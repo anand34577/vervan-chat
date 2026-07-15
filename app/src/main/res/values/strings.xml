@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vervan Chat</string>
+    <!-- App shortcut labels (spec §37.3) -->
+    <string name="shortcut_new_chat_short">New chat</string>
+    <string name="shortcut_new_chat_long">Start a new offline chat</string>
+    <string name="shortcut_voice_short">Voice input</string>
+    <string name="shortcut_voice_long">Start a chat with voice input</string>
+    <string name="shortcut_capture_short">Quick capture</string>
+    <string name="shortcut_capture_long">Capture a quick note</string>
+    <string name="shortcut_search_short">Search knowledge</string>
+    <string name="shortcut_search_long">Search across all content</string>
+    <!-- Notification channels (spec §37.4) -->
+    <string name="channel_jobs">Background jobs</string>
+    <string name="channel_import">Imports</string>
+    <string name="widget_new_note">New note</string>
+    <string name="widget_quick_ask">Quick ask</string>
+</resources>

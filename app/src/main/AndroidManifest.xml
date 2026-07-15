@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- On-device data sources (Phase G) — each is also gated by its own Settings toggle,
+         off by default, independent of this OS grant. READ_SMS carries a Play Store
+         distribution constraint: outside Play Store (sideloaded/personal use) it works once
+         granted; ON Play Store it's restricted to an app's default-SMS-handler role. See
+         SecuritySettingsScreen/plan notes — not solved here, just accepted going in. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- Phase I — floating quick-action bubble. SYSTEM_ALERT_WINDOW is granted via a system
+         Settings redirect (Settings.ACTION_MANAGE_OVERLAY_PERMISSION), not a runtime dialog.
+         BubbleService runs as "specialUse" (just showing the overlay) while idle, and briefly
+         upgrades to "mediaProjection" only around a capture — Android 14+ rejects starting a
+         mediaProjection-typed FGS before the user has granted screen-capture consent, so it
+         can't hold that type for its whole (consent-less, most-of-the-time) lifetime. Both
+         permissions are only ever requested/used if the user turns the bubble on in Settings —
+         off by default. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- Phase J — the local OpenAI-compatible API server. This is the first and only reason
+         this app ever declares INTERNET: opening any socket on Android, including a *server*
+         socket that only listens for inbound connections, requires it. Binds 127.0.0.1 by
+         default (unreachable from the network) unless the user separately turns on the LAN
+         toggle in Settings — see ApiServerService/LocalApiServer. Off by default; nothing here
+         runs until the user explicitly turns the server on. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".VervanApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Vervan"
+        android:supportsRtl="true">
+
+        <!-- Without these, the linker can't dlopen the vendor OpenCL driver on some devices
+             (seen as "Failed to load OpenCL library with dlopen: dlopen failed: library
+             libvndksupport.so not found" in logcat), so LiteRT-LM silently falls back to the
+             much slower WebGPU/Vulkan path on GPU instead of real OpenCL (LITERT_CL). required
+             is false since not every device has these — this only grants linker-namespace access
+             if they exist, it doesn't require them. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <service
+            android:name=".system.GenerationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Phase I — runs only while the quick-action bubble is turned on in Settings; shows
+             a persistent notification the whole time it's alive (see BubbleService's own doc
+             comment), never starts on boot. -->
+        <service
+            android:name=".overlay.BubbleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|mediaProjection">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent floating bubble for on-demand screen capture" />
+        </service>
+
+        <!-- Phase J — runs only while the local API server is turned on in Settings. -->
+        <service
+            android:name=".server.ApiServerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".widget.QuickAskWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_ask_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.NewNoteWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_new_note_info" />
+        </receiver>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Vervan">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Phase I — ACTION_PROCESS_TEXT: selecting text in any app shows "Vervan Chat" in
+             the selection toolbar. No dangerous permission — whether the result can be
+             inserted back into the host app is decided at runtime per-request by the
+             EXTRA_PROCESS_TEXT_READONLY extra the host sends, not a manifest declaration. -->
+        <activity
+            android:name=".ui.quickaction.QuickActionActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Vervan.Dialog"
+            android:excludeFromRecents="true"
+            android:label="Vervan Chat">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- Phase I — translucent, launched by the bubble (BubbleService) on tap. Holds the
+             MediaProjection consent flow and the single-frame capture; never in Recents. -->
+        <activity
+            android:name=".overlay.ScreenCaptureActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Vervan.Dialog"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask" />
+    </application>
+</manifest>
