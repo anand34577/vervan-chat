@@ -10,6 +10,7 @@ import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.jsoup.Jsoup
+import org.jsoup.parser.Parser
 
 sealed class ExtractResult {
     data class Text(val content: String) : ExtractResult()
@@ -155,8 +156,9 @@ object TextExtractor {
     }
 
     /** PPTX is a zip of `ppt/slides/slideN.xml` (+ optional `ppt/notesSlides/notesSlideN.xml`
-     * for speaker notes) — text runs live in DrawingML `<a:t>` tags inside each. Same
-     * hand-rolled zip/XML approach as DOCX/XLSX, not POI, for the same StAX-avoidance reason. */
+     * for speaker notes) — text runs live in DrawingML `<a:t>` tags inside each, read via
+     * Jsoup's XML parser mode rather than hand-rolled regex/unescape. Not POI, for the same
+     * StAX-avoidance reason as DOCX/XLSX. */
     private fun extractPptx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
             val slideEntries = zip.entries().asSequence()
@@ -185,7 +187,7 @@ object TextExtractor {
     private fun slideNumber(entryName: String): Int = Regex("(\\d+)\\.xml$").find(entryName)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
     private fun extractDrawingMlText(xml: String): String =
-        Regex("<a:t>(.*?)</a:t>", RegexOption.DOT_MATCHES_ALL).findAll(xml).joinToString(" ") { unescapeXml(it.groupValues[1]) }.trim()
+        Jsoup.parse(xml, "", Parser.xmlParser()).select("a|t").joinToString(" ") { it.text() }.trim()
 
     private fun unescapeXml(value: String): String = value
         .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")

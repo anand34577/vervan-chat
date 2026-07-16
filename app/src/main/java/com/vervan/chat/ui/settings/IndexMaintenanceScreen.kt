@@ -126,7 +126,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                 Text("Re-index all documents")
             }
-            if (busy) {
+            if (busy && busyDocumentId == null) {
                 androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 8.dp))
             }
             status?.let {

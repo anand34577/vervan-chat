@@ -6,6 +6,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.SavedOutput
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -60,8 +61,8 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                     if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
                     engine.generate("$instruction\n\n$originalText").collect { chunk -> _revision.value += chunk }
                 }
-            } catch (e: Exception) {
-                _error.value = "Generation failed: ${e.message}"
+            } catch (t: Throwable) {
+                _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }

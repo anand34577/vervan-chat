@@ -1,12 +1,20 @@
 package com.vervan.chat.ui.common
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.text.method.LinkMovementMethod
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
 import android.widget.TextView
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -18,20 +26,25 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewClientCompat
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
 import io.noties.markwon.Markwon
@@ -41,6 +54,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
+import org.json.JSONObject
 
 /** Response segments that need different native renderers. Everything remains on-device. */
 sealed class MdSegment {
@@ -50,82 +64,89 @@ sealed class MdSegment {
 }
 
 private val CODE_FENCE_REGEX = Regex("```([\\w+.-]*)[ \\t]*\\r?\\n([\\s\\S]*?)```")
+private val OPEN_FENCE_REGEX = Regex("```([\\w+.-]*)[ \\t]*\\r?\\n")
+
+private fun toCodeSegment(language: String, source: String): MdSegment =
+    if (language.equals("mermaid", ignoreCase = true)) MdSegment.Mermaid(source) else MdSegment.CodeBlock(language, source)
 
 fun splitMarkdownSegments(text: String): List<MdSegment> {
     val segments = mutableListOf<MdSegment>()
     var lastEnd = 0
     for (match in CODE_FENCE_REGEX.findAll(text)) {
         if (match.range.first > lastEnd) segments += MdSegment.Prose(text.substring(lastEnd, match.range.first))
-        val language = match.groupValues[1]
-        val source = match.groupValues[2].trimEnd('\r', '\n')
-        segments += if (language.equals("mermaid", ignoreCase = true)) {
-            MdSegment.Mermaid(source)
-        } else {
-            MdSegment.CodeBlock(language, source)
-        }
+        segments += toCodeSegment(match.groupValues[1], match.groupValues[2].trimEnd('\r', '\n'))
         lastEnd = match.range.last + 1
     }
-    if (lastEnd < text.length) segments += MdSegment.Prose(text.substring(lastEnd))
+    if (lastEnd < text.length) {
+        val remainder = text.substring(lastEnd)
+        // A fence opened but not yet closed — mid-stream, the model hasn't emitted the
+        // closing ``` yet. Render what's arrived so far as a live-updating code/mermaid
+        // block instead of dumping the raw ``` marker and code as plain prose until it closes.
+        val openMatch = OPEN_FENCE_REGEX.find(remainder)
+        if (openMatch != null) {
+            if (openMatch.range.first > 0) segments += MdSegment.Prose(remainder.substring(0, openMatch.range.first))
+            segments += toCodeSegment(openMatch.groupValues[1], remainder.substring(openMatch.range.last + 1))
+        } else {
+            segments += MdSegment.Prose(remainder)
+        }
+    }
     return segments.ifEmpty { listOf(MdSegment.Prose("")) }
 }
 
-data class MermaidEdge(val from: String, val to: String, val label: String? = null)
-
-private val SEQUENCE_EDGE = Regex("^\\s*([\\w .-]+?)\\s*-{1,2}>{1,2}\\s*([\\w .-]+?)\\s*:\\s*(.+?)\\s*$")
-private val PIPE_EDGE = Regex("^\\s*(.+?)\\s*--\\s*\\|([^|]+)\\|\\s*-->\\s*(.+?)\\s*$")
-private val LABEL_EDGE = Regex("^\\s*(.+?)\\s*--\\s+(.+?)\\s+-->\\s*(.+?)\\s*$")
-private val SIMPLE_EDGE = Regex("^\\s*(.+?)\\s*(?:-->|==>|---)\\s*(.+?)\\s*$")
-
-/** A deterministic subset for the flowcharts and sequence diagrams most answers generate. */
-fun parseMermaidEdges(source: String): List<MermaidEdge> = source.lineSequence()
-    .map(String::trim)
-    .filter {
-        it.isNotBlank() &&
-            !it.startsWith("%%") &&
-            !it.startsWith("graph ", ignoreCase = true) &&
-            !it.startsWith("flowchart ", ignoreCase = true) &&
-            !it.equals("sequenceDiagram", ignoreCase = true)
+/** Markwon uses `$$...$$` for inline math. Models commonly emit `$...$`, `\(...\)`, and
+ * `\[...\]`, so normalize those delimiters while leaving inline-code spans untouched. */
+internal fun normalizeLatexDelimiters(markdown: String): String {
+    val out = StringBuilder(markdown.length)
+    var index = 0
+    var codeFenceLength = 0
+    while (index < markdown.length) {
+        if (markdown[index] == '`') {
+            val end = markdown.indexOfFirstFrom(index) { it != '`' }
+            val runLength = end - index
+            if (codeFenceLength == 0) codeFenceLength = runLength
+            else if (runLength == codeFenceLength) codeFenceLength = 0
+            out.append(markdown, index, end)
+            index = end
+            continue
+        }
+        if (codeFenceLength == 0 && markdown.startsWith("\\[", index)) {
+            out.append("$$\n")
+            index += 2
+            continue
+        }
+        if (codeFenceLength == 0 && markdown.startsWith("\\]", index)) {
+            out.append("\n$$")
+            index += 2
+            continue
+        }
+        if (codeFenceLength == 0 && (markdown.startsWith("\\(", index) || markdown.startsWith("\\)", index))) {
+            out.append("$$")
+            index += 2
+            continue
+        }
+        if (
+            codeFenceLength == 0 && markdown[index] == '$' &&
+            markdown.getOrNull(index - 1) != '\\' &&
+            markdown.getOrNull(index - 1) != '$' && markdown.getOrNull(index + 1) != '$'
+        ) {
+            out.append("$$")
+        } else {
+            out.append(markdown[index])
+        }
+        index++
     }
-    .mapNotNull(::parseMermaidEdge)
-    .toList()
-
-private fun parseMermaidEdge(line: String): MermaidEdge? {
-    SEQUENCE_EDGE.matchEntire(line)?.let { match ->
-        return MermaidEdge(
-            cleanMermaidNode(match.groupValues[1]),
-            cleanMermaidNode(match.groupValues[2]),
-            match.groupValues[3].trim()
-        )
-    }
-    PIPE_EDGE.matchEntire(line)?.let { match ->
-        return MermaidEdge(
-            cleanMermaidNode(match.groupValues[1]),
-            cleanMermaidNode(match.groupValues[3]),
-            match.groupValues[2].trim()
-        )
-    }
-    LABEL_EDGE.matchEntire(line)?.let { match ->
-        return MermaidEdge(
-            cleanMermaidNode(match.groupValues[1]),
-            cleanMermaidNode(match.groupValues[3]),
-            match.groupValues[2].trim()
-        )
-    }
-    return SIMPLE_EDGE.matchEntire(line)?.let { match ->
-        MermaidEdge(cleanMermaidNode(match.groupValues[1]), cleanMermaidNode(match.groupValues[2]))
-    }
+    return out.toString()
 }
 
-private fun cleanMermaidNode(value: String): String {
-    val trimmed = value.trim()
-    val bracketStart = trimmed.indexOfFirst { it == '[' || it == '(' || it == '{' }
-    val withoutId = if (bracketStart > 0) trimmed.substring(bracketStart + 1) else trimmed
-    return withoutId.trim().trim('[', ']', '(', ')', '{', '}', '"', '\'', ' ')
+private inline fun String.indexOfFirstFrom(start: Int, predicate: (Char) -> Boolean): Int {
+    for (index in start until length) if (predicate(this[index])) return index
+    return length
 }
 
 @Composable
 fun MarkdownLiteText(text: String, modifier: Modifier = Modifier) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val segments = remember(text) { splitMarkdownSegments(text) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         segments.forEach { segment ->
@@ -136,11 +157,11 @@ fun MarkdownLiteText(text: String, modifier: Modifier = Modifier) {
                 is MdSegment.CodeBlock -> CodeSurface(
                     language = segment.language.ifBlank { "code" },
                     code = segment.code,
-                    onCopy = { clipboard.setText(AnnotatedString(segment.code)) }
+                    onCopy = { clipboard.setText(segment.code, scope) }
                 )
                 is MdSegment.Mermaid -> MermaidDiagram(
                     source = segment.source,
-                    onCopy = { clipboard.setText(AnnotatedString(segment.source)) }
+                    onCopy = { clipboard.setText(segment.source, scope) }
                 )
             }
         }
@@ -153,10 +174,13 @@ private fun MarkdownProse(markdown: String) {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
     val textSizePx = with(density) { 16.sp.toPx() }
-    val markwon = remember(context, textSizePx) {
+    val markwon = remember(context, textSizePx, colors.onSurface) {
         Markwon.builder(context)
             .usePlugin(MarkwonInlineParserPlugin.create())
-            .usePlugin(JLatexMathPlugin.create(textSizePx) { it.inlinesEnabled(true) })
+            .usePlugin(JLatexMathPlugin.create(textSizePx) {
+                it.inlinesEnabled(true)
+                it.theme().textColor(colors.onSurface.toArgb())
+            })
             .usePlugin(TablePlugin.create(context))
             .usePlugin(TaskListPlugin.create(context))
             .usePlugin(StrikethroughPlugin.create())
@@ -178,13 +202,25 @@ private fun MarkdownProse(markdown: String) {
         update = { view ->
             view.setTextColor(colors.onSurface.toArgb())
             view.setLinkTextColor(colors.primary.toArgb())
-            markwon.setMarkdown(view, markdown)
+            markwon.setMarkdown(view, normalizeLatexDelimiters(markdown))
         }
     )
 }
 
 @Composable
 private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val highlightColors = remember(scheme) {
+        CodeHighlightColors(
+            keyword = scheme.primary,
+            string = scheme.tertiary,
+            comment = scheme.onSurfaceVariant,
+            number = scheme.secondary,
+            type = scheme.primary,
+            default = scheme.onSurface
+        )
+    }
+    val highlighted = remember(code, language, highlightColors) { highlightCode(code, language, highlightColors) }
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
@@ -193,11 +229,10 @@ private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {
             RendererHeader(label = language, onCopy = onCopy)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Text(
-                text = code,
+                text = highlighted,
                 modifier = Modifier.horizontalScroll(rememberScrollState()).padding(Space.lg),
                 fontFamily = VervanMono,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -205,7 +240,12 @@ private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {
 
 @Composable
 private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
-    val edges = remember(source) { parseMermaidEdges(source) }
+    val scheme = MaterialTheme.colorScheme
+    val density = LocalDensity.current
+    var heightPx by remember { mutableIntStateOf(with(density) { 160.dp.roundToPx() }) }
+    val currentHeightCallback by rememberUpdatedState<(Int) -> Unit>(newValue = { measured ->
+        heightPx = measured.coerceAtLeast(with(density) { 80.dp.roundToPx() })
+    })
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -213,51 +253,89 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
         Column {
             RendererHeader(label = "Mermaid · offline", onCopy = onCopy, showDiagramIcon = true)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            if (edges.isEmpty()) {
-                Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Text("Preview unavailable for this diagram type", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        "The Mermaid source is preserved and can still be copied.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
+            AndroidView(
+                modifier = Modifier.fillMaxWidth().height(with(density) { heightPx.toDp() }),
+                factory = { context -> OfflineMermaidView(context) { currentHeightCallback(it) } },
+                onRelease = WebView::destroy,
+                update = { view ->
+                    view.render(
+                        source = source,
+                        background = scheme.surfaceContainerLow.cssHex(),
+                        foreground = scheme.onSurface.cssHex(),
+                        primary = scheme.primaryContainer.cssHex(),
+                        primaryText = scheme.onPrimaryContainer.cssHex(),
+                        secondary = scheme.secondaryContainer.cssHex(),
+                        outline = scheme.outline.cssHex()
                     )
-                    Text(source, fontFamily = VervanMono, style = MaterialTheme.typography.bodySmall)
                 }
-            } else {
-                Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-                    edges.forEach { edge ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
-                        ) {
-                            DiagramNode(edge.from, Modifier.weight(1f))
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                edge.label?.let {
-                                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Text("→", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                            }
-                            DiagramNode(edge.to, Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
+            )
         }
     }
 }
 
-@Composable
-private fun DiagramNode(label: String, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
-        Text(
-            label,
-            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+@SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
+private class OfflineMermaidView(context: Context, private val onHeightChanged: (Int) -> Unit) : WebView(context) {
+    private var ready = false
+    private var pendingScript: String? = null
+    private var renderedKey: String? = null
+
+    init {
+        setBackgroundColor(AndroidColor.TRANSPARENT)
+        isHorizontalScrollBarEnabled = false
+        isVerticalScrollBarEnabled = false
+        overScrollMode = OVER_SCROLL_NEVER
+        settings.apply {
+            javaScriptEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            blockNetworkLoads = true
+            domStorageEnabled = false
+            javaScriptCanOpenWindowsAutomatically = false
+        }
+        addJavascriptInterface(HeightBridge(this, onHeightChanged), "AndroidBridge")
+        val assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+            .build()
+        webViewClient = object : WebViewClientCompat() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                assetLoader.shouldInterceptRequest(request.url)
+
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                request.url.host != "appassets.androidplatform.net"
+
+            override fun onPageFinished(view: WebView, url: String) {
+                ready = true
+                pendingScript?.also {
+                    pendingScript = null
+                    evaluateJavascript(it, null)
+                }
+            }
+        }
+        loadUrl(MERMAID_PAGE)
+    }
+
+    fun render(source: String, background: String, foreground: String, primary: String, primaryText: String, secondary: String, outline: String) {
+        val key = listOf(source, background, foreground, primary, primaryText, secondary, outline).joinToString("\u0000")
+        if (key == renderedKey) return
+        renderedKey = key
+        val script = "window.renderDiagram(${listOf(source, background, foreground, primary, primaryText, secondary, outline).joinToString(",") { JSONObject.quote(it) }})"
+        if (ready) evaluateJavascript(script, null) else pendingScript = script
+    }
+
+    private class HeightBridge(private val view: WebView, private val callback: (Int) -> Unit) {
+        @JavascriptInterface
+        fun setHeight(heightPx: Int) {
+            view.post { callback(heightPx) }
+        }
+    }
+
+    companion object {
+        private const val MERMAID_PAGE = "https://appassets.androidplatform.net/assets/mermaid/index.html"
     }
 }
+
+private fun androidx.compose.ui.graphics.Color.cssHex(): String =
+    String.format("#%06X", 0xFFFFFF and toArgb())
 
 @Composable
 private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: Boolean = false) {

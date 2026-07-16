@@ -2,6 +2,7 @@ package com.vervan.chat.ui.nav
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -65,6 +67,7 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.ui.chat.BranchTreeScreen
 import com.vervan.chat.ui.chat.ChatScreen
+import com.vervan.chat.ui.chat.ChatInfoScreen
 import com.vervan.chat.ui.chats.ChatListScreen
 import com.vervan.chat.ui.collections.SmartCollectionsScreen
 import com.vervan.chat.ui.dev.DevWorkspaceScreen
@@ -118,24 +121,42 @@ private val tabs = listOf(
     Tab("chats", "Chats", Icons.AutoMirrored.Filled.Chat)
 )
 private val libraryTab = Tab("library", "Library", Icons.Filled.Folder)
+private val toolsTab = Tab("tools", "Tools", Icons.Filled.GridView)
 private val trailingTabs = listOf(
-    Tab("knowledge", "Knowledge", Icons.AutoMirrored.Filled.MenuBook),
+    toolsTab,
     libraryTab
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
-fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String? = null, intentVersion: Int = 0, windowSizeClass: WindowSizeClass? = null) {
+fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: android.net.Uri? = null, shortcut: String? = null, intentVersion: Int = 0, windowSizeClass: WindowSizeClass? = null) {
     val navController = rememberNavController()
     val prefs = LocalContext.current.getSharedPreferences("vervan", 0)
     val startDestination = if (prefs.getBoolean("onboarded", false)) "home" else "onboarding"
     var pendingShare by remember { mutableStateOf<String?>(null) }
+    var pendingSharedImagePath by remember { mutableStateOf<String?>(null) }
+    var pendingStudyMaterialText by remember { mutableStateOf<String?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Launcher shortcuts (spec §37.3) — navigate to the relevant destination on launch.
     androidx.compose.runtime.LaunchedEffect(sharedText, intentVersion) {
         if (sharedText != null) pendingShare = sharedText
+    }
+    // Shared image (e.g. a screenshot shared from another app) — copied into app storage so it
+    // survives the source content:// Uri disappearing, same pattern ChatViewModel.copyImage uses.
+    androidx.compose.runtime.LaunchedEffect(sharedImageUri, intentVersion) {
+        val uri = sharedImageUri ?: return@LaunchedEffect
+        val dest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
+                val file = java.io.File(dir, "shared-${System.currentTimeMillis()}.jpg")
+                app.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
+                com.vervan.chat.model.ImageUtils.fixOrientation(file)
+                file.absolutePath
+            }.getOrNull()
+        }
+        if (dest != null) pendingSharedImagePath = dest
     }
     androidx.compose.runtime.LaunchedEffect(shortcut, intentVersion) {
         if (shortcut == null || !prefs.getBoolean("onboarded", false)) return@LaunchedEffect
@@ -248,8 +269,112 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String?
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenCollections = { navController.navigate("collections") },
                     onOpenProfile = { navController.navigate("profile") },
-                    onOpenWorkspaces = { navController.navigate("workspaces") }
+                    onOpenWorkspaces = { navController.navigate("workspaces") },
+                    onOpenDocScanner = { navController.navigate("tools/document-scanner") },
+                    onOpenOcrScanner = { navController.navigate("tools/ocr-scanner") },
+                    onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
+                    onOpenTranslate = { navController.navigate("tools/translate") },
+                    onOpenWritingAssistant = { navController.navigate("tools/writing-assistant") },
+                    onOpenSmartNotes = { navController.navigate("tools/smart-notes") },
+                    onOpenClipboardTool = { navController.navigate("tools/clipboard-assistant") },
+                    onOpenExplainLevel = { navController.navigate("tools/explain-level") },
+                    onOpenBusinessCard = { navController.navigate("tools/business-card-scanner") },
+                    onOpenReceiptScanner = { navController.navigate("tools/receipt-scanner") },
+                    onOpenTableScanner = { navController.navigate("tools/table-scanner") },
+                    onOpenQuizGenerator = { navController.navigate("tools/quiz-generator") },
+                    onOpenAllTools = { navController.navigatePrimaryRoot("tools") }
                 )
+            }
+            composable("tools/document-scanner") {
+                com.vervan.chat.ui.tools.DocumentScannerScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
+                    onProcessAsStudyMaterial = { text -> pendingStudyMaterialText = text; navController.navigate("tools/study-material") }
+                )
+            }
+            composable("tools/ocr-scanner") {
+                com.vervan.chat.ui.tools.OcrScannerScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDocument = { documentId -> navController.navigate("document/$documentId") }
+                )
+            }
+            composable("tools/voice-chat") {
+                com.vervan.chat.ui.tools.VoiceChatScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenKeyboard = {
+                        scope.launch {
+                            val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                            app.container.db.chatDao().upsert(chat)
+                            navController.navigate("chat/${chat.id}")
+                        }
+                    }
+                )
+            }
+            composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/writing-assistant") { com.vervan.chat.ui.tools.WritingAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/smart-notes") { com.vervan.chat.ui.tools.SmartNotesScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/clipboard-assistant") { com.vervan.chat.ui.tools.ClipboardAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/explain-level") { com.vervan.chat.ui.tools.ExplainLikeImScreen(onBack = { navController.popBackStack() }) }
+            composable(
+                "tools/screenshot-intel?imagePath={imagePath}",
+                arguments = listOf(navArgument("imagePath") { type = NavType.StringType })
+            ) { entry ->
+                val imagePath = entry.arguments?.getString("imagePath")?.let { android.net.Uri.decode(it) } ?: return@composable
+                com.vervan.chat.ui.tools.ScreenshotIntelligenceScreen(onBack = { navController.popBackStack() }, imagePath = imagePath)
+            }
+            composable("tools/business-card-scanner") {
+                com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.BUSINESS_CARD, onBack = { navController.popBackStack() })
+            }
+            composable("tools/receipt-scanner") {
+                com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.RECEIPT, onBack = { navController.popBackStack() })
+            }
+            composable("tools/table-scanner") {
+                com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.TABLE, onBack = { navController.popBackStack() })
+            }
+            composable("tools/quiz-generator") { com.vervan.chat.ui.tools.QuizGeneratorScreen(onBack = { navController.popBackStack() }) }
+            composable("tools") {
+                com.vervan.chat.ui.tools.AllToolsScreen(onNavigate = { route -> navController.navigate(route) })
+            }
+            composable("tools/all") {
+                com.vervan.chat.ui.tools.AllToolsScreen(onBack = { navController.popBackStack() }, onNavigate = { route -> navController.navigate(route) })
+            }
+            composable("tools/socratic-tutor") { com.vervan.chat.ui.tools.SocraticTutorScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/exam-prep") { com.vervan.chat.ui.tools.ExamPreparationScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/homework-checker") { com.vervan.chat.ui.tools.HomeworkCheckerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/concept-mapper") { com.vervan.chat.ui.tools.ConceptMapperScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/memory-trainer") { com.vervan.chat.ui.tools.MemoryTrainerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/language-practice") { com.vervan.chat.ui.tools.LanguagePracticeScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/pronunciation-coach") { com.vervan.chat.ui.tools.PronunciationCoachScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/live-translator") { com.vervan.chat.ui.tools.LiveConversationTranslatorScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/interview-practice") { com.vervan.chat.ui.tools.InterviewPracticeScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/presentation-practice") { com.vervan.chat.ui.tools.PresentationPracticeScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/daily-planner") { com.vervan.chat.ui.tools.DailyPlannerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/goal-breakdown") { com.vervan.chat.ui.tools.GoalBreakdownScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/decision-assistant") { com.vervan.chat.ui.tools.DecisionAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/habit-reflection") { com.vervan.chat.ui.tools.HabitReflectionScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/smart-checklist") { com.vervan.chat.ui.tools.SmartChecklistScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/code-explainer") { com.vervan.chat.ui.tools.CodeExplainerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/regex-sql-helper") { com.vervan.chat.ui.tools.RegexSqlHelperScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/commit-message") { com.vervan.chat.ui.tools.CommitMessageScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/json-log-analyzer") { com.vervan.chat.ui.tools.JsonLogAnalyzerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/story-studio") { com.vervan.chat.ui.tools.StoryIdeaStudioScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/image-caption") { com.vervan.chat.ui.tools.ImageCaptionScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/social-post") { com.vervan.chat.ui.tools.CaptionSocialPostScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/recipe-assistant") { com.vervan.chat.ui.tools.RecipeAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/gift-message") { com.vervan.chat.ui.tools.GiftMessageAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/smart-form-filler") {
+                com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.CUSTOM, onBack = { navController.popBackStack() })
+            }
+            composable("tools/document-comparison") { com.vervan.chat.ui.tools.DocumentComparisonScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/email-composer") { com.vervan.chat.ui.tools.EmailComposerScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/model-dashboard") { com.vervan.chat.ui.tools.ModelCapabilityDashboardScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/study-material") {
+                val text = pendingStudyMaterialText
+                if (text == null) {
+                    navController.popBackStack()
+                } else {
+                    com.vervan.chat.ui.tools.StudyMaterialScreen(onBack = { navController.popBackStack() }, scannedText = text)
+                }
             }
             composable("search") {
                 SearchScreen(
@@ -367,6 +492,8 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String?
                     com.vervan.chat.ui.chats.ChatsTwoPaneScreen(
                         onOpenBranchTree = { chatId -> navController.navigate("chat/$chatId/tree") },
                         onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
+                        onOpenChatInfo = { chatId -> navController.navigate("chat/$chatId/info") },
+                        onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                         onOpenModels = { navController.navigate("models") }
                     )
                 } else {
@@ -378,11 +505,21 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String?
                 ChatScreen(
                     chatId = chatId,
                     onBack = { navController.popBackStack() },
+                    onOpenChatInfo = { navController.navigate("chat/$chatId/info") },
+                    onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                     onOpenBranchTree = { navController.navigate("chat/$chatId/tree") },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
-                    onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") }
+                    onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    // Forking replaces this chat in the back stack instead of stacking on top of
+                    // it — otherwise forking twice then pressing Back walks back through each
+                    // fork instead of leaving the chat entirely (user ask).
+                    onForkChat = { forkedChatId ->
+                        navController.navigate("chat/$forkedChatId") {
+                            popUpTo(backStackEntry2.destination.id) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable("chat/{chatId}/{startAction}") { entry ->
@@ -391,16 +528,31 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String?
                     chatId = chatId,
                     initialAction = entry.arguments?.getString("startAction"),
                     onBack = { navController.popBackStack() },
+                    onOpenChatInfo = { navController.navigate("chat/$chatId/info") },
+                    onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                     onOpenBranchTree = { navController.navigate("chat/$chatId/tree") },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
-                    onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") }
+                    onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    onForkChat = { forkedChatId ->
+                        navController.navigate("chat/$forkedChatId") {
+                            popUpTo(entry.destination.id) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable("chat/{chatId}/tree") { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 BranchTreeScreen(chatId = chatId, onBack = { navController.popBackStack() })
+            }
+            composable("chat/{chatId}/info") { entry ->
+                val chatId = entry.arguments?.getString("chatId") ?: return@composable
+                ChatInfoScreen(
+                    chatId = chatId,
+                    onBack = { navController.popBackStack() },
+                    onOpenDocument = { documentId -> navController.navigate("document/$documentId") }
+                )
             }
             composable("knowledge") {
                 KnowledgeScreen(onOpenKb = { kbId -> navController.navigate("knowledge/$kbId") })
@@ -518,7 +670,20 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, shortcut: String?
             text = text,
             onDismiss = { pendingShare = null },
             onOpenChat = { chatId -> pendingShare = null; navController.navigate("chat/$chatId") },
-            onOpenNote = { noteId -> pendingShare = null; navController.navigate("note/$noteId") }
+            onOpenNote = { noteId -> pendingShare = null; navController.navigate("note/$noteId") },
+            onOpenClipboardTool = { pendingShare = null; navController.navigate("tools/clipboard-assistant") }
+        )
+    }
+
+    pendingSharedImagePath?.let { path ->
+        SharedImageDialog(
+            onDismiss = { pendingSharedImagePath = null },
+            onScreenshotIntel = {
+                pendingSharedImagePath = null
+                navController.navigate("tools/screenshot-intel?imagePath=${android.net.Uri.encode(path)}")
+            },
+            onDocumentScan = { pendingSharedImagePath = null; navController.navigate("tools/document-scanner") },
+            onTranslate = { pendingSharedImagePath = null; navController.navigate("tools/translate") }
         )
     }
 
@@ -607,13 +772,22 @@ private fun ShareTargetDialog(
     text: String,
     onDismiss: () -> Unit,
     onOpenChat: (String) -> Unit,
-    onOpenNote: (String) -> Unit
+    onOpenNote: (String) -> Unit,
+    onOpenClipboardTool: () -> Unit
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Shared text") },
-        text = { Text(text.take(200), maxLines = 4) },
+        text = {
+            Column {
+                Text(text.take(200), maxLines = 4)
+                androidx.compose.material3.TextButton(
+                    onClick = onOpenClipboardTool,
+                    modifier = Modifier.padding(top = 8.dp)
+                ) { Text("Summarize · Translate · Rewrite · Explain…") }
+            }
+        },
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = {
                 scope.launch {
@@ -635,5 +809,30 @@ private fun ShareTargetDialog(
                 }
             }) { Text("Save as note") }
         }
+    )
+}
+
+/** Shared-image counterpart to [ShareTargetDialog] (spec-adjacent "Universal Share-to-AI" —
+ * a shared image gets image-specific actions instead of the generic text ones). The clipboard
+ * tool's initial text always comes from [ClipboardAssistantScreen] reading the clipboard live,
+ * not passed here — [pendingShare]'s text case is the only one routed through a param. */
+@Composable
+private fun SharedImageDialog(
+    onDismiss: () -> Unit,
+    onScreenshotIntel: () -> Unit,
+    onDocumentScan: () -> Unit,
+    onTranslate: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shared image") },
+        text = {
+            Column {
+                androidx.compose.material3.TextButton(onClick = onScreenshotIntel) { Text("OCR · Explain · Summarize · Extract error") }
+                androidx.compose.material3.TextButton(onClick = onDocumentScan) { Text("Scan document / export PDF") }
+                androidx.compose.material3.TextButton(onClick = onTranslate) { Text("Translate") }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

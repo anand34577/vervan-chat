@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -49,38 +50,52 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.BackendChoice
+import com.vervan.chat.data.db.entities.FileDownloadStatus
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.data.db.entities.ToolApprovalMode
 import com.vervan.chat.data.db.entities.displayName
+import com.vervan.chat.modeldownload.ModelAction
+import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.PageContainer
@@ -88,7 +103,7 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.theme.VervanMono
-import com.vervan.chat.ui.theme.VervanSuccess
+import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -98,18 +113,25 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
     val vm: ModelManagerViewModel = viewModel(factory = viewModelFactory {
         initializer { ModelManagerViewModel(app) }
     })
-    val models by vm.models.collectAsState()
-    val defaults by vm.defaults.collectAsState()
-    val status by vm.status.collectAsState()
-    val importing by vm.importing.collectAsState()
-    val busyModelId by vm.busyModelId.collectAsState()
-    val busyLabel by vm.busyLabel.collectAsState()
-    val pendingAcknowledgment by vm.pendingAcknowledgment.collectAsState()
-    val pendingMigration by vm.pendingMigration.collectAsState()
-    val loadedGenerationPath by vm.loadedGenerationPath.collectAsState()
-    val loadedEmbeddingPath by vm.loadedEmbeddingPath.collectAsState()
+    val models by vm.models.collectAsStateWithLifecycle()
+    val defaults by vm.defaults.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
+    val importing by vm.importing.collectAsStateWithLifecycle()
+    val busyModelId by vm.busyModelId.collectAsStateWithLifecycle()
+    val busyLabel by vm.busyLabel.collectAsStateWithLifecycle()
+    val pendingAcknowledgment by vm.pendingAcknowledgment.collectAsStateWithLifecycle()
+    val pendingMigration by vm.pendingMigration.collectAsStateWithLifecycle()
+    val loadedGenerationPath by vm.loadedGenerationPath.collectAsStateWithLifecycle()
+    val loadedEmbeddingPath by vm.loadedEmbeddingPath.collectAsStateWithLifecycle()
+    val downloadStates by vm.downloadStates.collectAsStateWithLifecycle()
     var editingModel by remember { mutableStateOf<ModelInfo?>(null) }
-    LaunchedEffect(Unit) { vm.refreshLoadedState() }
+    // LaunchedEffect(Unit) only fires once per composable instance — with save/restoreState
+    // navigation (bottom-nav style), returning to this screen reuses that same instance, so a
+    // model loaded/unloaded from Chat while this screen sat in the backstack never refreshed
+    // here (root cause of "Models screen shows the wrong Load/Unload button"). Re-check on
+    // every real return to the foreground instead of just the first-ever composition.
+    val resumeTick = com.vervan.chat.ui.common.rememberOnResumeTick()
+    LaunchedEffect(resumeTick) { vm.refreshLoadedState() }
 
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.importModel(it, ModelRole.GENERATION) }
@@ -192,6 +214,28 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
             }
+            val downloadingStates = downloadStates.filter { it.status != com.vervan.chat.data.db.entities.ModelStatus.NOT_DOWNLOADED }
+            val catalogStates = downloadStates.filter { it.status == com.vervan.chat.data.db.entities.ModelStatus.NOT_DOWNLOADED }
+
+            if (downloadingStates.isNotEmpty()) {
+                SectionHeader("Active downloads", Icons.Filled.CloudDownload)
+                downloadingStates.forEach { state ->
+                    DownloadPackageCard(
+                        state = state,
+                        onPause = { vm.pauseDownload(state.modelId, state.version) },
+                        onResume = { vm.resumeDownload(state.modelId, state.version) },
+                        onRetry = { vm.retryDownload(state.modelId, state.version) },
+                        onRemove = { vm.cancelDownload(state.modelId, state.version, keepPartial = false) },
+                        onStopKeepPartial = { vm.cancelDownload(state.modelId, state.version, keepPartial = true) },
+                        onStopDeletePartial = { vm.cancelDownload(state.modelId, state.version, keepPartial = false) }
+                    )
+                }
+            }
+
+            if (catalogStates.isNotEmpty()) {
+                AvailableForDownloadSection(catalogStates, onDownload = { vm.downloadModel(it.modelId, it.version) })
+            }
+
             ImportCard(
                 importing = importing,
                 onImport = { role ->
@@ -205,7 +249,7 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                 }
             )
 
-            if (importing || busyLabel != null) {
+            if (importing) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
             }
             status?.let {
@@ -262,14 +306,6 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            if (models.isEmpty()) {
-                Text(
-                    "No models imported yet. Import a generation model to start chatting, or an embedding model to power semantic search in Knowledge.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 20.dp)
-                )
-            }
         }
       }
     }
@@ -475,7 +511,7 @@ private fun EmbeddingImportStep(stepNumber: Int, label: String, fileName: String
             Text(
                 fileName ?: "Not selected",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (fileName != null) VervanSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (fileName != null) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -569,6 +605,14 @@ private fun ModelCard(
                                 )
                             }
                         }
+                        if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {
+                            Text(
+                                "Downloaded" + (model.catalogVersion?.let { " · v$it" } ?: "") +
+                                    " · ${java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(model.importedAt))}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 if (!selectionMode) {
@@ -577,7 +621,7 @@ private fun ModelCard(
                         if (isLoaded) SemanticChip("Loaded", ChipTone.Neutral)
                         if (model.isActive) SemanticChip("Default", ChipTone.Neutral)
                         Box {
-                            IconButton(onClick = { menuOpen = true }, enabled = !busy, modifier = Modifier.size(48.dp)) {
+                            IconButton(onClick = { menuOpen = true }, enabled = !busy) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "More options")
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -597,6 +641,12 @@ private fun ModelCard(
                                     text = { Text("Benchmark") },
                                     leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null) },
                                     onClick = { menuOpen = false; onBenchmark() }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Delete model", color = MaterialTheme.colorScheme.error) },
+                                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                    onClick = { menuOpen = false; confirmDelete = true }
                                 )
                             }
                         }
@@ -637,7 +687,7 @@ private fun ModelCard(
                 Text(
                     "Last ran on ${model.lastWorkingBackend.displayName()}$mtpNote",
                     style = MaterialTheme.typography.labelSmall,
-                    color = VervanSuccess,
+                    color = MaterialTheme.colorScheme.vervanSuccess,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
@@ -650,14 +700,6 @@ private fun ModelCard(
                     ) {
                         Icon(if (isLoaded) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(if (isLoaded) "Unload" else "Load", modifier = Modifier.padding(start = 6.dp))
-                    }
-                    TextButton(
-                        onClick = { confirmDelete = true },
-                        enabled = !busy,
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text("Delete forever", modifier = Modifier.padding(start = 4.dp))
                     }
                 }
             }
@@ -944,8 +986,485 @@ private fun OverrideField(
 }
 
 private fun formatModelSize(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
-    bytes >= 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
-    bytes >= 1024 -> "${bytes / 1024} KB"
+    bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GiB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024 * 1024 -> String.format("%.1f MiB", bytes / (1024.0 * 1024))
+    bytes >= 1024 -> String.format("%.0f KiB", bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/** "Available for Download" — collapsed by default, grouped by category, each category
+ * independently expandable (spec §3.2). */
+@Composable
+private fun AvailableForDownloadSection(
+    states: List<com.vervan.chat.modeldownload.ModelUiState>,
+    onDownload: (com.vervan.chat.modeldownload.ModelUiState) -> Unit
+) {
+    var sectionExpanded by rememberSaveable("available_models") { mutableStateOf(false) }
+    SectionHeader("Discover models", Icons.Filled.CloudDownload)
+    Card(
+        onClick = { sectionExpanded = !sectionExpanded },
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
+    ) {
+        Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ) {
+                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.padding(Space.md).size(24.dp))
+            }
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text("Available for download", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${states.size} curated model${if (states.size == 1) "" else "s"} · Categories stay collapsed until you open them",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                if (sectionExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (sectionExpanded) "Collapse available models" else "Expand available models"
+            )
+        }
+    }
+
+    if (sectionExpanded) {
+        states.groupBy { it.category }.forEach { (category, entries) ->
+            var expanded by rememberSaveable("catalog_${category.name}") { mutableStateOf(false) }
+            Card(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f))
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (category == ModelRole.GENERATION) Icons.Filled.Bolt else Icons.Outlined.Storage,
+                        contentDescription = null,
+                        tint = if (category == ModelRole.GENERATION) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    )
+                    Text(
+                        if (category == ModelRole.GENERATION) "Generation" else "Embedding",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f).padding(start = Space.md)
+                    )
+                    SemanticChip("${entries.size}", ChipTone.Neutral)
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Collapse category" else "Expand category",
+                        modifier = Modifier.padding(start = Space.sm)
+                    )
+                }
+            }
+            if (expanded) {
+                entries.forEach { entry -> CatalogEntryCard(entry, onDownload = { onDownload(entry) }) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogEntryCard(state: com.vervan.chat.modeldownload.ModelUiState, onDownload: () -> Unit) {
+    val accent = if (state.category == ModelRole.GENERATION) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val accentContainer = if (state.category == ModelRole.GENERATION) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+    Card(
+        Modifier.fillMaxWidth().padding(top = Space.sm),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = accentContainer.copy(alpha = 0.18f)),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(Space.lg)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = MaterialTheme.shapes.large, color = accentContainer, contentColor = accent) {
+                    Icon(
+                        if (state.category == ModelRole.GENERATION) Icons.Filled.Bolt else Icons.Outlined.Storage,
+                        contentDescription = null,
+                        modifier = Modifier.padding(Space.md).size(24.dp)
+                    )
+                }
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "v${state.version} · ${if (state.category == ModelRole.GENERATION) "Generation" else "Embedding"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = accent
+                    )
+                }
+            }
+
+            if (state.description.isNotBlank()) {
+                Text(
+                    state.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.md)
+                )
+            }
+            FlowRow(
+                Modifier.fillMaxWidth().padding(top = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                state.totalBytes?.let { SemanticChip("~${formatModelSize(it)}", ChipTone.Neutral) }
+                state.precision?.let { SemanticChip(it, ChipTone.Neutral) }
+                state.minimumRamBytes?.let { SemanticChip("${formatModelSize(it)} RAM", ChipTone.Neutral) }
+                SemanticChip("${state.totalFileCount} file${if (state.totalFileCount == 1) "" else "s"}", ChipTone.Neutral)
+                if (state.requiresAuthToken) SemanticChip("Access token", ChipTone.Warning)
+                if (state.requiresLicenseAcceptance) SemanticChip("License", ChipTone.Warning)
+                state.capabilities.forEach { SemanticChip(it, ChipTone.Neutral) }
+            }
+            if (state.sourceName.isNotBlank()) {
+                Text(
+                    "Source: ${state.sourceName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.md)
+                )
+            }
+            ResponsiveActions(Modifier.padding(top = Space.lg)) {
+                Button(onClick = onDownload) {
+                    Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Download", modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+        }
+    }
+}
+
+/** One card per actively downloading/paused/failed package — expands to per-file detail (spec
+ * §20). Progress is always derived from bytes (never a stored percentage), and only rendered as
+ * determinate once a total is actually known. */
+@Composable
+private fun DownloadPackageCard(
+    state: com.vervan.chat.modeldownload.ModelUiState,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit,
+    onRemove: () -> Unit,
+    onStopKeepPartial: () -> Unit,
+    onStopDeletePartial: () -> Unit
+) {
+    var expanded by rememberSaveable(state.packageId) { mutableStateOf(false) }
+    var confirmStop by remember { mutableStateOf(false) }
+    var confirmDeletePartial by remember { mutableStateOf(false) }
+    val tone = downloadStatusTone(state.status)
+    val statusColor = downloadStatusColor(state.status)
+    val progress = state.totalBytes?.takeIf { it > 0L }?.let {
+        (state.downloadedBytes.toFloat() / it.toFloat()).coerceIn(0f, 1f)
+    }
+
+    Card(
+        Modifier.fillMaxWidth().padding(bottom = Space.md),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.32f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(Space.lg)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = statusColor.copy(alpha = 0.14f),
+                    contentColor = statusColor
+                ) {
+                    Icon(
+                        downloadStatusIcon(state.status),
+                        contentDescription = null,
+                        modifier = Modifier.padding(Space.md).size(24.dp)
+                    )
+                }
+                Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                    Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "v${state.version} · ${if (state.category == ModelRole.GENERATION) "Generation" else "Embedding"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SemanticChip(statusChipLabel(state.status), tone)
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Hide download details" else "Show download details"
+                    )
+                }
+            }
+
+            Text(
+                statusLabel(state),
+                style = MaterialTheme.typography.labelMedium,
+                color = statusColor,
+                modifier = Modifier.padding(top = Space.md)
+            )
+            state.currentFileName?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.md)
+                )
+            }
+
+            if (state.status !in setOf(ModelStatus.QUEUED, ModelStatus.CANCELLING, ModelStatus.DELETING)) {
+                if (state.status in setOf(ModelStatus.PREPARING, ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING)) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                        color = statusColor,
+                        trackColor = statusColor.copy(alpha = 0.12f)
+                    )
+                } else if (progress != null) {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                        color = statusColor,
+                        trackColor = statusColor.copy(alpha = 0.12f)
+                    )
+                } else if (state.status !in setOf(ModelStatus.PAUSED, ModelStatus.FAILED)) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                        color = statusColor,
+                        trackColor = statusColor.copy(alpha = 0.12f)
+                    )
+                }
+            }
+
+            if (state.downloadedBytes > 0L || state.status == ModelStatus.DOWNLOADING || state.status == ModelStatus.PAUSED) {
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(top = Space.md),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    TransferMetric(
+                        icon = Icons.Outlined.Storage,
+                        label = "Downloaded",
+                        value = buildString {
+                            append(formatModelSize(state.downloadedBytes))
+                            state.totalBytes?.let { append(" / ${formatModelSize(it)}") }
+                        }
+                    )
+                    progress?.let {
+                        TransferMetric(Icons.Filled.CloudDownload, "Progress", "${(it * 100).toInt()}%")
+                    }
+                    if (state.status == ModelStatus.DOWNLOADING) {
+                        TransferMetric(
+                            Icons.Filled.Speed,
+                            "Speed",
+                            state.speedBytesPerSecond?.takeIf { it > 0 }?.let { "${formatModelSize(it)}/s" } ?: "Calculating…"
+                        )
+                        TransferMetric(
+                            Icons.Filled.Schedule,
+                            "Time left",
+                            state.estimatedRemainingSeconds?.let(::formatEta) ?: "Calculating…"
+                        )
+                    }
+                    if (state.totalFileCount > 1) {
+                        TransferMetric(Icons.Filled.CheckCircle, "Files", "${state.completedFileCount} / ${state.totalFileCount}")
+                    }
+                }
+            }
+
+            state.error?.let {
+                ValidationMessage(it.message.ifBlank { it.code.name }, modifier = Modifier.padding(top = Space.md))
+            }
+
+            if (expanded) {
+                Column(Modifier.padding(top = Space.md)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f))
+                    Text(
+                        "Package files · ${state.completedFileCount} of ${state.totalFileCount} complete",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = Space.md, bottom = Space.xs)
+                    )
+                    state.files.forEach { file ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (file.status == FileDownloadStatus.COMPLETED) Icons.Filled.CheckCircle else Icons.Filled.CloudDownload,
+                                contentDescription = null,
+                                tint = if (file.status == FileDownloadStatus.COMPLETED) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column(Modifier.weight(1f).padding(start = Space.sm)) {
+                                Text(file.fileName, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    fileStatusLabel(file),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (file.status == FileDownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            ResponsiveActions(Modifier.padding(top = Space.lg)) {
+                if (ModelAction.PAUSE in state.allowedActions) {
+                    TextButton(onClick = onPause) {
+                        Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Pause", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+                if (ModelAction.RESUME in state.allowedActions) {
+                    Button(onClick = onResume) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Resume", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+                if (ModelAction.RETRY in state.allowedActions) {
+                    Button(onClick = onRetry) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Retry", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+                if (ModelAction.CANCEL in state.allowedActions) {
+                    TextButton(onClick = { confirmStop = true }) {
+                        Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Stop", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+                if (ModelAction.DELETE in state.allowedActions) {
+                    TextButton(
+                        onClick = { confirmDeletePartial = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Delete partial", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+                if (ModelAction.REMOVE in state.allowedActions) {
+                    TextButton(onClick = onRemove, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Remove", modifier = Modifier.padding(start = Space.xs))
+                    }
+                }
+            }
+        }
+    }
+
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Stop downloading this model?") },
+            text = { Text("Keep downloaded data to resume later, or remove all downloaded data.") },
+            confirmButton = {
+                ResponsiveActions {
+                    TextButton(onClick = { confirmStop = false }) { Text("Continue") }
+                    TextButton(onClick = { confirmStop = false; onStopKeepPartial() }) { Text("Keep partial") }
+                    TextButton(
+                        onClick = { confirmStop = false; onStopDeletePartial() },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Delete partial") }
+                }
+            }
+        )
+    }
+    if (confirmDeletePartial) {
+        ConfirmDialog(
+            title = "Delete partial download?",
+            body = "Downloaded data for \"${state.displayName}\" will be removed. You can download it again later.",
+            confirmLabel = "Delete partial",
+            destructive = true,
+            onConfirm = { confirmDeletePartial = false; onRemove() },
+            onDismiss = { confirmDeletePartial = false }
+        )
+    }
+}
+
+@Composable
+private fun TransferMetric(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.padding(start = Space.sm)) {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.labelMedium, fontFamily = VervanMono)
+            }
+        }
+    }
+}
+
+@Composable
+private fun downloadStatusColor(status: ModelStatus): Color = when (status) {
+    ModelStatus.FAILED -> MaterialTheme.colorScheme.error
+    ModelStatus.PAUSED, ModelStatus.WAITING_FOR_NETWORK, ModelStatus.WAITING_FOR_WIFI, ModelStatus.WAITING_FOR_STORAGE ->
+        MaterialTheme.colorScheme.tertiary
+    ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING, ModelStatus.READY ->
+        MaterialTheme.colorScheme.vervanSuccess
+    else -> MaterialTheme.colorScheme.primary
+}
+
+private fun downloadStatusTone(status: ModelStatus): ChipTone = when (status) {
+    ModelStatus.FAILED -> ChipTone.Error
+    ModelStatus.PAUSED, ModelStatus.WAITING_FOR_NETWORK, ModelStatus.WAITING_FOR_WIFI, ModelStatus.WAITING_FOR_STORAGE -> ChipTone.Warning
+    ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING, ModelStatus.READY -> ChipTone.Success
+    else -> ChipTone.Neutral
+}
+
+private fun downloadStatusIcon(status: ModelStatus) = when (status) {
+    ModelStatus.FAILED -> Icons.Filled.Warning
+    ModelStatus.PAUSED -> Icons.Filled.Pause
+    ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING, ModelStatus.READY -> Icons.Filled.CheckCircle
+    else -> Icons.Filled.CloudDownload
+}
+
+private fun fileStatusLabel(file: com.vervan.chat.modeldownload.ModelFileUiState): String = when (file.status) {
+    FileDownloadStatus.COMPLETED -> "Complete"
+    FileDownloadStatus.DOWNLOADING -> "${formatModelSize(file.downloadedBytes)}${file.totalBytes?.let { " / ${formatModelSize(it)}" } ?: ""}"
+    FileDownloadStatus.FAILED -> file.errorMessage?.ifBlank { null } ?: "Failed"
+    FileDownloadStatus.PAUSED -> "Paused"
+    FileDownloadStatus.WAITING_FOR_NETWORK -> "Waiting for network"
+    FileDownloadStatus.NOT_STARTED -> "Waiting"
+}
+
+private fun statusChipLabel(status: ModelStatus): String = when (status) {
+    ModelStatus.WAITING_FOR_NETWORK -> "No network"
+    ModelStatus.WAITING_FOR_WIFI -> "Wi-Fi needed"
+    ModelStatus.WAITING_FOR_STORAGE -> "Storage needed"
+    ModelStatus.DOWNLOADED -> "Downloaded"
+    ModelStatus.VERIFYING -> "Verifying"
+    ModelStatus.IMPORTING -> "Installing"
+    else -> status.name.lowercase().replaceFirstChar(Char::titlecase)
+}
+
+private fun statusLabel(state: ModelUiState): String = when (state.status) {
+    ModelStatus.QUEUED -> "Queued"
+    ModelStatus.PREPARING -> "Preparing…"
+    ModelStatus.WAITING_FOR_NETWORK -> "Waiting for network"
+    ModelStatus.WAITING_FOR_WIFI -> "Waiting for Wi-Fi"
+    ModelStatus.WAITING_FOR_STORAGE -> "Waiting for storage"
+    ModelStatus.DOWNLOADING -> if (state.totalFileCount > 1) {
+        "Downloading file ${state.completedFileCount + 1} of ${state.totalFileCount}"
+    } else "Downloading"
+    ModelStatus.PAUSING -> "Pausing…"
+    ModelStatus.PAUSED -> "Paused"
+    ModelStatus.DOWNLOADED -> "Download complete — preparing verification"
+    ModelStatus.VERIFYING -> "Verifying…"
+    ModelStatus.IMPORTING -> "Importing…"
+    ModelStatus.READY -> "Ready"
+    ModelStatus.CANCELLING -> "Cancelling…"
+    ModelStatus.CANCELLED -> "Cancelled"
+    ModelStatus.FAILED -> "Failed"
+    ModelStatus.DELETING -> "Deleting…"
+    ModelStatus.NOT_DOWNLOADED -> "Not downloaded"
+}
+
+private fun formatEta(seconds: Long): String = when {
+    seconds < 60 -> "$seconds sec"
+    seconds < 3600 -> "${seconds / 60} min"
+    else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
 }

@@ -2,7 +2,7 @@ package com.vervan.chat.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -173,7 +175,14 @@ fun formatBytes(bytes: Long): String = when {
 
 @Composable
 fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+    val label = accent.name.lowercase().replaceFirstChar { it.uppercase() }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+            .padding(horizontal = Space.xs)
+    ) {
         Box(
             Modifier.size(36.dp)
                 .background(accent.swatchColor(), CircleShape)
@@ -186,7 +195,7 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
             if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = androidx.compose.ui.graphics.Color.Black, modifier = Modifier.size(18.dp))
         }
         Text(
-            accent.name.lowercase().replaceFirstChar { it.uppercase() },
+            label,
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(top = 4.dp)
         )

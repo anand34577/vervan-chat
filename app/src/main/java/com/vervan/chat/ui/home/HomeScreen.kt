@@ -22,17 +22,28 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContactPage
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Person
@@ -102,7 +113,20 @@ fun HomeScreen(
     onOpenFolders: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
-    onOpenWorkspaces: () -> Unit = {}
+    onOpenWorkspaces: () -> Unit = {},
+    onOpenDocScanner: () -> Unit = {},
+    onOpenOcrScanner: () -> Unit = {},
+    onOpenVoiceChat: () -> Unit = {},
+    onOpenTranslate: () -> Unit = {},
+    onOpenWritingAssistant: () -> Unit = {},
+    onOpenSmartNotes: () -> Unit = {},
+    onOpenClipboardTool: () -> Unit = {},
+    onOpenExplainLevel: () -> Unit = {},
+    onOpenBusinessCard: () -> Unit = {},
+    onOpenReceiptScanner: () -> Unit = {},
+    onOpenTableScanner: () -> Unit = {},
+    onOpenQuizGenerator: () -> Unit = {},
+    onOpenAllTools: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app) } })
@@ -193,13 +217,13 @@ fun HomeScreen(
                             }
                             Column(Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                                 WorkspaceStatusSection(activeModel, activeWorkspaceName, indexingDocuments.size, onOpenModels, onOpenWorkspaces)
-                                ToolsSection(onOpenWorkflows, onOpenWriting, onOpenDev, onOpenStudy, onOpenMemory, onOpenFolders, onOpenWorkspaces, onOpenCollections)
+                                ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenWorkflows, onOpenStudy, onOpenDev, onOpenMemory, onOpenAllTools)
                             }
                         }
                     } else {
                         ContinueSection(recentChats, projects, onOpenChat, onOpenProject, ::startNewChat)
                         QuickStartSection(onOpenKnowledge, onOpenNotes, onOpenProjects, onOpenLibrary)
-                        ToolsSection(onOpenWorkflows, onOpenWriting, onOpenDev, onOpenStudy, onOpenMemory, onOpenFolders, onOpenWorkspaces, onOpenCollections)
+                        ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenWorkflows, onOpenStudy, onOpenDev, onOpenMemory, onOpenAllTools)
                         WorkspaceStatusSection(activeModel, activeWorkspaceName, indexingDocuments.size, onOpenModels, onOpenWorkspaces)
                     }
                 }
@@ -488,6 +512,74 @@ private fun StatusRow(icon: ImageVector, title: String, body: String, tone: Stat
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ToolsSection(
+    onOpenVoiceChat: () -> Unit,
+    onOpenWritingAssistant: () -> Unit,
+    onOpenDocScanner: () -> Unit,
+    onOpenTranslate: () -> Unit,
+    onOpenWorkflows: () -> Unit,
+    onOpenStudy: () -> Unit,
+    onOpenDev: () -> Unit,
+    onOpenMemory: () -> Unit,
+    onOpenAllTools: () -> Unit,
+) {
+    val toolGroups = listOf(
+        "Popular now" to listOf(
+            ModernHomeTool(Icons.Filled.RecordVoiceOver, "Voice chat", "Talk naturally with your local model", onOpenVoiceChat),
+            ModernHomeTool(Icons.Filled.EditNote, "Writing assistant", "Rewrite, refine, or change tone", onOpenWritingAssistant),
+            ModernHomeTool(Icons.Filled.DocumentScanner, "Document scanner", "Capture pages and extract useful text", onOpenDocScanner),
+            ModernHomeTool(Icons.Filled.Translate, "Translate", "Translate text or a photographed page", onOpenTranslate),
+        ),
+        "Focused workspaces" to listOf(
+            ModernHomeTool(Icons.Filled.AccountTree, "Workflows", "Run repeatable multi-step tasks", onOpenWorkflows),
+            ModernHomeTool(Icons.Filled.Psychology, "Study", "Build material and practise recall", onOpenStudy),
+            ModernHomeTool(Icons.Filled.Code, "Developer", "Explain and improve technical text", onOpenDev),
+            ModernHomeTool(Icons.Outlined.Memory, "Memory", "Review context saved for future chats", onOpenMemory),
+        ),
+    )
+    Column {
+        VervanSectionHeader("Choose a mode", actionLabel = "See all", onAction = onOpenAllTools)
+        Text(
+            "Start with the kind of work you want to do. The complete toolkit is organized by outcome in Tools.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        toolGroups.forEach { (group, tools) ->
+            Text(
+                group,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.md, bottom = Space.sm).semantics { heading() },
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+                maxItemsInEachRow = 2,
+            ) {
+                tools.forEach { tool ->
+                    ActionTile(
+                        icon = tool.icon,
+                        title = tool.label,
+                        body = tool.body,
+                        onClick = tool.onClick,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class ModernHomeTool(
+    val icon: ImageVector,
+    val label: String,
+    val body: String,
+    val onClick: () -> Unit,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ToolsSection(
     onOpenWorkflows: () -> Unit,
     onOpenWriting: () -> Unit,
     onOpenDev: () -> Unit,
@@ -495,27 +587,67 @@ private fun ToolsSection(
     onOpenMemory: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenWorkspaces: () -> Unit,
-    onOpenCollections: () -> Unit
+    onOpenCollections: () -> Unit,
+    onOpenDocScanner: () -> Unit,
+    onOpenOcrScanner: () -> Unit,
+    onOpenVoiceChat: () -> Unit,
+    onOpenTranslate: () -> Unit,
+    onOpenWritingAssistant: () -> Unit,
+    onOpenSmartNotes: () -> Unit,
+    onOpenClipboardTool: () -> Unit,
+    onOpenExplainLevel: () -> Unit,
+    onOpenBusinessCard: () -> Unit,
+    onOpenReceiptScanner: () -> Unit,
+    onOpenTableScanner: () -> Unit,
+    onOpenQuizGenerator: () -> Unit,
+    onOpenAllTools: () -> Unit
 ) {
-    val tools = listOf(
-        HomeTool(Icons.Filled.AccountTree, "Workflows", onOpenWorkflows),
-        HomeTool(Icons.Filled.Edit, "Writing", onOpenWriting),
-        HomeTool(Icons.Filled.Code, "Developer", onOpenDev),
-        HomeTool(Icons.Filled.Psychology, "Study", onOpenStudy),
-        HomeTool(Icons.Outlined.Memory, "Memory", onOpenMemory),
-        HomeTool(Icons.Filled.Folder, "Folders", onOpenFolders),
-        HomeTool(Icons.Filled.Workspaces, "Workspaces", onOpenWorkspaces),
-        HomeTool(Icons.Filled.Hub, "Collections", onOpenCollections)
+    val toolGroups = listOf(
+        "Workspace" to listOf(
+            HomeTool(Icons.Filled.AccountTree, "Workflows", onOpenWorkflows),
+            HomeTool(Icons.Filled.Edit, "Writing", onOpenWriting),
+            HomeTool(Icons.Filled.Code, "Developer", onOpenDev),
+            HomeTool(Icons.Filled.Psychology, "Study", onOpenStudy),
+            HomeTool(Icons.Outlined.Memory, "Memory", onOpenMemory),
+            HomeTool(Icons.Filled.Folder, "Folders", onOpenFolders),
+            HomeTool(Icons.Filled.Workspaces, "Workspaces", onOpenWorkspaces),
+            HomeTool(Icons.Filled.Hub, "Collections", onOpenCollections)
+        ),
+        "Capture & extract" to listOf(
+            HomeTool(Icons.Filled.DocumentScanner, "Document Scanner", onOpenDocScanner),
+            HomeTool(Icons.Filled.TextFields, "OCR Scanner", onOpenOcrScanner),
+            HomeTool(Icons.Filled.ContactPage, "Business Card Scanner", onOpenBusinessCard),
+            HomeTool(Icons.AutoMirrored.Filled.ReceiptLong, "Receipt Scanner", onOpenReceiptScanner),
+            HomeTool(Icons.Filled.TableChart, "Table Scanner", onOpenTableScanner)
+        ),
+        "AI assistants" to listOf(
+            HomeTool(Icons.Filled.RecordVoiceOver, "Voice Chat", onOpenVoiceChat),
+            HomeTool(Icons.Filled.Translate, "Translate", onOpenTranslate),
+            HomeTool(Icons.Filled.EditNote, "Writing Assistant", onOpenWritingAssistant),
+            HomeTool(Icons.Filled.Description, "Smart Notes", onOpenSmartNotes),
+            HomeTool(Icons.Filled.ContentPaste, "Clipboard Assistant", onOpenClipboardTool),
+            HomeTool(Icons.Filled.School, "Explain Like I'm…", onOpenExplainLevel),
+            HomeTool(Icons.Filled.Quiz, "Quiz Generator", onOpenQuizGenerator)
+        ),
+        "Explore" to listOf(HomeTool(Icons.Filled.GridView, "All tools", onOpenAllTools))
     )
     Column {
-        VervanSectionHeader("More tools")
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-            maxItemsInEachRow = 2
-        ) {
-            tools.forEach { tool -> ToolButton(tool, Modifier.weight(1f)) }
+        VervanSectionHeader("Tools")
+        toolGroups.forEach { (group, groupedTools) ->
+            Text(
+                group,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.md, bottom = Space.sm).semantics { heading() }
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+                maxItemsInEachRow = 2
+            ) {
+                groupedTools.forEach { tool -> ToolButton(tool, Modifier.weight(1f)) }
+            }
         }
     }
 }

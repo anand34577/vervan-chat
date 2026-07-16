@@ -8,7 +8,7 @@ import com.vervan.chat.data.db.entities.Persona
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface PersonaDao {
+interface PersonaDao : BaseDao<Persona> {
     @Query("SELECT * FROM personas WHERE deletedAt IS NULL ORDER BY isBuiltIn DESC, name ASC")
     fun observePersonas(): Flow<List<Persona>>
 
@@ -24,12 +24,6 @@ interface PersonaDao {
 
     @Query("DELETE FROM personas WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
-
-    @androidx.room.Delete
-    suspend fun delete(persona: Persona)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(persona: Persona)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(personas: List<Persona>)

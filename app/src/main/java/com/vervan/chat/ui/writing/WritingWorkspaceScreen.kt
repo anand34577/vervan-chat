@@ -31,11 +31,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -45,6 +45,7 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.DiffViewer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ValidationLimits
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -55,7 +56,8 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
     val revision by vm.revision.collectAsState()
     val running by vm.running.collectAsState()
     val error by vm.error.collectAsState()
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     var original by remember { mutableStateOf("") }
     var targetLanguage by remember { mutableStateOf("") }
@@ -95,7 +97,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                     original = original,
                     transformed = revision,
                     onReplace = { original = revision },
-                    onCopy = { clipboard.setText(AnnotatedString(revision)) }
+                    onCopy = { clipboard.setText(revision, scope) }
                 )
                 ResponsiveActions(Modifier.padding(top = 8.dp)) {
                     TextButton(onClick = { vm.saveAsNote(original.take(60)) }) { Text("Add to note") }

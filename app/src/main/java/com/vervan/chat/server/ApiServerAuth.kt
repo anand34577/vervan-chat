@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import com.vervan.chat.security.createEncryptedPrefs
 import java.security.SecureRandom
 
 /**
@@ -13,14 +13,7 @@ import java.security.SecureRandom
  * PIN storage: never in plain DataStore alongside the rest of Settings.
  */
 class ApiServerAuth(context: Context) {
-    private val prefs: SharedPreferences = run {
-        val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            context, "vervan_api_server", masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_api_server")
 
     /** Returns the existing token, or generates and persists a new one on first call. */
     fun tokenOrGenerate(): String = prefs.getString(KEY_TOKEN, null) ?: regenerate()

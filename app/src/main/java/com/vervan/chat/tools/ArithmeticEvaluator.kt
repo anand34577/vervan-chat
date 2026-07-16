@@ -13,6 +13,15 @@ object ArithmeticEvaluator {
 
     private class Parser(private val input: String) {
         private var pos = 0
+        // A `calculate` call is a string the model constructs (or echoes back from user input);
+        // thousands of nested '(' — or unary +/- — recursed parseFactor()/parseExpression() with
+        // no limit, throwing StackOverflowError (an Error, not an Exception) up through
+        // ToolRegistry's catch(Exception) and relying entirely on ChatViewModel's outer
+        // catch(Throwable) to avoid crashing. Failing closed here with a normal exception is the
+        // more robust fix, in case this evaluator is ever called from a path that only catches
+        // Exception (as it already is in one ChatViewModel tool-execution site before this
+        // review's Throwable-widening fix).
+        private var depth = 0
 
         fun parseExpression(): Double {
             var value = parseTerm()
@@ -46,11 +55,11 @@ object ArithmeticEvaluator {
         private fun parseFactor(): Double {
             skipWhitespace()
             when (peek()) {
-                '-' -> { pos++; return -parseFactor() }
-                '+' -> { pos++; return parseFactor() }
+                '-' -> { pos++; return -withDepth { parseFactor() } }
+                '+' -> { pos++; return withDepth { parseFactor() } }
                 '(' -> {
                     pos++
-                    val value = parseExpression()
+                    val value = withDepth { parseExpression() }
                     skipWhitespace()
                     require(peek() == ')') { "missing closing parenthesis" }
                     pos++
@@ -63,8 +72,22 @@ object ArithmeticEvaluator {
             return input.substring(start, pos).toDouble()
         }
 
+        private inline fun withDepth(block: () -> Double): Double {
+            require(depth < MAX_DEPTH) { "expression is too deeply nested" }
+            depth++
+            try {
+                return block()
+            } finally {
+                depth--
+            }
+        }
+
         private fun skipWhitespace() { while (pos < input.length && input[pos].isWhitespace()) pos++ }
         private fun peek(): Char? = input.getOrNull(pos)
         fun expectEnd() { skipWhitespace(); require(pos == input.length) { "unexpected trailing input" } }
+
+        companion object {
+            private const val MAX_DEPTH = 200
+        }
     }
 }

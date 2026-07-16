@@ -1,15 +1,12 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.vervan.chat.data.db.entities.SavedOutput
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface SavedOutputDao {
+interface SavedOutputDao : BaseDao<SavedOutput> {
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<SavedOutput>>
 
@@ -22,10 +19,4 @@ interface SavedOutputDao {
 
     @Query("UPDATE saved_outputs SET sourceChatId = NULL WHERE sourceChatId = :chatId")
     suspend fun clearSourceChat(chatId: String)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(output: SavedOutput)
-
-    @Delete
-    suspend fun delete(output: SavedOutput)
 }

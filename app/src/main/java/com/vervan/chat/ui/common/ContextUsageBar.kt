@@ -18,7 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanWarn
+import com.vervan.chat.ui.theme.vervanWarning
 
 /** One named slice of the context budget (§7.2.2 context inspector: System/Persona/Project/
  * Folder/Memory/Sources/History/Current message/Reserved output). */
@@ -49,16 +49,16 @@ fun ContextUsageBar(
                         Modifier
                             .fillMaxWidth(fraction)
                             .height(8.dp)
-                            .background(if (nearLimit) VervanWarn else MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            .background(if (nearLimit) MaterialTheme.colorScheme.vervanWarning else MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                     )
                 }
             } else {
                 val total = slices.sumOf { it.tokens }.coerceAtLeast(1)
                 slices.forEach { slice ->
-                    val weight = (slice.tokens.toFloat() / total).coerceAtLeast(0.001f)
+                    val weight = slice.tokens.toFloat().coerceAtLeast(total * 0.001f)
                     Box(
                         Modifier
-                            .fillMaxWidth(weight)
+                            .weight(weight)
                             .height(8.dp)
                             .background(slice.color, RoundedCornerShape(2.dp))
                     )
@@ -68,23 +68,24 @@ fun ContextUsageBar(
         Text(
             summary,
             style = MaterialTheme.typography.labelSmall,
-            color = if (nearLimit) VervanWarn else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (nearLimit) MaterialTheme.colorScheme.vervanWarning else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs)
         )
         if (slices.isNotEmpty()) {
-            Row(
+            Column(
                 Modifier.fillMaxWidth().padding(top = Space.xs),
-                horizontalArrangement = Arrangement.spacedBy(Space.md)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 slices.filter { it.tokens > 0 }.forEach { slice ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(6.dp).background(slice.color, CircleShape))
                         Text(
-                            "${slice.label} ${slice.tokens}",
+                            slice.label,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = Space.xs)
+                            modifier = Modifier.weight(1f).padding(start = Space.xs)
                         )
+                        Text("~${slice.tokens}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

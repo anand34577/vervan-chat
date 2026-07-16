@@ -24,7 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -106,7 +106,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                         }
                     }
                     IconButton(onClick = { vm.save(title, content, tags); showKbPicker = true }) {
-                        Icon(Icons.Filled.MenuBook, contentDescription = "Add to knowledge base")
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Add to knowledge base")
                     }
                     IconButton(onClick = { confirmDelete = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Delete")

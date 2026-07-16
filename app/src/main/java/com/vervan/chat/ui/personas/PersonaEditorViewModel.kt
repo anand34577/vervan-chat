@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
+import com.vervan.chat.data.repo.resolveEditId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -69,9 +70,8 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false
-        val editingCustom = personaId != null && !_isBuiltIn.value
         val persona = Persona(
-            id = if (editingCustom) personaId!! else java.util.UUID.randomUUID().toString(),
+            id = resolveEditId(personaId, _isBuiltIn.value),
             name = _name.value.trim(),
             description = _description.value.trim(),
             systemInstruction = _systemInstruction.value.trim(),

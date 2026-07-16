@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.PromptTemplate
+import com.vervan.chat.data.repo.resolveEditId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -44,9 +45,8 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _body.value.isBlank()) return false
-        val editingCustom = templateId != null && !_isBuiltIn.value
         val template = PromptTemplate(
-            id = if (editingCustom) templateId!! else java.util.UUID.randomUUID().toString(),
+            id = resolveEditId(templateId, _isBuiltIn.value),
             name = _name.value.trim(),
             description = _description.value.trim(),
             body = _body.value.trim(),

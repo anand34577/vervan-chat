@@ -13,6 +13,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +32,14 @@ val VervanSuccess = Color(0xFF4ADE80)
 val VervanWarn = Color(0xFFF2C94C)
 val VervanSourceGrounded = Color(0xFF4ADE80)
 
+/** Status colors intended for text/icons on the current surface. Fixed neon status colors lose
+ * contrast in light mode, so resolve a darker tone there while keeping the familiar dark palette. */
+internal val ColorScheme.vervanSuccess: Color
+    get() = if (surface.luminance() > 0.5f) Color(0xFF0E6B38) else VervanSuccess
+
+internal val ColorScheme.vervanWarning: Color
+    get() = if (surface.luminance() > 0.5f) Color(0xFF725800) else VervanWarn
+
 /** One accent's dark-mode primary/secondary pair — everything else in [DarkColors] (surfaces,
  * error, success) stays fixed across accents so switching accent doesn't also reflow contrast
  * everywhere else in the app. */
@@ -45,9 +54,9 @@ private val DarkAccents = mapOf(
 )
 
 private val LightAccents = mapOf(
-    com.vervan.chat.data.settings.AccentTheme.AMBER to AccentPair(Color(0xFFB5730A), Color.White, Color(0xFFFFDCA8), Color(0xFF3B5FCC), Color(0xFFDCE4FF), Color(0xFF102050)),
+    com.vervan.chat.data.settings.AccentTheme.AMBER to AccentPair(Color(0xFF8A5700), Color.White, Color(0xFFFFDCA8), Color(0xFF3B5FCC), Color(0xFFDCE4FF), Color(0xFF102050)),
     com.vervan.chat.data.settings.AccentTheme.BLUE to AccentPair(Color(0xFF3B5FCC), Color.White, Color(0xFFDCE4FF), Color(0xFFB5730A), Color(0xFFFFDCA8), Color(0xFF4A3010)),
-    com.vervan.chat.data.settings.AccentTheme.GREEN to AccentPair(Color(0xFF1E8E4E), Color.White, Color(0xFFC5F2D8), Color(0xFF3B5FCC), Color(0xFFDCE4FF), Color(0xFF102050)),
+    com.vervan.chat.data.settings.AccentTheme.GREEN to AccentPair(Color(0xFF16753E), Color.White, Color(0xFFC5F2D8), Color(0xFF3B5FCC), Color(0xFFDCE4FF), Color(0xFF102050)),
     com.vervan.chat.data.settings.AccentTheme.VIOLET to AccentPair(Color(0xFF7A4FD1), Color.White, Color(0xFFE6DBFF), Color(0xFF1E8E4E), Color(0xFFC5F2D8), Color(0xFF0E4526)),
     com.vervan.chat.data.settings.AccentTheme.ROSE to AccentPair(Color(0xFFC2477A), Color.White, Color(0xFFFFD9E4), Color(0xFF3B5FCC), Color(0xFFDCE4FF), Color(0xFF102050))
 )
@@ -56,12 +65,15 @@ private fun darkSchemeFor(accent: AccentPair) = darkColorScheme(
     primary = accent.primary,
     onPrimary = accent.onPrimary,
     primaryContainer = accent.primaryContainer,
-    onPrimaryContainer = accent.primary,
+    onPrimaryContainer = Color(0xFFF1F3F7),
     secondary = accent.secondary,
     onSecondary = Color(0xFF0A0B0E),
     secondaryContainer = accent.secondaryContainer,
     onSecondaryContainer = accent.onSecondaryContainer,
     tertiary = VervanSuccess,
+    onTertiary = Color(0xFF06280F),
+    tertiaryContainer = Color(0xFF1C4A2C),
+    onTertiaryContainer = Color(0xFFB8F5CB),
     background = Color(0xFF111318),
     onBackground = Color(0xFFF1F3F7),
     surface = Color(0xFF111318),
@@ -92,7 +104,10 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     onSecondary = Color.White,
     secondaryContainer = accent.secondaryContainer,
     onSecondaryContainer = accent.onSecondaryContainer,
-    tertiary = Color(0xFF1E8E4E),
+    tertiary = Color(0xFF147A43),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFC5F2D8),
+    onTertiaryContainer = Color(0xFF0E4526),
     background = Color(0xFFF8F7F4),
     onBackground = Color(0xFF1B1C1E),
     surface = Color(0xFFFDFCF9),

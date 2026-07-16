@@ -18,6 +18,7 @@ import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.system.toUserMessage
 import androidx.room.withTransaction
 import java.io.InputStream
 import java.io.OutputStream
@@ -92,6 +93,20 @@ object BackupManager {
      * malformed input. Every row upserts on its own primary key, so importing the same file
      * twice is a no-op the second time, not a duplicate. */
     suspend fun import(db: AppDatabase, input: InputStream): BackupSummary {
+        // The doc comment above claims "throws with a readable message on malformed input", but
+        // nothing here actually did that translation — a missing field (org.json's own
+        // JSONException, e.g. "No value for createdAt") or an unrecognized enum value from a
+        // newer backup format (IllegalArgumentException from MessageRole.valueOf etc.) reached
+        // the caller as whatever raw internal message the parser happened to produce. Wrapping
+        // the whole parse in one place makes that claim actually true.
+        try {
+            return importUnchecked(db, input)
+        } catch (t: Throwable) {
+            throw IllegalArgumentException("This backup file couldn't be read — it may be corrupted or from an incompatible version. (${t.toUserMessage()})", t)
+        }
+    }
+
+    private suspend fun importUnchecked(db: AppDatabase, input: InputStream): BackupSummary {
         val root = JSONObject(input.bufferedReader().readText())
         val workspaces = root.optJSONArray("workspaces")?.toObjectList()?.map { workspaceFromJson(it) } ?: emptyList()
         val chats = root.optJSONArray("chats")?.toObjectList()?.map { chatFromJson(it) } ?: emptyList()

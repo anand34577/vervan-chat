@@ -4,6 +4,7 @@ import com.vervan.chat.data.branch.BranchUtil
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.llm.ThinkingParser
+import com.vervan.chat.llm.ClarificationParser
 import com.vervan.chat.model.Chunker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -24,7 +25,21 @@ class CoreLogicTest {
         val parsed = ThinkingParser.parse("<thinking>check facts</thinking>Final answer")
         assertEquals("check facts", parsed.reasoning)
         assertEquals("Final answer", parsed.answer)
+        assertEquals("native reasoning", ThinkingParser.parse("<think>native reasoning</think>Answer").reasoning)
+        val streaming = ThinkingParser.parse("<thinking>still reasoning")
+        assertEquals("still reasoning", streaming.reasoning)
+        assertEquals("", streaming.answer)
         assertEquals("plain", ThinkingParser.parse("plain").answer)
+    }
+
+    @Test fun clarificationParserExtractsQuickReplies() {
+        val parsed = ClarificationParser.parse(
+            "Before I continue. <clarify>{\"question\":\"Which platform?\",\"options\":[\"Android\",\"iOS\",\"Android\"]}</clarify>"
+        )
+        assertEquals("Before I continue.", parsed.answer)
+        assertEquals("Which platform?", parsed.request?.question)
+        assertEquals(listOf("Android", "iOS"), parsed.request?.options)
+        assertEquals("Intro", ClarificationParser.parse("Intro <clarify>").answer)
     }
 
     @Test fun chunkerRejectsEmptyDocuments() {

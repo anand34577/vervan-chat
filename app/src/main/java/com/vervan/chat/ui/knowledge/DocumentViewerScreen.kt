@@ -6,12 +6,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +42,9 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
     val vm: DocumentViewerViewModel = viewModel(factory = viewModelFactory { initializer { DocumentViewerViewModel(app, documentId) } })
     val document by vm.document.collectAsState()
     val chunks by vm.chunks.collectAsState()
+    val reindexing by vm.reindexing.collectAsState()
+    val error by vm.error.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -46,7 +52,28 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
                 title = { Text(document?.displayName ?: "Document", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
-                    IconButton(onClick = { vm.reindex() }) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                    IconButton(
+                        enabled = document?.filePath?.let { java.io.File(it).exists() } == true,
+                        onClick = {
+                            val doc = document ?: return@IconButton
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                java.io.File(doc.filePath)
+                            )
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                                .setDataAndType(uri, doc.mimeType)
+                                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Open with…")) }
+                        }
+                    ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open with another app") }
+                    if (reindexing) {
+                        androidx.compose.foundation.layout.Box(Modifier.size(48.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
+                    } else {
+                        IconButton(onClick = { vm.reindex() }) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                    }
                 }
             )
         }
@@ -57,6 +84,9 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
                     Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text("${chunks.size} sections", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            error?.let {
+                com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             }
             LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
                 items(chunks, key = { it.id }) { chunk ->

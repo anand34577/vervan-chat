@@ -1,15 +1,12 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Message
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface MessageDao {
+interface MessageDao : BaseDao<Message> {
     @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY createdAt ASC")
     fun observeMessages(chatId: String): Flow<List<Message>>
 
@@ -18,6 +15,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE state = 'STREAMING'")
     suspend fun getUnfinished(): List<Message>
+
+    @Query("UPDATE messages SET state = 'CANCELLED' WHERE chatId = :chatId AND state = 'STREAMING'")
+    suspend fun cancelStreamingForChat(chatId: String)
 
     @Query("DELETE FROM messages WHERE chatId = :chatId")
     suspend fun deleteForChat(chatId: String)
@@ -34,10 +34,4 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE chatId = :chatId AND role != 'SYSTEM'")
     suspend fun countForChat(chatId: String): Int
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(message: Message)
-
-    @Update
-    suspend fun update(message: Message)
 }

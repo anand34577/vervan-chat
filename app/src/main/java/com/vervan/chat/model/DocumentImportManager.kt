@@ -15,6 +15,7 @@ import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.data.db.entities.toBytes
 import com.vervan.chat.retrieval.EmbeddingEngine
 import com.vervan.chat.system.NotificationHelper
+import com.vervan.chat.system.toUserMessage
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
@@ -168,28 +169,43 @@ class DocumentImportManager(
         )
         documentDao.upsert(document)
 
-        when (val extracted = TextExtractor.extract(dest, name)) {
-            is ExtractResult.Unsupported -> {
-                document = document.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason)
-                documentDao.update(document)
-            }
-            ExtractResult.NeedsOcr -> {
-                document = document.copy(status = DocumentStatus.OCR_RUNNING, failureReason = null)
-                documentDao.update(document)
-                val ocrText = try { runOcr(name, dest) } catch (e: Exception) { "" }
-                document = if (ocrText.isBlank()) {
-                    document.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")
-                } else {
-                    persistChunks(document, kbId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true)
+        // The whole extract/OCR/chunk/embed sequence used to have no outer safety net: an
+        // OutOfMemoryError from OCR-ing a large scanned PDF, or from PDFBox/POI loading a huge
+        // document, propagated straight out of import()/reindexLocal() (crashing the app) AND
+        // left the document row permanently stuck at whatever intermediate status
+        // (EXTRACTING/OCR_RUNNING/CHUNKING/EMBEDDING) it last had, with no retry path. Now any
+        // failure here — including an Error, not just an Exception — is caught and recorded as
+        // a normal FAILED status the user can see and re-attempt.
+        return try {
+            when (val extracted = TextExtractor.extract(dest, name)) {
+                is ExtractResult.Unsupported -> {
+                    document = document.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason)
+                    documentDao.update(document)
+                    document
                 }
-                documentDao.update(document)
+                ExtractResult.NeedsOcr -> {
+                    document = document.copy(status = DocumentStatus.OCR_RUNNING, failureReason = null)
+                    documentDao.update(document)
+                    val ocrText = try { runOcr(name, dest) } catch (t: Throwable) { "" }
+                    document = if (ocrText.isBlank()) {
+                        document.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")
+                    } else {
+                        persistChunks(document, kbId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true)
+                    }
+                    documentDao.update(document)
+                    document
+                }
+                else -> {
+                    document = persistChunks(document, kbId, chunksFor(extracted), ocrApplied = false)
+                    documentDao.update(document)
+                    document
+                }
             }
-            else -> {
-                document = persistChunks(document, kbId, chunksFor(extracted), ocrApplied = false)
-                documentDao.update(document)
-            }
+        } catch (t: Throwable) {
+            val failed = document.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage())
+            documentDao.update(failed)
+            failed
         }
-        return document
     }
 
     private fun runOcr(name: String, file: File): String =
@@ -267,19 +283,26 @@ class DocumentImportManager(
             return@withContext
         }
         chunkDao.deleteForDocument(documentId)
-        when (val extracted = TextExtractor.extract(file, doc.displayName)) {
-            is ExtractResult.Unsupported -> documentDao.update(doc.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason))
-            ExtractResult.NeedsOcr -> {
-                val ocrText = try { runOcr(doc.displayName, file) } catch (e: Exception) { "" }
-                if (ocrText.isBlank()) {
-                    documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text"))
-                } else {
-                    documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true))
+        // Same outer safety net as processLocalFile — without it, a re-index failure (OOM on a
+        // large document, a corrupt source file) left the row stuck at CHUNKING/EMBEDDING
+        // forever and could crash the app instead of reporting FAILED.
+        try {
+            when (val extracted = TextExtractor.extract(file, doc.displayName)) {
+                is ExtractResult.Unsupported -> documentDao.update(doc.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason))
+                ExtractResult.NeedsOcr -> {
+                    val ocrText = try { runOcr(doc.displayName, file) } catch (t: Throwable) { "" }
+                    if (ocrText.isBlank()) {
+                        documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text"))
+                    } else {
+                        documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true))
+                    }
+                }
+                else -> {
+                    documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false))
                 }
             }
-            else -> {
-                documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false))
-            }
+        } catch (t: Throwable) {
+            documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage()))
         }
         job?.let {
             val finalStatus = documentDao.get(documentId)?.status

@@ -32,8 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanSuccess
-import com.vervan.chat.ui.theme.VervanWarn
+import com.vervan.chat.ui.theme.vervanSuccess
+import com.vervan.chat.ui.theme.vervanWarning
 
 /** §7.2.2 — the color-coded family a chat turn's non-message content belongs to: reasoning
  * (neutral), sources (informational/success), a reversible tool call (amber warning), an
@@ -44,8 +44,8 @@ enum class SubCardKind { Reasoning, Sources, ReversibleTool, ExternalAction, Too
 @Composable
 private fun SubCardKind.color(): Color = when (this) {
     SubCardKind.Reasoning -> MaterialTheme.colorScheme.onSurfaceVariant
-    SubCardKind.Sources -> VervanSuccess
-    SubCardKind.ReversibleTool -> VervanWarn
+    SubCardKind.Sources -> MaterialTheme.colorScheme.vervanSuccess
+    SubCardKind.ReversibleTool -> MaterialTheme.colorScheme.vervanWarning
     SubCardKind.ExternalAction -> MaterialTheme.colorScheme.error
     SubCardKind.ToolResult -> MaterialTheme.colorScheme.secondary
     SubCardKind.ContextOmission -> MaterialTheme.colorScheme.onSurfaceVariant

@@ -51,8 +51,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanSuccess
-import com.vervan.chat.ui.theme.VervanWarn
+import com.vervan.chat.ui.theme.vervanSuccess
+import com.vervan.chat.ui.theme.vervanWarning
 
 enum class StatusTone { Ready, Running, Warning, Error, Info }
 
@@ -183,9 +183,9 @@ fun FeatureHero(
 
 @Composable
 private fun StatusTone.color(): Color = when (this) {
-    StatusTone.Ready -> VervanSuccess
+    StatusTone.Ready -> MaterialTheme.colorScheme.vervanSuccess
     StatusTone.Running -> MaterialTheme.colorScheme.primary
-    StatusTone.Warning -> VervanWarn
+    StatusTone.Warning -> MaterialTheme.colorScheme.vervanWarning
     StatusTone.Error -> MaterialTheme.colorScheme.error
     StatusTone.Info -> MaterialTheme.colorScheme.secondary
 }
@@ -394,17 +394,18 @@ fun BoundedTextField(
     prefix: String? = null,
     singleLine: Boolean = false,
     minLines: Int = 1,
-    maxLines: Int = if (singleLine) 1 else 5,
+    maxLines: Int = if (singleLine) 1 else maxOf(5, minLines),
     supportingText: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-    textStyle: androidx.compose.ui.text.TextStyle = androidx.compose.material3.LocalTextStyle.current
+    textStyle: androidx.compose.ui.text.TextStyle = androidx.compose.material3.LocalTextStyle.current,
+    enabled: Boolean = true
 ) {
     val count = value.length
     val overLimit = count > maxLength
     val nearLimit = count >= (maxLength * 0.8f).toInt()
     val counterColor = when {
         overLimit -> MaterialTheme.colorScheme.error
-        nearLimit -> VervanWarn
+        nearLimit -> MaterialTheme.colorScheme.vervanWarning
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     OutlinedTextField(
@@ -415,6 +416,7 @@ fun BoundedTextField(
         placeholder = placeholder?.let { { Text(it) } },
         prefix = prefix?.let { { Text(it) } },
         isError = overLimit,
+        enabled = enabled,
         singleLine = singleLine,
         minLines = minLines,
         maxLines = maxLines,

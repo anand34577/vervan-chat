@@ -35,11 +35,17 @@ class SettingsRepository(context: Context) {
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
+        val SHOW_GENERATION_STATS = booleanPreferencesKey("show_generation_stats")
         val EXPERT_MODE = booleanPreferencesKey("expert_mode")
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
         val TTS_RATE = floatPreferencesKey("tts_rate")
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
+        val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
+        val KOKORO_QUALITY_ENABLED = booleanPreferencesKey("kokoro_quality_enabled")
+        val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
+        val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
+        val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val CONTEXT_TOKEN_LIMIT = intPreferencesKey("context_token_limit")
         val RESPONSE_LENGTH = stringPreferencesKey("response_length")
@@ -65,7 +71,6 @@ class SettingsRepository(context: Context) {
         val USER_LANGUAGES = stringSetPreferencesKey("user_languages")
         val USER_CODING_LANGUAGES = stringSetPreferencesKey("user_coding_languages")
         val USER_UNITS = stringPreferencesKey("user_units")
-        val USER_DATE_FORMAT = stringPreferencesKey("user_date_format")
         val USER_TOPICS_AVOID = stringPreferencesKey("user_topics_avoid")
         val USER_GOALS = stringPreferencesKey("user_goals")
         // §27.3 — memory-suggestion keys the user opted out of via "Never suggest this type".
@@ -84,6 +89,10 @@ class SettingsRepository(context: Context) {
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
         val SMS_TOOL_ENABLED = booleanPreferencesKey("sms_tool_enabled")
         val DEVICE_STATUS_TOOL_ENABLED = booleanPreferencesKey("device_status_tool_enabled")
+        val FILES_TOOL_ENABLED = booleanPreferencesKey("files_tool_enabled")
+        val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
+        val CALL_LOG_TOOL_ENABLED = booleanPreferencesKey("call_log_tool_enabled")
+        val SCREEN_TIME_TOOL_ENABLED = booleanPreferencesKey("screen_time_tool_enabled")
         // Phase I — floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
         val QUICK_ACTION_BUBBLE_ENABLED = booleanPreferencesKey("quick_action_bubble_enabled")
@@ -138,6 +147,11 @@ class SettingsRepository(context: Context) {
     val hapticsEnabled: Flow<Boolean> = store.data.map { it[Keys.HAPTICS_ENABLED] ?: true }
     suspend fun setHapticsEnabled(enabled: Boolean) { store.edit { it[Keys.HAPTICS_ENABLED] = enabled } }
 
+    // Per-message generation stats (time/tokens/tok-per-sec) shown when an assistant bubble is
+    // expanded — optional since it's noise for anyone who doesn't care about performance.
+    val showGenerationStats: Flow<Boolean> = store.data.map { it[Keys.SHOW_GENERATION_STATS] ?: false }
+    suspend fun setShowGenerationStats(enabled: Boolean) { store.edit { it[Keys.SHOW_GENERATION_STATS] = enabled } }
+
     val expertMode: Flow<Boolean> = store.data.map { it[Keys.EXPERT_MODE] ?: false }
     suspend fun setExpertMode(enabled: Boolean) { store.edit { it[Keys.EXPERT_MODE] = enabled } }
 
@@ -154,6 +168,32 @@ class SettingsRepository(context: Context) {
 
     val autoReadAloud: Flow<Boolean> = store.data.map { it[Keys.AUTO_READ_ALOUD] ?: false }
     suspend fun setAutoReadAloud(enabled: Boolean) { store.edit { it[Keys.AUTO_READ_ALOUD] = enabled } }
+
+    /** "AUTO" (Supertonic, falling back to Piper then the Android system engine), or an
+     * explicit pin: "SUPERTONIC", "PIPER", "SYSTEM". Realtime voice pipeline engine choice —
+     * see [com.vervan.chat.voice.TtsEngineSelector]. */
+    val ttsEnginePreference: Flow<String> = store.data.map { it[Keys.TTS_ENGINE_PREFERENCE] ?: "AUTO" }
+    suspend fun setTtsEnginePreference(value: String) { store.edit { it[Keys.TTS_ENGINE_PREFERENCE] = value } }
+
+    /** Opt-in "higher quality voice (slower)" tier — Kokoro is noticeably higher quality than
+     * Piper but can be 2-3 minutes of compute per minute of audio on budget devices, so it's
+     * never selected by AUTO even when enabled here. */
+    val kokoroQualityEnabled: Flow<Boolean> = store.data.map { it[Keys.KOKORO_QUALITY_ENABLED] ?: false }
+    suspend fun setKokoroQualityEnabled(v: Boolean) { store.edit { it[Keys.KOKORO_QUALITY_ENABLED] = v } }
+
+    /** Whether the realtime voice pipeline listens for interrupting speech while TTS is
+     * playing. Best-effort (needs hardware echo cancellation) — off automatically falls back
+     * to a tap-to-interrupt button, see [com.vervan.chat.audio.ContinuousAudioCapture]. */
+    val bargeInEnabled: Flow<Boolean> = store.data.map { it[Keys.BARGE_IN_ENABLED] ?: true }
+    suspend fun setBargeInEnabled(v: Boolean) { store.edit { it[Keys.BARGE_IN_ENABLED] = v } }
+
+    /** Model downloader (see com.vervan.chat.modeldownload) network settings. Off by default —
+     * a large model download simply waits for Wi-Fi instead of silently spending mobile data
+     * when on. */
+    val wifiOnlyModelDownloads: Flow<Boolean> = store.data.map { it[Keys.WIFI_ONLY_MODEL_DOWNLOADS] ?: false }
+    suspend fun setWifiOnlyModelDownloads(v: Boolean) { store.edit { it[Keys.WIFI_ONLY_MODEL_DOWNLOADS] = v } }
+    val autoResumeModelDownloads: Flow<Boolean> = store.data.map { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] ?: true }
+    suspend fun setAutoResumeModelDownloads(v: Boolean) { store.edit { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] = v } }
 
     /** UI text scale multiplier, 0.85x-1.3x — spec §38's font-scale accessibility setting. */
     val fontScale: Flow<Float> = store.data.map { it[Keys.FONT_SCALE] ?: 1.0f }
@@ -245,9 +285,6 @@ class SettingsRepository(context: Context) {
     val userUnits: Flow<String> = store.data.map { it[Keys.USER_UNITS] ?: "metric" }
     suspend fun setUserUnits(v: String) { store.edit { it[Keys.USER_UNITS] = v } }
 
-    val userDateFormat: Flow<String> = store.data.map { it[Keys.USER_DATE_FORMAT] ?: "yyyy-MM-dd" }
-    suspend fun setUserDateFormat(v: String) { store.edit { it[Keys.USER_DATE_FORMAT] = v } }
-
     val userTopicsAvoid: Flow<String> = store.data.map { it[Keys.USER_TOPICS_AVOID] ?: "" }
     suspend fun setUserTopicsAvoid(v: String) { store.edit { it[Keys.USER_TOPICS_AVOID] = v } }
 
@@ -296,6 +333,14 @@ class SettingsRepository(context: Context) {
     suspend fun setSmsToolEnabled(v: Boolean) { store.edit { it[Keys.SMS_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
     suspend fun setDeviceStatusToolEnabled(v: Boolean) { store.edit { it[Keys.DEVICE_STATUS_TOOL_ENABLED] = v } }
+    val filesToolEnabled: Flow<Boolean> = store.data.map { it[Keys.FILES_TOOL_ENABLED] ?: false }
+    suspend fun setFilesToolEnabled(v: Boolean) { store.edit { it[Keys.FILES_TOOL_ENABLED] = v } }
+    val locationToolEnabled: Flow<Boolean> = store.data.map { it[Keys.LOCATION_TOOL_ENABLED] ?: false }
+    suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
+    val callLogToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALL_LOG_TOOL_ENABLED] ?: false }
+    suspend fun setCallLogToolEnabled(v: Boolean) { store.edit { it[Keys.CALL_LOG_TOOL_ENABLED] = v } }
+    val screenTimeToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREEN_TIME_TOOL_ENABLED] ?: false }
+    suspend fun setScreenTimeToolEnabled(v: Boolean) { store.edit { it[Keys.SCREEN_TIME_TOOL_ENABLED] = v } }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: Flow<Set<String>> = store.data.map { it[Keys.DISABLED_TOOL_IDS] ?: emptySet() }

@@ -54,6 +54,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     val topK by vm.topK.collectAsState()
     val preferredBackend by vm.preferredBackend.collectAsState()
     val autoLoadDefaultModel by vm.autoLoadDefaultModel.collectAsState()
+    val showGenerationStats by vm.showGenerationStats.collectAsState()
     val maxNumImages by vm.maxNumImages.collectAsState()
     val randomSeed by vm.randomSeed.collectAsState()
 
@@ -183,6 +184,20 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             "GPU/CPU/NPU choice there always uses that instead, strictly (no fallback).",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Show generation stats", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Time taken and tokens/sec under a reply when you tap to expand it.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = showGenerationStats, onCheckedChange = vm::setShowGenerationStats)
+                    }
                     androidx.compose.foundation.layout.FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),

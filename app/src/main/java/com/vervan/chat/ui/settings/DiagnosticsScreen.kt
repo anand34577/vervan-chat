@@ -29,12 +29,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.ui.common.setText
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,7 +82,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
             }
         }
     )
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -96,7 +96,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
                         val text = sections.joinToString("\n\n") { (title, rows) ->
                             (listOf(title) + rows.map { (label, value) -> "$label: $value" }).joinToString("\n")
                         }
-                        clipboard.setText(AnnotatedString(text))
+                        clipboard.setText(text, scope)
                         scope.launch { snackbarHostState.showSnackbar("Copied diagnostics") }
                     }) { Icon(Icons.Filled.ContentCopy, "Copy all") }
                     IconButton(onClick = onOpenPermissions) { Icon(Icons.Filled.Shield, "Permissions") }

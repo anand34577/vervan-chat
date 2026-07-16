@@ -9,8 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.vervan.chat.ui.theme.VervanSuccess
-import com.vervan.chat.ui.theme.VervanWarn
+import com.vervan.chat.ui.theme.vervanSuccess
+import com.vervan.chat.ui.theme.vervanWarning
 
 /**
  * Semantic tone for a status word — separate from the app's accent color, so a
@@ -27,8 +27,8 @@ enum class ChipTone { Success, Warning, Error, Neutral }
 @Composable
 fun SemanticChip(text: String, tone: ChipTone, modifier: Modifier = Modifier) {
     val color = when (tone) {
-        ChipTone.Success -> VervanSuccess
-        ChipTone.Warning -> VervanWarn
+        ChipTone.Success -> MaterialTheme.colorScheme.vervanSuccess
+        ChipTone.Warning -> MaterialTheme.colorScheme.vervanWarning
         ChipTone.Error -> MaterialTheme.colorScheme.error
         ChipTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
     }

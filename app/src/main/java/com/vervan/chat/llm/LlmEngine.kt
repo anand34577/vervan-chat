@@ -283,7 +283,11 @@ class LlmEngine(private val context: Context) {
     }
 
     fun close() {
-        if (loadedModelPath != null) Log.i(TAG, "close() unloading ${File(loadedModelPath!!).name} (was on $activeBackend)")
+        // Read into a local val instead of a separate null-check + `!!` — a concurrent close()
+        // on another thread could null loadedModelPath between the two, which would NPE here.
+        // All current callers happen to hold llmMutex/tryLock, so this was latent, not live, but
+        // costs nothing to make actually safe.
+        loadedModelPath?.let { path -> Log.i(TAG, "close() unloading ${File(path).name} (was on $activeBackend)") }
         runCatching { conversation?.close() }.onFailure { Log.w(TAG, "close() conversation.close() threw", it) }
         runCatching { engine?.close() }.onFailure { Log.w(TAG, "close() engine.close() threw", it) }
         conversation = null

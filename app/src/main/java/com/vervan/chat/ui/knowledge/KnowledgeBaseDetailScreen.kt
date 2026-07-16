@@ -132,9 +132,9 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                 },
                 enabled = !importing
             ) {
+                if (importing) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 6.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                 Text(if (importing) "Importing…" else "Import document")
             }
-            if (importing) CircularProgressIndicator(Modifier.padding(top = 8.dp).size(20.dp), strokeWidth = 2.dp)
             error?.let { ErrorCard("Couldn't import this document", it, Modifier.padding(top = 8.dp)) }
 
             Row(

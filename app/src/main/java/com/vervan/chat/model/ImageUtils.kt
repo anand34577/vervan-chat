@@ -13,7 +13,7 @@ object ImageUtils {
 
     /**
      * Decodes with sampling before applying EXIF rotation, then stores a normalized JPEG.
-     * This avoids decoding 12â€“50 MP camera images at full size in both Compose and LiteRT.
+     * This avoids decoding 12–50 MP camera images at full size in both Compose and LiteRT.
      */
     fun fixOrientation(file: File) {
         normalizeForModel(file)
@@ -60,12 +60,14 @@ object ImageUtils {
         } else oriented
 
         val temp = File(file.parentFile, "${file.name}.tmp")
-        val saved = runCatching {
+        var saved = runCatching {
             temp.outputStream().use { normalized.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         }.getOrDefault(false)
         if (saved) {
             if (!temp.renameTo(file)) {
-                temp.copyTo(file, overwrite = true)
+                // copyTo() used to run unguarded — a storage-full mid-copy threw straight out
+                // of this function, and temp.delete() below never ran, leaving a stray .tmp file.
+                saved = runCatching { temp.copyTo(file, overwrite = true) }.isSuccess
                 temp.delete()
             }
         } else {

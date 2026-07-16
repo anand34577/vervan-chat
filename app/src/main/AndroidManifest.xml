@@ -16,6 +16,14 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Scoped storage (Android 13+) replaced broad file listing with per-media permissions
+         this app doesn't need — search_files only targets Downloads, which is still reachable
+         via READ_EXTERNAL_STORAGE pre-13; not requested (or requestable) above that. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <!-- Phase I — floating quick-action bubble. SYSTEM_ALERT_WINDOW is granted via a system
          Settings redirect (Settings.ACTION_MANAGE_OVERLAY_PERMISSION), not a runtime dialog.
@@ -40,6 +48,8 @@
     <application
         android:name=".VervanApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Vervan"
@@ -88,6 +98,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Model downloader (see com.vervan.chat.modeldownload) — runs only while a catalogue
+             model download is active/paused, so background downloads survive leaving the
+             Models screen. -->
+        <service
+            android:name=".modeldownload.ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <receiver
             android:name=".widget.QuickAskWidgetProvider"
             android:exported="false">
@@ -124,6 +142,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -152,7 +175,6 @@
             android:name=".overlay.ScreenCaptureActivity"
             android:exported="false"
             android:theme="@style/Theme.Vervan.Dialog"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask" />
+            android:excludeFromRecents="true" />
     </application>
 </manifest>

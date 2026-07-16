@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanSuccess
+import com.vervan.chat.ui.theme.vervanSuccess
 
 enum class Capability(val label: String, val icon: ImageVector) {
     Vision("Vision", Icons.Filled.Image),
@@ -42,9 +42,9 @@ enum class CapabilityState { Supported, Unsupported, Unknown }
 @Composable
 fun CapabilityBadge(capability: Capability, state: CapabilityState, modifier: Modifier = Modifier) {
     val (color, icon) = when (state) {
-        CapabilityState.Supported -> VervanSuccess to capability.icon
+        CapabilityState.Supported -> MaterialTheme.colorScheme.vervanSuccess to capability.icon
         CapabilityState.Unsupported -> MaterialTheme.colorScheme.onSurfaceVariant to capability.icon
-        CapabilityState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant to Icons.Filled.HelpOutline
+        CapabilityState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant to Icons.AutoMirrored.Filled.HelpOutline
     }
     val alpha = if (state == CapabilityState.Unsupported) 0.5f else 1f
     Row(

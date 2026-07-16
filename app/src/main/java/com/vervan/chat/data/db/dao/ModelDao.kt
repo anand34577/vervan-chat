@@ -1,16 +1,13 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface ModelDao {
+interface ModelDao : BaseDao<ModelInfo> {
     @Query("SELECT * FROM models ORDER BY importedAt DESC")
     fun observeModels(): Flow<List<ModelInfo>>
 
@@ -32,9 +29,6 @@ interface ModelDao {
     @Query("UPDATE models SET isActive = 0 WHERE role = :role")
     suspend fun clearActive(role: ModelRole)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(model: ModelInfo)
-
-    @Delete
-    suspend fun delete(model: ModelInfo)
+    @Query("SELECT * FROM models WHERE catalogModelId = :modelId AND catalogVersion = :version LIMIT 1")
+    suspend fun findByCatalogEntry(modelId: String, version: String): ModelInfo?
 }

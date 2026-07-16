@@ -48,7 +48,19 @@ class EmbeddingEngine(private val context: Context) {
                             "(e.g. tokenizer.model) imported alongside it before it can be loaded."
                     )
                 }
-                rawEmbedder = RawTfliteEmbedder(context, modelPath, tokenizerPath)
+                // Unlike loadMediaPipe() above, this constructor used to have no try/catch at
+                // all — a corrupt/wrong-shaped .tflite file (e.g. a generation-model shard
+                // mistakenly imported for the embedding role) throws straight out of
+                // RawTfliteEmbedder's init block (IndexOutOfBoundsException/
+                // NoSuchElementException reading its tensor shapes), crashing whichever caller
+                // invoked load() without its own try/catch.
+                try {
+                    rawEmbedder = RawTfliteEmbedder(context, modelPath, tokenizerPath)
+                } catch (t: Throwable) {
+                    throw IllegalStateException(
+                        "'${File(modelPath).name}' doesn't look like a valid embedding model: ${t.message}", t
+                    )
+                }
                 activeBackend = rawEmbedder!!.backend
             }
             loadedModelPath = modelPath
@@ -89,8 +101,11 @@ class EmbeddingEngine(private val context: Context) {
                 mediaPipeEmbedder?.let { return@withContext it.embed(text).embeddingResult().embeddings().firstOrNull()?.floatEmbedding() }
                 rawEmbedder?.let { return@withContext it.embed(text, isQuery, title) }
                 null
-            } catch (ex: Exception) {
-                Log.w(TAG, "Embedding failed", ex)
+            } catch (t: Throwable) {
+                // Throwable, not just Exception — a native TFLite inference failure (e.g.
+                // OutOfMemoryError on a huge chunk/query) must still degrade to "no embedding"
+                // rather than crash every semantic search.
+                Log.w(TAG, "Embedding failed", t)
                 null
             }
         }

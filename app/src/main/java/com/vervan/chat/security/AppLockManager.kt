@@ -23,14 +23,12 @@ enum class AppLockMethod { BIOMETRIC, PIN, BOTH }
  * PBKDF2 hash + random salt (stdlib javax.crypto, no new crypto dependency), never in plaintext.
  */
 class AppLockManager(context: Context) {
-    private val prefs: SharedPreferences = run {
-        val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            context, "vervan_lock", masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    // A corrupted/invalidated Keystore key (OS upgrade, cloud restore, FRP re-provision) makes
+    // EncryptedSharedPreferences.create throw instead of silently recovering — since this runs
+    // from Application.onCreate(), an uncaught throw here crashes every single app launch.
+    // Android's own documented recovery is to delete the corrupted prefs file so a fresh master
+    // key gets created; that costs the user their PIN (they re-set it), not their whole app.
+    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_lock")
 
     // Starts locked — if app lock is enabled, cold start should show the gate; if it's
     // disabled, this flag is simply never consulted (see LockScreen's gating), so defaulting

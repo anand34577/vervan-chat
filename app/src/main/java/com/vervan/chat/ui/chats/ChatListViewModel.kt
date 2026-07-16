@@ -20,7 +20,7 @@ enum class ChatFilter { ALL, PINNED, ARCHIVED }
 class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
-    private val allChats: StateFlow<List<Chat>> = db.chatDao().observeAllChats()
+    private val allChats: StateFlow<List<Chat>> = db.chatDao().observeListableChats()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val projectNames: StateFlow<Map<String, String>> = db.projectDao().observeAll()

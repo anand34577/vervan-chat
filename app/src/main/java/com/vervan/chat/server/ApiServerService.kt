@@ -36,19 +36,26 @@ class ApiServerService : Service() {
         if (server != null) return START_STICKY
         val app = applicationContext as VervanApp
         val settings = app.container.settingsRepository
-        runBlocking {
-            val port = settings.apiServerPort.first()
-            val lan = settings.lanApiServerEnabled.first()
-            val requireAuth = settings.apiServerRequireAuth.first()
-            val host = if (lan) null else "127.0.0.1" // null hostname = bind all interfaces (NanoHTTPD convention)
-            val auth = app.container.apiServerAuth
-            if (requireAuth) auth.tokenOrGenerate() // ensure a token exists before anything can connect
-            val instance = LocalApiServer(host, port, app, auth, requireAuth, scope)
-            runCatching { instance.start(fi.iki.elonen.NanoHTTPD.SOCKET_READ_TIMEOUT, false) }
-                .onFailure { stopSelf(); return@runBlocking }
-            server = instance
-        }
-        if (server == null) return START_NOT_STICKY
+        // Only instance.start() was guarded before — the settings reads and
+        // auth.tokenOrGenerate() (which touches the Keystore-backed token store) above it could
+        // throw uncaught on the main thread (this whole block runs inside runBlocking), crashing
+        // the app the moment the user toggles the local API server on.
+        val started = runCatching {
+            runBlocking {
+                val port = settings.apiServerPort.first()
+                val lan = settings.lanApiServerEnabled.first()
+                val requireAuth = settings.apiServerRequireAuth.first()
+                val host = if (lan) null else "127.0.0.1" // null hostname = bind all interfaces (NanoHTTPD convention)
+                val auth = app.container.apiServerAuth
+                if (requireAuth) auth.tokenOrGenerate() // ensure a token exists before anything can connect
+                val instance = LocalApiServer(host, port, app, auth, requireAuth, scope)
+                runCatching { instance.start(fi.iki.elonen.NanoHTTPD.SOCKET_READ_TIMEOUT, false) }
+                    .onFailure { return@runBlocking false }
+                server = instance
+                true
+            }
+        }.getOrDefault(false)
+        if (!started || server == null) { stopSelf(); return START_NOT_STICKY }
         runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }.onFailure { stopSelf() }
         return START_STICKY
     }

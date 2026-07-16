@@ -1,7 +1,9 @@
 package com.vervan.chat.server
 
+import android.util.Log
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.system.toUserMessage
 import fi.iki.elonen.NanoHTTPD
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
@@ -35,6 +37,10 @@ class LocalApiServer(
     private val streamingScope: CoroutineScope
 ) : NanoHTTPD(hostname, port) {
 
+    companion object {
+        private const val TAG = "LocalApiServer"
+    }
+
     override fun serve(session: IHTTPSession): Response {
         app.container.networkAuditLog.record("Local API request: ${session.method} ${session.uri}")
 
@@ -50,8 +56,13 @@ class LocalApiServer(
                 session.method == Method.POST && session.uri == "/v1/chat/completions" -> handleChatCompletions(session)
                 else -> errorResponse(Response.Status.NOT_FOUND, "Unknown endpoint")
             }
-        } catch (e: Exception) {
-            errorResponse(Response.Status.INTERNAL_ERROR, e.message ?: "Internal error")
+        } catch (t: Throwable) {
+            // Throwable, not just Exception — NanoHTTPD buffers request bodies with no size cap
+            // enforced here, so an oversized Content-Length can OutOfMemoryError; that must not
+            // crash the app just because a LAN client sent a bad request. The raw exception
+            // message also used to go straight into the client-visible JSON error body.
+            Log.e(TAG, "serve() failed for ${session.method} ${session.uri}", t)
+            errorResponse(Response.Status.INTERNAL_ERROR, t.toUserMessage())
         }
     }
 
@@ -94,8 +105,9 @@ class LocalApiServer(
                         }
                     }
                     pipedOut.write("data: [DONE]\n\n".toByteArray())
-                } catch (e: Exception) {
-                    runCatching { pipedOut.write(sseChunk(completionId, model.displayName, "[error: ${e.message}]").toByteArray()) }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "streaming chat completion failed", t)
+                    runCatching { pipedOut.write(sseChunk(completionId, model.displayName, "[error: ${t.toUserMessage()}]").toByteArray()) }
                 } finally {
                     runCatching { pipedOut.close() }
                 }

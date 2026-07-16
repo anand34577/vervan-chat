@@ -260,5 +260,73 @@ val MIGRATIONS = arrayOf(
             // globally-enabled one off) just for itself. See Chat.toolOverrideMap().
             db.execSQL("ALTER TABLE chats ADD COLUMN toolOverrides TEXT NOT NULL DEFAULT ''")
         }
+    },
+    object : Migration(28, 29) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Per-message generation stats (tokens/sec, total time), surfaced on tap in the
+            // assistant bubble's action row. Null for existing rows — never generated live.
+            db.execSQL("ALTER TABLE messages ADD COLUMN generationMs INTEGER")
+            db.execSQL("ALTER TABLE messages ADD COLUMN tokenCount INTEGER")
+        }
+    },
+    object : Migration(29, 30) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN documentId TEXT")
+        }
+    },
+    object : Migration(30, 31) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Expense ledger — logged manually via the log_expense tool or from the Receipt
+            // Scanner's "Log as expense" action.
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS expenses (" +
+                    "id TEXT NOT NULL PRIMARY KEY, merchant TEXT NOT NULL, amount REAL NOT NULL, " +
+                    "currency TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', " +
+                    "paymentMethod TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', " +
+                    "date INTEGER NOT NULL, createdAt INTEGER NOT NULL)"
+            )
+        }
+    },
+    object : Migration(31, 32) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Downloaded voice files for the realtime voice pipeline's Piper/Kokoro TTS
+            // engines (Supertonic manages its own storage via the SDK, no row here).
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS tts_voice_models (" +
+                    "id TEXT NOT NULL PRIMARY KEY, engine TEXT NOT NULL, language TEXT NOT NULL, " +
+                    "filePath TEXT NOT NULL, fileSizeBytes INTEGER NOT NULL, sha256 TEXT NOT NULL DEFAULT '', " +
+                    "downloadedAt INTEGER NOT NULL, isReady INTEGER NOT NULL DEFAULT 1)"
+            )
+        }
+    },
+    object : Migration(32, 33) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Model downloader (see com.vervan.chat.modeldownload) — origin/catalogue
+            // provenance columns on the existing models table, plus new package/file tables
+            // tracking a download's own state machine separately from the installed-model row
+            // ModelImportManager writes once import actually succeeds.
+            db.execSQL("ALTER TABLE models ADD COLUMN origin TEXT NOT NULL DEFAULT 'LOCAL_IMPORT'")
+            db.execSQL("ALTER TABLE models ADD COLUMN catalogModelId TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN catalogVersion TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN sourceUrl TEXT")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS download_packages (" +
+                    "id TEXT NOT NULL PRIMARY KEY, modelId TEXT NOT NULL, version TEXT NOT NULL, " +
+                    "displayName TEXT NOT NULL, role TEXT NOT NULL, status TEXT NOT NULL, " +
+                    "stopReason TEXT NOT NULL, totalBytes INTEGER, downloadedBytes INTEGER NOT NULL, " +
+                    "currentFileId TEXT, errorCode TEXT, errorMessage TEXT, " +
+                    "authRequired INTEGER NOT NULL, licenseAccepted INTEGER NOT NULL, " +
+                    "createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS download_files (" +
+                    "id TEXT NOT NULL PRIMARY KEY, packageId TEXT NOT NULL, fileId TEXT NOT NULL, " +
+                    "fileName TEXT NOT NULL, role TEXT NOT NULL, sourceUrl TEXT NOT NULL, " +
+                    "resolvedUrl TEXT, tempPath TEXT NOT NULL, finalPath TEXT NOT NULL, " +
+                    "expectedBytes INTEGER, downloadedBytes INTEGER NOT NULL, sha256 TEXT, " +
+                    "etag TEXT, lastModified TEXT, acceptRanges INTEGER, status TEXT NOT NULL, " +
+                    "retryCount INTEGER NOT NULL, errorMessage TEXT)"
+            )
+        }
     }
 )

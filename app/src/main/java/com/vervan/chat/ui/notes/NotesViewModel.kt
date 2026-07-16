@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Note
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -109,8 +110,8 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                     engine.generate(prompt).collect { result += it }
                 }
                 onResult(result)
-            } catch (e: Exception) {
-                _error.value = "Generation failed: ${e.message}"
+            } catch (t: Throwable) {
+                _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }

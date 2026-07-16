@@ -1,16 +1,14 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Workspace
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface WorkspaceDao {
+interface WorkspaceDao : BaseDao<Workspace> {
     // Default Workspace always sorts first (§9's "isDefault"/pin-like ordering), then most
     // recently active (spec §8's workspace-switcher "last active time").
     @Query("SELECT * FROM workspaces WHERE archived = 0 ORDER BY isDefault DESC, lastActiveAt DESC")
@@ -42,13 +40,4 @@ interface WorkspaceDao {
     // IGNORE so it's a no-op once the row already exists (mirrors PersonaDao.insertAll).
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertDefault(workspace: Workspace)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(workspace: Workspace)
-
-    @Update
-    suspend fun update(workspace: Workspace)
-
-    @Delete
-    suspend fun delete(workspace: Workspace)
 }

@@ -1,15 +1,12 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface KnowledgeBaseDao {
+interface KnowledgeBaseDao : BaseDao<KnowledgeBase> {
     @Query("SELECT * FROM knowledge_bases ORDER BY name ASC")
     fun observeAll(): Flow<List<KnowledgeBase>>
 
@@ -24,10 +21,4 @@ interface KnowledgeBaseDao {
 
     @Query("UPDATE knowledge_bases SET defaultProjectId = NULL WHERE defaultProjectId = :projectId")
     suspend fun clearDefaultProject(projectId: String)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(kb: KnowledgeBase)
-
-    @Delete
-    suspend fun delete(kb: KnowledgeBase)
 }

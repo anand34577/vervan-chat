@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chunk
 import com.vervan.chat.data.db.entities.Document
+import com.vervan.chat.system.toUserMessage
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -21,16 +23,33 @@ class DocumentViewerViewModel(private val app: VervanApp, private val documentId
     val chunks: StateFlow<List<Chunk>> = db.chunkDao().observeForDocument(documentId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _reindexing = MutableStateFlow(false)
+    val reindexing: StateFlow<Boolean> = _reindexing
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
     /** Re-indexes this document from its stored file (spec §42 index repair). */
     fun reindex() {
+        if (_reindexing.value) return
         viewModelScope.launch {
-            val doc = document.value ?: return@launch
-            val file = java.io.File(doc.filePath)
-            if (!file.exists()) return@launch
-            db.chunkDao().deleteForDocument(documentId)
-            db.documentDao().update(doc.copy(status = com.vervan.chat.data.db.entities.DocumentStatus.EXTRACTING))
-            // Re-run ingestion through the import manager by re-importing the local file.
-            app.container.documentImportManager.reindexLocal(documentId)
+            _reindexing.value = true
+            _error.value = null
+            try {
+                val doc = document.value ?: return@launch
+                val file = java.io.File(doc.filePath)
+                if (!file.exists()) {
+                    _error.value = "The original file is no longer available. Re-import it to rebuild the index."
+                    return@launch
+                }
+                db.chunkDao().deleteForDocument(documentId)
+                db.documentDao().update(doc.copy(status = com.vervan.chat.data.db.entities.DocumentStatus.EXTRACTING))
+                app.container.documentImportManager.reindexLocal(documentId)
+            } catch (t: Throwable) {
+                _error.value = "Re-indexing failed: ${t.toUserMessage()}"
+            } finally {
+                _reindexing.value = false
+            }
         }
     }
 }

@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -27,9 +29,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     buildFeatures {
         compose = true
@@ -54,6 +53,19 @@ android {
             pickFirsts += "**/libLiteRt*.so"
         }
     }
+
+    // AAPT compresses assets by default, which corrupts the alignment sherpa-onnx's ONNX
+    // runtime needs when it mmaps a model straight out of the APK (the bundled Silero VAD
+    // model under assets/vad/, see VoiceActivityDetector) — must ship uncompressed.
+    androidResources {
+        noCompress += listOf("onnx")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
 }
 
 dependencies {
@@ -65,10 +77,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.1")
     implementation("androidx.core:core-ktx:1.13.1")
+    // Loads the vendored Mermaid 10.9.6 browser bundle from APK assets over a safe local
+    // HTTPS origin. Runtime network loads are disabled in OfflineMermaidView.
+    implementation("androidx.webkit:webkit:1.16.0")
 
     // CommonMark, tables, tasks, links, and LaTeX rendered entirely on-device.
     val markwonVersion = "4.6.2"
@@ -102,6 +118,33 @@ dependencies {
     // The legacy org.tensorflow:tensorflow-lite line stops at 2.16.1, which cannot load them,
     // so use the current LiteRT runtime. It preserves the org.tensorflow.lite Java API.
     implementation("com.google.ai.edge.litert:litert:2.1.6")
+
+    // Realtime voice pipeline (see com.vervan.chat.voice) — tiered on-device TTS, all with
+    // confirmed Hindi support (Android's own system TTS varies by device/installed voice
+    // data, hence the tiering). Piper/Kokoro run through sherpa-onnx (Apache-2.0) rather than
+    // Piper's own GPL-3.0 codebase, so no copyleft exposure; Piper's hi_IN/en_IN voice .onnx
+    // files are MIT-licensed per the piper-voices repo. sherpa-onnx also supplies the bundled
+    // Silero-VAD (MIT) used for STT endpointing and barge-in — one less dependency than adding
+    // a separate VAD library.
+    //
+    // sherpa-onnx has no published Maven/JitPack coordinate (confirmed against a live Gradle
+    // sync — its own Android docs describe building native .so files from source, not a
+    // resolvable dependency). Vendored locally instead: drop the built/downloaded AAR into
+    // app/libs/ (see the placeholder note there) and this fileTree dependency picks it up.
+    // Empty libs/ resolves to zero files with no build error, so this line is safe to leave
+    // in place before the AAR exists — PiperTtsEngine/KokoroTtsEngine/VoiceActivityDetector
+    // just won't compile until it's there.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    // Piper/Kokoro voices ship from sherpa-onnx's GitHub releases as .tar.bz2 archives
+    // (model.onnx + tokens.txt + shared espeak-ng-data/ per voice) — Android has no built-in
+    // bzip2 support, and this is exactly commons-compress's job; avoids hand-rolling a bzip2
+    // decoder for what TtsModelDownloadManager.downloadArchiveVoice needs.
+    implementation("org.apache.commons:commons-compress:1.26.1")
+    // Supertonic's Android SDK (ai.supertone:supertonic-android, per the original spec) does
+    // not appear to be publicly documented or Maven-resolvable at all — its own GitHub repo
+    // lists iOS/Flutter/Java/web support but nothing for Android. Disabled pending a real
+    // integration path: see SupertonicTtsEngine.kt.disabled.
+
     // PDF text extraction for document import
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // On-device OCR for scanned PDFs (spec §13.3/40.27) — the (non play-services) "text-recognition"

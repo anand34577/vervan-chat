@@ -44,6 +44,30 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
     private val importManager = app.container.modelImportManager
     private val settings = app.container.settingsRepository
+    private val downloadRepo = app.container.modelDownloadRepository
+
+    /** Catalogue entries not yet installed + anything actively downloading — "Available for
+     * Download" and "Active Downloads" both render from this one flow, split by status. Ready
+     * installed models are deliberately NOT included here; they stay [models] (a plain
+     * [ModelInfo] list) since load/unload/delete for them is already fully implemented below. */
+    val downloadStates: StateFlow<List<com.vervan.chat.modeldownload.ModelUiState>> =
+        downloadRepo.uiStates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun downloadModel(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.startDownload(modelId, version) }
+    }
+    fun pauseDownload(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.pauseDownload(modelId, version) }
+    }
+    fun resumeDownload(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.resumeDownload(modelId, version) }
+    }
+    fun cancelDownload(modelId: String, version: String, keepPartial: Boolean) {
+        viewModelScope.launch { downloadRepo.cancelDownload(modelId, version, keepPartial) }
+    }
+    fun retryDownload(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.retryDownload(modelId, version) }
+    }
 
     companion object {
         private const val TAG = "ModelManagerVM"
@@ -52,16 +76,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     val models: StateFlow<List<ModelInfo>> = db.modelDao().observeModels()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val defaults: StateFlow<ModelDefaults> = combine(
+    val defaults: StateFlow<ModelDefaults> = combine<Number, ModelDefaults>(
         settings.temperature, settings.topP, settings.topK, settings.maxNumImages, settings.contextTokenLimit, settings.randomSeed
     ) { values ->
         ModelDefaults(
-            temperature = values[0] as Float,
-            topP = values[1] as Float,
-            topK = values[2] as Int,
-            maxNumImages = values[3] as Int,
-            contextTokens = values[4] as Int,
-            seed = values[5] as Int
+            temperature = values[0].toFloat(),
+            topP = values[1].toFloat(),
+            topK = values[2].toInt(),
+            maxNumImages = values[3].toInt(),
+            contextTokens = values[4].toInt(),
+            seed = values[5].toInt()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelDefaults(0.8f, 0.95f, 40, 1, 4096, -1))
 
@@ -349,6 +373,13 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun load(model: ModelInfo) {
         if (_importing.value) return
         Log.i(TAG, "load() requested: ${model.displayName} (preferredBackend=${model.preferredBackend})")
+        // Already resident — LlmEngine.load() would no-op internally anyway, but skip the
+        // busy state/toast churn of "loading" a model that's already loaded.
+        val alreadyLoadedPath = if (model.role == ModelRole.GENERATION) _loadedGenerationPath.value else _loadedEmbeddingPath.value
+        if (alreadyLoadedPath == model.filePath) {
+            _status.value = "${model.displayName} is already loaded"
+            return
+        }
         if (!canLoadSafely(model)) {
             Log.w(TAG, "load() rejected pre-flight: ${unsupportedRuntimeMessage(model)}")
             _status.value = unsupportedRuntimeMessage(model)
@@ -359,6 +390,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             _busyModelId.value = model.id
             _busyLabel.value = "Loading ${model.displayName}…"
             _status.value = "Loading ${model.displayName}…"
+            // Only one generation (or embedding) model is ever resident — remember what was
+            // loaded before this call so the toast below can call out the auto-unload instead
+            // of looking like nothing happened to the previous model.
+            val previousName = if (model.role == ModelRole.GENERATION) {
+                _loadedGenerationPath.value?.takeIf { it != model.filePath }
+                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
+            } else {
+                _loadedEmbeddingPath.value?.takeIf { it != model.filePath }
+                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
+            }
             try {
                 var disabledCapabilities: List<String> = emptyList()
                 withContext(Dispatchers.Default) {
@@ -396,6 +437,11 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
                 _status.value = "Loaded ${model.displayName}"
+                android.widget.Toast.makeText(
+                    app,
+                    if (previousName != null) "Unloaded $previousName — loaded ${model.displayName}" else "Loaded ${model.displayName}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
                 if (disabledCapabilities.isNotEmpty()) {
                     android.widget.Toast.makeText(
                         app, "${disabledCapabilities.joinToString(", ")} not supported on this model — disabled",
@@ -424,6 +470,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 app.container.withEmbedding { if (it.loadedModelPath == model.filePath) it.close() }
             }
             _status.value = "Unloaded ${model.displayName}"
+            android.widget.Toast.makeText(app, "Unloaded ${model.displayName}", android.widget.Toast.LENGTH_SHORT).show()
             refreshLoadedState()
         }
     }
@@ -454,15 +501,30 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
 
     fun delete(model: ModelInfo) {
         viewModelScope.launch {
-            // B14: clear any folder default pointing at this model before deleting it, so a
-            // folder can't end up silently referencing a dangling model id.
-            db.folderDao().clearDefaultModel(model.id)
-            db.chatDao().clearModel(model.id)
-            app.container.withLlm { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
-            app.container.withEmbedding { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
-            com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(model.filePath))
-            db.modelDao().delete(model)
-            refreshLoadedState()
+            _busyModelId.value = model.id
+            _busyLabel.value = "Deleting ${model.displayName}…"
+            _status.value = _busyLabel.value
+            try {
+                // B14: clear any folder default pointing at this model before deleting it, so a
+                // folder can't end up silently referencing a dangling model id.
+                db.folderDao().clearDefaultModel(model.id)
+                db.chatDao().clearModel(model.id)
+                app.container.withLlm { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
+                app.container.withEmbedding { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
+                withContext(Dispatchers.IO) {
+                    com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(model.filePath))
+                    model.tokenizerPath?.let { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
+                }
+                db.modelDao().delete(model)
+                _status.value = "Deleted ${model.displayName}"
+                refreshLoadedState()
+            } catch (t: Throwable) {
+                Log.e(TAG, "delete() failed for ${model.displayName}", t)
+                _status.value = "Delete failed: ${t.message ?: t::class.simpleName}"
+            } finally {
+                _busyModelId.value = null
+                _busyLabel.value = null
+            }
         }
     }
 

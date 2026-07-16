@@ -1,18 +1,17 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Chat
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface ChatDao {
-    @Query("SELECT * FROM chats WHERE archived = 0 AND deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
+interface ChatDao : BaseDao<Chat> {
+    @Query("SELECT * FROM chats WHERE archived = 0 AND deletedAt IS NULL AND (draft != '' OR EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)) ORDER BY pinned DESC, updatedAt DESC")
     fun observeChats(): Flow<List<Chat>>
+
+    @Query("SELECT * FROM chats WHERE deletedAt IS NULL AND (draft != '' OR EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)) ORDER BY pinned DESC, updatedAt DESC")
+    fun observeListableChats(): Flow<List<Chat>>
 
     @Query("SELECT * FROM chats WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun observeAllChats(): Flow<List<Chat>>
@@ -69,13 +68,4 @@ interface ChatDao {
 
     @Query("UPDATE chats SET folderId = NULL WHERE folderId = :folderId")
     suspend fun clearFolder(folderId: String)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(chat: Chat)
-
-    @Update
-    suspend fun update(chat: Chat)
-
-    @Delete
-    suspend fun delete(chat: Chat)
 }

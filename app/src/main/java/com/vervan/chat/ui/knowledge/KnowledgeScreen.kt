@@ -3,6 +3,7 @@ package com.vervan.chat.ui.knowledge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -103,25 +103,42 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
                 )
             }
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                kbs.forEach { kb ->
-                    val stats = kbStats[kb.id]
-                    KbCard(kb, docCount = stats?.first ?: 0, allReady = stats?.second ?: true, onClick = { onOpenKb(kb.id) })
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = when {
+                    maxWidth >= 760.dp -> 3
+                    maxWidth >= 520.dp -> 2
+                    else -> 1
                 }
-                if (kbs.isNotEmpty()) {
-                    Card(
-                        onClick = { showCreate = true },
-                        modifier = Modifier.widthIn(min = 180.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-                    ) {
-                        Column(Modifier.padding(Space.lg)) {
-                            Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text("New base", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl))
-                            Text("Create a document collection", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm),
+                    maxItemsInEachRow = columns
+                ) {
+                    kbs.forEach { kb ->
+                        val stats = kbStats[kb.id]
+                        Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                            KbCard(
+                                kb,
+                                docCount = stats?.first ?: 0,
+                                allReady = stats?.second ?: true,
+                                onClick = { onOpenKb(kb.id) }
+                            )
+                        }
+                    }
+                    if (kbs.isNotEmpty()) {
+                        Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                            Card(
+                                onClick = { showCreate = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                Column(Modifier.padding(Space.lg)) {
+                                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Text("New base", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl))
+                                    Text("Create a document collection", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
                 }
@@ -176,7 +193,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = Modifier.widthIn(min = 180.dp, max = 300.dp),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(Modifier.padding(Space.lg)) {

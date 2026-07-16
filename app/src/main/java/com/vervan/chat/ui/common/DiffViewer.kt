@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanSuccess
+import com.vervan.chat.ui.theme.vervanSuccess
 
 /**
  * §6/§7.6.2/§7.8 DiffViewer — AI text transforms (Writing, Developer, Notes actions) must show
@@ -56,7 +56,7 @@ fun DiffViewer(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(VervanSuccess.copy(alpha = 0.08f))
+                    .background(MaterialTheme.colorScheme.vervanSuccess.copy(alpha = 0.08f))
                     .verticalScroll(rememberScrollState())
                     .padding(Space.md)
             )

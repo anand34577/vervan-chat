@@ -46,9 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,6 +62,7 @@ import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
+import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
@@ -150,7 +150,7 @@ fun LibraryScreen(
                 },
                 modifier = Modifier.padding(top = Space.sm)
             )
-            androidx.compose.material3.ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
+            androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
                 libTabs.forEachIndexed { index, label ->
                     Tab(
                         selected = tab == index,
@@ -312,7 +312,7 @@ private fun SavedTab(
     onEnterSelection: (String) -> Unit
 ) {
     val filtered = remember(outputs, query) { outputs.filter { it.content.contains(query, ignoreCase = true) } }
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
     if (filtered.isEmpty()) {
@@ -349,7 +349,7 @@ private fun SavedTab(
                         Text(output.content.take(300), style = MaterialTheme.typography.bodyMedium)
                         if (!selectionMode) {
                             Row {
-                                TextButton(onClick = { clipboard.setText(AnnotatedString(output.content)) }) { Text("Copy") }
+                                TextButton(onClick = { clipboard.setText(output.content, scope) }) { Text("Copy") }
                                 TextButton(onClick = { scope.launch { app.container.db.savedOutputDao().upsert(output.copy(deletedAt = System.currentTimeMillis())) } }) { Text("Delete") }
                             }
                         }

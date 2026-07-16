@@ -1,0 +1,51 @@
+package com.vervan.chat.voice
+
+import android.content.Context
+
+/**
+ * Wraps Supertonic 3 (`ai.supertone:supertonic-android`) — a single 99M-parameter ONNX model
+ * covering Hindi + English (and 29 other languages), so no manual per-sentence script routing
+ * is needed (unlike [PiperTtsEngine]). The primary engine tier: tried first by
+ * [TtsEngineSelector]'s `AUTO` ordering.
+ *
+ * ponytail: the SDK's real Kotlin API surface (`Supertonic.TTS`, its `synthesize` return type)
+ * is isolated to this one file, same reasoning as [PiperTtsEngine]/[KokoroTtsEngine] — confirm
+ * against the actual `ai.supertone:supertonic-android:3.+` artifact at first Gradle sync
+ * (this app currently has zero prior integration to pattern-match against). Assumed here:
+ * `synthesize(text, lang)` returns raw WAV bytes, decoded via the shared [WavPcmDecoder].
+ */
+class SupertonicTtsEngine(private val context: Context) : TtsEngine {
+    override val engineName = "Supertonic"
+
+    private var tts: ai.supertone.Supertonic.TTS? = null
+    private var initFailed = false
+
+    override suspend fun isReady(): Boolean {
+        ensureLoaded()
+        return tts != null
+    }
+
+    private fun ensureLoaded() {
+        if (tts != null || initFailed) return
+        tts = runCatching { ai.supertone.Supertonic.TTS(context, autoDownload = true) }.getOrElse {
+            initFailed = true
+            null
+        }
+    }
+
+    override suspend fun synthesize(text: String, lang: String): TtsAudio {
+        ensureLoaded()
+        val engine = tts ?: throw IllegalStateException("Supertonic model not available")
+        val supertonicLang = when (lang) {
+            "hi" -> "hi"
+            "en" -> "en"
+            else -> "na" // auto-detect, for code-mixed Hinglish sentences
+        }
+        val wavBytes = engine.synthesize(text, lang = supertonicLang)
+        return WavPcmDecoder.decode(wavBytes)
+    }
+
+    fun release() {
+        tts = null
+    }
+}

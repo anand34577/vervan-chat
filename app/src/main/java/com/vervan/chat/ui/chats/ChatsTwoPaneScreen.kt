@@ -32,6 +32,8 @@ import com.vervan.chat.ui.chat.ChatScreen
 fun ChatsTwoPaneScreen(
     onOpenBranchTree: (String) -> Unit,
     onOpenPassage: (String) -> Unit = {},
+    onOpenChatInfo: (String) -> Unit = {},
+    onOpenDocument: (String) -> Unit = {},
     onOpenModels: () -> Unit = {}
 ) {
     var selectedChatId by remember { mutableStateOf<String?>(null) }
@@ -47,9 +49,12 @@ fun ChatsTwoPaneScreen(
                 ChatScreen(
                     chatId = chatId,
                     onBack = { selectedChatId = null },
+                    onOpenChatInfo = { onOpenChatInfo(chatId) },
+                    onOpenDocument = onOpenDocument,
                     onOpenBranchTree = { onOpenBranchTree(chatId) },
                     onOpenPassage = onOpenPassage,
-                    onOpenModels = onOpenModels
+                    onOpenModels = onOpenModels,
+                    onForkChat = { forkedChatId -> selectedChatId = forkedChatId }
                 )
             } else {
                 Column(

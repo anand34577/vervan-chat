@@ -1,16 +1,12 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Note
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface NoteDao {
+interface NoteDao : BaseDao<Note> {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<Note>>
 
@@ -37,13 +33,4 @@ interface NoteDao {
 
     @Query("UPDATE notes SET folderId = NULL WHERE folderId = :folderId")
     suspend fun clearFolder(folderId: String)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(note: Note)
-
-    @Update
-    suspend fun update(note: Note)
-
-    @Delete
-    suspend fun delete(note: Note)
 }

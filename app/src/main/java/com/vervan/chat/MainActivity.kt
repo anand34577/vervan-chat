@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.flow.update
 import com.vervan.chat.data.settings.ThemeMode
@@ -40,6 +42,7 @@ class MainActivity : FragmentActivity() {
             val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsState(initial = false)
             val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsState(initial = false)
             val highContrast by app.container.settingsRepository.highContrast.collectAsState(initial = false)
+            val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsState(initial = false)
             val accentTheme by app.container.settingsRepository.accentTheme.collectAsState(initial = com.vervan.chat.data.settings.AccentTheme.AMBER)
             val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsState(initial = false)
             val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsState(initial = "BIOMETRIC")
@@ -84,12 +87,14 @@ class MainActivity : FragmentActivity() {
                     LocalDensity provides androidx.compose.ui.unit.Density(
                         baseDensity.density,
                         baseDensity.fontScale * fontScale
-                    )
+                    ),
+                    LocalMinimumInteractiveComponentSize provides if (largeTouchTargets) 56.dp else 48.dp
                 ) {
                     Box(Modifier.fillMaxSize()) {
                         VervanNavGraph(
                             app = app,
                             sharedText = extractSharedText(intent),
+                            sharedImageUri = extractSharedImageUri(intent),
                             shortcut = extractShortcut(intent),
                             intentVersion = intentVersion,
                             windowSizeClass = windowSizeClass
@@ -116,6 +121,15 @@ class MainActivity : FragmentActivity() {
     private fun extractSharedText(intent: Intent?): String? {
         if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("text/") != true) return null
         return intent.getStringExtra(Intent.EXTRA_TEXT)
+    }
+
+    private fun extractSharedImageUri(intent: Intent?): android.net.Uri? {
+        if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("image/") != true) return null
+        return if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
     }
 
     /** Resolves a launcher-shortcut extra (spec §37.3) into a deep navigation target. */

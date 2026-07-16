@@ -26,6 +26,25 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
     val autoReadAloud: StateFlow<Boolean> = settings.autoReadAloud
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val ttsEnginePreference: StateFlow<String> = settings.ttsEnginePreference
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val kokoroQualityEnabled: StateFlow<Boolean> = settings.kokoroQualityEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val bargeInEnabled: StateFlow<Boolean> = settings.bargeInEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // ---- Realtime voice — Piper/Kokoro voice model downloads ----
+    val downloadedVoiceModels: StateFlow<List<com.vervan.chat.data.db.entities.TtsVoiceModel>> =
+        app.container.db.ttsVoiceModelDao().observeAll()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val activeVoiceDownloadJobs: StateFlow<List<com.vervan.chat.data.db.entities.JobRecord>> =
+        app.container.db.jobDao().observeActive()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun downloadVoiceModel(entry: com.vervan.chat.voice.TtsVoiceCatalogEntry) {
+        viewModelScope.launch {
+            app.container.ttsModelDownloadManager.downloadArchiveVoice(entry.engine, entry.language, entry.label, entry.archiveUrl)
+        }
+    }
     val fontScale: StateFlow<Float> = settings.fontScale
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
     val contextTokenLimit: StateFlow<Int> = settings.contextTokenLimit
@@ -39,6 +58,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
     val autoLoadDefaultModel = settings.autoLoadDefaultModel.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
     val oledTrueBlack: StateFlow<Boolean> = settings.oledTrueBlack
@@ -125,10 +145,18 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val smsToolEnabled: StateFlow<Boolean> = settings.smsToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val filesToolEnabled: StateFlow<Boolean> = settings.filesToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val locationToolEnabled: StateFlow<Boolean> = settings.locationToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val callLogToolEnabled: StateFlow<Boolean> = settings.callLogToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val screenTimeToolEnabled: StateFlow<Boolean> = settings.screenTimeToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setContactsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setContactsToolEnabled(v) } }
     fun setCalendarToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCalendarToolEnabled(v) } }
     fun setSmsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setSmsToolEnabled(v) } }
     fun setDeviceStatusToolEnabled(v: Boolean) { viewModelScope.launch { settings.setDeviceStatusToolEnabled(v) } }
+    fun setFilesToolEnabled(v: Boolean) { viewModelScope.launch { settings.setFilesToolEnabled(v) } }
+    fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
+    fun setCallLogToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCallLogToolEnabled(v) } }
+    fun setScreenTimeToolEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenTimeToolEnabled(v) } }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: StateFlow<Set<String>> = settings.disabledToolIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -180,10 +208,14 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setDefaultRetrievalMode(mode: String) { viewModelScope.launch { settings.setDefaultRetrievalMode(mode) } }
     fun setTtsRate(rate: Float) { viewModelScope.launch { settings.setTtsRate(rate) } }
     fun setAutoReadAloud(enabled: Boolean) { viewModelScope.launch { settings.setAutoReadAloud(enabled) } }
+    fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
+    fun setKokoroQualityEnabled(v: Boolean) { viewModelScope.launch { settings.setKokoroQualityEnabled(v) } }
+    fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
     fun setFontScale(scale: Float) { viewModelScope.launch { settings.setFontScale(scale) } }
     fun setOledTrueBlack(enabled: Boolean) { viewModelScope.launch { settings.setOledTrueBlack(enabled) } }
     fun setAccentTheme(theme: AccentTheme) { viewModelScope.launch { settings.setAccentTheme(theme) } }
     fun setHapticsEnabled(enabled: Boolean) { viewModelScope.launch { settings.setHapticsEnabled(enabled) } }
+    fun setShowGenerationStats(enabled: Boolean) { viewModelScope.launch { settings.setShowGenerationStats(enabled) } }
     fun setExpertMode(enabled: Boolean) { viewModelScope.launch { settings.setExpertMode(enabled) } }
     fun setLargeTouchTargets(enabled: Boolean) { viewModelScope.launch { settings.setLargeTouchTargets(enabled) } }
     fun setDynamicColor(enabled: Boolean) { viewModelScope.launch { settings.setDynamicColor(enabled) } }

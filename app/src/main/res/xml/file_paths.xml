@@ -2,4 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Matches VervanApp's filesDir/images used for both picked and camera-captured images. -->
     <files-path name="images" path="images/" />
+    <!-- Imported documents stay private until a user explicitly taps Open with; the Intent
+         grants read access to that one content URI only. -->
+    <files-path name="shared_files" path="." />
 </paths>

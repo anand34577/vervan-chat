@@ -331,25 +331,21 @@ private fun ChatListRow(
     onExport: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    // §7.2.1 swipe right = pin, swipe left = archive. confirmValueChange always returns false
-    // so the row snaps back after firing — the action itself never removes the row, this list
-    // just re-sorts/re-filters underneath it.
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onTogglePin()
-                SwipeToDismissBoxValue.EndToStart -> onToggleArchive()
-                SwipeToDismissBoxValue.Settled -> {}
-            }
-            false
-        }
-    )
-    // confirmValueChange returning false rejects the dismiss but doesn't reliably snap the
-    // offset back to zero on its own — without this, a row left visually mid-swipe after firing
-    // once absorbs the next swipe instead of registering a fresh gesture, which is exactly why
-    // swiping a pinned chat back to unpin (or archiving twice) silently did nothing.
+    // §7.2.1 swipe right = pin, swipe left = archive. Observe the reached anchor, perform the
+    // action, then reset so the row remains reusable after the list re-sorts/re-filters.
+    val dismissState = rememberSwipeToDismissBoxState()
     LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue != SwipeToDismissBoxValue.Settled) dismissState.reset()
+        when (dismissState.currentValue) {
+            SwipeToDismissBoxValue.StartToEnd -> {
+                onTogglePin()
+                dismissState.reset()
+            }
+            SwipeToDismissBoxValue.EndToStart -> {
+                onToggleArchive()
+                dismissState.reset()
+            }
+            SwipeToDismissBoxValue.Settled -> Unit
+        }
     }
     SwipeToDismissBox(
         state = dismissState,

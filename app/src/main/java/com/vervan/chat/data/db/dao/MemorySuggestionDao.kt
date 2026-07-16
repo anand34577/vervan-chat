@@ -1,17 +1,13 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.MemorySuggestion
 import com.vervan.chat.data.db.entities.MemorySuggestionStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface MemorySuggestionDao {
+interface MemorySuggestionDao : BaseDao<MemorySuggestion> {
     @Query("SELECT * FROM memory_suggestions WHERE status = :status ORDER BY createdAt DESC")
     fun observeByStatus(status: MemorySuggestionStatus = MemorySuggestionStatus.PENDING): Flow<List<MemorySuggestion>>
 
@@ -26,13 +22,4 @@ interface MemorySuggestionDao {
 
     @Query("SELECT * FROM memory_suggestions WHERE `key` = :key AND status = 'PENDING' LIMIT 1")
     suspend fun getPendingByKey(key: String): MemorySuggestion?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(suggestion: MemorySuggestion)
-
-    @Update
-    suspend fun update(suggestion: MemorySuggestion)
-
-    @Delete
-    suspend fun delete(suggestion: MemorySuggestion)
 }

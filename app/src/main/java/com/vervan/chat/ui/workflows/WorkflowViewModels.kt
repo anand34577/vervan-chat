@@ -8,8 +8,10 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.Workflow
+import com.vervan.chat.data.repo.resolveEditId
 import com.vervan.chat.model.ExtractResult
 import com.vervan.chat.model.TextExtractor
+import com.vervan.chat.system.toUserMessage
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,37 +69,51 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         viewModelScope.launch { _workflow.value = db.workflowDao().get(workflowId) }
     }
 
-    /** Reads a picked file straight into text — ponytail: no persistence, this is a one-shot input, not a knowledge-base import. */
+    /** Reads a picked file straight into text — ponytail: no persistence, this is a one-shot input, not a knowledge-base import.
+     * Returns null (with [_error] set) instead of throwing on storage-full, a revoked/expired
+     * SAF grant, or an OCR/extraction failure — this used to be able to throw uncaught out of
+     * a bare `scope.launch` in WorkflowRunScreen with no exception handler, crashing the app
+     * instead of just failing this one file pick. */
     suspend fun readFile(uri: Uri): String? = withContext(Dispatchers.IO) {
-        val tmp = File.createTempFile("workflow_input", ".tmp", app.cacheDir)
+        val tmp = try {
+            File.createTempFile("workflow_input", ".tmp", app.cacheDir)
+        } catch (t: Throwable) {
+            _error.value = "Couldn't read file: ${t.toUserMessage()}"
+            return@withContext null
+        }
         try {
-            app.contentResolver.openInputStream(uri)?.use { input ->
-                tmp.outputStream().use { output -> input.copyTo(output) }
-            }
-            val name = app.contentResolver.query(uri, null, null, null, null)?.use { c ->
-                val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
-            } ?: uri.lastPathSegment ?: "file.txt"
-            when (val result = TextExtractor.extract(tmp, name)) {
-                is ExtractResult.Text -> result.content
-                // This is a one-shot text input, not a knowledge-base import, so a table/slide
-                // deck just gets flattened to plain text rather than routed through the
-                // row-group/per-slide chunkers those shapes get on the real import path.
-                is ExtractResult.Tabular -> result.sheets.joinToString("\n\n") { sheet ->
-                    (listOfNotNull(sheet.header) + sheet.rows).joinToString("\n") { it.joinToString("\t") }
+            try {
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    tmp.outputStream().use { output -> input.copyTo(output) }
                 }
-                is ExtractResult.Slides -> result.slides.joinToString("\n\n") { slide ->
-                    listOfNotNull(slide.body.takeIf { it.isNotBlank() }, slide.notes?.takeIf { it.isNotBlank() }).joinToString("\n")
-                }
-                is ExtractResult.Unsupported -> { _error.value = result.reason; null }
-                ExtractResult.NeedsOcr -> {
-                    val text = if (name.substringAfterLast('.', "").lowercase() == "pdf") {
-                        com.vervan.chat.model.OcrExtractor.extractFromPdf(tmp)
-                    } else {
-                        com.vervan.chat.model.OcrExtractor.extractFromImage(tmp)
+                val name = app.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+                } ?: uri.lastPathSegment ?: "file.txt"
+                when (val result = TextExtractor.extract(tmp, name)) {
+                    is ExtractResult.Text -> result.content
+                    // This is a one-shot text input, not a knowledge-base import, so a table/slide
+                    // deck just gets flattened to plain text rather than routed through the
+                    // row-group/per-slide chunkers those shapes get on the real import path.
+                    is ExtractResult.Tabular -> result.sheets.joinToString("\n\n") { sheet ->
+                        (listOfNotNull(sheet.header) + sheet.rows).joinToString("\n") { it.joinToString("\t") }
                     }
-                    text.ifBlank { _error.value = "OCR found no readable text"; null }
+                    is ExtractResult.Slides -> result.slides.joinToString("\n\n") { slide ->
+                        listOfNotNull(slide.body.takeIf { it.isNotBlank() }, slide.notes?.takeIf { it.isNotBlank() }).joinToString("\n")
+                    }
+                    is ExtractResult.Unsupported -> { _error.value = result.reason; null }
+                    ExtractResult.NeedsOcr -> {
+                        val text = if (name.substringAfterLast('.', "").lowercase() == "pdf") {
+                            com.vervan.chat.model.OcrExtractor.extractFromPdf(tmp)
+                        } else {
+                            com.vervan.chat.model.OcrExtractor.extractFromImage(tmp)
+                        }
+                        text.ifBlank { _error.value = "OCR found no readable text"; null }
+                    }
                 }
+            } catch (t: Throwable) {
+                _error.value = "Couldn't read file: ${t.toUserMessage()}"
+                null
             }
         } finally {
             tmp.delete()
@@ -174,8 +190,11 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                         resumeIndex = index + 1
                     }
                 }
-            } catch (e: Exception) {
-                _error.value = "Workflow failed: ${e.message}"
+            } catch (t: Throwable) {
+                // Throwable, not just Exception — a multi-step run's accumulated carryText can
+                // grow large enough to OutOfMemoryError on a low-RAM device; unlike ChatViewModel
+                // this runner had no outer Throwable safety net at all.
+                _error.value = "Workflow failed: ${t.toUserMessage()}"
                 _running.value = false
                 return@launch
             }
@@ -252,9 +271,8 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
     suspend fun save(): Boolean {
         val cleanSteps = _steps.value.map { it.trim() }.filter { it.isNotBlank() }
         if (_name.value.isBlank() || cleanSteps.isEmpty()) return false
-        val editingCustom = workflowId != null && !_isBuiltIn.value
         val workflow = Workflow(
-            id = if (editingCustom) workflowId!! else java.util.UUID.randomUUID().toString(),
+            id = resolveEditId(workflowId, _isBuiltIn.value),
             name = _name.value.trim(),
             description = _description.value.trim(),
             stepsJson = Workflow.encodeSteps(cleanSteps),

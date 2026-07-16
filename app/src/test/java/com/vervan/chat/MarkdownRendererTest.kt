@@ -1,7 +1,10 @@
 package com.vervan.chat
 
+import androidx.compose.ui.graphics.Color
+import com.vervan.chat.ui.common.CodeHighlightColors
 import com.vervan.chat.ui.common.MdSegment
-import com.vervan.chat.ui.common.parseMermaidEdges
+import com.vervan.chat.ui.common.highlightCode
+import com.vervan.chat.ui.common.normalizeLatexDelimiters
 import com.vervan.chat.ui.common.splitMarkdownSegments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -14,15 +17,28 @@ class MarkdownRendererTest {
         assertTrue(segments.any { it is MdSegment.Mermaid })
     }
 
-    @Test fun parsesCommonFlowAndSequenceEdges() {
-        val flow = parseMermaidEdges("flowchart LR\nA[Draft] --> B{Review}\nB -- approved --> C[Done]")
-        assertEquals("Draft", flow[0].from)
-        assertEquals("Review", flow[0].to)
-        assertEquals("approved", flow[1].label)
+    @Test fun keepsOpenFenceRenderableWhileStreaming() {
+        val segments = splitMarkdownSegments("Before\n```mermaid\nflowchart LR\nA --> B")
+        assertTrue(segments.last() is MdSegment.Mermaid)
+        assertEquals("flowchart LR\nA --> B", (segments.last() as MdSegment.Mermaid).source)
+    }
 
-        val sequence = parseMermaidEdges("sequenceDiagram\nUser->>App: Open chat")
-        assertEquals("User", sequence.single().from)
-        assertEquals("App", sequence.single().to)
-        assertEquals("Open chat", sequence.single().label)
+    @Test fun normalizesCommonLatexWithoutChangingInlineCode() {
+        assertEquals("Inline \$\$x^2\$\$ and `price \$5`", normalizeLatexDelimiters("Inline \$x^2\$ and `price \$5`"))
+        assertEquals("\$\$E=mc^2\$\$", normalizeLatexDelimiters("\\(E=mc^2\\)"))
+        assertEquals("\$\$\na+b\n\$\$", normalizeLatexDelimiters("\\[a+b\\]"))
+    }
+
+    @Test fun highlightsEveryOptionalGrammarWithoutMissingGroupCrashes() {
+        val colors = CodeHighlightColors(Color.Red, Color.Green, Color.Gray, Color.Blue, Color.Magenta, Color.Black)
+        mapOf(
+            "kotlin" to "fun main() { // hi\n val n = 1 }",
+            "python" to "# hi\ndef main(): return 1",
+            "yaml" to "# hi\nkey: value",
+            "json" to "{\"ok\": true}",
+            "css" to "/* hi */ .x { color: inherit; }"
+        ).forEach { (language, code) ->
+            assertEquals(code, highlightCode(code, language, colors).text)
+        }
     }
 }

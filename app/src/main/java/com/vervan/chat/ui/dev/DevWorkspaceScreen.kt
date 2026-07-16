@@ -31,11 +31,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,6 +45,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ValidationLimits
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -55,7 +56,8 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
     val output by vm.output.collectAsState()
     val running by vm.running.collectAsState()
     val error by vm.error.collectAsState()
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     var code by remember { mutableStateOf("") }
 
@@ -90,7 +92,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                     Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(12.dp))
                 }
                 ResponsiveActions(Modifier.padding(top = 8.dp)) {
-                    TextButton(onClick = { clipboard.setText(AnnotatedString(output)) }) { Text("Copy") }
+                    TextButton(onClick = { clipboard.setText(output, scope) }) { Text("Copy") }
                     TextButton(onClick = { vm.saveAsNote(code.take(60)) }) { Text("Add to note") }
                     TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
                 }

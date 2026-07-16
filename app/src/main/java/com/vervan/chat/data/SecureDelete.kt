@@ -1,5 +1,6 @@
 package com.vervan.chat.data
 
+import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
 import java.security.SecureRandom
@@ -35,8 +36,15 @@ object SecureDelete {
                         written += toWrite
                     }
                 }
+            }.onFailure {
+                // This used to fail with zero signal anywhere (no log, nothing) then delete the
+                // file anyway — silently degrading from "securely wiped" to "sensitive bytes
+                // still recoverable on disk" with no way to notice. At minimum, log it.
+                Log.w(TAG, "overwriteAndDelete: overwrite failed for ${file.name}, deleting without a secure wipe", it)
             }
         }
         file.delete()
     }
+
+    private const val TAG = "SecureDelete"
 }

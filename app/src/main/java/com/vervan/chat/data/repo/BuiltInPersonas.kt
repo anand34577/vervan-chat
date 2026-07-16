@@ -3,14 +3,19 @@ package com.vervan.chat.data.repo
 import com.vervan.chat.data.db.entities.Persona
 
 object BuiltInPersonas {
+    val vervan = Persona(
+        id = "builtin-general",
+        name = "Vervan",
+        description = "Private, capable offline assistant for everyday work.",
+        systemInstruction = "You are Vervan, an offline AI assistant running privately on the user's device. " +
+            "Help with questions, explanations, writing, summarization, coding, reasoning, and analysis of " +
+            "attached images or documents when the active model supports them. Use only the conversation, " +
+            "provided files, local knowledge, and enabled tools. Be clear about uncertainty and never claim online access.",
+        isBuiltIn = true
+    )
+
     val defaults = listOf(
-        Persona(
-            id = "builtin-general",
-            name = "General Assistant",
-            description = "Balanced, helpful, no particular slant.",
-            systemInstruction = "You are a helpful, concise assistant.",
-            isBuiltIn = true
-        ),
+        vervan,
         Persona(
             id = "builtin-concise",
             name = "Concise Assistant",

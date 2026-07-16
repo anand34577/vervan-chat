@@ -1,16 +1,12 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Document
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface DocumentDao {
+interface DocumentDao : BaseDao<Document> {
     @Query("SELECT * FROM documents WHERE knowledgeBaseId = :kbId AND deletedAt IS NULL ORDER BY importedAt DESC")
     fun observeForKb(kbId: String): Flow<List<Document>>
 
@@ -48,13 +44,4 @@ interface DocumentDao {
     // SQL delete which would orphan them.
     @Query("SELECT * FROM documents WHERE workspaceId = :workspaceId")
     suspend fun getForWorkspace(workspaceId: String): List<Document>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(document: Document)
-
-    @Update
-    suspend fun update(document: Document)
-
-    @Delete
-    suspend fun delete(document: Document)
 }

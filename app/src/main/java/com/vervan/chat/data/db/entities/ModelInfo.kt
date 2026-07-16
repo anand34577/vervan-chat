@@ -15,6 +15,10 @@ fun ModelBackend.displayName(): String = when (this) {
 
 enum class ModelRole { GENERATION, EMBEDDING }
 
+/** How a [ModelInfo] row got here — drives whether the model downloader offers a catalogue
+ * entry as "already installed" (see ModelInstallationRepository's duplicate-prevention check). */
+enum class ModelOrigin { LOCAL_IMPORT, DOWNLOADED }
+
 /** Explicit per-model hardware choice (user ask: "if GPU is selected load only on GPU, if not
  * able then give error" — no silent fallback unless the user picks AUTO). AUTO tries NPU first,
  * then GPU, then CPU. */
@@ -59,7 +63,15 @@ data class ModelInfo(
     // Only set (and only needed) for an EMBEDDING model that's a bare TFLite graph rather than
     // a MediaPipe Task Bundle — its companion SentencePiece tokenizer file, imported alongside
     // the model itself since the graph has no bundled tokenizer of its own.
-    val tokenizerPath: String? = null
+    val tokenizerPath: String? = null,
+    // Catalogue provenance for a model that came through the downloader (see
+    // com.vervan.chat.modeldownload) — null/LOCAL_IMPORT for anything imported the original way.
+    // catalogModelId+catalogVersion double as the "already installed" duplicate check against
+    // ModelCatalog entries.
+    val origin: ModelOrigin = ModelOrigin.LOCAL_IMPORT,
+    val catalogModelId: String? = null,
+    val catalogVersion: String? = null,
+    val sourceUrl: String? = null
 )
 
 /**

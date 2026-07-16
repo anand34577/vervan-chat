@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -19,6 +20,13 @@ class WavRecorder(val outputFile: File) {
     private var audioRecord: AudioRecord? = null
     @Volatile private var recording = false
     private var recordThread: Thread? = null
+
+    /** Set if the record loop ended early because [AudioRecord.read] returned a persistent
+     * error code — e.g. RECORD_AUDIO permission revoked mid-recording, or the mic taken by a
+     * higher-priority app. Callers can check this after [stop] to tell "silent because nothing
+     * was said" apart from "recording actually failed", which the loop used to swallow. */
+    @Volatile var failureReason: String? = null
+        private set
 
     @SuppressLint("MissingPermission") // Caller checks RECORD_AUDIO; start still fails closed below.
     fun start() {
@@ -47,7 +55,18 @@ class WavRecorder(val outputFile: File) {
             pcmFile.outputStream().use { out ->
                 while (recording) {
                     val read = record.read(buffer, 0, buffer.size)
-                    if (read > 0) out.write(buffer, 0, read)
+                    if (read > 0) {
+                        out.write(buffer, 0, read)
+                    } else if (read < 0) {
+                        // A negative return (ERROR_DEAD_OBJECT, ERROR_INVALID_OPERATION,
+                        // ERROR_BAD_VALUE — e.g. RECORD_AUDIO revoked mid-recording via the
+                        // notification-shade permission toggle) used to be silently ignored,
+                        // spinning this loop forever doing nothing and producing a silent/empty
+                        // WAV file with no indication anything went wrong.
+                        Log.w(TAG, "AudioRecord.read() returned error code $read; stopping")
+                        failureReason = "Recording stopped unexpectedly (error $read)"
+                        recording = false
+                    }
                 }
             }
             writeWavFile(pcmFile, outputFile)
@@ -76,13 +95,10 @@ class WavRecorder(val outputFile: File) {
     }
 
     private fun writeWavFile(pcmFile: File, wavFile: File) {
-        val byteRate = sampleRate * 2 // mono, 16-bit
         val dataLength = pcmFile.length().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         RandomAccessFile(wavFile, "rw").use { raf ->
             raf.setLength(0)
-            val header = ByteArray(44)
-            writeWavHeader(header, sampleRate, byteRate, dataLength)
-            raf.write(header)
+            raf.write(WavFormat.header(dataLength, sampleRate, 1))
             pcmFile.inputStream().use { input ->
                 val buffer = ByteArray(16 * 1024)
                 while (true) {
@@ -94,31 +110,7 @@ class WavRecorder(val outputFile: File) {
         }
     }
 
-    private fun writeWavHeader(h: ByteArray, sampleRate: Int, byteRate: Int, dataLen: Int) {
-        "RIFF".forEachIndexed { i, c -> h[i] = c.code.toByte() }
-        writeIntLE(h, 4, 36 + dataLen)
-        "WAVE".forEachIndexed { i, c -> h[8 + i] = c.code.toByte() }
-        "fmt ".forEachIndexed { i, c -> h[12 + i] = c.code.toByte() }
-        writeIntLE(h, 16, 16) // Subchunk1Size for PCM
-        writeShortLE(h, 20, 1) // AudioFormat = PCM
-        writeShortLE(h, 22, 1) // NumChannels = mono
-        writeIntLE(h, 24, sampleRate)
-        writeIntLE(h, 28, byteRate)
-        writeShortLE(h, 32, 2) // BlockAlign = channels * bitsPerSample/8
-        writeShortLE(h, 34, 16) // BitsPerSample
-        "data".forEachIndexed { i, c -> h[36 + i] = c.code.toByte() }
-        writeIntLE(h, 40, dataLen)
-    }
-
-    private fun writeIntLE(b: ByteArray, offset: Int, value: Int) {
-        b[offset] = (value and 0xff).toByte()
-        b[offset + 1] = ((value shr 8) and 0xff).toByte()
-        b[offset + 2] = ((value shr 16) and 0xff).toByte()
-        b[offset + 3] = ((value shr 24) and 0xff).toByte()
-    }
-
-    private fun writeShortLE(b: ByteArray, offset: Int, value: Int) {
-        b[offset] = (value and 0xff).toByte()
-        b[offset + 1] = ((value shr 8) and 0xff).toByte()
+    companion object {
+        private const val TAG = "WavRecorder"
     }
 }

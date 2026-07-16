@@ -10,12 +10,29 @@ package com.vervan.chat.llm
 object ThinkingParser {
     data class Parsed(val reasoning: String?, val answer: String)
 
-    private val PATTERN = Regex("<thinking>([\\s\\S]*?)</thinking>", RegexOption.IGNORE_CASE)
+    private val COMPLETE = Regex(
+        "<\\s*(thinking|think)\\s*>([\\s\\S]*?)<\\s*/\\s*\\1\\s*>",
+        RegexOption.IGNORE_CASE
+    )
+    private val STREAMING = Regex("<\\s*(thinking|think)\\s*>([\\s\\S]*)$", RegexOption.IGNORE_CASE)
 
     fun parse(content: String): Parsed {
-        val match = PATTERN.find(content) ?: return Parsed(null, content)
-        val reasoning = match.groupValues[1].trim()
-        val answer = content.removeRange(match.range).trim()
-        return Parsed(reasoning.ifBlank { null }, answer)
+        val match = COMPLETE.find(content)
+        if (match != null) {
+            val reasoning = match.groupValues[2].trim()
+            val answer = content.removeRange(match.range).trim()
+            return Parsed(reasoning.ifBlank { null }, answer)
+        }
+        val streaming = STREAMING.find(content)
+        if (streaming != null) {
+            val reasoning = streaming.groupValues[2].trim()
+            val answer = content.substring(0, streaming.range.first).trim()
+            return Parsed(reasoning.ifBlank { null }, answer)
+        }
+        val trimmed = content.trimStart()
+        if (trimmed.startsWith("<") && listOf("<think>", "<thinking>").any { it.startsWith(trimmed, ignoreCase = true) }) {
+            return Parsed(null, "")
+        }
+        return Parsed(null, content)
     }
 }

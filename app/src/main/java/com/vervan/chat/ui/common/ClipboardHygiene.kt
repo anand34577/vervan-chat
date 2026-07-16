@@ -1,7 +1,8 @@
 package com.vervan.chat.ui.common
 
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import android.content.ClipData
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -14,10 +15,19 @@ import kotlinx.coroutines.launch
  * ponytail: this can only clear this app's own copy. Android 13+'s OS-level clipboard
  * preview/history is entirely outside app control — nothing at the app layer reaches it.
  */
-fun ClipboardManager.setSensitiveText(text: String, scope: CoroutineScope, clearAfterMs: Long = 30_000) {
-    setText(AnnotatedString(text))
+fun Clipboard.setText(text: String, scope: CoroutineScope) {
     scope.launch {
+        setClipEntry(ClipEntry(ClipData.newPlainText("plain text", text)))
+    }
+}
+
+fun Clipboard.setSensitiveText(text: String, scope: CoroutineScope, clearAfterMs: Long = 30_000) {
+    scope.launch {
+        setClipEntry(ClipEntry(ClipData.newPlainText("plain text", text)))
         delay(clearAfterMs)
-        if (getText()?.text == text) setText(AnnotatedString(""))
+        val currentText = getClipEntry()?.clipData?.let { clip ->
+            if (clip.itemCount == 0) null else clip.getItemAt(0).text?.toString()
+        }
+        if (currentText == text) setClipEntry(null)
     }
 }

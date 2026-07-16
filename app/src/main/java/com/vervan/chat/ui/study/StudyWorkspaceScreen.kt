@@ -1,6 +1,12 @@
 package com.vervan.chat.ui.study
 
+import android.text.format.DateUtils
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -8,22 +14,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,20 +53,21 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.SelectionTopBar
-import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.ValidationMessage
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.CardDefaults
+import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.selectableItem
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: StudyWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { StudyWorkspaceViewModel(app) } })
-    val setNames by vm.setNames.collectAsState()
+    val sets by vm.sets.collectAsState()
     val generating by vm.generating.collectAsState()
+    val generationStage by vm.generationStage.collectAsState()
     val error by vm.error.collectAsState()
 
     var showGenerate by remember { mutableStateOf(false) }
@@ -62,69 +75,76 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     var selected by remember { mutableStateOf(setOf<String>()) }
     var pendingSingleDelete by remember { mutableStateOf<String?>(null) }
     var confirmBulkDelete by remember { mutableStateOf(false) }
+    val names = sets.map { it.name }
 
     Scaffold(
         topBar = {
             if (selectionMode) {
                 SelectionTopBar(
                     selectedCount = selected.size,
-                    allSelected = selected.size == setNames.size && setNames.isNotEmpty(),
-                    onToggleSelectAll = { selected = if (selected.size == setNames.size && setNames.isNotEmpty()) emptySet() else setNames.toSet() },
+                    allSelected = selected.size == sets.size && sets.isNotEmpty(),
+                    onToggleSelectAll = { selected = if (selected.size == sets.size && sets.isNotEmpty()) emptySet() else names.toSet() },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = { confirmBulkDelete = true },
                     deleteContentDescription = "Delete selected sets"
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Study workspace") },
+                    title = {
+                        Column {
+                            Text("Study")
+                            Text("${sets.size} deck${if (sets.size == 1) "" else "s"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
-                    actions = { IconButton(onClick = { showGenerate = true }) { Icon(Icons.Filled.Add, contentDescription = "New flashcard set") } }
-                    // Long-press a row to enter selection mode — no separate top-bar entry
-                    // point, matching every other list screen in the app.
+                    actions = {
+                        IconButton(onClick = { vm.clearError(); showGenerate = true }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Create study deck")
+                        }
+                    }
                 )
             }
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            if (setNames.isEmpty() && !showGenerate) {
-                Column(Modifier.padding(24.dp)) {
-                    Text("No flashcard sets yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Paste some study material and generate a set to review.",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                    )
-                    Button(onClick = { showGenerate = true }) { Text("Generate a set") }
-                }
-            } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    items(setNames, key = { it }) { name ->
-                        val isSelected = name in selected
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                .selectableItem(
-                                    selectionMode = selectionMode,
-                                    onClick = { onOpenSet(name) },
-                                    onToggleSelected = { selected = if (isSelected) selected - name else selected + name },
-                                    onEnterSelection = { selectionMode = true; selected = selected + name }
-                                ),
-                            colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-                            border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
-                        ) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (selectionMode) {
-                                    androidx.compose.material3.Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = { selected = if (isSelected) selected - name else selected + name }
-                                    )
-                                }
-                                Text(name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                                if (!selectionMode) {
-                                    TextButton(onClick = { pendingSingleDelete = name }) { Text("Delete") }
-                                }
+        if (sets.isEmpty()) {
+            EmptyState(
+                icon = Icons.Filled.School,
+                title = "Build your first study deck",
+                body = "Turn notes or learning material into focused cards, then review the ideas you miss most.",
+                actionLabel = "Create deck",
+                onAction = { vm.clearError(); showGenerate = true },
+                modifier = Modifier.fillMaxSize().padding(padding)
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                    ) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text("Small reviews, stronger recall", style = MaterialTheme.typography.titleSmall)
+                                Text("Open a deck and answer before revealing each card.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
+                }
+                items(sets, key = { it.name }) { set ->
+                    StudySetCard(
+                        set = set,
+                        selected = set.name in selected,
+                        selectionMode = selectionMode,
+                        onOpen = { onOpenSet(set.name) },
+                        onDelete = { pendingSingleDelete = set.name },
+                        onToggleSelected = { selected = if (set.name in selected) selected - set.name else selected + set.name },
+                        onEnterSelection = { selectionMode = true; selected = selected + set.name }
+                    )
                 }
             }
         }
@@ -132,7 +152,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
 
     pendingSingleDelete?.let { name ->
         ConfirmDialog(
-            title = "Delete flashcard set?",
+            title = "Delete study deck?",
             body = "\"$name\" and all of its cards will be permanently deleted. This can't be undone.",
             confirmLabel = "Delete",
             destructive = true,
@@ -144,12 +164,12 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     if (confirmBulkDelete) {
         val count = selected.size
         ConfirmDialog(
-            title = "Delete selected sets?",
-            body = "$count flashcard set${if (count == 1) "" else "s"} and all of their cards will be permanently deleted. This can't be undone.",
+            title = "Delete selected decks?",
+            body = "$count deck${if (count == 1) "" else "s"} and all of their cards will be permanently deleted.",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = {
-                selected.forEach { vm.deleteSet(it) }
+                selected.forEach(vm::deleteSet)
                 confirmBulkDelete = false
                 selected = emptySet()
                 selectionMode = false
@@ -161,35 +181,152 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     if (showGenerate) {
         var setName by remember { mutableStateOf("") }
         var sourceText by remember { mutableStateOf("") }
-        var cardCount by remember { mutableFloatStateOf(8f) }
-        androidx.compose.material3.AlertDialog(
+        var focus by remember { mutableStateOf("") }
+        var cardCount by remember { mutableFloatStateOf(12f) }
+        var cardStyle by remember { mutableStateOf("balanced") }
+        AlertDialog(
             onDismissRequest = { if (!generating) showGenerate = false },
-            title = { Text("New flashcard set") },
+            title = { Text("Create a study deck") },
             text = {
-                Column {
+                if (generating) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(56.dp)) {
+                                Icon(Icons.Filled.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(14.dp))
+                            }
+                            Text(generationStage, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(
+                                "This can take a moment when the model needs to load.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
+                            Text(
+                                "Everything stays on this device.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    }
+                } else Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Tell the local AI what you want to remember. You can refine the deck before generating it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BoundedTextField(
-                        value = setName, onValueChange = { setName = it }, label = "Set name",
+                        value = setName, onValueChange = { setName = it }, label = "Deck name",
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !generating
                     )
                     BoundedTextField(
                         value = sourceText, onValueChange = { sourceText = it }, label = "Study material",
                         minLines = 5, maxLength = ValidationLimits.STUDY_SOURCE,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !generating
                     )
-                    Text("Cards: ${cardCount.toInt()}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-                    Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 1f..100f, steps = 98)
+                    BoundedTextField(
+                        value = focus, onValueChange = { focus = it }, label = "Learning goal (optional)",
+                        singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !generating
+                    )
+                    Text("Card style", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("balanced" to "Balanced", "active-recall" to "Active recall", "concept-focused" to "Concepts").forEach { (value, label) ->
+                            FilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
+                        }
+                    }
+                    Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..30f, steps = 24, enabled = !generating)
                     error?.let { ValidationMessage(it, modifier = Modifier.padding(top = 8.dp)) }
-                    if (generating) CircularProgressIndicator(Modifier.padding(top = 8.dp).size(20.dp), strokeWidth = 2.dp)
                 }
             },
             confirmButton = {
                 TextButton(
-                    onClick = { vm.generateSet(setName, sourceText, cardCount.toInt()) { showGenerate = false; onOpenSet(setName) } },
-                    enabled = !generating
-                ) { Text("Generate") }
+                    onClick = { vm.generateSet(setName.trim(), sourceText, cardCount.toInt(), focus, cardStyle) { showGenerate = false; onOpenSet(setName.trim()) } },
+                    enabled = !generating && setName.isNotBlank() && sourceText.isNotBlank()
+                ) { Text("Generate deck") }
             },
             dismissButton = { TextButton(onClick = { showGenerate = false }, enabled = !generating) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+private fun StudySetCard(
+    set: StudySetSummary,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleSelected: () -> Unit,
+    onEnterSelection: () -> Unit
+) {
+    val progress = if (set.cardCount == 0) 0f else set.masteredCount.toFloat() / set.cardCount
+    val (accent, accentContainer, onAccentContainer) = when ((set.name.hashCode() and Int.MAX_VALUE) % 3) {
+        0 -> Triple(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+        1 -> Triple(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
+        else -> Triple(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+    }
+    val masteryLabel = when {
+        set.masteredCount == set.cardCount && set.cardCount > 0 -> "Mastered"
+        set.masteredCount > 0 -> "In progress"
+        else -> "New deck"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().selectableItem(selectionMode, onOpen, onToggleSelected, onEnterSelection),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else accentContainer.copy(alpha = 0.34f)),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else accent.copy(alpha = 0.26f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp, pressedElevation = 3.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = accentContainer, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.School, contentDescription = null, tint = accent, modifier = Modifier.padding(12.dp))
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(set.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Surface(shape = CircleShape, color = accentContainer) {
+                            Text(
+                                masteryLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = onAccentContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        set.description.ifBlank { "${set.cardCount} cards ready to review" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                color = accent,
+                trackColor = accent.copy(alpha = 0.14f)
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("${set.masteredCount} of ${set.cardCount} mastered", style = MaterialTheme.typography.labelMedium, color = accent)
+                    Text(
+                        listOfNotNull(
+                            set.accuracyPercent?.let { "$it% accuracy" },
+                            set.lastStudiedAt?.let { DateUtils.getRelativeTimeSpanString(it).toString() }
+                        ).joinToString(" · ").ifBlank { "Not reviewed yet" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!selectionMode) TextButton(onClick = onDelete) { Text("Delete") }
+            }
+        }
     }
 }

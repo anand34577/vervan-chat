@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -31,7 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,8 +50,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.MarkdownLiteText
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -83,7 +88,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 actions = {
                     IconButton(onClick = { showSourcePicker = true }) {
                         Icon(
-                            Icons.Filled.MenuBook, contentDescription = "Sources",
+                            Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Sources",
                             tint = if (sourceKbIds.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -91,7 +96,9 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp)) {
+      PageContainer(Modifier.padding(padding)) {
+       androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = 840.dp).fillMaxSize().imePadding().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -142,7 +149,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                             }
                             if (index == currentIndex) {
                                 if (step.output.isNotBlank()) {
-                                    Text(step.output, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                                    MarkdownLiteText(step.output, modifier = Modifier.padding(top = Space.xs))
                                 } else if (running && !step.done) {
                                     CircularProgressIndicator(Modifier.padding(top = 8.dp).size(16.dp), strokeWidth = 2.dp)
                                 }
@@ -164,6 +171,8 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 }
             }
         }
+       }
+      }
     }
 
     if (showSourcePicker) {

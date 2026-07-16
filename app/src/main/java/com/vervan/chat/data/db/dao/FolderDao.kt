@@ -1,16 +1,14 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.vervan.chat.data.db.entities.Folder
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface FolderDao {
+interface FolderDao : BaseDao<Folder> {
     @Query("SELECT * FROM folders WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<Folder>>
 
@@ -33,12 +31,6 @@ interface FolderDao {
     @Query("DELETE FROM folders WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(folder: Folder)
-
-    @Update
-    suspend fun update(folder: Folder)
-
     // Model migration relink (spec §11.12) — points every folder default at the new model
     // artifact in one statement instead of round-tripping each Folder row through update().
     @Query("UPDATE folders SET defaultModelId = :newModelId WHERE defaultModelId = :oldModelId")
@@ -51,7 +43,4 @@ interface FolderDao {
 
     @Query("UPDATE folders SET defaultPersonaId = NULL WHERE defaultPersonaId = :personaId")
     suspend fun clearDefaultPersona(personaId: String)
-
-    @Delete
-    suspend fun delete(folder: Folder)
 }

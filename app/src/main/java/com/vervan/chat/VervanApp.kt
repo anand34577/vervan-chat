@@ -1,7 +1,7 @@
 package com.vervan.chat
 
 import android.app.Application
-import android.content.ComponentCallbacks2
+import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -24,10 +24,12 @@ import com.vervan.chat.retrieval.EmbeddingEngine
 import com.vervan.chat.retrieval.RetrievalEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Simple hand-rolled DI container — no framework needed for this many dependencies. */
 class AppContainer(app: Application) {
@@ -48,6 +50,16 @@ class AppContainer(app: Application) {
     val settingsRepository = SettingsRepository(app)
     val thermalMonitor = ThermalMonitor(app)
     val networkAuditLog = com.vervan.chat.system.NetworkAuditLog()
+    val ttsModelDownloadManager = com.vervan.chat.voice.TtsModelDownloadManager(app, db.ttsVoiceModelDao(), db.jobDao(), networkAuditLog)
+    val hfTokenStore = com.vervan.chat.modeldownload.HuggingFaceTokenStore(app)
+    // Application-scoped: a download must keep running across screen navigation, and its own
+    // recovery-on-restart logic (see ModelDownloadRepository.recoverOnStartup) is what handles
+    // actual process death — this scope only needs to outlive individual Compose screens.
+    private val modelDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val modelDownloadRepository = com.vervan.chat.modeldownload.ModelDownloadRepository(
+        app, db.downloadPackageDao(), db.downloadFileDao(), db.modelDao(), modelImportManager,
+        settingsRepository, networkAuditLog, hfTokenStore, modelDownloadScope
+    )
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
     val appLockManager = AppLockManager(app)
@@ -56,8 +68,14 @@ class AppContainer(app: Application) {
     // same window flag — MainActivity just sets FLAG_SECURE whenever this set is non-empty.
     val secureWindowReasons = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
 
-    suspend fun <T> withLlm(block: suspend (LlmEngine) -> T): T = llmMutex.withLock { block(llmEngine) }
-    suspend fun <T> withEmbedding(block: suspend (EmbeddingEngine) -> T): T = embeddingMutex.withLock { block(embeddingEngine) }
+    // Native load/generate calls are blocking. Keeping the shared lock and engine work on a
+    // worker dispatcher lets Compose render each caller's loading state immediately.
+    suspend fun <T> withLlm(block: suspend (LlmEngine) -> T): T = withContext(Dispatchers.Default) {
+        llmMutex.withLock { block(llmEngine) }
+    }
+    suspend fun <T> withEmbedding(block: suspend (EmbeddingEngine) -> T): T = withContext(Dispatchers.Default) {
+        embeddingMutex.withLock { block(embeddingEngine) }
+    }
 }
 
 class VervanApp : Application() {
@@ -82,23 +100,35 @@ class VervanApp : Application() {
                 // re-call startForeground()), the very next time the app backgrounds it comes
                 // back on its own instead of needing an off/on toggle in Settings.
                 CoroutineScope(Dispatchers.IO).launch {
-                    if (container.settingsRepository.quickActionBubbleEnabled.first()) {
-                        com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
-                    }
+                    runCatching {
+                        if (container.settingsRepository.quickActionBubbleEnabled.first()) {
+                            com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                        }
+                    }.onFailure { Log.e(TAG, "onAppBackgrounded housekeeping failed", it) }
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
-                com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
+                // The transparent capture-consent/region activity belongs to the bubble flow;
+                // stopping the service here would remove its required mediaProjection FGS just
+                // before getMediaProjection(). Normal app foregrounding still hides the bubble.
+                if (!com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()) {
+                    com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
+                }
                 CoroutineScope(Dispatchers.IO).launch {
-                    if (container.settingsRepository.appLockEnabled.first()) {
-                        container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
-                    }
+                    runCatching {
+                        if (container.settingsRepository.appLockEnabled.first()) {
+                            container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
+                        }
+                    }.onFailure { Log.e(TAG, "onAppForegrounded housekeeping failed", it) }
                 }
             }
         })
         // Process death mid-generation leaves messages stuck PENDING/STREAMING — mark them
         // interrupted so the UI shows them accurately instead of a phantom spinner forever.
-        CoroutineScope(Dispatchers.IO).launch {
+        // The whole block is one runCatching: a SQLiteException/disk hiccup here ran on an
+        // unsupervised coroutine before this fix, which crashes the whole process even though
+        // it's background housekeeping — every launch, until the underlying issue cleared.
+        CoroutineScope(Dispatchers.IO).launch { runCatching {
             container.db.messageDao().getUnfinished().forEach {
                 container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
             }
@@ -129,6 +159,9 @@ class VervanApp : Application() {
                     .forEach { container.db.chatDao().update(it.copy(deletedAt = System.currentTimeMillis())) }
             }
             container.db.personaDao().insertAll(BuiltInPersonas.defaults)
+            // Built-ins are immutable in the editor, so refresh the default definition on
+            // existing installs as well as seeding it on fresh installs.
+            container.db.personaDao().update(BuiltInPersonas.vervan)
             // Fresh-install seed for the permanent Default Workspace (Workspace System spec
             // §2) — a no-op once it exists, whether created here or by migration 22->23.
             container.db.workspaceDao().insertDefault(
@@ -195,7 +228,13 @@ class VervanApp : Application() {
             container.db.documentDao().observeDeleted().first().forEach { doc ->
                 if (doc.deletedAt != null && doc.deletedAt < cutoff) container.documentImportManager.delete(doc)
             }
-        }
+            // A download package left active/paused by a process death (spec §29) needs the
+            // foreground service back up to reconcile and (if settings allow) auto-resume it —
+            // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
+            if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
+                com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
+            }
+        }.onFailure { Log.e(TAG, "Cold-start housekeeping failed", it) } }
     }
 
     /**
@@ -204,30 +243,33 @@ class VervanApp : Application() {
      * lazily reloaded by whichever ChatViewModel/workspace next calls `generate()`, same
      * path as a cold start; the only cost is that next call re-pays the model load time.
      */
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        // Tiered handling (B13, spec §32.7) instead of only reacting to the single most
-        // severe level — the embedding model is cheap to reload and not mid-generation, so
-        // it's the first thing freed; the generation model is only dropped once things are
-        // critical, since dropping it mid-chat costs a full reload on the next message.
-        when {
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
-                if (container.llmMutex.tryLock()) {
-                    try { container.llmEngine.close() } finally { container.llmMutex.unlock() }
-                }
-                if (container.embeddingMutex.tryLock()) {
-                    try { container.embeddingEngine.close() } finally { container.embeddingMutex.unlock() }
-                }
-            }
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
-                if (container.embeddingMutex.tryLock()) {
-                    try { container.embeddingEngine.close() } finally { container.embeddingMutex.unlock() }
-                }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        // Native models are rebuildable caches, so release both before the OS has to kill
+        // the process. A later generation or retrieval request loads them again normally.
+        if (container.llmMutex.tryLock()) {
+            val unloadedPath = container.llmEngine.loadedModelPath
+            try { container.llmEngine.close() } finally { container.llmMutex.unlock() }
+            if (unloadedPath != null) notifyModelUnloadedBySystem(unloadedPath)
+        }
+        if (container.embeddingMutex.tryLock()) {
+            try { container.embeddingEngine.close() } finally { container.embeddingMutex.unlock() }
+        }
+    }
+
+    private fun notifyModelUnloadedBySystem(filePath: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val name = runCatching {
+                container.db.modelDao().observeModels().first().find { it.filePath == filePath }?.displayName
+            }.getOrNull() ?: java.io.File(filePath).nameWithoutExtension
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(this@VervanApp, "Low memory — unloaded $name", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
 
     companion object {
         const val RECYCLE_BIN_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+        private const val TAG = "VervanApp"
     }
 }

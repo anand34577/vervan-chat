@@ -43,6 +43,9 @@ private val PERMISSIONS = listOf(
     PermissionInfo(Manifest.permission.READ_CONTACTS, "Contacts", "Only if you turn on the Contacts data source in Security — lets the model search contact names."),
     PermissionInfo(Manifest.permission.READ_CALENDAR, "Calendar", "Only if you turn on the Calendar data source in Security — lets the model search upcoming events."),
     PermissionInfo(Manifest.permission.READ_SMS, "SMS", "Only if you turn on the SMS data source in Security — lets the model search message content."),
+    PermissionInfo(Manifest.permission.READ_CALL_LOG, "Call log", "Only if you turn on the Call log data source in Security — lets the model search recent calls."),
+    PermissionInfo(Manifest.permission.ACCESS_COARSE_LOCATION, "Location", "Only if you turn on the Location data source in Security — approximate coordinates only, no address lookup."),
+    PermissionInfo(Manifest.permission.READ_EXTERNAL_STORAGE, "Files", "Only if you turn on the Files data source in Security (Android 12 and below) — lets the model search Downloads by filename."),
     PermissionInfo("android.permission.SYSTEM_ALERT_WINDOW", "Draw over other apps", "Only if you turn on the quick-action bubble in Security — shows the floating capture button.")
 )
 

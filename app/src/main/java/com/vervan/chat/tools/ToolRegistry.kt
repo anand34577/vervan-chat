@@ -1,21 +1,30 @@
 package com.vervan.chat.tools
 
 import android.Manifest
+import android.app.AppOpsManager
+import android.app.usage.UsageStatsManager
 import android.content.Intent
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.os.Process
 import android.os.StatFs
 import android.provider.AlarmClock
 import android.provider.CalendarContract
+import android.provider.CallLog
 import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
+import com.vervan.chat.data.db.entities.Expense
 import com.vervan.chat.data.db.entities.Memory
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.retrieval.RetrievalMode
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -242,7 +251,12 @@ object ToolRegistry {
                             "${Telephony.Sms.DATE} DESC"
                         )?.use { cursor ->
                             while (cursor.moveToNext() && results.size < 10) {
-                                results += "${cursor.getString(0)}: ${cursor.getString(1).take(150)}"
+                                // BODY/ADDRESS can legitimately be null for some rows (MMS
+                                // placeholder rows, drafts) — this threw NullPointerException
+                                // before, reported as an unhelpful "Tool failed: null".
+                                val address = cursor.getString(0) ?: "(unknown)"
+                                val body = cursor.getString(1) ?: ""
+                                results += "$address: ${body.take(150)}"
                             }
                         }
                         if (results.isEmpty()) "No messages matched \"$query\"." else results.joinToString("\n") { "- $it" }
@@ -318,13 +332,402 @@ object ToolRegistry {
                                 else -> "connected"
                             }
                         } ?: "unknown"
+                    val wifiOn = (app.getSystemService(android.content.Context.WIFI_SERVICE) as? WifiManager)?.let {
+                        @Suppress("DEPRECATION") runCatching { it.isWifiEnabled }.getOrNull()
+                    }
                     ToolResult(
                         true,
                         "Battery: ${battery ?: "unknown"}%. Storage free: ${freeBytes / (1024 * 1024)} MB. " +
                             "RAM available: ${mem.availMem / (1024 * 1024)} MB of ${mem.totalMem / (1024 * 1024)} MB. " +
-                            "Network: $connectivity."
+                            "Network: $connectivity. Wi-Fi: ${if (wifiOn == true) "on" else if (wifiOn == false) "off" else "unknown"}."
                     )
                 }
+            }
+        ),
+        // A local model has no real-time clock of its own — "what's today's date" or "how long
+        // until X" needs this instead of the model guessing from training data.
+        ToolDefinition(
+            name = "current_datetime",
+            description = "Get the current on-device date and time.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { _, _ ->
+                val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.FULL, java.text.DateFormat.SHORT)
+                ToolResult(true, fmt.format(java.util.Date()))
+            }
+        ),
+        ToolDefinition(
+            name = "unit_convert",
+            description = "Convert a numeric value between common length, weight, or temperature units " +
+                "(m, km, mi, ft, in, cm, kg, g, lb, oz, c, f, k).",
+            paramNames = listOf("value", "from", "to"),
+            risk = ToolRisk.READ_ONLY,
+            execute = { _, params ->
+                val value = params.optDouble("value", Double.NaN)
+                val from = params.optString("from")
+                val to = params.optString("to")
+                if (value.isNaN() || from.isBlank() || to.isBlank()) {
+                    ToolResult(false, "unit_convert needs numeric 'value' and non-empty 'from'/'to' units")
+                } else {
+                    try {
+                        ToolResult(true, "$value $from = ${UnitConversion.convert(value, from, to)} $to")
+                    } catch (e: IllegalArgumentException) {
+                        ToolResult(false, e.message ?: "Couldn't convert $from to $to")
+                    }
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "random_number",
+            description = "Generate a random integer between min and max (inclusive), e.g. for a dice roll or a coin flip.",
+            paramNames = listOf("min", "max"),
+            risk = ToolRisk.READ_ONLY,
+            execute = { _, params ->
+                val min = params.optInt("min", 1)
+                val max = params.optInt("max", 100)
+                if (min > max) ToolResult(false, "random_number needs 'min' <= 'max'")
+                else ToolResult(true, (min..max).random().toString())
+            }
+        ),
+        ToolDefinition(
+            name = "read_clipboard",
+            description = "Read the current text on the device clipboard.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                val clip = (app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)
+                    ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                if (clip.isNullOrBlank()) ToolResult(true, "Clipboard is empty.") else ToolResult(true, clip)
+            }
+        ),
+        ToolDefinition(
+            name = "write_clipboard",
+            description = "Copy text to the device clipboard.",
+            paramNames = listOf("text"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            execute = { app, params ->
+                val text = params.optString("text")
+                if (text.isBlank()) return@ToolDefinition ToolResult(false, "write_clipboard needs non-empty 'text'")
+                val manager = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                manager.setPrimaryClip(android.content.ClipData.newPlainText("Vervan Chat", text))
+                ToolResult(true, "Copied to clipboard.")
+            }
+        ),
+        ToolDefinition(
+            name = "search_files",
+            description = "Search filenames in the user's Downloads folder.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_files needs a non-empty 'query'")
+                if (!app.container.settingsRepository.filesToolEnabled.first()) {
+                    return@ToolDefinition ToolResult(false, "Files access is disabled in Settings → Security.")
+                }
+                // Downloads is a shared MediaStore collection every app can query by filename
+                // without READ_EXTERNAL_STORAGE on Android 13+ (that permission isn't even
+                // requestable there — see the manifest's maxSdkVersion note); below 13, the
+                // Settings toggle above already required granting it.
+                if (android.os.Build.VERSION.SDK_INT <= 32 &&
+                    ContextCompat.checkSelfPermission(app, Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    return@ToolDefinition ToolResult(false, "Files permission hasn't been granted.")
+                }
+                withContext(Dispatchers.IO) {
+                    val results = mutableListOf<String>()
+                    runCatching {
+                        app.contentResolver.query(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            arrayOf(MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.DATE_MODIFIED),
+                            "${MediaStore.Downloads.DISPLAY_NAME} LIKE ?", arrayOf("%$query%"),
+                            "${MediaStore.Downloads.DATE_MODIFIED} DESC"
+                        )?.use { cursor ->
+                            while (cursor.moveToNext() && results.size < 10) results += cursor.getString(0)
+                        }
+                    }
+                    ToolResult(true, if (results.isEmpty()) "No files in Downloads matched \"$query\"." else results.joinToString("\n") { "- $it" })
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "current_location",
+            description = "Get the device's last known approximate location (latitude/longitude only, no address).",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                gatedResult(app, app.container.settingsRepository.locationToolEnabled, Manifest.permission.ACCESS_COARSE_LOCATION, "Location") {
+                    withContext(Dispatchers.IO) {
+                        // Recheck at the platform call site as the permission can be revoked after
+                        // gatedResult's initial check. runCatching below handles the remaining race.
+                        if (ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            "Location permission hasn't been granted."
+                        } else {
+                            val lm = app.getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
+                            @android.annotation.SuppressLint("MissingPermission") // Checked above; runCatching handles revocation races.
+                            val location = runCatching {
+                                lm.getProviders(true).asSequence()
+                                    .mapNotNull { provider -> lm.getLastKnownLocation(provider) }
+                                    .maxByOrNull { it.time }
+                            }.getOrNull()
+                            if (location == null) "No recent location available."
+                            else "Latitude ${"%.4f".format(location.latitude)}, longitude ${"%.4f".format(location.longitude)} " +
+                                "(as of ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(location.time))})."
+                        }
+                    }
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "search_call_log",
+            description = "Search the user's recent call log by contact name or number.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, params ->
+                val query = params.optString("query")
+                gatedResult(app, app.container.settingsRepository.callLogToolEnabled, Manifest.permission.READ_CALL_LOG, "Call log") {
+                    withContext(Dispatchers.IO) {
+                        val results = mutableListOf<String>()
+                        val selection = if (query.isBlank()) null else "${CallLog.Calls.CACHED_NAME} LIKE ? OR ${CallLog.Calls.NUMBER} LIKE ?"
+                        val args = if (query.isBlank()) null else arrayOf("%$query%", "%$query%")
+                        app.contentResolver.query(
+                            CallLog.Calls.CONTENT_URI,
+                            arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.TYPE, CallLog.Calls.DURATION),
+                            selection, args,
+                            "${CallLog.Calls.DATE} DESC"
+                        )?.use { cursor ->
+                            val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                            while (cursor.moveToNext() && results.size < 10) {
+                                val name = cursor.getString(0) ?: cursor.getString(1) ?: "Unknown"
+                                val type = when (cursor.getInt(3)) {
+                                    CallLog.Calls.INCOMING_TYPE -> "incoming"
+                                    CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+                                    CallLog.Calls.MISSED_TYPE -> "missed"
+                                    else -> "call"
+                                }
+                                results += "$name — $type, ${fmt.format(java.util.Date(cursor.getLong(2)))}, ${cursor.getInt(4)}s"
+                            }
+                        }
+                        if (results.isEmpty()) "No matching calls found." else results.joinToString("\n") { "- $it" }
+                    }
+                }
+            }
+        ),
+        // Tasks reuse the existing Note entity/table tagged "task" (and "task-done" once
+        // completed) instead of a new entity+DAO+migration — Notes already has full CRUD,
+        // search, and a UI, so a task is really just a note with a status.
+        ToolDefinition(
+            name = "create_task",
+            description = "Create a to-do task.",
+            paramNames = listOf("text"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            execute = { app, params ->
+                val text = params.optString("text")
+                if (text.isBlank()) return@ToolDefinition ToolResult(false, "create_task needs non-empty 'text'")
+                app.container.db.noteDao().upsert(Note(title = text.take(80), content = text, tags = "task"))
+                ToolResult(true, "Added task: $text")
+            }
+        ),
+        ToolDefinition(
+            name = "list_tasks",
+            description = "List open (not yet completed) to-do tasks.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                val tasks = app.container.db.noteDao().observeAll().first()
+                    .filter { "task" in it.tags.split(",") }
+                if (tasks.isEmpty()) ToolResult(true, "No open tasks.")
+                else ToolResult(true, tasks.joinToString("\n") { "- ${it.title}" })
+            }
+        ),
+        ToolDefinition(
+            name = "complete_task",
+            description = "Mark a to-do task as completed, by matching its text.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "complete_task needs a non-empty 'query'")
+                val task = app.container.db.noteDao().observeAll().first()
+                    .firstOrNull { "task" in it.tags.split(",") && it.title.contains(query, true) }
+                    ?: return@ToolDefinition ToolResult(false, "No open task matched \"$query\".")
+                app.container.db.noteDao().upsert(task.copy(tags = "task-done"))
+                ToolResult(true, "Completed task: ${task.title}")
+            }
+        ),
+        ToolDefinition(
+            name = "open_app",
+            description = "Launch another installed app by name.",
+            paramNames = listOf("name"),
+            risk = ToolRisk.EXTERNAL_ACTION,
+            execute = { app, params ->
+                val name = params.optString("name")
+                if (name.isBlank()) return@ToolDefinition ToolResult(false, "open_app needs a non-empty 'name'")
+                withContext(Dispatchers.IO) {
+                    val pm = app.packageManager
+                    val match = pm.getInstalledApplications(android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
+                        .firstOrNull { pm.getApplicationLabel(it).toString().contains(name, true) }
+                    val launchIntent = match?.let { pm.getLaunchIntentForPackage(it.packageName) }
+                    if (launchIntent == null) ToolResult(false, "No installed app matched \"$name\".")
+                    else launch(app, launchIntent, pm.getApplicationLabel(match).toString())
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "compose_sms",
+            description = "Open the SMS app with a recipient and message prefilled. Does not send.",
+            paramNames = listOf("to", "message"),
+            risk = ToolRisk.EXTERNAL_ACTION,
+            execute = { app, params ->
+                val to = params.optString("to")
+                if (to.isBlank()) return@ToolDefinition ToolResult(false, "compose_sms needs a non-empty 'to'")
+                launch(app, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(to)}")).apply {
+                    putExtra("sms_body", params.optString("message"))
+                }, "text message draft")
+            }
+        ),
+        ToolDefinition(
+            name = "screen_time_summary",
+            description = "Summarize today's on-device screen time by app.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                if (!app.container.settingsRepository.screenTimeToolEnabled.first()) {
+                    return@ToolDefinition ToolResult(false, "Screen time is disabled in Settings → Security.")
+                }
+                val appOps = app.getSystemService(android.content.Context.APP_OPS_SERVICE) as AppOpsManager
+                val hasAccess = appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), app.packageName) == AppOpsManager.MODE_ALLOWED
+                if (!hasAccess) return@ToolDefinition ToolResult(false, "Usage-access permission hasn't been granted.")
+                withContext(Dispatchers.IO) {
+                    val usm = app.getSystemService(android.content.Context.USAGE_STATS_SERVICE) as UsageStatsManager
+                    val cal = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0)
+                    }
+                    val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
+                    val pm = app.packageManager
+                    val top = stats.filter { it.totalTimeInForeground > 0 }
+                        .sortedByDescending { it.totalTimeInForeground }
+                        .take(8)
+                        .map { stat ->
+                            val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(stat.packageName, 0)).toString() }.getOrDefault(stat.packageName)
+                            "$label: ${stat.totalTimeInForeground / 60_000} min"
+                        }
+                    ToolResult(true, if (top.isEmpty()) "No usage recorded yet today." else top.joinToString("\n") { "- $it" })
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "log_expense",
+            description = "Log an expense to the running expense ledger.",
+            paramNames = listOf("merchant", "amount", "currency", "category", "paymentMethod"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            execute = { app, params ->
+                val merchant = params.optString("merchant")
+                val amount = params.optDouble("amount", Double.NaN)
+                if (merchant.isBlank() || amount.isNaN()) return@ToolDefinition ToolResult(false, "log_expense needs non-empty 'merchant' and numeric 'amount'")
+                app.container.db.expenseDao().upsert(
+                    Expense(
+                        merchant = merchant, amount = amount,
+                        currency = params.optString("currency"), category = params.optString("category"),
+                        paymentMethod = params.optString("paymentMethod")
+                    )
+                )
+                ToolResult(true, "Logged expense: $merchant, $amount ${params.optString("currency")}".trim())
+            }
+        ),
+        ToolDefinition(
+            name = "list_expenses",
+            description = "List recent logged expenses, optionally filtered by category, with a running total.",
+            paramNames = listOf("category"),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, params ->
+                val category = params.optString("category")
+                val expenses = if (category.isBlank()) app.container.db.expenseDao().observeAll().first().take(20)
+                else app.container.db.expenseDao().getByCategory(category)
+                if (expenses.isEmpty()) return@ToolDefinition ToolResult(true, "No expenses logged" + (if (category.isNotBlank()) " for \"$category\"." else "."))
+                val total = expenses.sumOf { it.amount }
+                ToolResult(
+                    true,
+                    expenses.joinToString("\n") { "- ${it.merchant}: ${it.amount} ${it.currency}".trim() } +
+                        "\nTotal: $total ${expenses.first().currency}".trim()
+                )
+            }
+        ),
+        ToolDefinition(
+            name = "plan_my_day",
+            description = "A morning briefing combining today's calendar events, open tasks, and device status.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                val sections = mutableListOf<String>()
+                val settings = app.container.settingsRepository
+                if (settings.calendarToolEnabled.first() && ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    withContext(Dispatchers.IO) {
+                        val events = mutableListOf<String>()
+                        val now = System.currentTimeMillis()
+                        val endOfDay = now + 24 * 3_600_000L
+                        app.contentResolver.query(
+                            CalendarContract.Events.CONTENT_URI,
+                            arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART),
+                            "${CalendarContract.Events.DTSTART} BETWEEN ? AND ?", arrayOf(now.toString(), endOfDay.toString()),
+                            "${CalendarContract.Events.DTSTART} ASC"
+                        )?.use { cursor ->
+                            val fmt = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+                            while (cursor.moveToNext()) events += "${fmt.format(java.util.Date(cursor.getLong(1)))} — ${cursor.getString(0)}"
+                        }
+                        if (events.isNotEmpty()) sections += "Today's schedule:\n" + events.joinToString("\n") { "- $it" }
+                    }
+                }
+                val tasks = app.container.db.noteDao().observeAll().first().filter { "task" in it.tags.split(",") }
+                if (tasks.isNotEmpty()) sections += "Open tasks:\n" + tasks.joinToString("\n") { "- ${it.title}" }
+                sections += "Device: " + withContext(Dispatchers.IO) {
+                    val battery = (app.getSystemService(android.content.Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    "Battery ${battery ?: "unknown"}%."
+                }
+                ToolResult(true, if (sections.isEmpty()) "Nothing to report — no calendar/task sources enabled." else sections.joinToString("\n\n"))
+            }
+        ),
+        ToolDefinition(
+            name = "catch_me_up",
+            description = "A digest of recent unread-worthy SMS and upcoming calendar events.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            execute = { app, _ ->
+                val sections = mutableListOf<String>()
+                val settings = app.container.settingsRepository
+                if (settings.smsToolEnabled.first() && ContextCompat.checkSelfPermission(app, Manifest.permission.READ_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    withContext(Dispatchers.IO) {
+                        val messages = mutableListOf<String>()
+                        app.contentResolver.query(
+                            Telephony.Sms.CONTENT_URI,
+                            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY),
+                            null, null, "${Telephony.Sms.DATE} DESC"
+                        )?.use { cursor ->
+                            while (cursor.moveToNext() && messages.size < 5) {
+                                val address = cursor.getString(0) ?: "(unknown)"
+                                val body = cursor.getString(1) ?: ""
+                                messages += "$address: ${body.take(100)}"
+                            }
+                        }
+                        if (messages.isNotEmpty()) sections += "Recent messages:\n" + messages.joinToString("\n") { "- $it" }
+                    }
+                }
+                if (settings.calendarToolEnabled.first() && ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    withContext(Dispatchers.IO) {
+                        val events = mutableListOf<String>()
+                        val now = System.currentTimeMillis()
+                        app.contentResolver.query(
+                            CalendarContract.Events.CONTENT_URI,
+                            arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART),
+                            "${CalendarContract.Events.DTSTART} >= ?", arrayOf(now.toString()),
+                            "${CalendarContract.Events.DTSTART} ASC"
+                        )?.use { cursor ->
+                            val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                            while (cursor.moveToNext() && events.size < 5) events += "${fmt.format(java.util.Date(cursor.getLong(1)))} — ${cursor.getString(0)}"
+                        }
+                        if (events.isNotEmpty()) sections += "Upcoming events:\n" + events.joinToString("\n") { "- $it" }
+                    }
+                }
+                ToolResult(true, if (sections.isEmpty()) "Nothing new — no message/calendar sources enabled." else sections.joinToString("\n\n"))
             }
         )
     )
@@ -368,6 +771,52 @@ object ToolRegistry {
         app.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         ToolResult(true, "Opened $label for review.")
     } catch (e: Exception) {
-        ToolResult(false, "No app can handle $label: ${e.message}")
+        ToolResult(false, "No app can handle $label: ${e.toUserMessage()}")
+    }
+}
+
+/** Backs the `unit_convert` tool — a fixed, small conversion table rather than a units library,
+ * since length/weight/temperature covers the vast majority of what a model actually gets asked. */
+private object UnitConversion {
+    private val LENGTH_TO_METERS = mapOf(
+        "m" to 1.0, "meter" to 1.0, "meters" to 1.0,
+        "km" to 1000.0, "kilometer" to 1000.0, "kilometers" to 1000.0,
+        "cm" to 0.01, "centimeter" to 0.01, "centimeters" to 0.01,
+        "mm" to 0.001, "millimeter" to 0.001, "millimeters" to 0.001,
+        "mi" to 1609.344, "mile" to 1609.344, "miles" to 1609.344,
+        "ft" to 0.3048, "foot" to 0.3048, "feet" to 0.3048,
+        "in" to 0.0254, "inch" to 0.0254, "inches" to 0.0254
+    )
+    private val WEIGHT_TO_KG = mapOf(
+        "kg" to 1.0, "kilogram" to 1.0, "kilograms" to 1.0,
+        "g" to 0.001, "gram" to 0.001, "grams" to 0.001,
+        "lb" to 0.453592, "lbs" to 0.453592, "pound" to 0.453592, "pounds" to 0.453592,
+        "oz" to 0.0283495, "ounce" to 0.0283495, "ounces" to 0.0283495
+    )
+    private val TEMPERATURE = setOf("c", "celsius", "f", "fahrenheit", "k", "kelvin")
+
+    fun convert(value: Double, from: String, to: String): Double {
+        val f = from.trim().lowercase()
+        val t = to.trim().lowercase()
+        val result = when {
+            f in LENGTH_TO_METERS && t in LENGTH_TO_METERS -> value * LENGTH_TO_METERS.getValue(f) / LENGTH_TO_METERS.getValue(t)
+            f in WEIGHT_TO_KG && t in WEIGHT_TO_KG -> value * WEIGHT_TO_KG.getValue(f) / WEIGHT_TO_KG.getValue(t)
+            f in TEMPERATURE && t in TEMPERATURE -> convertTemperature(value, f, t)
+            else -> throw IllegalArgumentException("Unsupported or mismatched units: $from -> $to")
+        }
+        return kotlin.math.round(result * 1000) / 1000
+    }
+
+    private fun convertTemperature(value: Double, from: String, to: String): Double {
+        val celsius = when {
+            from.startsWith("c") -> value
+            from.startsWith("f") -> (value - 32) * 5.0 / 9.0
+            else -> value - 273.15
+        }
+        return when {
+            to.startsWith("c") -> celsius
+            to.startsWith("f") -> celsius * 9.0 / 5.0 + 32
+            else -> celsius + 273.15
+        }
     }
 }

@@ -21,6 +21,9 @@ data class Message(
     val content: String,
     val state: MessageState = MessageState.COMPLETE,
     val imagePath: String? = null,
+    // Imported document attached to this turn. The document row owns the durable file path and
+    // MIME type; storing only its id here avoids duplicating attachment metadata in messages.
+    val documentId: String? = null,
     // Mono-WAV voice message attachment, sent as raw audio bytes to the model directly
     // (LlmEngine.generate's Content.AudioBytes) when the loaded model supports audio input —
     // separate from the composer's "Dictate to text" mic, which runs Android's own offline
@@ -35,5 +38,11 @@ data class Message(
     // {"tool": name, "success": bool, "summary": text} — set once a tool call (read-only
     // or approved write) has actually run, for display under the message.
     val toolResultJson: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    // Generation stats for an assistant reply — null for user/system messages and for any
+    // assistant message that didn't come from a live generate() call (tool results, the
+    // vision/audio "not supported" stand-ins above). tokenCount is the same chars/4 estimate
+    // ChatContextStrip already uses for context %, not an exact tokenizer count.
+    val generationMs: Long? = null,
+    val tokenCount: Int? = null
 )

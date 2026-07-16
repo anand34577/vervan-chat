@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <style>
+        html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+        #diagram { box-sizing: border-box; width: 100%; padding: 12px; overflow-x: auto; }
+        #diagram svg { display: block; width: auto !important; min-width: 100%; max-width: none !important; height: auto !important; }
+        #source {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 12px;
+            width: 100%;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+            font: 12px/1.45 monospace;
+        }
+    </style>
+    <script src="mermaid.min.js"></script>
+</head>
+<body>
+<div id="diagram" hidden></div>
+<pre id="source"></pre>
+<script>
+    const diagram = document.getElementById('diagram');
+    const sourcePreview = document.getElementById('source');
+    let latestRequest = 0;
+    let pending = null;
+    let drawing = false;
+
+    function reportHeight() {
+        requestAnimationFrame(() => {
+            const cssHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 1);
+            AndroidBridge.setHeight(Math.ceil(cssHeight * window.devicePixelRatio));
+        });
+    }
+
+    function showSource(source, foreground) {
+        diagram.hidden = true;
+        sourcePreview.hidden = false;
+        sourcePreview.style.color = foreground;
+        sourcePreview.textContent = source;
+        reportHeight();
+    }
+
+    async function draw(request) {
+        const config = {
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'base',
+            themeVariables: {
+                background: request.background,
+                mainBkg: request.background,
+                primaryColor: request.primary,
+                primaryTextColor: request.primaryText,
+                primaryBorderColor: request.outline,
+                secondaryColor: request.secondary,
+                secondaryTextColor: request.foreground,
+                secondaryBorderColor: request.outline,
+                tertiaryColor: request.background,
+                tertiaryTextColor: request.foreground,
+                tertiaryBorderColor: request.outline,
+                lineColor: request.outline,
+                textColor: request.foreground,
+                noteBkgColor: request.secondary,
+                noteTextColor: request.foreground
+            },
+            flowchart: { useMaxWidth: true, htmlLabels: false },
+            sequence: { useMaxWidth: true },
+            suppressErrorRendering: true
+        };
+        mermaid.initialize(config);
+        try {
+            await mermaid.parse(request.source);
+            const result = await mermaid.render('mermaid-' + request.id, request.source);
+            if (request.id !== latestRequest) return;
+            diagram.innerHTML = result.svg;
+            diagram.hidden = false;
+            sourcePreview.hidden = true;
+            result.bindFunctions?.(diagram);
+            reportHeight();
+        } catch (_) {
+            if (request.id === latestRequest) showSource(request.source, request.foreground);
+        }
+    }
+
+    async function drain() {
+        if (drawing) return;
+        drawing = true;
+        while (pending) {
+            const request = pending;
+            pending = null;
+            await draw(request);
+        }
+        drawing = false;
+    }
+
+    window.renderDiagram = function(source, background, foreground, primary, primaryText, secondary, outline) {
+        pending = { id: ++latestRequest, source, background, foreground, primary, primaryText, secondary, outline };
+        drain();
+    };
+
+    reportHeight();
+</script>
+</body>
+</html>

@@ -320,10 +320,22 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     val calendar by vm.calendarToolEnabled.collectAsState()
     val sms by vm.smsToolEnabled.collectAsState()
     val deviceStatus by vm.deviceStatusToolEnabled.collectAsState()
+    val files by vm.filesToolEnabled.collectAsState()
+    val location by vm.locationToolEnabled.collectAsState()
+    val callLog by vm.callLogToolEnabled.collectAsState()
+    val screenTime by vm.screenTimeToolEnabled.collectAsState()
 
     val requestContacts = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setContactsToolEnabled(granted) }
     val requestCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setCalendarToolEnabled(granted) }
     val requestSms = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setSmsToolEnabled(granted) }
+    val requestFiles = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setFilesToolEnabled(granted) }
+    val requestLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setLocationToolEnabled(granted) }
+    val requestCallLog = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setCallLogToolEnabled(granted) }
+    // PACKAGE_USAGE_STATS is a special access, not a runtime permission — granted via a Settings
+    // redirect and checked through AppOpsManager, same shape as the overlay permission below.
+    val usageAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (hasUsageAccess(context)) vm.setScreenTimeToolEnabled(true)
+    }
 
     // Each toggle's own app-level "on" is independently checked at call time anyway (see
     // ToolRegistry.gatedResult), so a revoked permission never breaks a tool call — this just
@@ -335,6 +347,10 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
         if (contacts && !hasPermission(android.Manifest.permission.READ_CONTACTS)) vm.setContactsToolEnabled(false)
         if (calendar && !hasPermission(android.Manifest.permission.READ_CALENDAR)) vm.setCalendarToolEnabled(false)
         if (sms && !hasPermission(android.Manifest.permission.READ_SMS)) vm.setSmsToolEnabled(false)
+        if (files && android.os.Build.VERSION.SDK_INT <= 32 && !hasPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)) vm.setFilesToolEnabled(false)
+        if (location && !hasPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)) vm.setLocationToolEnabled(false)
+        if (callLog && !hasPermission(android.Manifest.permission.READ_CALL_LOG)) vm.setCallLogToolEnabled(false)
+        if (screenTime && !hasUsageAccess(context)) vm.setScreenTimeToolEnabled(false)
     }
 
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
@@ -358,9 +374,39 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
             ) { turnOn ->
                 if (turnOn) requestSms.launch(android.Manifest.permission.READ_SMS) else vm.setSmsToolEnabled(false)
             }
-            DataSourceRow("Device status (battery, storage, network)", deviceStatus) { vm.setDeviceStatusToolEnabled(it) }
+            DataSourceRow("Device status (battery, storage, network, Wi-Fi)", deviceStatus) { vm.setDeviceStatusToolEnabled(it) }
+            DataSourceRow("Files (Downloads)", files) { turnOn ->
+                if (turnOn) requestFiles.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE) else vm.setFilesToolEnabled(false)
+            }
+            DataSourceRow("Location (coarse, no address lookup)", location) { turnOn ->
+                if (turnOn) requestLocation.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION) else vm.setLocationToolEnabled(false)
+            }
+            DataSourceRow("Call log", callLog) { turnOn ->
+                if (turnOn) requestCallLog.launch(android.Manifest.permission.READ_CALL_LOG) else vm.setCallLogToolEnabled(false)
+            }
+            DataSourceRow("Screen time (per-app usage today)", screenTime) { turnOn ->
+                if (!turnOn) {
+                    vm.setScreenTimeToolEnabled(false)
+                } else if (hasUsageAccess(context)) {
+                    vm.setScreenTimeToolEnabled(true)
+                } else {
+                    usageAccessLauncher.launch(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                }
+            }
         }
     }
+}
+
+/** PACKAGE_USAGE_STATS special-access check — see [OnDeviceDataSourcesCard]'s screen-time row. */
+private fun hasUsageAccess(context: android.content.Context): Boolean {
+    val appOps = context.getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+    @Suppress("DEPRECATION")
+    val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        appOps.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
+    } else {
+        appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
+    }
+    return mode == android.app.AppOpsManager.MODE_ALLOWED
 }
 
 @Composable
