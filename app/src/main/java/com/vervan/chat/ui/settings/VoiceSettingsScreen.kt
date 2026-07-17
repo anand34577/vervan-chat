@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -35,7 +36,7 @@ import com.vervan.chat.VervanApp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
+fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
@@ -44,6 +45,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
     val ttsEnginePreference by vm.ttsEnginePreference.collectAsState()
     val kokoroQualityEnabled by vm.kokoroQualityEnabled.collectAsState()
     val bargeInEnabled by vm.bargeInEnabled.collectAsState()
+    val inbuiltSttEnabled by vm.inbuiltSttEnabled.collectAsState()
     val downloadedVoiceModels by vm.downloadedVoiceModels.collectAsState()
     val activeVoiceDownloadJobs by vm.activeVoiceDownloadJobs.collectAsState()
 
@@ -121,9 +123,47 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
 
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
+                    Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Realtime voice chat tries the loaded chat model's own transcription first (when it supports audio input, e.g. Gemma 4 E2B). This controls the fallback used when that model can't transcribe, or does it poorly:",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Use offline speech-to-text model", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "On: use the downloaded Whisper model (Model Manager) when available. Off: fall back straight to the device's built-in speech recognizer.",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = inbuiltSttEnabled, onCheckedChange = { vm.setInbuiltSttEnabled(it) })
+                    }
+                    androidx.compose.material3.TextButton(
+                        onClick = onOpenModelManager,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) { Text("Download Whisper in Model Manager") }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Text("Voice models", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Downloaded once and cached on-device. Without these, realtime voice chat falls back to the device's built-in text-to-speech.",
+                        "Hindi and English voices are downloaded and managed from Model Manager — same pause/resume/cancel/delete controls as any other model. Without one downloaded, realtime voice chat falls back to the device's built-in text-to-speech.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.TextButton(
+                        onClick = onOpenModelManager,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) { Text("Open Model Manager") }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Kokoro isn't in Model Manager yet (it needs an extra step Model Manager's downloader doesn't do) — download it here instead.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     com.vervan.chat.voice.TtsVoiceCatalog.entries.forEach { entry ->
@@ -145,10 +185,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            if (!downloaded && activeJob == null) {
-                                androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
-                            } else if (activeJob != null) {
-                                androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            when {
+                                downloaded -> IconButton(onClick = { vm.deleteVoiceModel(entry) }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete downloaded voice")
+                                }
+                                activeJob != null -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                else -> androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
                             }
                         }
                     }

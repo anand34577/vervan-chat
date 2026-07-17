@@ -13,7 +13,13 @@ fun ModelBackend.displayName(): String = when (this) {
     ModelBackend.UNVERIFIED -> "Not tested yet"
 }
 
-enum class ModelRole { GENERATION, EMBEDDING }
+// TTS_VOICE/STT_MODEL never produce a ModelInfo row (neither is a loadable chat model) — they
+// exist purely so a TTS voice or an inbuilt speech-to-text model can be a normal
+// ModelCatalog/ModelDownloadRepository entry, reusing the same download/pause/resume/delete UI
+// as GENERATION/EMBEDDING instead of a second bespoke downloader. See
+// ModelDownloadRepository.verifyAndImport's category branch — both write into the same
+// TtsVoiceModelDao-backed table (engine/language identify the row either way).
+enum class ModelRole { GENERATION, EMBEDDING, TTS_VOICE, STT_MODEL }
 
 /** How a [ModelInfo] row got here — drives whether the model downloader offers a catalogue
  * entry as "already installed" (see ModelInstallationRepository's duplicate-prevention check). */
@@ -39,6 +45,10 @@ data class ModelInfo(
     val lastWorkingBackend: ModelBackend = ModelBackend.UNVERIFIED,
     val isActive: Boolean = false,
     val importedAt: Long = System.currentTimeMillis(),
+    // Set by ModelLoadCoordinator every time a load into the native engine actually succeeds —
+    // doubles as both "last successfully used" and the tiebreaker for picking a replacement
+    // default when the current default is deleted (spec §4.3 priority order).
+    val lastLoadedAt: Long? = null,
     // Bring-your-own-model means this app never ships or verifies the model's actual
     // license — it can only make the user actively acknowledge that one applies (spec
     // §12) before the model is used. Not legal advice, not a fetched/verified license text.

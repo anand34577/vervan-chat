@@ -5,10 +5,11 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,14 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
@@ -44,7 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -52,8 +47,6 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +56,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,15 +79,13 @@ import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SemanticChip
-import com.vervan.chat.ui.common.StatusChip
-import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatListScreen(onOpenChat: (String) -> Unit) {
     val context = LocalContext.current
@@ -112,7 +104,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     var selected by remember { mutableStateOf(setOf<String>()) }
     var selectionMode by remember { mutableStateOf(false) }
     var showFolders by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     val visibleChats = remember(chats, query) {
         if (query.isBlank()) chats else chats.filter {
             it.title.contains(query, ignoreCase = true) || it.draft.contains(query, ignoreCase = true)
@@ -186,9 +178,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                 query = query,
                 onQueryChange = { query = it },
                 filter = filter,
-                onFilter = vm::setFilter,
-                total = chats.size,
-                visible = visibleChats.size
+                onFilter = vm::setFilter
             )
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -271,37 +261,25 @@ private fun ChatListHeader(
     query: String,
     onQueryChange: (String) -> Unit,
     filter: ChatFilter,
-    onFilter: (ChatFilter) -> Unit,
-    total: Int,
-    visible: Int
+    onFilter: (ChatFilter) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    ) {
-        Column(Modifier.padding(Space.md)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                StatusChip("$visible shown", StatusTone.Info)
-                StatusChip("$total total", StatusTone.Ready)
-            }
-            VervanSearchField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-                placeholder = "Search conversations"
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
-            ) {
-                ChatFilter.entries.forEach { f ->
-                    FilterChip(
-                        selected = filter == f,
-                        onClick = { onFilter(f) },
-                        label = { Text(f.label()) }
-                    )
-                }
+    Column(Modifier.fillMaxWidth().padding(top = Space.md)) {
+        VervanSearchField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = "Search conversations"
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            ChatFilter.entries.forEach { f ->
+                FilterChip(
+                    selected = filter == f,
+                    onClick = { onFilter(f) },
+                    label = { Text(f.label()) }
+                )
             }
         }
     }

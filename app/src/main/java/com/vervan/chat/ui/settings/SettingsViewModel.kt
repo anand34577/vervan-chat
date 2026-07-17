@@ -32,6 +32,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bargeInEnabled: StateFlow<Boolean> = settings.bargeInEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val inbuiltSttEnabled: StateFlow<Boolean> = settings.inbuiltSttEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     // ---- Realtime voice — Piper/Kokoro voice model downloads ----
     val downloadedVoiceModels: StateFlow<List<com.vervan.chat.data.db.entities.TtsVoiceModel>> =
@@ -44,6 +46,9 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch {
             app.container.ttsModelDownloadManager.downloadArchiveVoice(entry.engine, entry.language, entry.label, entry.archiveUrl)
         }
+    }
+    fun deleteVoiceModel(entry: com.vervan.chat.voice.TtsVoiceCatalogEntry) {
+        viewModelScope.launch { app.container.ttsModelDownloadManager.deleteVoice(entry.engine, entry.language) }
     }
     val fontScale: StateFlow<Float> = settings.fontScale
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
@@ -211,6 +216,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
     fun setKokoroQualityEnabled(v: Boolean) { viewModelScope.launch { settings.setKokoroQualityEnabled(v) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
+    fun setInbuiltSttEnabled(v: Boolean) { viewModelScope.launch { settings.setInbuiltSttEnabled(v) } }
     fun setFontScale(scale: Float) { viewModelScope.launch { settings.setFontScale(scale) } }
     fun setOledTrueBlack(enabled: Boolean) { viewModelScope.launch { settings.setOledTrueBlack(enabled) } }
     fun setAccentTheme(theme: AccentTheme) { viewModelScope.launch { settings.setAccentTheme(theme) } }

@@ -87,6 +87,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.voice.RealtimeVoiceController
@@ -395,14 +396,18 @@ private fun AssistantTurnBubble(
             shape = RoundedCornerShape(topStart = 6.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
-            Text(
-                buildAnnotatedString {
-                    append(turn.text)
-                    if (turn.isStreaming) withStyle(SpanStyle(color = primary.copy(alpha = pulse))) { append("  •") }
-                },
-                Modifier.padding(Space.md),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Bottom) {
+                // The model streams markdown (same as the regular chat screen) — render it
+                // properly here too instead of dumping raw "**"/"#" syntax as plain text.
+                MarkdownLiteText(turn.text.ifBlank { " " }, modifier = Modifier.weight(1f, fill = false))
+                if (turn.isStreaming) {
+                    Text(
+                        " •",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = primary.copy(alpha = pulse)
+                    )
+                }
+            }
         }
         if (turn.audioSamples != null || turn.audioPending) {
             AssistantPlaybackBar(
@@ -509,7 +514,7 @@ private fun VoiceControlCluster(
                 VoiceControllerState.IDLE -> IdleControls(onStart, onKeyboard)
                 VoiceControllerState.LISTENING -> ListeningControls(liveWaveform, liveElapsedMs, onCancel, onFinishListening, onKeyboard)
                 VoiceControllerState.SPEAKING -> SpeakingControls(playbackPaused, onBargeIn, onPause, onStop)
-                VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL -> ProcessingControls(
+                VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL, VoiceControllerState.TRANSCRIBING -> ProcessingControls(
                     label = voiceStatusLabel(activeState, playbackPaused, loadingModelName),
                     onCancel = onCancel,
                     onKeyboard = onKeyboard
@@ -758,6 +763,7 @@ internal fun voiceStatusLabel(state: VoiceControllerState, paused: Boolean, load
     VoiceControllerState.IDLE -> "Ready"
     VoiceControllerState.LOADING_MODEL -> "Preparing ${loadingModelName ?: "local model"}…"
     VoiceControllerState.LISTENING -> "Listening…"
+    VoiceControllerState.TRANSCRIBING -> "Transcribing…"
     VoiceControllerState.THINKING -> "Thinking…"
     VoiceControllerState.SPEAKING -> if (paused) "Paused" else "Speaking…"
 }

@@ -41,8 +41,15 @@ class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
             model = com.k2fsa.sherpa.onnx.OfflineTtsModelConfig(kokoro = kokoro, numThreads = 2, provider = "cpu"),
             maxNumSentences = 1
         )
-        // See PiperTtsEngine.loadVoice for why this is positional + a null AssetManager.
-        return com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        // See PiperTtsEngine.loadVoice for why this is positional + a null AssetManager, and why
+        // a self-test synthesis call follows rather than trusting construction alone.
+        val tts = com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        val selfTest = tts.generate("test", 0, 1.0f)
+        if (selfTest.samples.isEmpty()) {
+            tts.release()
+            throw IllegalStateException("Voice loaded but self-test synthesis produced no audio")
+        }
+        return tts
     }
 
     override suspend fun synthesize(text: String, lang: String): TtsAudio {

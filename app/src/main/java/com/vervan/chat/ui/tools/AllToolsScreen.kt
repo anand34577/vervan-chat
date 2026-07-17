@@ -3,6 +3,7 @@ package com.vervan.chat.ui.tools
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -186,8 +188,8 @@ private val categories = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
-    var query by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val visibleCategories = remember(query, selectedCategory) {
         categories.mapNotNull { category ->
             val entries = category.entries.filter { entry ->
@@ -218,6 +220,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 260.dp),
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp),
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
                 verticalArrangement = Arrangement.spacedBy(Space.md),
             ) {

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,11 +86,13 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -214,6 +217,7 @@ fun ChatScreen(
     val messages by vm.messages.collectAsState()
     val allMessages by vm.allMessages.collectAsState()
     val isGenerating by vm.isGenerating.collectAsState()
+    val isRetrieving by vm.isRetrieving.collectAsState()
     val error by vm.error.collectAsState()
     val chat by vm.chat.collectAsState()
     val workspace by vm.workspace.collectAsState()
@@ -371,6 +375,7 @@ fun ChatScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showSavedResponses by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var isRunningOcr by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
@@ -419,6 +424,52 @@ fun ChatScreen(
                     ).show()
                 }
             isImportingAudio = false
+        }
+    }
+
+    // OCR attach — same picker/camera UX as the vision "Photo"/"Camera" tiles, but the LLM
+    // never sees the image: on-device ML Kit recognizes the text, the user can review/edit it
+    // in a preview sheet, and only that text is folded into the outgoing message. Works with
+    // any loaded model, vision-capable or not.
+    var pendingOcrImagePath by remember { mutableStateOf<String?>(null) }
+    var pendingOcrText by remember { mutableStateOf<String?>(null) }
+    var showOcrPreview by remember { mutableStateOf(false) }
+    fun applyOcrResult(result: Result<ChatViewModel.OcrResult>) {
+        isRunningOcr = false
+        result.onSuccess { r ->
+            pendingOcrImagePath?.let { java.io.File(it).delete() }
+            pendingOcrImagePath = r.imagePath
+            pendingOcrText = r.text
+            showOcrPreview = true
+            if (r.text.isBlank()) {
+                android.widget.Toast.makeText(context, "No text found in that image", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }.onFailure {
+            android.widget.Toast.makeText(context, "OCR failed: ${it.toUserMessage()}", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    val pickOcrImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            isRunningOcr = true
+            scope.launch { applyOcrResult(vm.extractOcr(uri)) }
+        }
+    }
+    var pendingOcrCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val takeOcrPicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = pendingOcrCameraFile
+        pendingOcrCameraFile = null
+        if (success && file != null) {
+            isRunningOcr = true
+            scope.launch { applyOcrResult(vm.extractOcrFromFile(file)) }
+        } else {
+            file?.delete()
+        }
+    }
+    val requestOcrCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val (file, uri) = vm.newCameraImageFile()
+            pendingOcrCameraFile = file
+            takeOcrPicture.launch(uri)
         }
     }
 
@@ -561,6 +612,7 @@ fun ChatScreen(
                         )
                         Text(
                             when {
+                                isRetrieving -> "Searching knowledge base…"
                                 chat?.isTemporary == true -> "Incognito · deletes when you leave"
                                 modelLoadState is ChatViewModel.ModelLoadState.Ready -> {
                                     val ready = modelLoadState as ChatViewModel.ModelLoadState.Ready
@@ -569,7 +621,7 @@ fun ChatScreen(
                                 else -> "Private · on device"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isGenerating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isGenerating || isRetrieving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )
                     }
@@ -875,7 +927,7 @@ fun ChatScreen(
             // Quote reply and a pending attachment are both "context attached to the next
             // message" — grouped into one composing tray instead of two separately-floating
             // rows so they read as one unit sitting above the composer, not a growing stack.
-            if (pendingQuote != null || pendingImagePath != null || pendingAudioPath != null || pendingDocument != null) {
+            if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
                 Column(
                     Modifier.fillMaxWidth().widthIn(max = 840.dp).align(Alignment.CenterHorizontally)
                         .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -916,7 +968,7 @@ fun ChatScreen(
                                 }
                             }
                         }
-                        if (pendingQuote != null || pendingImagePath != null || pendingAudioPath != null) HorizontalDivider()
+                        if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null) HorizontalDivider()
                     }
                     pendingQuote?.let { quoted ->
                         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -933,8 +985,40 @@ fun ChatScreen(
                             }
                         }
                     }
-                    if (pendingQuote != null && (pendingImagePath != null || pendingAudioPath != null)) {
+                    if (pendingQuote != null && (pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null)) {
                         HorizontalDivider()
+                    }
+                    pendingOcrImagePath?.let { path ->
+                        Box(Modifier.fillMaxWidth().padding(8.dp).clickable { showOcrPreview = true }) {
+                            val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
+                            val bitmap = remember(path, thumbnailPx) {
+                                com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
+                            }
+                            bitmap?.let {
+                                Image(
+                                    it,
+                                    contentDescription = "OCR photo preview",
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 220.dp).clip(MaterialTheme.shapes.large),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Surface(
+                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                            ) {
+                                Text(
+                                    if (pendingOcrText.isNullOrBlank()) "OCR · no text found · tap to view" else "OCR · tap to view extracted text",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { java.io.File(path).delete(); pendingOcrImagePath = null; pendingOcrText = null },
+                                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
+                            ) { Icon(Icons.Filled.Close, contentDescription = "Remove OCR attachment", tint = MaterialTheme.colorScheme.inverseOnSurface) }
+                        }
                     }
                     pendingImagePath?.let { path ->
                         Box(Modifier.fillMaxWidth().padding(8.dp).clickable { showPendingImagePreview = true }) {
@@ -1084,7 +1168,7 @@ fun ChatScreen(
                                 maxLines = 1
                             )
                             val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
-                            val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingAudioPath != null || documentReady) &&
+                            val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) &&
                                 composerEnabled && draft.length <= 12_000
                             Box(
                                 Modifier.padding(start = 8.dp).size(48.dp)
@@ -1105,12 +1189,19 @@ fun ChatScreen(
                                         val quotePrefix = pendingQuote?.let { quoted ->
                                             quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
                                         }.orEmpty()
-                                        val body = draft.ifBlank { if (documentReady) "Describe this document." else draft }
+                                        val ocrText = pendingOcrText?.takeIf { it.isNotBlank() }
+                                        val bodyBase = draft.ifBlank { if (documentReady) "Describe this document." else draft }
+                                        val body = if (ocrText != null) {
+                                            "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
+                                        } else bodyBase
                                         val image = pendingImagePath
                                         val audio = pendingAudioPath
                                         val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
                                         draft = ""
                                         pendingImagePath = null
+                                        pendingOcrImagePath?.let { java.io.File(it).delete() }
+                                        pendingOcrImagePath = null
+                                        pendingOcrText = null
                                         pendingAudioPath = null
                                         pendingQuote = null
                                         vm.clearPendingDocument()
@@ -1140,6 +1231,7 @@ fun ChatScreen(
             visionAvailable = visionAvailable,
             audioAvailable = audioAvailable,
             isImportingAudio = isImportingAudio,
+            isRunningOcr = isRunningOcr,
             onDismiss = { showAttachmentSheet = false },
             onPhoto = {
                 showAttachmentSheet = false
@@ -1148,6 +1240,14 @@ fun ChatScreen(
             onCamera = {
                 showAttachmentSheet = false
                 requestCameraPermission.launch(android.Manifest.permission.CAMERA)
+            },
+            onOcrPhoto = {
+                showAttachmentSheet = false
+                pickOcrImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onOcrCamera = {
+                showAttachmentSheet = false
+                requestOcrCameraPermission.launch(android.Manifest.permission.CAMERA)
             },
             onRecordAudio = {
                 showAttachmentSheet = false
@@ -1183,6 +1283,21 @@ fun ChatScreen(
             },
             confirmLabel = "Attach",
             onConfirm = { showPendingImagePreview = false }
+        )
+    }
+
+    pendingOcrImagePath?.takeIf { showOcrPreview }?.let { path ->
+        OcrPreviewDialog(
+            imagePath = path,
+            text = pendingOcrText.orEmpty(),
+            onTextChange = { pendingOcrText = it },
+            onRemove = {
+                java.io.File(path).delete()
+                pendingOcrImagePath = null
+                pendingOcrText = null
+                showOcrPreview = false
+            },
+            onDismiss = { showOcrPreview = false }
         )
     }
 
@@ -1473,9 +1588,12 @@ private fun ChatAttachmentSheet(
     visionAvailable: Boolean?,
     audioAvailable: Boolean?,
     isImportingAudio: Boolean,
+    isRunningOcr: Boolean,
     onDismiss: () -> Unit,
     onPhoto: () -> Unit,
     onCamera: () -> Unit,
+    onOcrPhoto: () -> Unit,
+    onOcrCamera: () -> Unit,
     onRecordAudio: () -> Unit,
     onAudioFile: () -> Unit,
     onDocument: () -> Unit,
@@ -1509,6 +1627,32 @@ private fun ChatAttachmentSheet(
                     description = if (visionAvailable == false) "Not supported by this model" else "Capture something now",
                     enabled = visionAvailable != false,
                     onClick = onCamera,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            AttachmentSectionLabel("Extract text (OCR)")
+            Text(
+                "Works even without a vision model — reads the text out of a photo on-device and drops it into your message.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AttachmentTile(
+                    icon = Icons.Filled.DocumentScanner,
+                    title = "OCR Photo",
+                    description = if (isRunningOcr) "Reading text…" else "Pick a photo to scan",
+                    enabled = !isRunningOcr,
+                    onClick = onOcrPhoto,
+                    modifier = Modifier.weight(1f)
+                )
+                AttachmentTile(
+                    icon = Icons.Filled.CameraAlt,
+                    title = "OCR Camera",
+                    description = if (isRunningOcr) "Reading text…" else "Capture and scan now",
+                    enabled = !isRunningOcr,
+                    onClick = onOcrCamera,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1719,6 +1863,67 @@ internal fun FullScreenImagePreview(
                 }
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     bitmap?.let { Image(it, "Image preview", Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+                }
+            }
+        }
+    }
+}
+
+/** Preview + review sheet for an OCR attach — shows the scanned photo alongside the text ML
+ * Kit recognized from it, editable in case OCR misread something, before it gets folded into
+ * the outgoing message (see ChatScreen's send handler). This is the "same experience as
+ * attaching an image" the user sees pre-send; the photo itself is discarded on send/remove and
+ * never reaches the model. */
+@Composable
+private fun OcrPreviewDialog(
+    imagePath: String,
+    text: String,
+    onTextChange: (String) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(16.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close preview") }
+                    Text("Extracted text (OCR)", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onRemove) { Text("Remove") }
+                }
+                val thumbnailPx = with(LocalDensity.current) { 1200.dp.roundToPx() }
+                val bitmap = remember(imagePath, thumbnailPx) {
+                    com.vervan.chat.model.ImageUtils.decodeThumbnail(imagePath, thumbnailPx)?.asImageBitmap()
+                }
+                bitmap?.let {
+                    Image(
+                        it,
+                        contentDescription = "Scanned photo",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).padding(horizontal = 12.dp).clip(MaterialTheme.shapes.large),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+                Text(
+                    if (text.isBlank()) "No text was found in this photo. You can still type your own text below, or remove the attachment." else "Review the recognized text below — edit anything OCR got wrong. This is what gets sent, not the photo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
+                    placeholder = { Text("Recognized text will appear here") }
+                )
+                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.Button(onClick = onDismiss) { Text("Use this text") }
                 }
             }
         }

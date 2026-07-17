@@ -12,6 +12,8 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.reconcileCapabilities
 import com.vervan.chat.model.ImportResult
 import com.vervan.chat.llm.LlmEngine
+import com.vervan.chat.modelload.LoadTrigger
+import com.vervan.chat.modelload.ModelLoadInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +47,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val importManager = app.container.modelImportManager
     private val settings = app.container.settingsRepository
     private val downloadRepo = app.container.modelDownloadRepository
+    private val coordinator = app.container.modelLoadCoordinator
 
     /** Catalogue entries not yet installed + anything actively downloading — "Available for
      * Download" and "Active Downloads" both render from this one flow, split by status. Ready
@@ -65,8 +68,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun cancelDownload(modelId: String, version: String, keepPartial: Boolean) {
         viewModelScope.launch { downloadRepo.cancelDownload(modelId, version, keepPartial) }
     }
-    fun retryDownload(modelId: String, version: String) {
-        viewModelScope.launch { downloadRepo.retryDownload(modelId, version) }
+    fun deleteDownload(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.deleteDownload(modelId, version) }
     }
 
     companion object {
@@ -90,15 +93,20 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelDefaults(0.8f, 0.95f, 40, 1, 4096, -1))
 
     init {
-        // Single-model-per-role convenience (user ask): with only one generation (or
-        // embedding) model installed, it's simply "the" model — no manual "set as default"
-        // step needed. Re-evaluated on every models change so this also kicks in right after
-        // deleting down to a lone survivor, not just at import time.
+        // Auto-default convenience (user ask): whenever a role has installed models but none
+        // is active yet — the first import, or every model of that role having just been
+        // deactivated some other way — pick one automatically instead of leaving the role
+        // defaultless until the user visits Model Manager. Goes through setActive() (not
+        // straight to the coordinator) so the license-acknowledgment gate still applies: an
+        // unacknowledged sole model still raises the acknowledgment dialog instead of silently
+        // becoming the default. Re-evaluated on every models change, so this also covers
+        // deleting a role down to a lone survivor, not just import time.
         viewModelScope.launch {
             models.collect { list ->
                 ModelRole.entries.forEach { role ->
-                    val sole = list.filter { it.role == role }.singleOrNull()
-                    if (sole != null && !sole.isActive) setActive(sole)
+                    val ofRole = list.filter { it.role == role }
+                    val candidate = ofRole.firstOrNull()
+                    if (candidate != null && ofRole.none { it.isActive }) setActive(candidate)
                 }
             }
         }
@@ -127,20 +135,18 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val _pendingMigration = MutableStateFlow<Pair<ModelInfo, ModelInfo>?>(null)
     val pendingMigration: StateFlow<Pair<ModelInfo, ModelInfo>?> = _pendingMigration
 
-    /** Which model.filePath is actually resident in the (single, shared) generation/embedding
-     * engine right now — drives the single Load/Unload toggle per card instead of showing both
-     * buttons regardless of real state. Refreshed after every action that can change it; this
-     * screen is the only place that mutates engine state via user action, so polling on every
-     * recomposition isn't needed. */
-    private val _loadedGenerationPath = MutableStateFlow<String?>(app.container.llmEngine.loadedModelPath)
-    val loadedGenerationPath: StateFlow<String?> = _loadedGenerationPath
-    private val _loadedEmbeddingPath = MutableStateFlow<String?>(app.container.embeddingEngine.loadedModelPath)
-    val loadedEmbeddingPath: StateFlow<String?> = _loadedEmbeddingPath
+    /** Which model.id is actually resident in the (single, shared) generation/embedding engine
+     * right now — drives the single Load/Unload toggle per card instead of showing both buttons
+     * regardless of real state, and the per-role error banner (spec: load errors must also be
+     * visible in Model Manager). Sourced from the coordinator so this screen and chat/voice can
+     * never disagree about what's actually loaded or what just failed. */
+    val generationLoadInfo: StateFlow<ModelLoadInfo> = coordinator.observeState(ModelRole.GENERATION)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelLoadInfo(ModelRole.GENERATION))
+    val embeddingLoadInfo: StateFlow<ModelLoadInfo> = coordinator.observeState(ModelRole.EMBEDDING)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelLoadInfo(ModelRole.EMBEDDING))
 
-    fun refreshLoadedState() {
-        _loadedGenerationPath.value = app.container.llmEngine.loadedModelPath
-        _loadedEmbeddingPath.value = app.container.embeddingEngine.loadedModelPath
-    }
+    private fun loadInfoFor(role: ModelRole): ModelLoadInfo =
+        if (role == ModelRole.GENERATION) generationLoadInfo.value else embeddingLoadInfo.value
 
     fun importModel(uri: Uri, role: ModelRole) {
         Log.i(TAG, "importModel() requested: uri=$uri, role=$role")
@@ -267,7 +273,13 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             Log.i(TAG, "validateAndActivate() SUCCESS: ${verified.displayName} verified on ${verified.lastWorkingBackend}")
             _status.value = "Verified ${verified.displayName}"
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
-            refreshLoadedState()
+            // This load happened directly via withLlm/withEmbedding (verification is a one-shot
+            // check, not a coordinator-managed load — see ModelLoadCoordinator's doc comment),
+            // so the coordinator doesn't know about it yet. loadManually() sees this exact model
+            // already resident and takes its free "already loaded" branch, just to resync the
+            // coordinator's published state — no real reload happens, and unlike ensureLoaded()
+            // this can't be misdirected at whatever the role's current *default* happens to be.
+            coordinator.loadManually(verified)
 
             val previousVersion = db.modelDao().getOthersOfRole(verified.role, verified.id)
                 .firstOrNull { com.vervan.chat.model.ModelFamily.sameFamily(it.displayName, verified.displayName) }
@@ -296,18 +308,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             _pendingAcknowledgment.value = model
             return
         }
-        viewModelScope.launch {
-            db.modelDao().clearActive(model.role)
-            db.modelDao().upsert(model.copy(isActive = true))
-        }
+        viewModelScope.launch { coordinator.setDefault(model) }
     }
 
     fun acknowledgeAndActivate(model: ModelInfo) {
         _pendingAcknowledgment.value = null
-        viewModelScope.launch {
-            db.modelDao().clearActive(model.role)
-            db.modelDao().upsert(model.copy(isActive = true, licenseAcknowledged = true))
-        }
+        viewModelScope.launch { coordinator.setDefault(model.copy(licenseAcknowledged = true)) }
     }
 
     fun dismissAcknowledgment() { _pendingAcknowledgment.value = null }
@@ -365,7 +371,10 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 _importing.value = false
                 _busyModelId.value = null
                 _busyLabel.value = null
-                refreshLoadedState()
+                // Benchmarking loads directly via withLlm/withEmbedding, same as
+                // validateAndActivate above — resync the coordinator's view of what's actually
+                // resident now (free "already loaded" branch, no real reload).
+                coordinator.loadManually(model)
             }
         }
     }
@@ -373,10 +382,9 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun load(model: ModelInfo) {
         if (_importing.value) return
         Log.i(TAG, "load() requested: ${model.displayName} (preferredBackend=${model.preferredBackend})")
-        // Already resident — LlmEngine.load() would no-op internally anyway, but skip the
-        // busy state/toast churn of "loading" a model that's already loaded.
-        val alreadyLoadedPath = if (model.role == ModelRole.GENERATION) _loadedGenerationPath.value else _loadedEmbeddingPath.value
-        if (alreadyLoadedPath == model.filePath) {
+        // Already resident — skip the busy state/toast churn of "loading" a model that's
+        // already loaded.
+        if (loadInfoFor(model.role).currentModelId == model.id) {
             _status.value = "${model.displayName} is already loaded"
             return
         }
@@ -393,85 +401,35 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             // Only one generation (or embedding) model is ever resident — remember what was
             // loaded before this call so the toast below can call out the auto-unload instead
             // of looking like nothing happened to the previous model.
-            val previousName = if (model.role == ModelRole.GENERATION) {
-                _loadedGenerationPath.value?.takeIf { it != model.filePath }
-                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
-            } else {
-                _loadedEmbeddingPath.value?.takeIf { it != model.filePath }
-                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
-            }
-            try {
-                var disabledCapabilities: List<String> = emptyList()
-                withContext(Dispatchers.Default) {
-                    if (model.role == ModelRole.GENERATION) {
-                        // Loading a new generation model always frees whatever was loaded before —
-                        // the engine is a single shared instance, so only one generation model is
-                        // ever resident at a time (LlmEngine.load() closes the previous one first).
-                        val (updated, disabled) = app.container.withLlm { engine ->
-                            val result = engine.load(
-                                model.filePath, model.contextTokens ?: 4096, model.maxNumImages ?: 1,
-                                model.preferredBackend.toEnginePreference(),
-                                enableSpeculativeDecoding = model.mtpEnabled
-                            )
-                            val dbBackend = when (result.backend) {
-                                LlmEngine.ModelBackend.GPU -> ModelBackend.GPU
-                                LlmEngine.ModelBackend.NPU -> ModelBackend.NPU
-                                else -> ModelBackend.CPU
-                            }
-                            model.reconcileCapabilities(dbBackend, engine.visionEnabled, engine.audioEnabled, mtpAttempted = model.mtpEnabled, mtpActive = engine.speculativeDecodingActive)
-                        }
-                        // Was never persisted here — a manual Load from this screen left the model
-                        // shown as "Unverified"/"Not tested yet" forever, even after it demonstrably
-                        // worked, because only the chat-triggered load path (ChatViewModel) wrote
-                        // lastWorkingBackend back to the DB.
-                        db.modelDao().upsert(updated)
-                        disabledCapabilities = disabled
-                        Log.i(TAG, "load() SUCCESS: ${model.displayName} loaded on ${updated.lastWorkingBackend}, disabled=$disabled")
-                    } else {
-                        val dbBackend = app.container.withEmbedding { engine ->
-                            engine.load(model.filePath, model.tokenizerPath)
-                            if (engine.activeBackend == com.vervan.chat.retrieval.EmbeddingBackend.GPU) ModelBackend.GPU else ModelBackend.CPU
-                        }
-                        db.modelDao().upsert(model.copy(lastWorkingBackend = dbBackend))
-                        Log.i(TAG, "load() SUCCESS: embedding model ${model.displayName} loaded on $dbBackend")
-                    }
-                }
+            val previousId = loadInfoFor(model.role).currentModelId?.takeIf { it != model.id }
+            val previousName = previousId?.let { id -> models.value.find { it.id == id }?.displayName }
+            val result = coordinator.loadManually(model)
+            if (result.success) {
                 _status.value = "Loaded ${model.displayName}"
                 android.widget.Toast.makeText(
                     app,
                     if (previousName != null) "Unloaded $previousName — loaded ${model.displayName}" else "Loaded ${model.displayName}",
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
-                if (disabledCapabilities.isNotEmpty()) {
-                    android.widget.Toast.makeText(
-                        app, "${disabledCapabilities.joinToString(", ")} not supported on this model — disabled",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${t::class.simpleName}: ${t.message}", t)
+            } else {
+                Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${result.errorMessage}")
                 val backendNote = if (model.preferredBackend != BackendChoice.AUTO) " on ${model.preferredBackend}" else ""
-                _status.value = "Load failed$backendNote: ${t.message ?: t::class.simpleName}"
-            } finally {
-                _importing.value = false
-                _busyModelId.value = null
-                _busyLabel.value = null
-                refreshLoadedState()
+                _status.value = "Load failed$backendNote: ${result.errorMessage}"
             }
+            _importing.value = false
+            _busyModelId.value = null
+            _busyLabel.value = null
         }
     }
 
     fun unload(model: ModelInfo) {
         Log.i(TAG, "unload() requested: ${model.displayName}")
         viewModelScope.launch {
-            if (model.role == ModelRole.GENERATION) {
-                app.container.withLlm { if (it.loadedModelPath == model.filePath) it.close() }
-            } else {
-                app.container.withEmbedding { if (it.loadedModelPath == model.filePath) it.close() }
+            if (loadInfoFor(model.role).currentModelId == model.id) {
+                coordinator.unload(model.role)
+                _status.value = "Unloaded ${model.displayName}"
+                android.widget.Toast.makeText(app, "Unloaded ${model.displayName}", android.widget.Toast.LENGTH_SHORT).show()
             }
-            _status.value = "Unloaded ${model.displayName}"
-            android.widget.Toast.makeText(app, "Unloaded ${model.displayName}", android.widget.Toast.LENGTH_SHORT).show()
-            refreshLoadedState()
         }
     }
 
@@ -509,15 +467,25 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 // folder can't end up silently referencing a dangling model id.
                 db.folderDao().clearDefaultModel(model.id)
                 db.chatDao().clearModel(model.id)
-                app.container.withLlm { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
-                app.container.withEmbedding { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
+                coordinator.forceUnloadIfLoaded(model)
                 withContext(Dispatchers.IO) {
                     com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(model.filePath))
                     model.tokenizerPath?.let { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
                 }
                 db.modelDao().delete(model)
+                if (model.isActive) {
+                    // Today, deleting the active model left the role defaultless until the user
+                    // manually picked a new one — reassign automatically instead (spec §4.3).
+                    coordinator.reassignDefaultAfterDelete(model.role, model.id)
+                }
+                if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {
+                    val catalogId = model.catalogModelId
+                    val catalogVersion = model.catalogVersion
+                    if (catalogId != null && catalogVersion != null) {
+                        downloadRepo.forgetInstalledPackage(catalogId, catalogVersion)
+                    }
+                }
                 _status.value = "Deleted ${model.displayName}"
-                refreshLoadedState()
             } catch (t: Throwable) {
                 Log.e(TAG, "delete() failed for ${model.displayName}", t)
                 _status.value = "Delete failed: ${t.message ?: t::class.simpleName}"

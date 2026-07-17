@@ -1,18 +1,15 @@
 package com.vervan.chat.ui.nav
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
@@ -26,7 +23,12 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material.icons.filled.Workspaces
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,9 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -114,17 +114,22 @@ import com.vervan.chat.ui.writing.WritingWorkspaceScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
+private data class Tab(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector
+)
 
 private val tabs = listOf(
-    Tab("home", "Home", Icons.Filled.Home),
-    Tab("chats", "Chats", Icons.AutoMirrored.Filled.Chat)
+    Tab("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
+    Tab("chats", "Chats", Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
 )
-private val libraryTab = Tab("library", "Library", Icons.Filled.Folder)
-private val toolsTab = Tab("tools", "Tools", Icons.Filled.GridView)
+private val libraryTab = Tab("library", "Library", Icons.Outlined.Folder, Icons.Filled.Folder)
+private val toolsTab = Tab("tools", "Tools", Icons.Outlined.GridView, Icons.Filled.GridView)
 private val trailingTabs = listOf(
-    toolsTab,
-    libraryTab
+    libraryTab,
+    toolsTab
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
@@ -186,21 +191,16 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
 
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
-            NavigationRail {
-                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
-                NavigationRailItem(
-                    selected = false,
+            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                FloatingActionButton(
                     onClick = { showCreateSheet = true },
-                    icon = {
-                        Box(
-                            Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Create", tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        }
-                    },
-                    label = { Text("Create") }
-                )
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Create")
+                }
+                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
                 trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
             }
         }
@@ -212,24 +212,21 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            floatingActionButton = {
+                if (!useRail && showBottomBar) {
+                    ExtendedFloatingActionButton(
+                        onClick = { showCreateSheet = true },
+                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        text = { Text("Create") },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            },
             bottomBar = {
                 if (!useRail && showBottomBar) {
-                    NavigationBar {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                         tabs.forEach { tab -> BottomTabItem(tab, currentRoute, navController) }
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = { showCreateSheet = true },
-                            icon = {
-                                Box(
-                                    Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Create", tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                                }
-                            },
-                            label = { Text("Create") },
-                            colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer)
-                        )
                         trailingTabs.forEach { tab -> BottomTabItem(tab, currentRoute, navController) }
                     }
                 }
@@ -256,32 +253,17 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
                     onOpenNotes = { navController.navigate("notes") },
                     onOpenProjects = { navController.navigate("projects") },
                     onOpenLibrary = { navController.navigate("library") },
-                    onOpenMemory = { navController.navigate("memory") },
-                    onOpenWorkflows = { navController.navigate("workflows") },
                     onOpenChats = { navController.navigate("chats") },
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
                     onOpenSearch = { navController.navigate("search") },
-                    onOpenWriting = { navController.navigate("writing") },
-                    onOpenDev = { navController.navigate("dev") },
-                    onOpenStudy = { navController.navigate("study") },
-                    onOpenFolders = { navController.navigate("folders") },
-                    onOpenCollections = { navController.navigate("collections") },
                     onOpenProfile = { navController.navigate("profile") },
                     onOpenWorkspaces = { navController.navigate("workspaces") },
                     onOpenDocScanner = { navController.navigate("tools/document-scanner") },
-                    onOpenOcrScanner = { navController.navigate("tools/ocr-scanner") },
                     onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
                     onOpenTranslate = { navController.navigate("tools/translate") },
                     onOpenWritingAssistant = { navController.navigate("tools/writing-assistant") },
-                    onOpenSmartNotes = { navController.navigate("tools/smart-notes") },
-                    onOpenClipboardTool = { navController.navigate("tools/clipboard-assistant") },
-                    onOpenExplainLevel = { navController.navigate("tools/explain-level") },
-                    onOpenBusinessCard = { navController.navigate("tools/business-card-scanner") },
-                    onOpenReceiptScanner = { navController.navigate("tools/receipt-scanner") },
-                    onOpenTableScanner = { navController.navigate("tools/table-scanner") },
-                    onOpenQuizGenerator = { navController.navigate("tools/quiz-generator") },
                     onOpenAllTools = { navController.navigatePrimaryRoot("tools") }
                 )
             }
@@ -584,7 +566,9 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             composable("settings/experience") { ExperienceControlsSettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/accessibility") { AccessibilitySettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/generation") { GenerationRetrievalSettingsScreen(onBack = { navController.popBackStack() }) }
-            composable("settings/voice") { VoiceSettingsScreen(onBack = { navController.popBackStack() }) }
+            composable("settings/voice") {
+                VoiceSettingsScreen(onBack = { navController.popBackStack() }, onOpenModelManager = { navController.navigate("models") })
+            }
             composable("settings/security") {
                 com.vervan.chat.ui.settings.SecuritySettingsScreen(
                     onBack = { navController.popBackStack() },
@@ -737,8 +721,9 @@ private fun RowScope.BottomTabItem(tab: Tab, currentRoute: NavDestination?, navC
         onClick = {
             navController.navigatePrimaryRoot(tab.route)
         },
-        icon = { Icon(tab.icon, contentDescription = tab.label) },
-        label = { Text(tab.label) }
+        icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
+        label = { Text(tab.label) },
+        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer)
     )
 }
 
@@ -750,19 +735,18 @@ private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: 
         onClick = {
             navController.navigatePrimaryRoot(tab.route)
         },
-        icon = { Icon(tab.icon, contentDescription = tab.label) },
+        icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
         label = { Text(tab.label) }
     )
 }
 
 private fun NavHostController.navigatePrimaryRoot(route: String) {
-    val poppedToExistingRoot = popBackStack(route, inclusive = false)
-    if (!poppedToExistingRoot) {
-        navigate(route) {
-            popUpTo("home") { inclusive = false }
-            launchSingleTop = true
-            restoreState = false
-        }
+    navigate(route) {
+        // Home is the stable app shell root; the graph's configured start can be onboarding,
+        // which is removed after setup and therefore cannot anchor restored tab stacks.
+        popUpTo("home") { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }
 

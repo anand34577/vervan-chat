@@ -58,7 +58,20 @@ class AppContainer(app: Application) {
     private val modelDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val modelDownloadRepository = com.vervan.chat.modeldownload.ModelDownloadRepository(
         app, db.downloadPackageDao(), db.downloadFileDao(), db.modelDao(), modelImportManager,
-        settingsRepository, networkAuditLog, hfTokenStore, modelDownloadScope
+        db.ttsVoiceModelDao(), settingsRepository, networkAuditLog, hfTokenStore, modelDownloadScope
+    )
+    // Application-scoped for the same reason as modelDownloadScope above — an ensureLoaded()
+    // call started from one screen (e.g. RealtimeVoiceController) must keep running/be
+    // join-able even if that screen goes away before the load finishes.
+    private val modelLoadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val modelLoadCoordinator = com.vervan.chat.modelload.ModelLoadCoordinator(
+        db.modelDao(), llmEngine, embeddingEngine, llmMutex, embeddingMutex,
+        object : com.vervan.chat.modelload.GenerationDefaults {
+            override suspend fun contextTokenLimit() = settingsRepository.contextTokenLimit.first()
+            override suspend fun maxNumImages() = settingsRepository.maxNumImages.first()
+            override suspend fun preferredBackend() = settingsRepository.preferredBackend.first()
+        },
+        modelLoadScope
     )
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
@@ -247,13 +260,10 @@ class VervanApp : Application() {
         super.onLowMemory()
         // Native models are rebuildable caches, so release both before the OS has to kill
         // the process. A later generation or retrieval request loads them again normally.
-        if (container.llmMutex.tryLock()) {
-            val unloadedPath = container.llmEngine.loadedModelPath
-            try { container.llmEngine.close() } finally { container.llmMutex.unlock() }
-            if (unloadedPath != null) notifyModelUnloadedBySystem(unloadedPath)
-        }
-        if (container.embeddingMutex.tryLock()) {
-            try { container.embeddingEngine.close() } finally { container.embeddingMutex.unlock() }
+        val unloadedPath = container.llmEngine.loadedModelPath
+        val unloadedRoles = container.modelLoadCoordinator.unloadUnderMemoryPressure()
+        if (com.vervan.chat.data.db.entities.ModelRole.GENERATION in unloadedRoles && unloadedPath != null) {
+            notifyModelUnloadedBySystem(unloadedPath)
         }
     }
 

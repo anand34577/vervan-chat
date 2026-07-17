@@ -44,6 +44,7 @@ class SettingsRepository(context: Context) {
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
         val KOKORO_QUALITY_ENABLED = booleanPreferencesKey("kokoro_quality_enabled")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
+        val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
         val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
         val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
         val FONT_SCALE = floatPreferencesKey("font_scale")
@@ -186,6 +187,15 @@ class SettingsRepository(context: Context) {
      * to a tap-to-interrupt button, see [com.vervan.chat.audio.ContinuousAudioCapture]. */
     val bargeInEnabled: Flow<Boolean> = store.data.map { it[Keys.BARGE_IN_ENABLED] ?: true }
     suspend fun setBargeInEnabled(v: Boolean) { store.edit { it[Keys.BARGE_IN_ENABLED] = v } }
+
+    /** Realtime voice pipeline's speech-to-text policy (see
+     * [com.vervan.chat.voice.RealtimeVoiceController]): the active generation model is tried
+     * first when it supports audio input; this toggle only controls whether the downloaded
+     * on-device Whisper model is used as the fallback tier (default on) or skipped straight to
+     * Android's system speech recognizer (off). Has no effect until the Whisper model is
+     * actually downloaded via Model Manager. */
+    val inbuiltSttEnabled: Flow<Boolean> = store.data.map { it[Keys.INBUILT_STT_ENABLED] ?: true }
+    suspend fun setInbuiltSttEnabled(v: Boolean) { store.edit { it[Keys.INBUILT_STT_ENABLED] = v } }
 
     /** Model downloader (see com.vervan.chat.modeldownload) network settings. Off by default —
      * a large model download simply waits for Wi-Fi instead of silently spending mobile data

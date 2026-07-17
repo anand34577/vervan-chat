@@ -11,7 +11,6 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
-import com.vervan.chat.data.db.entities.ModelBackend
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Persona
@@ -22,10 +21,12 @@ import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.data.db.entities.displayName
 import com.vervan.chat.data.db.entities.reconcileCapabilities
 import com.vervan.chat.model.DocumentImportOutcome
-import com.vervan.chat.llm.LlmEngine
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.llm.ModelProfiles
 import com.vervan.chat.llm.TitleGenerator
+import com.vervan.chat.modelload.LoadTrigger
+import com.vervan.chat.modelload.ModelLoadInfo
+import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.retrieval.RetrievalMode
 import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.system.toUserMessage
@@ -115,6 +116,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
 
+    /** True only while [retrieveSources] is actively embedding the query/scanning chunks —
+     * lets the UI show "Searching knowledge base" instead of folding that time invisibly
+     * into the generic generating state. */
+    private val _isRetrieving = MutableStateFlow(false)
+    val isRetrieving: StateFlow<Boolean> = _isRetrieving
+
     sealed class ModelLoadState {
         data object NoModel : ModelLoadState()
         data class NotLoaded(val modelName: String) : ModelLoadState()
@@ -154,16 +161,32 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     private var draftSaveJob: Job? = null
     private val leaveCleanupStarted = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    private data class AutoLoadSnapshot(
+        val model: ModelInfo?,
+        val profileId: String?,
+        val autoLoad: Boolean,
+        val loadInfo: ModelLoadInfo
+    )
+
     init {
         viewModelScope.launch {
-            combine(chat, generationModels, app.container.settingsRepository.autoLoadDefaultModel) { chatRow, models, autoLoad ->
-                Triple(resolveGenerationModel(chatRow, models), chatRow?.profile, autoLoad)
-            }.distinctUntilChanged().collect { (model, profile, autoLoad) ->
-                when {
-                    model == null -> _modelLoadState.value = ModelLoadState.NoModel
-                    engine.loadedModelPath == model.filePath -> markModelReady(model)
-                    autoLoad && profile != null -> preloadModel(profile, model)
-                    !autoLoad -> _modelLoadState.value = ModelLoadState.NotLoaded(model.displayName)
+            combine(
+                chat, generationModels, app.container.settingsRepository.autoLoadDefaultModel,
+                app.container.modelLoadCoordinator.observeState(ModelRole.GENERATION)
+            ) { chatRow, models, autoLoad, loadInfo ->
+                AutoLoadSnapshot(resolveGenerationModel(chatRow, models), chatRow?.profile, autoLoad, loadInfo)
+            }.distinctUntilChanged().collect { snapshot ->
+                val (model, profileId, autoLoad, loadInfo) = snapshot
+                _modelLoadState.value = toChatModelLoadState(model, autoLoad, loadInfo)
+                if (model != null && loadInfo.currentModelId == model.id) {
+                    _visionAvailable.value = model.supportsVision ?: engine.visionEnabled
+                    _audioAvailable.value = model.supportsAudio ?: engine.audioEnabled
+                }
+                val alreadyLoadedOrLoading = loadInfo.currentModelId == model?.id ||
+                    (loadInfo.phase == ModelLoadPhase.LOADING && loadInfo.loadingModelId == model?.id)
+                if (model != null && autoLoad && profileId != null && !alreadyLoadedOrLoading) {
+                    val adjustedContext = computeAdjustedContext(profileId, model)
+                    app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_AUTOLOAD, adjustedContext)
                 }
             }
         }
@@ -173,20 +196,29 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         chatRow?.modelId?.let { id -> models.find { it.id == id && it.role == ModelRole.GENERATION } }
             ?: models.firstOrNull { it.role == ModelRole.GENERATION && it.isActive }
 
-    private fun markModelReady(model: ModelInfo) {
-        _modelLoadState.value = ModelLoadState.Ready(
-            model.displayName,
-            engine.activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
-        )
-        _visionAvailable.value = model.supportsVision ?: engine.visionEnabled
-        _audioAvailable.value = model.supportsAudio ?: engine.audioEnabled
+    /** Maps the coordinator's role-wide load state onto this chat's specific resolved model —
+     * the coordinator only knows "what's loaded/loading for GENERATION app-wide", so this chat
+     * only shows Ready/Loading/Failed when that happens to be *its* model, not just any
+     * generation model some other screen triggered. */
+    private fun toChatModelLoadState(model: ModelInfo?, autoLoad: Boolean, info: ModelLoadInfo): ModelLoadState {
+        if (model == null) return ModelLoadState.NoModel
+        return when {
+            info.currentModelId == model.id -> ModelLoadState.Ready(
+                model.displayName, engine.activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
+            )
+            info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id ->
+                ModelLoadState.Loading(model.displayName, "Loading model into memory")
+            info.error?.loadedModelId == model.id ->
+                ModelLoadState.Failed(model.displayName, info.error?.errorMessage ?: "Unknown error")
+            !autoLoad -> ModelLoadState.NotLoaded(model.displayName)
+            else -> ModelLoadState.Loading(model.displayName, "Preparing local runtime")
+        }
     }
 
-    private suspend fun preloadModel(profile: String, model: ModelInfo) {
-        _modelLoadState.value = ModelLoadState.Loading(model.displayName, "Preparing local runtime")
-        app.container.withLlm {
-            ensureGenerationModelLoaded(profile, model)
-        }
+    private suspend fun computeAdjustedContext(profileId: String, model: ModelInfo): Int {
+        val requestedContext = model.contextTokens ?: app.container.settingsRepository.contextTokenLimit.first()
+        val profile = ModelProfiles.resolve(ModelProfileType.fromId(profileId))
+        return (requestedContext * profile.contextFraction).toInt().coerceAtLeast(1024)
     }
 
     fun retryModelLoad() {
@@ -198,7 +230,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             if (model == null) {
                 _modelLoadState.value = ModelLoadState.NoModel
             } else {
-                preloadModel(chatRow.profile, model)
+                val adjustedContext = computeAdjustedContext(chatRow.profile, model)
+                app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND, adjustedContext)
             }
         }
     }
@@ -278,6 +311,38 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val file = java.io.File(dir, "${System.currentTimeMillis()}.jpg")
         val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
         return file to uri
+    }
+
+    /** Result of an OCR attach — unlike a vision attachment, the LLM never sees [imagePath];
+     * only [text] gets folded into the outgoing message (see ChatScreen's send handler), so this
+     * works with any loaded model, vision-capable or not. [imagePath] is kept only so the
+     * composer can show the same "picked/captured photo" preview UX as a real image attachment,
+     * and so the user can confirm what was actually scanned before sending. Camera captures for
+     * OCR reuse [newCameraImageFile]'s dir — that one's already registered with FileProvider;
+     * a separate cache-dir target crashed with "Failed to find configured root" since it wasn't. */
+    data class OcrResult(val imagePath: String, val text: String)
+
+    /** Runs on-device ML Kit OCR (see [com.vervan.chat.model.OcrExtractor]) over a picked
+     * gallery image. */
+    suspend fun extractOcr(uri: Uri): Result<OcrResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
+            val dest = java.io.File(dir, "${System.currentTimeMillis()}_ocr.jpg")
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw java.io.IOException("Could not read image")
+            com.vervan.chat.model.ImageUtils.fixOrientation(dest)
+            OcrResult(dest.absolutePath, com.vervan.chat.model.OcrExtractor.extractFromImage(dest))
+        }.onFailure { Log.e(TAG, "OCR extraction failed", it) }
+    }
+
+    /** Same as [extractOcr] but for a camera capture already materialized as a file (via
+     * [newCameraImageFile]). */
+    suspend fun extractOcrFromFile(file: java.io.File): Result<OcrResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            com.vervan.chat.model.ImageUtils.fixOrientation(file)
+            OcrResult(file.absolutePath, com.vervan.chat.model.OcrExtractor.extractFromImage(file))
+        }.onFailure { Log.e(TAG, "OCR extraction failed", it) }
     }
 
     /**
@@ -933,91 +998,6 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(activeLeafId = leafId, updatedAt = System.currentTimeMillis())) }
     }
 
-    /** Loads and verifies the selected generation model. Caller owns [app.container.withLlm]. */
-    private suspend fun ensureGenerationModelLoaded(profileId: String, model: ModelInfo): ModelInfo? {
-        if (engine.loadedModelPath == model.filePath) {
-            markModelReady(model)
-            return model
-        }
-        // Only one generation model is ever resident (LlmEngine.load() frees the previous one
-        // first) — remember what was loaded so a swap can be announced distinctly from a
-        // cold/first load, instead of both looking like a silent no-op to the user.
-        val previouslyLoadedPath = engine.loadedModelPath
-        val previouslyLoadedName = previouslyLoadedPath?.let { path ->
-            db.modelDao().observeModels().first().find { it.filePath == path }?.displayName
-                ?: java.io.File(path).nameWithoutExtension
-        }
-        _modelLoadState.value = ModelLoadState.Loading(model.displayName, "Loading model into memory")
-        return try {
-            val settings = app.container.settingsRepository
-            val requestedContext = model.contextTokens ?: settings.contextTokenLimit.first()
-            val profile = ModelProfiles.resolve(ModelProfileType.fromId(profileId))
-            val adjustedContext = (requestedContext * profile.contextFraction).toInt().coerceAtLeast(1024)
-            val backendPreference = when (model.preferredBackend) {
-                com.vervan.chat.data.db.entities.BackendChoice.GPU -> LlmEngine.BackendPreference.GPU_ONLY
-                com.vervan.chat.data.db.entities.BackendChoice.CPU -> LlmEngine.BackendPreference.CPU_ONLY
-                com.vervan.chat.data.db.entities.BackendChoice.NPU -> LlmEngine.BackendPreference.NPU_ONLY
-                com.vervan.chat.data.db.entities.BackendChoice.AUTO -> when (settings.preferredBackend.first()) {
-                    "GPU" -> LlmEngine.BackendPreference.GPU_ONLY
-                    "CPU" -> LlmEngine.BackendPreference.CPU_ONLY
-                    "NPU" -> LlmEngine.BackendPreference.NPU_ONLY
-                    else -> LlmEngine.BackendPreference.AUTO
-                }
-            }
-            val backendHint = when (model.lastWorkingBackend) {
-                ModelBackend.GPU -> LlmEngine.ModelBackend.GPU
-                ModelBackend.CPU -> LlmEngine.ModelBackend.CPU
-                ModelBackend.NPU -> LlmEngine.ModelBackend.NPU
-                else -> null
-            }
-            val maxNumImages = model.maxNumImages ?: settings.maxNumImages.first()
-            val useMtp = model.mtpEnabled
-            // engine.load() is a blocking native call (GPU/NPU delegate init can take 10s+) —
-            // must run off the Main dispatcher or it ANRs the whole app (was previously called
-            // directly inside viewModelScope.launch, unlike ModelManagerViewModel's equivalent).
-            val result = withContext(Dispatchers.Default) {
-                try {
-                    engine.load(model.filePath, adjustedContext, maxNumImages, backendPreference, backendHint, useMtp)
-                } catch (first: Throwable) {
-                    if (adjustedContext <= 2048) throw first
-                    _modelLoadState.value = ModelLoadState.Loading(model.displayName, "Retrying with a smaller context")
-                    engine.load(model.filePath, 2048, maxNumImages, backendPreference, backendHint, useMtp)
-                }
-            }
-            if (result.fellBackToCpu) {
-                android.widget.Toast.makeText(app, "GPU unavailable — using CPU", android.widget.Toast.LENGTH_SHORT).show()
-            }
-            val dbBackend = when (result.backend) {
-                LlmEngine.ModelBackend.GPU -> ModelBackend.GPU
-                LlmEngine.ModelBackend.NPU -> ModelBackend.NPU
-                else -> ModelBackend.CPU
-            }
-            val (reconciled, disabled) = model.reconcileCapabilities(
-                dbBackend, engine.visionEnabled, engine.audioEnabled,
-                mtpAttempted = useMtp, mtpActive = engine.speculativeDecodingActive
-            )
-            db.modelDao().upsert(reconciled)
-            markModelReady(reconciled)
-            _confirmationMessage.value = if (previouslyLoadedName != null && previouslyLoadedPath != model.filePath) {
-                "Unloaded $previouslyLoadedName — loaded ${reconciled.displayName}"
-            } else {
-                "Loaded ${reconciled.displayName}"
-            }
-            if (disabled.isNotEmpty()) {
-                android.widget.Toast.makeText(
-                    app, "${disabled.joinToString(", ")} not supported on this model — disabled",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
-            reconciled
-        } catch (t: Throwable) {
-            Log.e(TAG, "[$chatId] model load failed for ${model.displayName}", t)
-            val reason = t.message ?: t::class.simpleName ?: "Unknown error"
-            _modelLoadState.value = ModelLoadState.Failed(model.displayName, reason)
-            null
-        }
-    }
-
     /** Shared tail of send/editAndResend/regenerate: load model, retrieve sources, generate. */
     private suspend fun beginGeneration(triggerText: String, imagePath: String?, audioPath: String? = null) {
         val chatRow = db.chatDao().getChat(chatId) ?: return
@@ -1029,9 +1009,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             return
         }
         Log.i(TAG, "[$chatId] beginGeneration() resolved model=${model.displayName}, engine.loadedModelPath=${engine.loadedModelPath}")
-        if (ensureGenerationModelLoaded(chatRow.profile, model) == null) {
-            val failure = _modelLoadState.value as? ModelLoadState.Failed
-            _error.value = "Could not load ${model.displayName}: ${failure?.reason ?: "unknown error"}"
+        val adjustedContext = computeAdjustedContext(chatRow.profile, model)
+        val loadResult = app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND, adjustedContext)
+        if (!loadResult.success) {
+            _error.value = "Could not load ${model.displayName}: ${loadResult.errorMessage ?: "unknown error"}"
             return
         }
         if (audioPath != null && !engine.audioEnabled) {
@@ -1319,30 +1300,31 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     }
 
     private suspend fun retrieveSources(kbIds: List<String>, query: String, topK: Int = 5): List<SourcePassage> {
-        return app.container.withEmbedding { embeddingEngine ->
-            val embeddingModel = db.modelDao().getActiveModel(ModelRole.EMBEDDING)
-            val mode = if (embeddingModel != null) {
-                if (embeddingEngine.loadedModelPath != embeddingModel.filePath) {
-                    try {
-                        embeddingEngine.load(embeddingModel.filePath, embeddingModel.tokenizerPath)
-                    } catch (t: Throwable) {
-                        // Falls back to keyword search below, but this used to be a silent
-                        // catch — a broken embedding model made RAG quietly degrade with no
-                        // visible reason at all. Surface it once per attempt instead. Catches
-                        // Throwable, not just Exception — a corrupt/oversized embedding model
-                        // can throw OutOfMemoryError here, which must still fall back to
-                        // keyword search rather than crash the chat mid-conversation.
-                        Log.w(TAG, "[$chatId] retrieveSources() embedding load failed, falling back to keyword", t)
-                        _error.value = "Semantic search unavailable (${t.toUserMessage()}) — using keyword search instead."
-                    }
-                }
-                if (embeddingEngine.isLoaded) {
-                    val preferred = app.container.settingsRepository.defaultRetrievalMode.first()
-                    runCatching { RetrievalMode.valueOf(preferred) }.getOrDefault(RetrievalMode.HYBRID)
-                } else RetrievalMode.KEYWORD
-            } else RetrievalMode.KEYWORD
-            retrievalEngine.retrieve(kbIds, query, mode, topK)
+        _isRetrieving.value = true
+        try {
+            return retrieveSourcesInner(kbIds, query, topK)
+        } finally {
+            _isRetrieving.value = false
         }
+    }
+
+    private suspend fun retrieveSourcesInner(kbIds: List<String>, query: String, topK: Int): List<SourcePassage> {
+        val embeddingModel = db.modelDao().getActiveModel(ModelRole.EMBEDDING)
+        val mode = if (embeddingModel != null) {
+            val result = app.container.modelLoadCoordinator.ensureLoaded(ModelRole.EMBEDDING, LoadTrigger.RAG_RETRIEVAL)
+            if (!result.success) {
+                // Falls back to keyword search below, but this used to be a silent failure — a
+                // broken embedding model made RAG quietly degrade with no visible reason at all.
+                // Surface it once per attempt instead.
+                Log.w(TAG, "[$chatId] retrieveSources() embedding load failed, falling back to keyword: ${result.errorMessage}")
+                _error.value = "Semantic search unavailable (${result.errorMessage}) — using keyword search instead."
+                RetrievalMode.KEYWORD
+            } else {
+                val preferred = app.container.settingsRepository.defaultRetrievalMode.first()
+                runCatching { RetrievalMode.valueOf(preferred) }.getOrDefault(RetrievalMode.HYBRID)
+            }
+        } else RetrievalMode.KEYWORD
+        return app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
     }
 
     private fun sourcesToJson(passages: List<SourcePassage>): String {

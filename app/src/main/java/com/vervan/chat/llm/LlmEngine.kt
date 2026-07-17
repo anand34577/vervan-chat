@@ -15,13 +15,14 @@ import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.vervan.chat.modelload.GenerationLoadable
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
-class LlmEngine(private val context: Context) {
+class LlmEngine(private val context: Context) : GenerationLoadable {
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null
@@ -32,18 +33,18 @@ class LlmEngine(private val context: Context) {
     private var generateCallCounter = 0
     private val sendInFlight = AtomicBoolean(false)
     private val stoppedSinceLastSend = AtomicBoolean(false)
-    var loadedModelPath: String? = null
+    override var loadedModelPath: String? = null
         private set
-    var activeBackend: ModelBackend = ModelBackend.UNVERIFIED
+    override var activeBackend: ModelBackend = ModelBackend.UNVERIFIED
         private set
-    var visionEnabled: Boolean = false
+    override var visionEnabled: Boolean = false
         private set
-    var audioEnabled: Boolean = false
+    override var audioEnabled: Boolean = false
         private set
     // Whether the currently-loaded model actually ran with MTP (speculative decoding) active —
     // distinct from [ModelInfo.mtpSupported]/[ModelInfo.mtpEnabled], which are the detected
     // capability and the user's on/off choice; this is what actually happened on this load.
-    var speculativeDecodingActive: Boolean = false
+    override var speculativeDecodingActive: Boolean = false
         private set
 
     enum class ModelBackend { GPU, CPU, NPU, UNVERIFIED }
@@ -282,7 +283,16 @@ class LlmEngine(private val context: Context) {
         }
     }
 
-    fun close() {
+    override fun loadModel(
+        modelPath: String,
+        maxTokens: Int,
+        maxNumImages: Int,
+        backendPreference: BackendPreference,
+        preferredBackendHint: ModelBackend?,
+        enableSpeculativeDecoding: Boolean
+    ): LoadResult = load(modelPath, maxTokens, maxNumImages, backendPreference, preferredBackendHint, enableSpeculativeDecoding)
+
+    override fun close() {
         // Read into a local val instead of a separate null-check + `!!` — a concurrent close()
         // on another thread could null loadedModelPath between the two, which would NPE here.
         // All current callers happen to hold llmMutex/tryLock, so this was latent, not live, but

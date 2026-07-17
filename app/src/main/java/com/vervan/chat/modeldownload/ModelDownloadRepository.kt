@@ -8,6 +8,7 @@ import android.util.Log
 import com.vervan.chat.data.db.dao.DownloadFileDao
 import com.vervan.chat.data.db.dao.DownloadPackageDao
 import com.vervan.chat.data.db.dao.ModelDao
+import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.entities.DownloadFile
 import com.vervan.chat.data.db.entities.DownloadPackage
 import com.vervan.chat.data.db.entities.FileDownloadStatus
@@ -17,6 +18,7 @@ import com.vervan.chat.data.db.entities.ModelOrigin
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.data.db.entities.StopReason
+import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.data.settings.SettingsRepository
 import com.vervan.chat.model.ImportResult
 import com.vervan.chat.model.ModelImportManager
@@ -26,6 +28,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +37,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Owns the model-package download/verify/import state machine end to end — the spec's
@@ -56,6 +60,7 @@ class ModelDownloadRepository(
     private val fileDao: DownloadFileDao,
     private val modelDao: ModelDao,
     private val modelImportManager: ModelImportManager,
+    private val ttsVoiceModelDao: TtsVoiceModelDao,
     private val settingsRepository: SettingsRepository,
     private val networkAuditLog: NetworkAuditLog,
     private val tokenStore: HuggingFaceTokenStore,
@@ -65,6 +70,8 @@ class ModelDownloadRepository(
     private val downloader = HttpRangeDownloader()
     private val validator = ModelValidator()
     private val workMutex = Mutex()
+    private val recoveryMutex = Mutex()
+    private var recoveryComplete = false
     private var activeJob: Job? = null
     private var activePackageId: String? = null
 
@@ -75,29 +82,48 @@ class ModelDownloadRepository(
     private val _speedInfo = MutableStateFlow<Pair<Long?, Long?>?>(null) // (bytesPerSecond, etaSeconds)
 
     val uiStates: Flow<List<ModelUiState>> = combine(
-        packageDao.observeAll(), fileDao.observeAll(), modelDao.observeModels(), _speedInfo
-    ) { packages, allFiles, installed, speed ->
+        packageDao.observeAll(), fileDao.observeAll(), modelDao.observeModels(),
+        ttsVoiceModelDao.observeAll(), _speedInfo
+    ) { packages, allFiles, installed, voices, speed ->
         val filesByPackage = allFiles.groupBy { it.packageId }
+        val voicesByKey = voices.associateBy { it.engine.uppercase() to it.language }
         val installedKeys = installed.mapNotNull { m ->
             val cid = m.catalogModelId ?: return@mapNotNull null
             val cv = m.catalogVersion ?: return@mapNotNull null
             cid to cv
-        }.toSet()
-        val activePackages = packages.filter { it.status != ModelStatus.READY }
+        }.toSet() + ModelCatalog.all.filter { catalog ->
+            isVoiceLikeCategory(catalog.category) &&
+                voicesByKey.containsKey(catalog.ttsEngine?.uppercase() to catalog.ttsLanguage)
+        }.map { it.modelId to it.version }.toSet()
+        val activePackages = packages.filter { it.status !in setOf(ModelStatus.READY, ModelStatus.CANCELLED) }
         val downloadingUi = activePackages.map { pkg ->
             toUiState(pkg, filesByPackage[pkg.id].orEmpty(), if (pkg.id == activePackageId) speed else null)
         }
+        val installedVoiceUi = ModelCatalog.all.filter { isVoiceLikeCategory(it.category) }
+            .mapNotNull { catalog ->
+                val voice = voicesByKey[catalog.ttsEngine?.uppercase() to catalog.ttsLanguage]
+                    ?: return@mapNotNull null
+                val pkg = packages.find { it.modelId == catalog.modelId && it.version == catalog.version }
+                val baseState = pkg?.let { toUiState(it, emptyList(), null) }
+                    ?: toNotDownloadedUiState(catalog).copy(status = ModelStatus.READY)
+                baseState.copy(
+                    installedSizeBytes = voice.fileSizeBytes,
+                    installedAt = voice.downloadedAt,
+                    allowedActions = setOf(ModelAction.DELETE, ModelAction.DETAILS)
+                )
+            }
         val busyKeys = activePackages.map { it.modelId to it.version }.toSet()
         val catalogUi = ModelCatalog.all
             .filter { it.enabled && (it.modelId to it.version) !in busyKeys && (it.modelId to it.version) !in installedKeys }
             .map { toNotDownloadedUiState(it) }
-        downloadingUi + catalogUi
+        downloadingUi + installedVoiceUi + catalogUi
     }
 
     /** Called once at process start (see ModelDownloadService) — reconciles any package left in
      * an active-looking state by a process death against the real partial-file size on disk,
      * per spec §29: a killed process is never itself treated as a failure. */
-    suspend fun recoverOnStartup() {
+    suspend fun recoverOnStartup() = recoveryMutex.withLock {
+        if (recoveryComplete) return@withLock
         val unfinished = packageDao.getUnfinished()
         for (pkg in unfinished) {
             when (pkg.status) {
@@ -120,14 +146,22 @@ class ModelDownloadRepository(
             }
             tryStartNext()
         }
+        recoveryComplete = true
     }
 
     suspend fun startDownload(modelId: String, version: String): Boolean {
         val catalog = ModelCatalog.find(modelId, version) ?: return false
-        if (modelDao.findByCatalogEntry(modelId, version) != null) return false
+        if (isVoiceLikeCategory(catalog.category)) {
+            val engine = catalog.ttsEngine ?: return false
+            val language = catalog.ttsLanguage ?: return false
+            if (ttsVoiceModelDao.getByEngine(engine, language) != null) return false
+        } else if (modelDao.findByCatalogEntry(modelId, version) != null) return false
         val pkgId = DownloadIds.packageId(modelId, version)
         val existing = packageDao.get(pkgId)
-        if (existing != null && existing.status != ModelStatus.CANCELLED) return false
+        if (existing != null) {
+            if (existing.status !in setOf(ModelStatus.READY, ModelStatus.CANCELLED)) return false
+            cleanupPackage(pkgId)
+        }
 
         val stagingDir = storageManager.stagingDirFor(pkgId)
         packageDao.upsert(
@@ -153,13 +187,26 @@ class ModelDownloadRepository(
         return true
     }
 
+    /** Whether package [pkgId] is the one [tryStartNext] currently has running, and — if so —
+     * its job. Reading [activePackageId]/[activeJob] must go through [workMutex], the same lock
+     * [tryStartNext] writes them under: without it there's no happens-before edge between that
+     * write (on [Dispatchers.Default]) and this read (on whatever dispatcher the caller — the
+     * ViewModel — happens to use), so a caller here could observe a stale/null value and think
+     * nothing is running when a download genuinely is. That's what silently broke pause/cancel
+     * before: it took the "not active" branch, wrote PAUSED/CANCELLING straight to the row, and
+     * left the real download running untouched in the background. */
+    private suspend fun activeJobFor(pkgId: String): Job? = workMutex.withLock {
+        if (activePackageId == pkgId) activeJob else null
+    }
+
     suspend fun pauseDownload(modelId: String, version: String) {
         val pkgId = DownloadIds.packageId(modelId, version)
         val pkg = packageDao.get(pkgId) ?: return
         if (pkg.status !in PAUSABLE_STATUSES) return
-        if (activePackageId == pkgId) {
+        val job = activeJobFor(pkgId)
+        if (job != null) {
             packageDao.upsert(pkg.copy(status = ModelStatus.PAUSING, stopReason = StopReason.PAUSE_REQUESTED, updatedAt = System.currentTimeMillis()))
-            activeJob?.cancel()
+            job.cancel()
         } else {
             packageDao.upsert(pkg.copy(status = ModelStatus.PAUSED, stopReason = StopReason.NONE, updatedAt = System.currentTimeMillis()))
         }
@@ -168,19 +215,16 @@ class ModelDownloadRepository(
     suspend fun resumeDownload(modelId: String, version: String) {
         val pkgId = DownloadIds.packageId(modelId, version)
         val pkg = packageDao.get(pkgId) ?: return
-        if (pkg.status != ModelStatus.PAUSED) return
-        packageDao.upsert(pkg.copy(status = ModelStatus.QUEUED, stopReason = StopReason.NONE, updatedAt = System.currentTimeMillis()))
-        ModelDownloadService.start(context)
-        tryStartNext()
-    }
-
-    /** Re-queues a FAILED package, keeping whatever files already completed successfully (spec
-     * §28: "Partial successful files in a multi-file package are preserved"). */
-    suspend fun retryDownload(modelId: String, version: String) {
-        val pkgId = DownloadIds.packageId(modelId, version)
-        val pkg = packageDao.get(pkgId) ?: return
-        if (pkg.status != ModelStatus.FAILED) return
-        packageDao.upsert(pkg.copy(status = ModelStatus.QUEUED, errorCode = null, errorMessage = null, stopReason = StopReason.NONE, updatedAt = System.currentTimeMillis()))
+        if (pkg.status !in setOf(ModelStatus.PAUSED, ModelStatus.FAILED)) return
+        if (pkg.status == ModelStatus.FAILED) {
+            fileDao.getForPackage(pkgId).filter { it.status == FileDownloadStatus.FAILED }.forEach {
+                fileDao.upsert(it.copy(status = FileDownloadStatus.PAUSED, errorMessage = null))
+            }
+        }
+        packageDao.upsert(pkg.copy(
+            status = ModelStatus.QUEUED, errorCode = null, errorMessage = null,
+            stopReason = StopReason.NONE, updatedAt = System.currentTimeMillis()
+        ))
         ModelDownloadService.start(context)
         tryStartNext()
     }
@@ -196,10 +240,30 @@ class ModelDownloadRepository(
         val pkgId = DownloadIds.packageId(modelId, version)
         val pkg = packageDao.get(pkgId) ?: return
         packageDao.upsert(pkg.copy(status = ModelStatus.CANCELLING, stopReason = StopReason.CANCEL_REQUESTED, updatedAt = System.currentTimeMillis()))
-        if (activePackageId == pkgId) {
-            activeJob?.cancel()
+        val job = activeJobFor(pkgId)
+        if (job != null) {
+            job.cancel()
         } else {
             cleanupPackage(pkgId)
+        }
+    }
+
+    suspend fun deleteDownload(modelId: String, version: String) {
+        val pkgId = DownloadIds.packageId(modelId, version)
+        val pkg = packageDao.get(pkgId)
+        val catalog = ModelCatalog.find(modelId, version)
+        if (catalog != null && isVoiceLikeCategory(catalog.category)) {
+            val voice = if (catalog.ttsEngine != null && catalog.ttsLanguage != null) {
+                ttsVoiceModelDao.getByEngine(catalog.ttsEngine, catalog.ttsLanguage)
+            } else null
+            voice?.let {
+                File(it.filePath).deleteRecursively()
+                ttsVoiceModelDao.delete(it)
+            }
+            if (pkg != null) cleanupPackage(pkgId)
+        } else {
+            if (pkg == null) return
+            cancelDownload(modelId, version, keepPartial = false)
         }
     }
 
@@ -215,8 +279,17 @@ class ModelDownloadRepository(
                     try {
                         executePackage(next.id)
                     } finally {
-                        activePackageId = null
-                        activeJob = null
+                        // NonCancellable: this finally runs after job.cancel(), so the coroutine
+                        // is already cancelled — withLock's suspension point would throw
+                        // immediately without this wrapper, and these fields would never
+                        // actually get cleared, leaving pause/cancel unable to find *this*
+                        // package again and blocking the next queued package from starting.
+                        withContext(NonCancellable) {
+                            workMutex.withLock {
+                                activePackageId = null
+                                activeJob = null
+                            }
+                        }
                         _speedInfo.value = null
                         tryStartNext()
                     }
@@ -238,7 +311,10 @@ class ModelDownloadRepository(
 
             val files = fileDao.getForPackage(pkgId)
             val remaining = files.sumOf { (it.expectedBytes ?: 0L) - it.downloadedBytes }.coerceAtLeast(0)
-            storageManager.checkAvailable(remaining, requiresImportCopy = true)
+            // TTS_VOICE/STT_MODEL finalize via File.renameTo (finalizeVoiceModel) rather than a
+            // real copy — no second on-disk copy of the download, so no need to reserve double
+            // the space the generic import path needs.
+            storageManager.checkAvailable(remaining, requiresImportCopy = !isVoiceLikeCategory(catalog.category))
 
             for (file in files) {
                 if (file.status == FileDownloadStatus.COMPLETED) continue
@@ -315,31 +391,98 @@ class ModelDownloadRepository(
                 validator.validateTflite(File(modelFile.tempPath))
                 files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
             }
+            ModelFormat.ONNX_TTS, ModelFormat.ONNX_STT -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
         }
 
         setStatus(pkgId, ModelStatus.IMPORTING)
-        val importResult = if (catalog.category == ModelRole.EMBEDDING) {
-            val tokenizerFile = files.firstOrNull { it.role == ModelFileRole.TOKENIZER }
-                ?: throw ModelDownloadException(ModelErrorCode.TOKENIZER_MISSING, "Embedding model requires a tokenizer file")
-            modelImportManager.importEmbeddingModel(Uri.fromFile(File(modelFile.tempPath)), Uri.fromFile(File(tokenizerFile.tempPath)))
+        if (isVoiceLikeCategory(catalog.category)) {
+            // Neither a TTS voice nor an STT model is a loadable chat model — skip
+            // ModelImportManager/ModelInfo entirely and write it where
+            // PiperTtsEngine/KokoroTtsEngine/WhisperSttEngine already look (TtsVoiceModelDao),
+            // same as a voice downloaded through the older TtsModelDownloadManager path.
+            ttsVoiceModelDao.upsert(finalizeVoiceModel(catalog, files))
         } else {
-            modelImportManager.import(Uri.fromFile(File(modelFile.tempPath)), catalog.category)
-        }
-        val installed = when (importResult) {
-            is ImportResult.Success -> importResult.model
-            is ImportResult.Duplicate -> importResult.existing
-            is ImportResult.Rejected -> throw ModelDownloadException(ModelErrorCode.IMPORT_FAILED, importResult.reason)
-        }
-        modelDao.upsert(
-            installed.copy(
-                origin = ModelOrigin.DOWNLOADED, catalogModelId = catalog.modelId,
-                catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl
+            // Drop the ".part" suffix now that every file passed validation — ModelImportManager
+            // (both single-file import() and importEmbeddingModel()'s model-vs-tokenizer
+            // disambiguation) decides file identity from the extension, and every downloaded file
+            // shares the same ".part" extension, so it can never tell a ".tflite.part" model from
+            // a "sentencepiece.model.part" tokenizer without this rename first.
+            files.forEach { f ->
+                if (f.tempPath != f.finalPath) {
+                    val src = File(f.tempPath)
+                    val dst = File(f.finalPath)
+                    if (!src.renameTo(dst)) {
+                        throw ModelDownloadException(ModelErrorCode.STORAGE_WRITE_FAILED, "Could not finalize downloaded file ${f.fileName}")
+                    }
+                }
+            }
+            val importResult = if (catalog.category == ModelRole.EMBEDDING) {
+                val tokenizerFile = files.firstOrNull { it.role == ModelFileRole.TOKENIZER }
+                    ?: throw ModelDownloadException(ModelErrorCode.TOKENIZER_MISSING, "Embedding model requires a tokenizer file")
+                modelImportManager.importEmbeddingModel(Uri.fromFile(File(modelFile.finalPath)), Uri.fromFile(File(tokenizerFile.finalPath)))
+            } else {
+                modelImportManager.import(Uri.fromFile(File(modelFile.finalPath)), catalog.category)
+            }
+            val installed = when (importResult) {
+                is ImportResult.Success -> importResult.model
+                is ImportResult.Duplicate -> importResult.existing
+                is ImportResult.Rejected -> throw ModelDownloadException(ModelErrorCode.IMPORT_FAILED, importResult.reason)
+            }
+            modelDao.upsert(
+                installed.copy(
+                    origin = ModelOrigin.DOWNLOADED, catalogModelId = catalog.modelId,
+                    catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl
+                )
             )
-        )
+        }
 
         storageManager.deleteStaging(pkgId)
         fileDao.deleteForPackage(pkgId)
         packageDao.upsert((packageDao.get(pkgId) ?: return).copy(status = ModelStatus.READY, currentFileId = null, updatedAt = System.currentTimeMillis()))
+    }
+
+    /** Moves a verified TTS_VOICE or STT_MODEL package's downloaded files (still at their `.part`
+     * [DownloadFile.tempPath] at this point — this catalog/format never goes through the
+     * LITERTLM/TFLITE rename-to-finalPath step) into the canonical `<root>/<engine>_<language>/`
+     * directory [com.vervan.chat.voice.PiperTtsEngine]/[com.vervan.chat.voice.KokoroTtsEngine]/
+     * [com.vervan.chat.voice.WhisperSttEngine] already read via [TtsVoiceModelDao] — same layout
+     * the older [com.vervan.chat.voice.TtsModelDownloadManager] path writes for TTS voices, so
+     * both sources are interchangeable to the engines. TTS voices land under `tts_voices/`, STT
+     * models under `stt_models/` — purely a filesystem-tidiness split, both write the same
+     * [TtsVoiceModel] row shape. */
+    private fun finalizeVoiceModel(catalog: CatalogModel, files: List<DownloadFile>): TtsVoiceModel {
+        val engine = catalog.ttsEngine ?: throw ModelDownloadException(ModelErrorCode.UNKNOWN, "Catalog entry missing engine identifier: ${catalog.modelId}")
+        val language = catalog.ttsLanguage ?: throw ModelDownloadException(ModelErrorCode.UNKNOWN, "Catalog entry missing language identifier: ${catalog.modelId}")
+        val rootDirName = if (catalog.category == ModelRole.STT_MODEL) "stt_models" else "tts_voices"
+        val voiceDir = File(context.filesDir, "$rootDirName/${engine.lowercase()}_$language").apply { mkdirs() }
+        var totalBytes = 0L
+        files.forEach { f ->
+            val src = File(f.tempPath)
+            val dst = File(voiceDir, f.fileName)
+            totalBytes += src.length()
+            if (!src.renameTo(dst)) {
+                src.copyTo(dst, overwrite = true)
+                src.delete()
+            }
+        }
+        val modelFile = File(voiceDir, "model.onnx")
+        val hash = if (modelFile.isFile) sha256Of(modelFile) else ""
+        return TtsVoiceModel(engine = engine, language = language, filePath = voiceDir.absolutePath, fileSizeBytes = totalBytes, sha256 = hash)
+    }
+
+    /** [TtsVoiceModel.sha256] is informational only (support/debugging, not verified against a
+     * known-good value) — see the same rationale in [com.vervan.chat.voice.TtsModelDownloadManager]. */
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private suspend fun awaitNetworkAndWifi(pkgId: String) {
@@ -358,8 +501,14 @@ class ModelDownloadRepository(
         }
     }
 
-    private suspend fun handleStop(pkgId: String) {
-        val pkg = packageDao.get(pkgId) ?: return
+    /** Runs entirely under [NonCancellable]: this is called from the `catch (CancellationException)`
+     * branch in [executePackage], i.e. the enclosing coroutine is already cancelled. Without this
+     * wrapper, every suspend DB call below (Room dispatches its suspend DAO functions onto a query
+     * executor — a real suspension point) would throw immediately instead of running, so the
+     * "write PAUSED"/cleanup step would silently never happen — leaving the row stuck at
+     * PAUSING/CANCELLING forever. */
+    private suspend fun handleStop(pkgId: String) = withContext(NonCancellable) {
+        val pkg = packageDao.get(pkgId) ?: return@withContext
         when (pkg.stopReason) {
             StopReason.PAUSE_REQUESTED -> {
                 val files = fileDao.getForPackage(pkgId)
@@ -384,6 +533,18 @@ class ModelDownloadRepository(
                 // path guessing at a final state.
             }
         }
+    }
+
+    /** Called by ModelManagerViewModel.delete() when discarding an installed [ModelInfo] whose
+     * origin is [ModelOrigin.DOWNLOADED] — the READY [DownloadPackage] row that installed it is
+     * excluded from every UI list once READY (see [uiStates]), so nothing else ever cleans it
+     * up; without this it lingers in the DB forever as dead debris. Only ever touches a row
+     * that's actually READY — an active download's package still needs [cancelDownload] or
+     * [pauseDownload], not this. */
+    suspend fun forgetInstalledPackage(modelId: String, version: String) {
+        val pkgId = DownloadIds.packageId(modelId, version)
+        val pkg = packageDao.get(pkgId) ?: return
+        if (pkg.status == ModelStatus.READY) cleanupPackage(pkgId)
     }
 
     private suspend fun cleanupPackage(pkgId: String) {
@@ -462,9 +623,17 @@ class ModelDownloadRepository(
             precision = catalog?.precision,
             minimumRamBytes = catalog?.minimumRamBytes,
             sourceName = catalog?.sourceName ?: "",
-            allowedActions = allowedActionsFor(pkg.status)
+            allowedActions = downloadActionsFor(pkg.status)
         )
     }
+
+    /** TTS voices and downloadable STT models both skip ModelImportManager/ModelInfo and write
+     * into [TtsVoiceModelDao] instead (see [finalizeVoiceModel]) — this is the one predicate
+     * that decides "does this catalog category behave like a voice model" everywhere that
+     * distinction matters, so a third such category later is a one-line change, not a hunt
+     * across every `== ModelRole.TTS_VOICE` check. */
+    private fun isVoiceLikeCategory(role: ModelRole): Boolean =
+        role == ModelRole.TTS_VOICE || role == ModelRole.STT_MODEL
 
     private fun toNotDownloadedUiState(catalog: CatalogModel): ModelUiState = ModelUiState(
         modelId = catalog.modelId, version = catalog.version, displayName = catalog.displayName,
@@ -475,18 +644,6 @@ class ModelDownloadRepository(
         minimumRamBytes = catalog.minimumRamBytes, capabilities = catalog.capabilities, sourceName = catalog.sourceName,
         allowedActions = setOf(ModelAction.DOWNLOAD, ModelAction.DETAILS)
     )
-
-    private fun allowedActionsFor(status: ModelStatus): Set<ModelAction> = when (status) {
-        ModelStatus.NOT_DOWNLOADED -> setOf(ModelAction.DOWNLOAD, ModelAction.DETAILS)
-        ModelStatus.QUEUED -> setOf(ModelAction.REMOVE, ModelAction.DETAILS)
-        ModelStatus.PREPARING, ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING -> setOf(ModelAction.DETAILS)
-        ModelStatus.WAITING_FOR_NETWORK, ModelStatus.WAITING_FOR_WIFI, ModelStatus.DOWNLOADING -> setOf(ModelAction.PAUSE, ModelAction.CANCEL, ModelAction.DETAILS)
-        ModelStatus.WAITING_FOR_STORAGE -> setOf(ModelAction.CANCEL, ModelAction.DETAILS)
-        ModelStatus.PAUSING, ModelStatus.CANCELLING, ModelStatus.DELETING -> emptySet()
-        ModelStatus.PAUSED -> setOf(ModelAction.RESUME, ModelAction.DELETE, ModelAction.DETAILS)
-        ModelStatus.FAILED -> setOf(ModelAction.RETRY, ModelAction.REMOVE, ModelAction.DETAILS)
-        ModelStatus.READY, ModelStatus.CANCELLED -> emptySet()
-    }
 
     companion object {
         private const val TAG = "ModelDownloadRepository"

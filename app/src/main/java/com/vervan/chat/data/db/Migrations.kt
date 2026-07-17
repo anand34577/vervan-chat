@@ -328,5 +328,13 @@ val MIGRATIONS = arrayOf(
                     "retryCount INTEGER NOT NULL, errorMessage TEXT)"
             )
         }
+    },
+    object : Migration(33, 34) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // ModelLoadCoordinator (spec: "Model Loading Strategy") — tracks the last time a
+            // model was actually loaded into its native engine, used to pick a replacement
+            // default when the current default is deleted.
+            db.execSQL("ALTER TABLE models ADD COLUMN lastLoadedAt INTEGER")
+        }
     }
 )

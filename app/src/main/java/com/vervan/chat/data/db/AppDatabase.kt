@@ -110,7 +110,7 @@ class Converters {
         Workspace::class, Expense::class, TtsVoiceModel::class,
         DownloadPackage::class, DownloadFile::class
     ],
-    version = 33,
+    version = 34,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
