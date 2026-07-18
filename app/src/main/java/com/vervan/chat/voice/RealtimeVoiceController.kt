@@ -256,12 +256,18 @@ class RealtimeVoiceController(private val app: VervanApp) {
      * lets [PiperTtsEngine]'s per-sentence script detection work as intended. Returns null on
      * any failure (model error, empty output) so the caller can just re-listen. */
     private suspend fun transcribeAudio(audioPath: String): String? = runCatching {
-        app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.VOICE_SESSION)
-        app.container.withLlm { engine ->
-            val builder = StringBuilder()
-            engine.generate(TRANSCRIBE_PROMPT, audioPath = audioPath).collect { token -> builder.append(token) }
-            builder.toString().trim()
-        }
+        val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
+            ?: return@runCatching null
+        val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
+        if (!loaded.success || !app.container.audioEnabled(model)) return@runCatching null
+        val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+        val builder = StringBuilder()
+        app.container.generate(
+            model, TRANSCRIBE_PROMPT, null, audioPath,
+            params.temperature, params.topP, params.topK, params.seed,
+            params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+        ).collect { token -> builder.append(token) }
+        builder.toString().trim().takeIf { it.isNotEmpty() }
     }.getOrNull()
 
     private suspend fun respondAndSpeak(userText: String) {
@@ -296,25 +302,32 @@ class RealtimeVoiceController(private val app: VervanApp) {
         val scope = controllerScope
         val bargeInWatcher = maybeStartBargeInWatcher()
         val job = scope?.launch(Dispatchers.Default) {
-            app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.VOICE_SESSION)
-            app.container.withLlm { engine ->
-                engine.generate(userText).collect { token ->
-                    replyText += token
-                    _turns.update { current ->
-                        if (current.any { it.id == turnId }) {
-                            current.map { turn -> if (turn.id == turnId) turn.copy(text = replyText) else turn }
-                        } else {
-                            current + VoiceTurn(
-                                fromUser = false,
-                                text = replyText,
-                                isStreaming = true,
-                                audioPending = true,
-                                id = turnId
-                            )
-                        }
+            val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
+                ?: throw IllegalStateException("The active generation model was removed during the voice session")
+            val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
+            check(loaded.success) { loaded.errorMessage ?: "Could not load the voice model" }
+            val genParams = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+            val replyFlow = app.container.generate(
+                model, userText, null, null,
+                genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
+                genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences
+            )
+            replyFlow.collect { token ->
+                replyText += token
+                _turns.update { current ->
+                    if (current.any { it.id == turnId }) {
+                        current.map { turn -> if (turn.id == turnId) turn.copy(text = replyText) else turn }
+                    } else {
+                        current + VoiceTurn(
+                            fromUser = false,
+                            text = replyText,
+                            isStreaming = true,
+                            audioPending = true,
+                            id = turnId
+                        )
                     }
-                    chunker.append(token)
                 }
+                chunker.append(token)
             }
         }
         generationJob = job

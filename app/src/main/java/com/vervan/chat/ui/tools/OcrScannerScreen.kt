@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
@@ -29,6 +31,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.system.toUserMessage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,16 +71,17 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     var extractedText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
     fun runOcr(file: File) {
         imagePath = file.absolutePath
         savedMessage = null
+        errorText = null
         isProcessing = true
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("")
-            }
-            extractedText = text
+            val result = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) } }
+            result.onSuccess { extractedText = it }
+                .onFailure { errorText = it.toUserMessage(); extractedText = "" }
             isProcessing = false
         }
     }
@@ -101,7 +107,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             val (file, uri) = newImageFile()
             pendingCameraFile = file
             takePicture.launch(uri)
-        }
+            } else errorText = "Camera access is off. Choose an image or allow it in Settings."
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -115,6 +121,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                     }.getOrNull()
                 }
                 if (dest != null) runOcr(dest)
+            else errorText = "Could not open the image. Choose another one."
             }
         }
     }
@@ -127,19 +134,28 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
+            ToolIntro(
+                icon = Icons.Filled.DocumentScanner,
+                title = "Turn a photo into editable text",
+                body = "Choose an image, review its text, then copy or save it."
+            )
             Text(
-                "Extract text from a photo or an image file — runs fully on-device.",
+                "Extract editable text from an image on-device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.height(18.dp))
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                     Text(" Camera")
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.height(18.dp))
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
                     Text(" From files")
                 }
             }
@@ -154,11 +170,23 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 }
             }
             if (isProcessing) {
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(Modifier.padding(end = 8.dp))
-                    Text("Recognizing text…")
-                }
-            } else if (imagePath != null) {
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Recognizing text",
+                    body = "Reading text from the image on this device."
+                )
+            }
+            errorText?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Text recognition failed",
+                    message = it,
+                    recovery = "Use a clear JPG or PNG image, then try again."
+                )
+            }
+            if (!isProcessing && imagePath != null && errorText == null) {
+                ToolResultHeader(
+                    title = if (extractedText.isBlank()) "No text detected" else "Text recognized",
+                    supportingText = if (extractedText.isBlank()) "Try a sharper, evenly lit image." else "Review and correct the result before using it."
+                )
                 OutlinedTextField(
                     value = extractedText,
                     onValueChange = { extractedText = it },
@@ -176,7 +204,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                         enabled = extractedText.isNotBlank(),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Filled.ContentCopy, null, Modifier.height(18.dp))
+                        Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
                         Text(" Copy")
                     }
                     Button(
@@ -193,7 +221,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                         enabled = extractedText.isNotBlank(),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Filled.Description, null, Modifier.height(18.dp))
+                        Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
                         Text(" Save as document")
                     }
                 }
@@ -201,6 +229,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                     Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
                 }
             }
+        }
         }
     }
 }

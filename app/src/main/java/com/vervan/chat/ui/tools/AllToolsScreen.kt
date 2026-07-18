@@ -1,6 +1,5 @@
 package com.vervan.chat.ui.tools
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +17,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Rule
@@ -38,9 +36,11 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +48,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -188,8 +189,25 @@ private val categories = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("vervan", 0) }
+    // Favorites persist in the shared prefs the app already uses (no schema change): a set of
+    // tool routes. Held in state so toggling re-renders immediately; prefs is the durable source
+    // of truth and is reloaded on process restart.
+    var favorites by remember { mutableStateOf(prefs.getStringSet("tool_favorites", emptySet())!!.toSet()) }
+    fun toggleFavorite(route: String) {
+        val next = if (route in favorites) favorites - route else favorites + route
+        favorites = next
+        prefs.edit().putStringSet("tool_favorites", next).apply()
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    // Pinned tools, in the catalog's own order, shown only in the unfiltered default view so the
+    // section doesn't fight an active search or category filter.
+    val pinnedEntries = remember(favorites) {
+        categories.flatMap { it.entries }.filter { it.route in favorites }
+    }
+    val showPinned = pinnedEntries.isNotEmpty() && query.isBlank() && selectedCategory == null
     val visibleCategories = remember(query, selectedCategory) {
         categories.mapNotNull { category ->
             val entries = category.entries.filter { entry ->
@@ -229,7 +247,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                         icon = Icons.Filled.GridView,
                         eyebrow = "On-device toolkit",
                         title = "Choose what you want to accomplish",
-                        body = "${categories.sumOf { it.entries.size }} tools grouped into clear, practical sections. Everything runs locally.",
+                        body = "${categories.sumOf { it.entries.size }} practical tools, grouped by task and run locally.",
                         modifier = Modifier.padding(top = Space.lg),
                     )
                 }
@@ -262,12 +280,26 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     }
                 }
 
+                if (showPinned) {
+                    item(key = "pinned-header", span = { GridItemSpan(maxLineSpan) }) {
+                        VervanSectionHeader(title = "Pinned", count = pinnedEntries.size)
+                    }
+                    items(pinnedEntries, key = { "pinned-${it.route}" }) { entry ->
+                        ToolCard(
+                            entry = entry,
+                            isFavorite = true,
+                            onToggleFavorite = { toggleFavorite(entry.route) },
+                            onClick = { onNavigate(entry.route) },
+                        )
+                    }
+                }
+
                 if (visibleCategories.isEmpty()) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                         EmptyState(
                             icon = Icons.Filled.GridView,
                             title = "No tools found",
-                            body = "Try a different search or choose All categories.",
+                            body = "Try another term or choose All.",
                             modifier = Modifier.padding(vertical = Space.xxl),
                         )
                     }
@@ -288,7 +320,12 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                             }
                         }
                         items(category.entries, key = { it.route }) { entry ->
-                            ToolCard(entry = entry, onClick = { onNavigate(entry.route) })
+                            ToolCard(
+                                entry = entry,
+                                isFavorite = entry.route in favorites,
+                                onToggleFavorite = { toggleFavorite(entry.route) },
+                                onClick = { onNavigate(entry.route) },
+                            )
                         }
                     }
                     item(key = "end", span = { GridItemSpan(maxLineSpan) }) {
@@ -306,12 +343,17 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun ToolCard(entry: ToolEntry, onClick: () -> Unit) {
+private fun ToolCard(
+    entry: ToolEntry,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onClick: () -> Unit,
+) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = vervanBorder(),
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -329,12 +371,14 @@ private fun ToolCard(entry: ToolEntry, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(start = Space.md),
                 )
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = if (isFavorite) "Unpin ${entry.label}" else "Pin ${entry.label}",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
             Text(
                 entry.description,

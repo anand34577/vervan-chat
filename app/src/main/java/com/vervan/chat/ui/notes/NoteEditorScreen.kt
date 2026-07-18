@@ -127,10 +127,17 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
             if (running) {
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp).padding(end = 8.dp), strokeWidth = 2.dp)
-                    Text("Working…")
+                    Text("Updating the note on this device…")
                 }
             }
-            error?.let { ErrorCard("Couldn't complete the note action", it, Modifier.padding(top = 8.dp)) }
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't complete the note action",
+                    message = it,
+                    recovery = "Your note is safe. Check the model or shorten the selection, then try again.",
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
             ChipInputField(
                 items = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { newTags ->
@@ -155,7 +162,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     maxLength = ValidationLimits.NOTE_CONTENT,
                     maxLines = Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f),
-                    placeholder = "Write here… supports **bold**, `code`, ```code blocks```"
+                    placeholder = "Write here… Markdown is supported"
                 )
             }
             pendingResult?.let { result ->
@@ -177,7 +184,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
             text = {
                 Column {
                     if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet — create one from the Knowledge tab first.")
+                        Text("No knowledge bases yet. Create one in Knowledge.")
                     }
                     knowledgeBases.forEach { kb ->
                         Text(

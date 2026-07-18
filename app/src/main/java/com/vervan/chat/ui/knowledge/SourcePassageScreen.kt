@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -87,7 +88,8 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
             items(neighbors, key = { it.id }) { c ->
                 val isTarget = c.id == chunk?.id
                 Card(
@@ -108,6 +110,7 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

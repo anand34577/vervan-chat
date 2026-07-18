@@ -12,23 +12,23 @@ package com.vervan.chat.llm
 enum class ModelProfileType(val id: String, val label: String, val description: String) {
     FAST(
         "FAST", "Fast",
-        "Smaller context, shorter output, minimal retrieval, fastest thinking. Best for quick questions."
+        "Fast, short answers for quick questions."
     ),
     BALANCED(
         "BALANCED", "Balanced",
-        "Moderate context, standard retrieval, normal output length. The everyday default."
+        "A practical balance of speed and answer quality."
     ),
     QUALITY(
         "QUALITY", "Quality",
-        "Larger context, more retrieval, longer output, deeper reasoning. Best for complex analysis."
+        "Deeper, longer answers for complex work."
     ),
     BATTERY_SAVER(
         "BATTERY_SAVER", "Battery saver",
-        "Conservative output, lower context, reduced retrieval. Trades quality for battery on the go."
+        "Uses less context and retrieval to save battery."
     ),
     THERMAL_SAFE(
         "THERMAL_SAFE", "Thermal safe",
-        "Reduced workload, no concurrent embedding, lower context. Use when the device is hot."
+        "Reduces workload when the device is warm."
     );
 
     companion object {

@@ -44,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 
@@ -60,9 +61,25 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     var shuffled by remember { mutableStateOf(false) }
     var sessionCorrect by remember { mutableIntStateOf(0) }
     var sessionSeen by remember { mutableIntStateOf(0) }
-    val sessionCards = remember(cards, shuffled) { if (shuffled) cards.shuffled() else cards }
-    fun resetSession() { index = 0; revealed = false; sessionCorrect = 0; sessionSeen = 0 }
+    // Snapshot the deck once per session instead of re-deriving from `cards` on every
+    // recomposition — `cards` re-emits on every markResult() write (it's backed by a Room Flow),
+    // which used to reshuffle the deck under the user mid-session and, with "Needs practice" on,
+    // could shrink the deck the instant a card was answered correctly and skip/end the session
+    // early. A session now only resets on an explicit user action (toggling the filter/shuffle
+    // chips, "Review again", "Practice missed cards") or the very first time real data arrives.
+    var sessionCards by remember { mutableStateOf<List<StudyCard>>(emptyList()) }
+    var sessionDataLoaded by remember { mutableStateOf(false) }
+    fun resetSession() {
+        sessionCards = if (shuffled) cards.shuffled() else cards
+        index = 0; revealed = false; sessionCorrect = 0; sessionSeen = 0
+    }
     LaunchedEffect(missedOnly, shuffled) { resetSession() }
+    LaunchedEffect(cards) {
+        if (!sessionDataLoaded && cards.isNotEmpty()) {
+            sessionDataLoaded = true
+            resetSession()
+        }
+    }
 
     Scaffold(
         topBar = {

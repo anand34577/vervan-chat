@@ -105,10 +105,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
             val prompt = "${action.instruction}\n\n$content"
             var result = ""
             try {
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    engine.generate(prompt).collect { result += it }
-                }
+                com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { result += it }
                 onResult(result)
             } catch (t: Throwable) {
                 _error.value = "Generation failed: ${t.toUserMessage()}"

@@ -17,6 +17,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanSearchField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -66,10 +68,10 @@ fun ToolsScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          Column(Modifier.fillMaxSize()) {
             Text(
-                "Tools the model can call when Tools is turned on for a chat. Turning one off here " +
-                    "turns it off everywhere by default — a chat can still override that just for itself.",
+                "Choose which tools chats can use by default. Each chat can override this.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
@@ -80,7 +82,7 @@ fun ToolsScreen(onBack: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Always tell the model the date & time", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Injected directly into every prompt, independent of Tools being on — off means the model only knows \"now\" if it asks and a date/time tool is enabled.",
+                            "Include the current date and time in every prompt.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -89,12 +91,10 @@ fun ToolsScreen(onBack: () -> Unit) {
                 }
             }
 
-            OutlinedTextField(
+            VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search tools") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                singleLine = true,
+                placeholder = "Search model tools",
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             )
 
@@ -107,6 +107,7 @@ fun ToolsScreen(onBack: () -> Unit) {
                     )
                 }
             }
+          }
         }
     }
 }

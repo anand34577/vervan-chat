@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -164,17 +165,23 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
+            ToolIntro(
+                icon = Icons.Filled.PhotoCamera,
+                title = "Scan a complete document",
+                body = "Capture pages, review them, then export a PDF or searchable text."
+            )
             Text(
-                "Capture each page, then export as a PDF/images or import as a Knowledge document.",
+                "Capture pages, then export or add them to Knowledge.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             OutlinedButton(
                 onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) {
-                Icon(Icons.Filled.PhotoCamera, null, Modifier.height(18.dp))
+                Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                 Text(" Capture page ${pages.size + 1}")
             }
             if (pages.isNotEmpty()) {
@@ -194,33 +201,35 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                     }
                 }
                 if (isWorking) {
-                    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                        CircularProgressIndicator(Modifier.padding(end = 8.dp))
-                        Text("Processing pages on this device…")
-                    }
+                    com.vervan.chat.ui.common.OperationProgressCard(
+                        title = "Processing ${pages.size} ${if (pages.size == 1) "page" else "pages"}",
+                        body = "Reading and preparing captured pages. Keep this screen open.",
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
                 } else {
                     Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = ::exportPdf, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.PictureAsPdf, null, Modifier.height(18.dp))
+                            Icon(Icons.Filled.PictureAsPdf, null, Modifier.size(18.dp))
                             Text(" PDF")
                         }
                         OutlinedButton(onClick = ::exportImages, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.Share, null, Modifier.height(18.dp))
+                            Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
                             Text(" Images")
                         }
                     }
                     Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        Icon(Icons.Filled.Description, null, Modifier.height(18.dp))
+                        Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
                         Text(" Save as document (RAG)")
                     }
                     OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        Text("Process as study material (notes/tasks/mind map/summary)")
+                        Text("Create study material")
                     }
                 }
                 statusMessage?.let {
                     Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
                 }
             }
+        }
         }
     }
 }

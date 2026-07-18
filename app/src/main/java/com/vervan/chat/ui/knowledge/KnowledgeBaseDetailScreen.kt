@@ -50,9 +50,11 @@ import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
+import com.vervan.chat.system.toUserMessage
 
 private enum class DocFilter(val label: String) { ALL("All"), READY("Ready"), PROCESSING("Processing"), FAILED("Failed"), UNSUPPORTED("Unsupported") }
 
@@ -117,7 +119,8 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
             }
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
             Button(
                 onClick = {
                     pickFile.launch(
@@ -173,6 +176,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                 }
             }
         }
+        }
     }
 
     pendingVersionConflict?.let { conflict ->
@@ -193,7 +197,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
     if (confirmDeleteKb) {
         ConfirmDialog(
             title = "Delete knowledge base?",
-            body = "This removes the knowledge base and its imported documents. This can't be undone.",
+            body = "Permanently remove this base and its imported documents?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { confirmDeleteKb = false; vm.deleteKnowledgeBase(onBack) },
@@ -205,7 +209,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
         val count = selected.size
         ConfirmDialog(
             title = "Delete selected documents?",
-            body = "$count document${if (count == 1) "" else "s"} and their indexed chunks will be removed from this knowledge base.",
+            body = "Remove $count document${if (count == 1) "" else "s"} and their search index?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = {
@@ -276,8 +280,8 @@ private fun DocumentRow(
                     DocumentStatus.READY -> document.failureReason
                         ?: if (document.ocrApplied) "Ready (OCR text) — tap to view" else "Ready — tap to view"
                     DocumentStatus.OCR_RUNNING -> "Running OCR (scanned PDF)…"
-                    DocumentStatus.FAILED -> "Failed: ${document.failureReason}"
-                    DocumentStatus.UNSUPPORTED -> "Unsupported: ${document.failureReason}"
+                    DocumentStatus.FAILED -> "Failed. ${document.failureReason.toUserMessage()}"
+                    DocumentStatus.UNSUPPORTED -> "Unsupported. ${document.failureReason.toUserMessage()}"
                     else -> document.status.name.lowercase().replaceFirstChar { it.uppercase() } + "…"
                 }
                 Text(
@@ -298,7 +302,7 @@ private fun DocumentRow(
     if (confirmDelete) {
         ConfirmDialog(
             title = "Delete \"${document.displayName}\"?",
-            body = "This removes the document and its indexed chunks from this knowledge base.",
+            body = "Remove this document and its search index?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },

@@ -77,7 +77,7 @@ object ModelCatalog {
             modelId = "gemma-4-e2b-it-litert",
             version = "1",
             displayName = "Gemma 4 E2B IT",
-            description = "Google's Gemma 4, 2B-parameter instruction-tuned model, packaged for on-device LiteRT-LM inference.",
+            description = "Google's 2B instruction model for on-device LiteRT-LM.",
             category = ModelRole.GENERATION,
             format = ModelFormat.LITERTLM,
             files = listOf(
@@ -99,7 +99,7 @@ object ModelCatalog {
             modelId = "embeddinggemma-300m-litert",
             version = "1",
             displayName = "EmbeddingGemma 300M",
-            description = "Google's EmbeddingGemma 300M, 512-token sequence length, mixed precision — for on-device semantic search and retrieval.",
+            description = "Google's 300M embedding model for local semantic search.",
             category = ModelRole.EMBEDDING,
             format = ModelFormat.TFLITE,
             files = listOf(
@@ -143,7 +143,7 @@ object ModelCatalog {
             modelId = "sherpa-onnx-whisper-tiny",
             version = "1",
             displayName = "Whisper Tiny (offline speech-to-text)",
-            description = "OpenAI's Whisper Tiny (multilingual, int8-quantized), running fully on-device via sherpa-onnx — used for realtime voice chat when the active chat model can't transcribe audio itself, or as a fallback when it doesn't do it well.",
+            description = "Multilingual Whisper Tiny for offline voice transcription.",
             category = ModelRole.STT_MODEL,
             format = ModelFormat.ONNX_STT,
             files = listOf(
@@ -167,7 +167,7 @@ object ModelCatalog {
         modelId = "mms-tts-$iso",
         version = "1",
         displayName = displayName,
-        description = "Meta's MMS-TTS model for on-device speech synthesis in the realtime voice chat pipeline.",
+        description = "Meta's on-device speech model for voice replies.",
         category = ModelRole.TTS_VOICE,
         format = ModelFormat.ONNX_TTS,
         files = listOf(

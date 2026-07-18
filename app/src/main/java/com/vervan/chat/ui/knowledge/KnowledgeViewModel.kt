@@ -8,6 +8,7 @@ import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -75,7 +76,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                     is com.vervan.chat.model.DocumentImportOutcome.Imported -> { /* observed via documents Flow */ }
                 }
             } catch (e: Exception) {
-                _error.value = "Import failed: ${e.message}"
+                _error.value = "Import failed. ${e.toUserMessage()}"
             }
             _importing.value = false
         }
@@ -86,9 +87,14 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
      * force a trip to the document viewer just to retry. */
     fun reindex(document: Document) {
         viewModelScope.launch {
-            db.chunkDao().deleteForDocument(document.id)
-            db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING))
-            docImport.reindexLocal(document.id)
+            _error.value = null
+            try {
+                db.chunkDao().deleteForDocument(document.id)
+                db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING))
+                docImport.reindexLocal(document.id)
+            } catch (e: Exception) {
+                _error.value = "Re-indexing failed. ${e.toUserMessage()}"
+            }
         }
     }
 
@@ -101,7 +107,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                 ensureEmbeddingModelLoaded()
                 docImport.resolveVersionConflict(conflict.existing, conflict.tempFilePath, conflict.mimeType, conflict.newHash, replace)
             } catch (e: Exception) {
-                _error.value = "Import failed: ${e.message}"
+                _error.value = "Import failed. ${e.toUserMessage()}"
             }
             _importing.value = false
         }
@@ -115,15 +121,12 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
 
     private suspend fun ensureEmbeddingModelLoaded() {
         val active = db.modelDao().getActiveModel(ModelRole.EMBEDDING) ?: return
-        app.container.withEmbedding { engine ->
-            if (engine.loadedModelPath != active.filePath) {
-            try {
-                engine.load(active.filePath, active.tokenizerPath)
-            } catch (e: Exception) {
-                // Import still proceeds — chunks are keyword-searchable without embeddings.
-                _error.value = "Embedding model failed to load (semantic search unavailable): ${e.message}"
-            }
-            }
+        val result = app.container.modelLoadCoordinator.ensureLoaded(
+            active, com.vervan.chat.modelload.LoadTrigger.RAG_RETRIEVAL
+        )
+        if (!result.success) {
+            // Import still proceeds — chunks are keyword-searchable without embeddings.
+                _error.value = "Semantic search is unavailable. Keyword search still works."
         }
     }
 

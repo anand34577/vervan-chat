@@ -336,5 +336,61 @@ val MIGRATIONS = arrayOf(
             // default when the current default is deleted.
             db.execSQL("ALTER TABLE models ADD COLUMN lastLoadedAt INTEGER")
         }
+    },
+    object : Migration(34, 35) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // llama.cpp (GGUF) backend support, alongside the existing LiteRT-LM runtime —
+            // existing rows default to LITERT_LM. mmprojPath is only ever set for a
+            // vision-capable llama.cpp model (its companion mtmd projector GGUF).
+            db.execSQL("ALTER TABLE models ADD COLUMN engine TEXT NOT NULL DEFAULT 'LITERT_LM'")
+            db.execSQL("ALTER TABLE models ADD COLUMN mmprojPath TEXT")
+        }
+    },
+    object : Migration(35, 36) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Full LLM config exposure — common generation overrides, llama.cpp-only load/gen
+            // overrides, and read-only GGUF metadata (all nullable = "inherit global default"
+            // or, for the metadata trio, "not read yet").
+            db.execSQL("ALTER TABLE models ADD COLUMN minP REAL")
+            db.execSQL("ALTER TABLE models ADD COLUMN repetitionPenalty REAL")
+            db.execSQL("ALTER TABLE models ADD COLUMN maxOutputTokens INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN stopSequences TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN gpuLayerCount INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN cpuThreads INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN nBatch INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN nUbatch INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN useMlock INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN flashAttention INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN kvCacheType TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN vulkanDeviceIndex INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN ropeFreqBase REAL")
+            db.execSQL("ALTER TABLE models ADD COLUMN ropeFreqScale REAL")
+            db.execSQL("ALTER TABLE models ADD COLUMN chatTemplateOverride TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN loraPath TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN loraScale REAL")
+            db.execSQL("ALTER TABLE models ADD COLUMN modelDesc TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN nativeMaxContext INTEGER")
+            db.execSQL("ALTER TABLE models ADD COLUMN layerCount INTEGER")
+        }
+    },
+    object : Migration(36, 37) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Indices on every FK-shaped lookup column actually hit by a DAO WHERE clause — the
+            // schema had none before this, so e.g. the main chat-list query's own
+            // "EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)" was a full scan
+            // of messages for every chat, every emission. Names match Room's own auto-generated
+            // convention (index_<table>_<column>) so this migration and the @Index annotations
+            // in the entity classes describe the exact same schema.
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_chatId ON messages(chatId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_chats_workspaceId ON chats(workspaceId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_chats_folderId ON chats(folderId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_chats_projectId ON chats(projectId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_chunks_documentId ON chunks(documentId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_chunks_knowledgeBaseId ON chunks(knowledgeBaseId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_documents_knowledgeBaseId ON documents(knowledgeBaseId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_documents_workspaceId ON documents(workspaceId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_workspaceId ON folders(workspaceId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_download_files_packageId ON download_files(packageId)")
+        }
     }
 )

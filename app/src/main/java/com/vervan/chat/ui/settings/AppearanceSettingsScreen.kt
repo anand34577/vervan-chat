@@ -22,11 +22,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,7 +62,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
+        ScrollablePage(padding) {
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
@@ -121,7 +124,10 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
                             value = fontScale, onValueChange = { vm.setFontScale(it) },
-                            valueRange = 0.85f..1.5f, modifier = Modifier.weight(1f)
+                            valueRange = 0.85f..1.5f,
+                            modifier = Modifier.weight(1f).semantics {
+                                contentDescription = "Font size, ${(fontScale * 100).toInt()} percent"
+                            }
                         )
                         Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))
                     }

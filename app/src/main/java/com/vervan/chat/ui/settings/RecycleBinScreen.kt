@@ -23,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -181,7 +182,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
             EmptyState(
                 icon = Icons.Filled.Delete,
                 title = "Nothing here",
-                body = "Deleted chats, notes, and documents stay here for $RETENTION_DAYS days before they're gone for good.",
+                body = "Deleted items stay here for $RETENTION_DAYS days.",
                 modifier = Modifier.padding(padding)
             )
             return@Scaffold
@@ -226,7 +227,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
     if (confirmEmptyAll) {
         ConfirmDialog(
             title = "Empty recycle bin?",
-            body = "Permanently delete all $totalCount item${if (totalCount == 1) "" else "s"}? This can't be undone.",
+            body = "Permanently delete all $totalCount item${if (totalCount == 1) "" else "s"}?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = { vm.emptyTrash(); confirmEmptyAll = false },
@@ -237,7 +238,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
         val count = selectedItems.size
         ConfirmDialog(
             title = "Delete selected items?",
-            body = "Permanently delete $count selected item${if (count == 1) "" else "s"}? This can't be undone.",
+            body = "Permanently delete $count selected item${if (count == 1) "" else "s"}?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = {
@@ -252,7 +253,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
     pendingSingleDelete?.let { item ->
         ConfirmDialog(
             title = "Delete forever?",
-            body = "\"${item.title.take(60).ifBlank { "Untitled item" }}\" will be permanently deleted. This can't be undone.",
+            body = "Permanently delete \"${item.title.take(60).ifBlank { "Untitled item" }}\"?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = {
@@ -271,7 +272,7 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
     Card(
         Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.sm),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        border = vervanBorder()
     ) {
         Row(
             Modifier.fillMaxWidth().padding(Space.lg),

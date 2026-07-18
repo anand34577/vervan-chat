@@ -94,11 +94,20 @@ fun QuickActionScreen(
                 }
             }
             if (running) {
-                Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Preparing your text",
+                    body = "Applying the selected action locally.",
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
-            error?.let { ErrorCard(title = "Couldn't generate", body = it, modifier = Modifier.padding(top = 12.dp)) }
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't generate a result",
+                    message = it,
+                    recovery = "Your text is safe. Check the model, then try again.",
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
             if (revision.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
                 Text(revision, style = MaterialTheme.typography.bodyMedium)

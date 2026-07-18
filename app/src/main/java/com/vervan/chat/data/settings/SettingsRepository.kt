@@ -55,9 +55,21 @@ class SettingsRepository(context: Context) {
         val TOP_P = floatPreferencesKey("top_p")
         val TOP_K = intPreferencesKey("top_k")
         val PREFERRED_BACKEND = stringPreferencesKey("preferred_backend")
-        val AUTO_LOAD_DEFAULT_MODEL = booleanPreferencesKey("auto_load_default_model")
         val MAX_NUM_IMAGES = intPreferencesKey("max_num_images")
         val RANDOM_SEED = intPreferencesKey("random_seed")
+        // Full LLM config exposure — global fallbacks for fields with a real app-wide default
+        // (chatTemplateOverride/loraPath/gpuLayerCount are per-model-only, no global concept,
+        // same precedent as mmprojPath having no global counterpart).
+        val MIN_P = floatPreferencesKey("min_p")
+        val REPETITION_PENALTY = floatPreferencesKey("repetition_penalty")
+        val MAX_OUTPUT_TOKENS = intPreferencesKey("max_output_tokens")
+        val CPU_THREADS = intPreferencesKey("cpu_threads")
+        val N_BATCH = intPreferencesKey("n_batch")
+        val N_UBATCH = intPreferencesKey("n_ubatch")
+        val USE_MLOCK = booleanPreferencesKey("use_mlock")
+        val FLASH_ATTENTION_MODE = stringPreferencesKey("flash_attention_mode")
+        val KV_CACHE_TYPE = stringPreferencesKey("kv_cache_type")
+        val VULKAN_DEVICE_INDEX = intPreferencesKey("vulkan_device_index")
         val DEFAULT_PROFILE = stringPreferencesKey("default_profile")
         val DEFAULT_START_SCREEN = stringPreferencesKey("default_start_screen")
         val CONFIRM_DESTRUCTIVE = booleanPreferencesKey("confirm_destructive")
@@ -239,11 +251,6 @@ class SettingsRepository(context: Context) {
     val preferredBackend: Flow<String> = store.data.map { it[Keys.PREFERRED_BACKEND] ?: "AUTO" }
     suspend fun setPreferredBackend(value: String) { store.edit { it[Keys.PREFERRED_BACKEND] = value } }
 
-    /** Load the chat's selected model when a conversation opens, before the user can send.
-     * Enabled by default because it removes a long, surprising wait after the first message. */
-    val autoLoadDefaultModel: Flow<Boolean> = store.data.map { it[Keys.AUTO_LOAD_DEFAULT_MODEL] ?: true }
-    suspend fun setAutoLoadDefaultModel(enabled: Boolean) { store.edit { it[Keys.AUTO_LOAD_DEFAULT_MODEL] = enabled } }
-
     /** Vision token budget: how many images a single prompt can attach, for models loaded
      * with vision support. */
     val maxNumImages: Flow<Int> = store.data.map { it[Keys.MAX_NUM_IMAGES] ?: 1 }
@@ -253,6 +260,39 @@ class SettingsRepository(context: Context) {
      * the engine for reproducible output. */
     val randomSeed: Flow<Int> = store.data.map { it[Keys.RANDOM_SEED] ?: -1 }
     suspend fun setRandomSeed(value: Int) { store.edit { it[Keys.RANDOM_SEED] = value } }
+
+    val minP: Flow<Float> = store.data.map { it[Keys.MIN_P] ?: 0.05f }
+    suspend fun setMinP(value: Float) { store.edit { it[Keys.MIN_P] = value.coerceIn(0f, 1f) } }
+
+    val repetitionPenalty: Flow<Float> = store.data.map { it[Keys.REPETITION_PENALTY] ?: 1.1f }
+    suspend fun setRepetitionPenalty(value: Float) { store.edit { it[Keys.REPETITION_PENALTY] = value.coerceIn(1f, 2f) } }
+
+    val maxOutputTokens: Flow<Int> = store.data.map { it[Keys.MAX_OUTPUT_TOKENS] ?: 512 }
+    suspend fun setMaxOutputTokens(value: Int) { store.edit { it[Keys.MAX_OUTPUT_TOKENS] = value } }
+
+    /** 0/null means "auto" (`Runtime.getRuntime().availableProcessors()`), llama.cpp-only. */
+    val cpuThreads: Flow<Int> = store.data.map { it[Keys.CPU_THREADS] ?: 0 }
+    suspend fun setCpuThreads(value: Int) { store.edit { it[Keys.CPU_THREADS] = value } }
+
+    val nBatch: Flow<Int> = store.data.map { it[Keys.N_BATCH] ?: 2048 }
+    suspend fun setNBatch(value: Int) { store.edit { it[Keys.N_BATCH] = value } }
+
+    val nUbatch: Flow<Int> = store.data.map { it[Keys.N_UBATCH] ?: 512 }
+    suspend fun setNUbatch(value: Int) { store.edit { it[Keys.N_UBATCH] = value } }
+
+    val useMlock: Flow<Boolean> = store.data.map { it[Keys.USE_MLOCK] ?: false }
+    suspend fun setUseMlock(value: Boolean) { store.edit { it[Keys.USE_MLOCK] = value } }
+
+    /** "AUTO" (default — degrades safely if unsupported), "ON", or "OFF". */
+    val flashAttentionMode: Flow<String> = store.data.map { it[Keys.FLASH_ATTENTION_MODE] ?: "AUTO" }
+    suspend fun setFlashAttentionMode(value: String) { store.edit { it[Keys.FLASH_ATTENTION_MODE] = value } }
+
+    /** "f16" (default), "q8_0", or "q4_0" — llama.cpp KV cache quantization. */
+    val kvCacheType: Flow<String> = store.data.map { it[Keys.KV_CACHE_TYPE] ?: "f16" }
+    suspend fun setKvCacheType(value: String) { store.edit { it[Keys.KV_CACHE_TYPE] = value } }
+
+    val vulkanDeviceIndex: Flow<Int> = store.data.map { it[Keys.VULKAN_DEVICE_INDEX] ?: 0 }
+    suspend fun setVulkanDeviceIndex(value: Int) { store.edit { it[Keys.VULKAN_DEVICE_INDEX] = value } }
 
     /** Default model profile for new chats (spec §11.9). One of ModelProfileType.id. */
     val defaultProfile: Flow<String> = store.data.map { it[Keys.DEFAULT_PROFILE] ?: "BALANCED" }

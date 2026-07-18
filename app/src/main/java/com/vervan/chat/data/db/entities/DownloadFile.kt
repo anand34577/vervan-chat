@@ -1,6 +1,7 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 enum class ModelFileRole { MODEL, TOKENIZER, VOCABULARY, CONFIG, METADATA, ADAPTER, AUXILIARY }
@@ -11,7 +12,8 @@ enum class FileDownloadStatus { NOT_STARTED, DOWNLOADING, PAUSED, WAITING_FOR_NE
  * [acceptRanges]) is validated against the server on every resume attempt (see
  * com.vervan.chat.modeldownload.HttpRangeDownloader) — a changed validator means the remote
  * artifact moved and the partial file must be discarded, not silently appended to. */
-@Entity(tableName = "download_files")
+// packageId backs every per-package file lookup/delete. See Migration(36, 37).
+@Entity(tableName = "download_files", indices = [Index("packageId")])
 data class DownloadFile(
     @PrimaryKey val id: String, // "packageId:fileId"
     val packageId: String,

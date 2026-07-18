@@ -54,6 +54,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.ValidationMessage
@@ -106,18 +107,19 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
             }
         }
     ) { padding ->
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         if (sets.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.School,
                 title = "Build your first study deck",
-                body = "Turn notes or learning material into focused cards, then review the ideas you miss most.",
+                body = "Turn study material into cards and review what you miss.",
                 actionLabel = "Create deck",
                 onAction = { vm.clearError(); showGenerate = true },
-                modifier = Modifier.fillMaxSize().padding(padding)
+                modifier = Modifier.fillMaxSize()
             )
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
@@ -130,7 +132,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column(Modifier.padding(start = 12.dp)) {
                                 Text("Small reviews, stronger recall", style = MaterialTheme.typography.titleSmall)
-                                Text("Open a deck and answer before revealing each card.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Answer before revealing each card.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -148,12 +150,13 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 }
             }
         }
+        }
     }
 
     pendingSingleDelete?.let { name ->
         ConfirmDialog(
             title = "Delete study deck?",
-            body = "\"$name\" and all of its cards will be permanently deleted. This can't be undone.",
+            body = "Permanently delete \"$name\" and all its cards?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { vm.deleteSet(name); pendingSingleDelete = null },
@@ -165,7 +168,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
         val count = selected.size
         ConfirmDialog(
             title = "Delete selected decks?",
-            body = "$count deck${if (count == 1) "" else "s"} and all of their cards will be permanently deleted.",
+            body = "Permanently delete $count deck${if (count == 1) "" else "s"} and all their cards?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = {
@@ -216,7 +219,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         }
                     }
                 } else Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Tell the local AI what you want to remember. You can refine the deck before generating it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Add what you want to learn. You can refine the deck before creating it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BoundedTextField(
                         value = setName, onValueChange = { setName = it }, label = "Deck name",
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,

@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.projects
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +49,12 @@ import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.DeleteMenuItem
+import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,17 +79,27 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
             FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New project") }
         }
     ) { padding ->
-        if (projects.isEmpty()) {
+        PageContainer(Modifier.padding(padding)) {
+          if (projects.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.Workspaces,
                 title = "No projects yet",
-                body = "Projects group related chats, notes, and instructions together so context carries across a whole line of work.",
-                modifier = Modifier.padding(padding),
+                body = "Keep related chats, notes, and instructions together.",
+                modifier = Modifier,
                 actionLabel = "New project",
                 onAction = { showCreate = true }
             )
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+          } else {
+            Column(Modifier.fillMaxSize()) {
+              FeatureHero(
+                icon = Icons.Filled.Workspaces,
+                eyebrow = "Focused work",
+                title = "Projects",
+                body = "Create a focused space for related work.",
+                modifier = Modifier.padding(top = Space.sm)
+              )
+              VervanSectionHeader("All projects", count = projects.size, actionLabel = "New", onAction = { showCreate = true })
+              LazyColumn(Modifier.fillMaxSize()) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
@@ -90,7 +108,9 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
                         onDelete = { pendingDelete = project }
                     )
                 }
+              }
             }
+          }
         }
     }
 
@@ -119,7 +139,7 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
     pendingDelete?.let { project ->
         ConfirmDialog(
             title = "Move project to recycle bin?",
-            body = "\"${project.name}\" will move to the recycle bin. Its chats and notes stay available but are unlinked.",
+            body = "Move \"${project.name}\" to the bin? Its chats and notes are kept.",
             confirmLabel = "Move to recycle bin",
             destructive = true,
             onConfirm = { vm.delete(project); pendingDelete = null },
@@ -131,15 +151,24 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
 @Composable
 private fun ProjectCard(project: Project, onClick: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
     var showMenu by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), onClick = onClick) {
-        Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                project.name,
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        onClick = onClick,
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = vervanBorder()
+    ) {
+        Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+            IconAffordance(icon = Icons.Filled.Workspaces, size = IconAffordanceSize.Default)
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text(project.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    project.instructions.takeIf { it.isNotBlank() } ?: "Open project workspace",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Box {
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Project actions") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {

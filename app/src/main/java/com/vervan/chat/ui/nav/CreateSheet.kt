@@ -1,7 +1,6 @@
 package com.vervan.chat.ui.nav
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,6 +11,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
@@ -51,7 +51,7 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
                         onClick = action.onClick,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = 2.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        border = vervanBorder()
                     ) {
                         ListItem(
                             leadingContent = {

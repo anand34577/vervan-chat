@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ChipInputField
 import com.vervan.chat.ui.common.ValidationLimits
 
@@ -65,7 +66,8 @@ fun UserProfileScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
             Text(
                 "Added to prompts only when a field is filled. Never inferred from your chats.",
                 style = MaterialTheme.typography.bodySmall,
@@ -126,6 +128,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(top = 12.dp)
             )
             ProfileField("Current goals", goals, "what are you working toward?", maxLength = ValidationLimits.USER_GOALS, onChange = vm::setGoals)
+        }
         }
     }
 }

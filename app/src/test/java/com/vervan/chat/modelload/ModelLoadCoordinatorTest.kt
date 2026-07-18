@@ -96,6 +96,13 @@ private class FakeGenerationDefaults : GenerationDefaults {
     override suspend fun contextTokenLimit() = 4096
     override suspend fun maxNumImages() = 1
     override suspend fun preferredBackend() = "AUTO"
+    override suspend fun cpuThreads() = 0
+    override suspend fun nBatch() = 2048
+    override suspend fun nUbatch() = 512
+    override suspend fun useMlock() = false
+    override suspend fun flashAttentionMode() = "AUTO"
+    override suspend fun kvCacheType() = "f16"
+    override suspend fun vulkanDeviceIndex() = 0
 }
 
 /** Fake whose [loadModel] suspends-in-spirit by blocking on a [CompletableDeferred] the test
@@ -105,11 +112,15 @@ private class FakeGenerationDefaults : GenerationDefaults {
  * [LlmEngine.load] is itself a blocking native call, not a suspend function. */
 private class FakeGenerationEngine(private val gate: CompletableDeferred<Unit>) : GenerationLoadable {
     val loadCallCount = AtomicInteger(0)
+    // §10 priority tests need the *order* calls happened in, not just the count — the
+    // coordinator already serializes loadModel() calls per role, so a plain list is safe.
+    val loadedPathsInOrder = java.util.Collections.synchronizedList(mutableListOf<String>())
     override var loadedModelPath: String? = null
     override val activeBackend = LlmEngine.ModelBackend.CPU
     override val visionEnabled = false
     override val audioEnabled = false
     override val speculativeDecodingActive = false
+    override val loadedContextTokens: Int? = null
     override fun loadModel(
         modelPath: String, maxTokens: Int, maxNumImages: Int,
         backendPreference: LlmEngine.BackendPreference, preferredBackendHint: LlmEngine.ModelBackend?,
@@ -118,9 +129,11 @@ private class FakeGenerationEngine(private val gate: CompletableDeferred<Unit>) 
         loadCallCount.incrementAndGet()
         runBlocking { gate.await() }
         loadedModelPath = modelPath
+        loadedPathsInOrder += modelPath
         return LlmEngine.LoadResult(LlmEngine.ModelBackend.CPU, fellBackToCpu = false)
     }
     override fun close() { loadedModelPath = null }
+    override fun cancelActiveGeneration() {}
 }
 
 private class FakeEmbeddingEngine : EmbeddingLoadable {
@@ -137,8 +150,8 @@ class ModelLoadCoordinatorConcurrencyTest {
         val generationEngine = FakeGenerationEngine(gate)
         val dao = FakeModelDao(listOf(model("m1").copy(isActive = true)))
         val coordinator = ModelLoadCoordinator(
-            dao, generationEngine, FakeEmbeddingEngine(),
-            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            dao, generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
             FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
         )
 
@@ -164,8 +177,8 @@ class ModelLoadCoordinatorConcurrencyTest {
         val m = model("m1").copy(isActive = true)
         val dao = FakeModelDao(listOf(m))
         val coordinator = ModelLoadCoordinator(
-            dao, generationEngine, FakeEmbeddingEngine(),
-            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            dao, generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
             FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
         )
 
@@ -182,8 +195,8 @@ class ModelLoadCoordinatorConcurrencyTest {
     fun noModelInstalledReturnsFailureWithoutTouchingEngine() = runBlocking {
         val generationEngine = FakeGenerationEngine(CompletableDeferred())
         val coordinator = ModelLoadCoordinator(
-            FakeModelDao(), generationEngine, FakeEmbeddingEngine(),
-            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeModelDao(), generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
             FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
         )
 
@@ -192,5 +205,137 @@ class ModelLoadCoordinatorConcurrencyTest {
         assertEquals(false, result.success)
         assertEquals(ModelLoadErrorCategory.NO_MODEL_INSTALLED, result.errorCategory)
         assertEquals(0, generationEngine.loadCallCount.get())
+    }
+
+    /** §10 — "explicit manual selection" must jump ahead of a lower-priority automatic request
+     * that queued for the same role at the same time, even though the coordinator can't interrupt
+     * whatever's *already* running (native loads are blocking calls with no cancellation hook —
+     * see the watchdog dispatcher comment in ModelLoadCoordinator). What it *can* control is who
+     * goes next once the current load finishes, and that's what this proves. */
+    @Test
+    fun manualRequestJumpsAheadOfQueuedAutomaticRequestForTheSameRole() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val generationEngine = FakeGenerationEngine(gate)
+        val a = model("a", lastLoadedAt = 1)
+        val b = model("b", lastLoadedAt = 2)
+        val c = model("c", lastLoadedAt = 3)
+        val dao = FakeModelDao(listOf(a, b, c))
+        val coordinator = ModelLoadCoordinator(
+            dao, generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
+        )
+        val scope = CoroutineScope(Dispatchers.Default)
+
+        // a's load starts and blocks on the gate — the "currently in flight" load.
+        val aResult = scope.async { coordinator.ensureLoaded(a, LoadTrigger.CHAT_AUTOLOAD) }
+        kotlinx.coroutines.delay(100) // let a actually become the in-flight load first
+
+        // While a is in flight, b (low-priority automatic) and c (high-priority manual) both
+        // queue up for the same role — b first, to prove priority beats arrival order.
+        val bResult = scope.async { coordinator.ensureLoaded(b, LoadTrigger.CHAT_AUTOLOAD) }
+        kotlinx.coroutines.delay(50)
+        val cResult = scope.async { coordinator.loadManually(c) }
+        kotlinx.coroutines.delay(100) // let both b and c actually register as waiters
+
+        gate.complete(Unit) // let a finish; b and c now race to go next
+
+        assertTrue(aResult.await().success)
+        assertTrue(bResult.await().success)
+        assertTrue(cResult.await().success)
+
+        assertEquals(3, generationEngine.loadCallCount.get())
+        assertEquals(listOf(a.filePath, c.filePath, b.filePath), generationEngine.loadedPathsInOrder)
+    }
+}
+
+/** §11.2 — a default model whose file vanished outside the app should self-heal by reassigning
+ * default status and retrying once, but only for automatic loading; an explicit Model Manager
+ * pick of that exact (now-missing) model must not be silently swapped for something else. */
+class ModelLoadCoordinatorMissingDefaultTest {
+    @Test
+    fun automaticLoadReassignsDefaultAndRetriesOnceOnMissingFile() = runBlocking {
+        val broken = model("broken", lastLoadedAt = 1).copy(isActive = true)
+        java.io.File(broken.filePath).delete() // simulate the file having vanished outside the app
+        val replacement = model("replacement", lastLoadedAt = 2)
+        val generationEngine = FakeGenerationEngine(CompletableDeferred(Unit))
+        val dao = FakeModelDao(listOf(broken, replacement))
+        val coordinator = ModelLoadCoordinator(
+            dao, generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
+        )
+
+        val result = coordinator.ensureLoaded(broken, LoadTrigger.CHAT_AUTOLOAD)
+
+        assertTrue(result.success)
+        assertEquals(replacement.id, result.loadedModelId)
+        assertEquals(1, generationEngine.loadCallCount.get())
+        assertTrue(dao.stateFlow.value.first { it.id == replacement.id }.isActive)
+        assertTrue(!dao.stateFlow.value.first { it.id == broken.id }.isActive)
+    }
+
+    @Test
+    fun explicitManualPickOfMissingModelFailsCleanlyWithoutSubstituting() = runBlocking {
+        val broken = model("broken").copy(isActive = true)
+        java.io.File(broken.filePath).delete()
+        val generationEngine = FakeGenerationEngine(CompletableDeferred(Unit))
+        val dao = FakeModelDao(listOf(broken))
+        val coordinator = ModelLoadCoordinator(
+            dao, generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
+        )
+
+        val result = coordinator.loadManually(broken)
+
+        assertEquals(false, result.success)
+        assertEquals(ModelLoadErrorCategory.FILE_MISSING, result.errorCategory)
+        assertEquals(0, generationEngine.loadCallCount.get())
+        assertTrue(dao.stateFlow.value.first { it.id == broken.id }.isActive)
+    }
+}
+
+private class FakeResourceMonitor(private val bytes: Long) : ResourceMonitor {
+    override fun availableMemoryBytes(): Long = bytes
+}
+
+/** §13 resource estimation — the model() helper's temp file is empty, so estimateRequiredBytes
+ * falls back to ModelInfo.fileSizeBytes, which is exactly what these tests drive. */
+class ModelLoadCoordinatorResourceBudgetTest {
+    @Test
+    fun blocksLoadThatObviouslyWontFitAndNeverTouchesTheEngine() = runBlocking {
+        val generationEngine = FakeGenerationEngine(CompletableDeferred(Unit))
+        val huge = model("huge").copy(isActive = true, fileSizeBytes = 20_000_000_000L) // 20GB
+        val coordinator = ModelLoadCoordinator(
+            FakeModelDao(listOf(huge)), generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default),
+            FakeResourceMonitor(200L * 1024 * 1024) // 200MB available
+        )
+
+        val result = coordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND)
+
+        assertEquals(false, result.success)
+        assertEquals(ModelLoadErrorCategory.INSUFFICIENT_MEMORY, result.errorCategory)
+        assertTrue(result.errorMessage!!.contains("GB"))
+        assertEquals(0, generationEngine.loadCallCount.get())
+    }
+
+    @Test
+    fun allowsLoadThatFitsWithinAvailableMemory() = runBlocking {
+        val generationEngine = FakeGenerationEngine(CompletableDeferred(Unit))
+        val small = model("small").copy(isActive = true, fileSizeBytes = 500L * 1024 * 1024) // 500MB
+        val coordinator = ModelLoadCoordinator(
+            FakeModelDao(listOf(small)), generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default),
+            FakeResourceMonitor(8L * 1024 * 1024 * 1024) // 8GB available
+        )
+
+        val result = coordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND)
+
+        assertTrue(result.success)
+        assertEquals(1, generationEngine.loadCallCount.get())
     }
 }

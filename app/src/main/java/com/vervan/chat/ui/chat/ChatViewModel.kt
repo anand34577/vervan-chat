@@ -63,6 +63,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     private val engine = app.container.llmEngine
     private val retrievalEngine = app.container.retrievalEngine
 
+    /** Whichever engine [model] actually loads through — used for reading loaded-state
+     * (visionEnabled/audioEnabled/activeBackend) once the coordinator confirms it's resident. */
+    private fun activeEngineFor(model: ModelInfo) =
+        if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) app.container.llamaCppEngine else engine
+
     /** Every message in every branch — raw input to [BranchUtil]. */
     val allMessages: StateFlow<List<Message>> = db.messageDao().observeMessages(chatId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -102,9 +107,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         personaList.find { it.id == effectiveId }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val activeModelName: StateFlow<String?> = combine(chat, db.modelDao().observeModels()) { chatRow, models ->
-        val model = chatRow?.modelId?.let { id -> models.find { it.id == id && it.role == ModelRole.GENERATION } }
-            ?: models.firstOrNull { it.role == ModelRole.GENERATION && it.isActive }
+    val activeModelName: StateFlow<String?> = combine(
+        chat, db.modelDao().observeModels(), app.container.modelLoadCoordinator.observeState(ModelRole.GENERATION)
+    ) { chatRow, models, loadInfo ->
+        val model = resolveGenerationModel(chatRow, models, loadInfo.currentModelId)
         model?.let { "${it.displayName} · ${it.lastWorkingBackend.displayName()}" }
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -163,55 +169,76 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     private data class AutoLoadSnapshot(
         val model: ModelInfo?,
-        val profileId: String?,
-        val autoLoad: Boolean,
         val loadInfo: ModelLoadInfo
     )
 
     init {
+        // Model Loading Strategy §5.2 — chat/conversation screens are a Category B screen
+        // ("can be viewed without a model, specific actions require one"), not Category A.
+        // Opening a chat must never trigger a load on its own; this collector only *reflects*
+        // whatever the coordinator's shared state already is (so this screen stays in sync if
+        // some other trigger — Send, Voice, another screen — loaded something), it never calls
+        // ensureLoaded() itself. The actual load happens in beginGeneration(), triggered only by
+        // a real model-dependent action (send/regenerate/continue).
         viewModelScope.launch {
             combine(
-                chat, generationModels, app.container.settingsRepository.autoLoadDefaultModel,
+                chat, generationModels,
                 app.container.modelLoadCoordinator.observeState(ModelRole.GENERATION)
-            ) { chatRow, models, autoLoad, loadInfo ->
-                AutoLoadSnapshot(resolveGenerationModel(chatRow, models), chatRow?.profile, autoLoad, loadInfo)
+            ) { chatRow, models, loadInfo ->
+                AutoLoadSnapshot(resolveGenerationModel(chatRow, models, loadInfo.currentModelId), loadInfo)
             }.distinctUntilChanged().collect { snapshot ->
-                val (model, profileId, autoLoad, loadInfo) = snapshot
-                _modelLoadState.value = toChatModelLoadState(model, autoLoad, loadInfo)
+                val (model, loadInfo) = snapshot
+                _modelLoadState.value = toChatModelLoadState(model, loadInfo)
                 if (model != null && loadInfo.currentModelId == model.id) {
-                    _visionAvailable.value = model.supportsVision ?: engine.visionEnabled
-                    _audioAvailable.value = model.supportsAudio ?: engine.audioEnabled
-                }
-                val alreadyLoadedOrLoading = loadInfo.currentModelId == model?.id ||
-                    (loadInfo.phase == ModelLoadPhase.LOADING && loadInfo.loadingModelId == model?.id)
-                if (model != null && autoLoad && profileId != null && !alreadyLoadedOrLoading) {
-                    val adjustedContext = computeAdjustedContext(profileId, model)
-                    app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_AUTOLOAD, adjustedContext)
+                    val activeEngine = activeEngineFor(model)
+                    _visionAvailable.value = model.supportsVision ?: activeEngine.visionEnabled
+                    _audioAvailable.value = model.supportsAudio ?: activeEngine.audioEnabled
                 }
             }
         }
     }
 
-    private fun resolveGenerationModel(chatRow: Chat?, models: List<ModelInfo>): ModelInfo? =
+    /** Chat pin > whatever generation model is currently loaded > role default. Without the
+     * "currently loaded" step, opening a chat with no pin (e.g. a brand-new chat) would force a
+     * switch to the stored default even when the user just manually loaded a different model
+     * they intend to keep using — auto-loading should never evict a model nobody asked to
+     * replace. */
+    private fun resolveGenerationModel(chatRow: Chat?, models: List<ModelInfo>, loadedModelId: String? = null): ModelInfo? =
         chatRow?.modelId?.let { id -> models.find { it.id == id && it.role == ModelRole.GENERATION } }
+            ?: loadedModelId?.let { id -> models.find { it.id == id && it.role == ModelRole.GENERATION } }
             ?: models.firstOrNull { it.role == ModelRole.GENERATION && it.isActive }
+
+    /** Suspend counterpart of [resolveGenerationModel] for call sites that only have a chat row
+     * and query the DB directly, rather than an already-loaded `models` list. */
+    private suspend fun resolveGenerationModelForChat(chatRow: Chat?): ModelInfo? {
+        chatRow?.modelId?.let { id ->
+            db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
+        }
+        app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId?.let { id ->
+            db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
+        }
+        return db.modelDao().getActiveModel(ModelRole.GENERATION)
+    }
 
     /** Maps the coordinator's role-wide load state onto this chat's specific resolved model —
      * the coordinator only knows "what's loaded/loading for GENERATION app-wide", so this chat
      * only shows Ready/Loading/Failed when that happens to be *its* model, not just any
      * generation model some other screen triggered. */
-    private fun toChatModelLoadState(model: ModelInfo?, autoLoad: Boolean, info: ModelLoadInfo): ModelLoadState {
+    private fun toChatModelLoadState(model: ModelInfo?, info: ModelLoadInfo): ModelLoadState {
         if (model == null) return ModelLoadState.NoModel
         return when {
             info.currentModelId == model.id -> ModelLoadState.Ready(
-                model.displayName, engine.activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
+                model.displayName, activeEngineFor(model).activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
             )
             info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id ->
                 ModelLoadState.Loading(model.displayName, "Loading model into memory")
             info.error?.loadedModelId == model.id ->
-                ModelLoadState.Failed(model.displayName, info.error?.errorMessage ?: "Unknown error")
-            !autoLoad -> ModelLoadState.NotLoaded(model.displayName)
-            else -> ModelLoadState.Loading(model.displayName, "Preparing local runtime")
+                ModelLoadState.Failed(model.displayName, info.error?.errorMessage.toUserMessage())
+            // §5.2 — nothing auto-loads this model just because the chat is open, so absent any
+            // of the above this chat's model is simply not loaded yet; ModelReadinessPanel offers
+            // "Load", and beginGeneration() loads it for real the moment a model-dependent action
+            // (Send/regenerate/continue) actually happens.
+            else -> ModelLoadState.NotLoaded(model.displayName)
         }
     }
 
@@ -225,13 +252,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (_modelLoadState.value is ModelLoadState.Loading) return
         viewModelScope.launch {
             val chatRow = db.chatDao().getChat(chatId) ?: return@launch
-            val model = chatRow.modelId?.let { db.modelDao().get(it)?.takeIf { item -> item.role == ModelRole.GENERATION } }
-                ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
+            val model = resolveGenerationModelForChat(chatRow)
             if (model == null) {
                 _modelLoadState.value = ModelLoadState.NoModel
             } else {
                 val adjustedContext = computeAdjustedContext(chatRow.profile, model)
-                app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND, adjustedContext)
+                app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.CHAT_SEND, adjustedContext)
             }
         }
     }
@@ -412,10 +438,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     private suspend fun ensureEmbeddingModelLoaded() {
         val active = db.modelDao().getActiveModel(ModelRole.EMBEDDING) ?: return
-        app.container.withEmbedding { engine ->
-            if (engine.loadedModelPath != active.filePath) {
-                runCatching { engine.load(active.filePath, active.tokenizerPath) }
-            }
+        runCatching {
+            app.container.modelLoadCoordinator.ensureLoaded(active, LoadTrigger.RAG_RETRIEVAL)
         }
     }
 
@@ -956,9 +980,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 _error.value = null
                 val request = prepare() ?: return@launch
                 Log.i(TAG, "[$chatId] generation start: triggerLen=${request.triggerText.length}, hasImage=${request.imagePath != null}, hasAudio=${request.audioPath != null}")
-                app.container.withLlm {
-                    beginGeneration(request.triggerText, request.imagePath, request.audioPath)
-                }
+                beginGeneration(request.triggerText, request.imagePath, request.audioPath)
                 Log.i(TAG, "[$chatId] generation finished in ${System.currentTimeMillis() - startedAt}ms")
             // Runs after the response completes, on its own coroutine (spec §20 — never
                 // interrupts interactive generation).
@@ -1001,26 +1023,32 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Shared tail of send/editAndResend/regenerate: load model, retrieve sources, generate. */
     private suspend fun beginGeneration(triggerText: String, imagePath: String?, audioPath: String? = null) {
         val chatRow = db.chatDao().getChat(chatId) ?: return
-        val model = chatRow.modelId?.let { db.modelDao().get(it)?.takeIf { m -> m.role == ModelRole.GENERATION } }
-            ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
+        val model = resolveGenerationModelForChat(chatRow)
         if (model == null) {
             Log.w(TAG, "[$chatId] beginGeneration() no generation model resolved (chatRow.modelId=${chatRow.modelId})")
             _error.value = "No model selected. Import or activate one in Models."
             return
         }
-        Log.i(TAG, "[$chatId] beginGeneration() resolved model=${model.displayName}, engine.loadedModelPath=${engine.loadedModelPath}")
-        val adjustedContext = computeAdjustedContext(chatRow.profile, model)
-        val loadResult = app.container.modelLoadCoordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND, adjustedContext)
+        val activeEngine = activeEngineFor(model)
+        Log.i(TAG, "[$chatId] beginGeneration() resolved model=${model.displayName} (engine=${model.engine}), loadedModelPath=${activeEngine.loadedModelPath}")
+        // Only compute (and force) the profile-scaled context on a genuinely fresh load. If
+        // this exact model is already resident — e.g. just loaded manually from Model Manager
+        // at its full context — passing a smaller override here would change the coordinator's
+        // load config fingerprint and trigger a pointless full unload+reload to shrink an
+        // already-sufficient context, right before generating with it.
+        val alreadyResident = app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId == model.id
+        val adjustedContext = if (alreadyResident) null else computeAdjustedContext(chatRow.profile, model)
+        val loadResult = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.CHAT_SEND, adjustedContext)
         if (!loadResult.success) {
             _error.value = "Could not load ${model.displayName}: ${loadResult.errorMessage ?: "unknown error"}"
             return
         }
-        if (audioPath != null && !engine.audioEnabled) {
+        if (audioPath != null && !activeEngine.audioEnabled) {
             val assistantMessage = Message(
                 chatId = chatId,
                 parentId = chatRow.activeLeafId,
                 role = MessageRole.ASSISTANT,
-                content = "Voice message saved, but this model runtime does not support direct audio input on this device yet.",
+                content = "This model cannot use audio. Load an audio-capable model and resend.",
                 state = MessageState.COMPLETE
             )
             db.messageDao().upsert(assistantMessage)
@@ -1031,12 +1059,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Content.ImageBytes and sent to an engine loaded at Capability.TEXT_ONLY (no
         // visionBackend), which the native runtime just drops with no error surfaced
         // anywhere: the attachment looked sent but the model never actually saw it.
-        if (imagePath != null && !engine.visionEnabled) {
+        if (imagePath != null && !activeEngine.visionEnabled) {
             val assistantMessage = Message(
                 chatId = chatId,
                 parentId = chatRow.activeLeafId,
                 role = MessageRole.ASSISTANT,
-                content = "Image attached, but this model does not support vision on this device — try a vision-capable model from Model Manager.",
+                content = "This model cannot view images. Load a vision model and resend.",
                 state = MessageState.COMPLETE
             )
             db.messageDao().upsert(assistantMessage)
@@ -1070,8 +1098,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             hop++
             Log.i(TAG, "[$chatId] runGenerationLoop() hop=$hop/$MAX_TOOL_HOPS toolsEnabled=$toolsEnabled")
             val chatRow = db.chatDao().getChat(chatId) ?: return
-            val model = chatRow.modelId?.let { db.modelDao().get(it)?.takeIf { m -> m.role == ModelRole.GENERATION } }
-                ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
+            val model = resolveGenerationModelForChat(chatRow)
             val persona: Persona? = resolveEffectivePersona(chatRow)
             val projectInstructions = chatRow.projectId?.let { db.projectDao().get(it)?.instructions }
             val memories = db.memoryDao().getApplicable(chatRow.personaId, chatRow.projectId)
@@ -1080,15 +1107,18 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val history = trimHistoryToBudget(fullHistory, contextLimitTokens)
             val promptPassages = trimPassagesToBudget(passages, contextLimitTokens)
             val enabledToolIds = if (toolsEnabled) effectiveToolIds(chatRow) else emptySet()
-            val prompt = buildPrompt(
+            val effectiveThinkingMode = if (model?.supportsThinking == false) "OFF" else chatRow.thinkingMode
+            val modelEngine = model?.engine ?: com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM
+            val (systemPrompt, prompt) = buildPrompt(
                 persona, projectInstructions, memories, history, promptPassages, toolsEnabled,
                 stylePreferenceText(profile.maxOutputHint),
-                reasoningInstruction(if (model?.supportsThinking == false) "OFF" else chatRow.thinkingMode),
+                reasoningInstruction(effectiveThinkingMode, modelEngine),
                 app.container.settingsRepository.userProfilePrompt(),
                 noEvidenceFound,
                 historyTrimmed = history.size < fullHistory.size,
                 enabledToolIds = enabledToolIds
             )
+            val assistantPrefill = assistantPrefillFor(effectiveThinkingMode, modelEngine)
 
             val assistantMessage = Message(
                 chatId = chatId, parentId = chatRow.activeLeafId, role = MessageRole.ASSISTANT, content = "", state = MessageState.STREAMING,
@@ -1100,21 +1130,36 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             setActiveLeaf(assistantMessage.id)
 
             val accumulated = StringBuilder()
+            // The forced-open "<think>\n" prefill (see assistantPrefillFor) never reaches this
+            // flow's token callback — it was appended to the native prompt, not generated — so it
+            // has to be seeded here for ThinkingParser to find a matching open tag, and for the
+            // persisted message content to read the same as if the model had opened the tag itself.
+            if (effectiveThinkingMode != "OFF") assistantPrefill?.let { accumulated.append(it) }
             var failed = false
             var lastStreamPersistAt = 0L
             val settings = app.container.settingsRepository
             val genStartedAt = android.os.SystemClock.elapsedRealtime()
-            engine.generate(
-                prompt,
-                imagePath.takeIf { hop == 1 },
-                audioPath.takeIf { hop == 1 },
-                // Effective-config priority (spec §7): chat-specific override first, then
-                // per-model override, then the app-global setting.
-                temperature = chatRow.temperature ?: model?.temperature ?: com.vervan.chat.data.repo.PersonaTraits.temperatureFor(persona, settings.temperature.first()),
-                topP = chatRow.topP ?: model?.topP ?: settings.topP.first(),
-                topK = chatRow.topK ?: model?.topK ?: settings.topK.first(),
-                randomSeed = model?.seed ?: settings.randomSeed.first().takeIf { it >= 0 }
+            val genParams = com.vervan.chat.llm.resolveGenerationParams(
+                model, settings, chatRow.temperature, chatRow.topP, chatRow.topK,
+                personaTemperature = com.vervan.chat.data.repo.PersonaTraits.temperatureFor(persona, settings.temperature.first())
             )
+            // Routes to whichever engine `model` actually needs (LiteRT-LM or llama.cpp) — model
+            // can be null if its row vanished mid-loop (rare; beginGeneration already validated
+            // one existed), in which case fall back to the LiteRT-LM engine directly, same as
+            // this function's other `model?.` reads tolerate a missing model.
+            (if (model != null) {
+                app.container.generate(
+                    model, prompt, imagePath.takeIf { hop == 1 }, audioPath.takeIf { hop == 1 },
+                    genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
+                    genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences,
+                    assistantPrefill = assistantPrefill, systemPrompt = systemPrompt
+                )
+            } else {
+                engine.generate(
+                    prompt, imagePath.takeIf { hop == 1 }, audioPath.takeIf { hop == 1 },
+                    genParams.temperature, genParams.topP, genParams.topK, genParams.seed
+                )
+            })
                 .catch { e ->
                     failed = true
                     Log.e(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() FAILED after ${accumulated.length} chars: ${e::class.simpleName}: ${e.message}", e)
@@ -1133,8 +1178,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             Log.i(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() complete: ${accumulated.length} chars")
             val output = accumulated.toString()
 
-            val toolCall = if (toolsEnabled) ToolCallParser.parse(output) else null
-            if (toolCall == null) {
+            val parseResult = if (toolsEnabled) ToolCallParser.parseAll(output) else ToolCallParser.ParseResult(emptyList(), emptyList())
+            val toolCall = parseResult.calls.firstOrNull()
+            if (toolCall == null && parseResult.malformed.isEmpty()) {
                 val generationMs = android.os.SystemClock.elapsedRealtime() - genStartedAt
                 db.messageDao().update(
                     assistantMessage.copy(
@@ -1146,9 +1192,26 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 )
                 return
             }
+            // Strip every matched block (the executed call, any extra ones only the app-side
+            // loop's one-tool-per-turn rule leaves unexecuted, and malformed ones) so nothing
+            // raw is left dangling in the visible, persisted message.
+            val visibleContent = ToolCallParser.stripAll(output, parseResult.calls.map { it.rawBlock } + parseResult.malformed)
+            if (toolCall == null) {
+                // Tag matched but the body inside wasn't valid `{"tool": ..., "params": ...}`
+                // JSON — tell the model instead of silently dropping its attempt (it previously
+                // just vanished with no signal to the model or the user).
+                Log.w(TAG, "[$chatId] runGenerationLoop() hop=$hop tool_call block(s) failed to parse: ${parseResult.malformed.size}")
+                db.messageDao().update(assistantMessage.copy(content = visibleContent, state = MessageState.COMPLETE))
+                if (appendSystemAndContinue(
+                        assistantMessage.id,
+                        "Your <tool_call> block could not be parsed. Reply again using exactly this format, with valid JSON and no extra text inside the tags: <tool_call>{\"tool\": \"tool_name\", \"params\": {...}}</tool_call>",
+                        hop
+                    )
+                ) return
+                continue
+            }
             Log.i(TAG, "[$chatId] runGenerationLoop() hop=$hop model requested tool '${toolCall.name}'")
 
-            val visibleContent = ToolCallParser.stripToolCall(output, toolCall)
             val tool = ToolRegistry.find(toolCall.name)?.takeIf { toolCall.name in enabledToolIds }
             if (tool == null) {
                 // Also hit if the model somehow calls a tool that's disabled (globally or by
@@ -1206,39 +1269,61 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     toolResultJson = toolResultToJson(tool.name, result)
                 )
             )
-            val toolResultMessage = Message(
-                chatId = chatId, parentId = assistantMessage.id, role = MessageRole.SYSTEM,
-                content = "Tool ${tool.name} result: ${result.summary}"
-            )
-            db.messageDao().upsert(toolResultMessage)
-            setActiveLeaf(toolResultMessage.id)
-
-            if (hop == MAX_TOOL_HOPS) {
-                val limitMessage = Message(
-                    chatId = chatId, parentId = toolResultMessage.id, role = MessageRole.ASSISTANT,
-                    content = "(Reached the tool-call limit for this turn.)", state = MessageState.COMPLETE
-                )
-                db.messageDao().upsert(limitMessage)
-                setActiveLeaf(limitMessage.id)
-                return
-            }
+            if (appendSystemAndContinue(assistantMessage.id, "Tool ${tool.name} result: ${result.summary}", hop)) return
             // else: loop — next iteration's history includes the tool result.
         }
+    }
+
+    /**
+     * Appends [content] as a SYSTEM message under [parentId] and makes it the active leaf, so
+     * the next hop's history includes it — shared tail for every "loop the model again with
+     * this extra context" case in [runGenerationLoop] (a tool result, or malformed-call
+     * feedback). Returns true if this was the last allowed hop, in which case a final
+     * assistant message explains the limit was hit instead of looping again; the caller
+     * should `return` when this is true.
+     */
+    private suspend fun appendSystemAndContinue(parentId: String, content: String, hop: Int): Boolean {
+        val systemMessage = Message(chatId = chatId, parentId = parentId, role = MessageRole.SYSTEM, content = content)
+        db.messageDao().upsert(systemMessage)
+        setActiveLeaf(systemMessage.id)
+        if (hop == MAX_TOOL_HOPS) {
+            val limitMessage = Message(
+                chatId = chatId, parentId = systemMessage.id, role = MessageRole.ASSISTANT,
+                content = "(Reached the tool-call limit for this turn.)", state = MessageState.COMPLETE
+            )
+            db.messageDao().upsert(limitMessage)
+            setActiveLeaf(limitMessage.id)
+            return true
+        }
+        return false
     }
 
     /** User approves or rejects a pending reversible-write tool call from [messageId]. */
     fun confirmToolCall(messageId: String, approve: Boolean) {
         Log.i(TAG, "[$chatId] confirmToolCall() messageId=$messageId, approve=$approve")
         if (!approve) {
-            viewModelScope.launch {
-                val message = getAllMessages().find { it.id == messageId && it.state == MessageState.AWAITING_CONFIRMATION }
-                    ?: return@launch
+            // Previously just marked CANCELLED and stopped — the model was never told the
+            // user declined, so it couldn't recover (retry differently, answer without the
+            // tool, or ask something else); the conversation just dead-ended until the user
+            // typed a new message unprompted. Now it loops back in, same as the approve path.
+            launchGeneration {
+                val all = getAllMessages()
+                val message = all.find { it.id == messageId && it.state == MessageState.AWAITING_CONFIRMATION }
+                    ?: return@launchGeneration null
                 db.messageDao().update(message.copy(state = MessageState.CANCELLED, toolCallJson = null))
+                val declineMessage = Message(
+                    chatId = chatId, parentId = message.id, role = MessageRole.SYSTEM,
+                    content = "The user declined to run this tool. Continue without it, or ask a follow-up if you need different information."
+                )
+                db.messageDao().upsert(declineMessage)
+                setActiveLeaf(declineMessage.id)
+                GenerationRequest(nearestUserText(all, message), null, null)
             }
             return
         }
         launchGeneration {
-            val message = getAllMessages().find { it.id == messageId && it.state == MessageState.AWAITING_CONFIRMATION }
+            val all = getAllMessages()
+            val message = all.find { it.id == messageId && it.state == MessageState.AWAITING_CONFIRMATION }
                 ?: return@launchGeneration null
             val callJson = message.toolCallJson?.let { runCatching { JSONObject(it) }.getOrNull() }
                 ?: return@launchGeneration null
@@ -1269,8 +1354,24 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             )
             db.messageDao().upsert(toolResultMessage)
             setActiveLeaf(toolResultMessage.id)
-            GenerationRequest(result.summary, null, null)
+            // Retrieval query for the next generation must be what the user actually asked,
+            // not the tool result summary (e.g. "Created note \"Groceries\"." would otherwise
+            // become the RAG query) — beginGeneration() only uses GenerationRequest.triggerText
+            // for source retrieval, so this doesn't affect what the model is prompted with.
+            GenerationRequest(nearestUserText(all, message), null, null)
         }
+    }
+
+    /** Walks parent links from [from] up to the nearest USER message and returns its content —
+     * used where a retrieval query needs "what did the user actually ask" rather than whatever
+     * text happens to be at the current leaf (e.g. a tool call or its result summary). */
+    private fun nearestUserText(all: List<Message>, from: Message?): String {
+        var current = from
+        while (current != null) {
+            if (current.role == MessageRole.USER) return current.content
+            current = current.parentId?.let { pid -> all.find { it.id == pid } }
+        }
+        return ""
     }
 
     private fun toolResultToJson(toolName: String, result: ToolResult): String =
@@ -1317,7 +1418,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 // broken embedding model made RAG quietly degrade with no visible reason at all.
                 // Surface it once per attempt instead.
                 Log.w(TAG, "[$chatId] retrieveSources() embedding load failed, falling back to keyword: ${result.errorMessage}")
-                _error.value = "Semantic search unavailable (${result.errorMessage}) — using keyword search instead."
+                _error.value = "Semantic search is unavailable. Using keyword search instead."
                 RetrievalMode.KEYWORD
             } else {
                 val preferred = app.container.settingsRepository.defaultRetrievalMode.first()
@@ -1377,16 +1478,48 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     }
 
     /**
-     * Prompt-engineered "thinking mode" (spec §15) — `tasks-genai` exposes no native
-     * reasoning-mode toggle, so this just asks the model to wrap its reasoning in
-     * `<thinking>` tags before answering; [com.vervan.chat.llm.ThinkingParser] splits that
-     * out for display. Empty for OFF, so a chat that never touches this pays no prompt cost.
+     * Prompt-engineered "thinking mode" (spec §15) — neither `tasks-genai` (LiteRT-LM) nor
+     * llama.cpp's `llama_chat_apply_template` (explicitly non-Jinja, no `enable_thinking`
+     * template variable support) exposes a native reasoning-budget flag, so this asks the model
+     * to wrap its reasoning in `<thinking>` tags before answering; [com.vervan.chat.llm.ThinkingParser]
+     * splits that out for display. Empty for OFF, so a chat that never touches this pays no
+     * prompt cost. For a llama.cpp model, also appends the literal `/think`/`/no_think` tokens
+     * Qwen3-family GGUF models were themselves fine-tuned to respond to (a real behavior switch
+     * on top of, not instead of, the generic `<thinking>`-tag instruction above) plus a soft
+     * token-budget hint mapped from effort level. This text is a *request* the model can ignore;
+     * [assistantPrefillFor] is what actually enforces the outcome for llama.cpp models — the
+     * closest approximation to a native
+     * reasoning budget that llama.cpp's template API can express.
      */
-    private fun reasoningInstruction(mode: String): String = when (mode) {
-        "FAST" -> "Before answering, briefly think through the problem in 1-2 sentences wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-        "BALANCED" -> "Before answering, think through the problem step by step wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-        "DEEP" -> "Before answering, think through the problem thoroughly, considering multiple angles and edge cases, wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-        else -> ""
+    private fun reasoningInstruction(mode: String, engine: com.vervan.chat.data.db.entities.ModelEngine = com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM): String {
+        val base = when (mode) {
+            "FAST" -> "Before answering, briefly think through the problem in 1-2 sentences wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+            "BALANCED" -> "Before answering, think through the problem step by step wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+            "DEEP" -> "Before answering, think through the problem thoroughly, considering multiple angles and edge cases, wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+            else -> ""
+        }
+        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) return base
+        return when (mode) {
+            "FAST" -> "$base /think (keep your reasoning under roughly 256 tokens)"
+            "BALANCED" -> "$base /think (keep your reasoning under roughly 1024 tokens)"
+            "DEEP" -> "$base /think (keep your reasoning under roughly 4096 tokens)"
+            else -> "/no_think"
+        }
+    }
+
+    /**
+     * Assistant-message prefill (spec §15) — the actual enforcement mechanism behind
+     * [reasoningInstruction]'s text, since a plain "/think"/"/no_think" instruction embedded in
+     * the user turn is only ever a request the model is free to ignore (this is what made
+     * thinking-mode effectively uncontrollable before: no code path forced either outcome).
+     * llama.cpp's own prompt gets this text appended directly after the chat template's
+     * assistant-turn-start tokens (see `nativeGenerate`'s `assistantPrefill`), so generation
+     * literally continues from an already-open or already-closed `<think>` block instead of
+     * hoping the model complies. `null` for OFF/non-thinking models leaves the prompt untouched.
+     */
+    private fun assistantPrefillFor(mode: String, engine: com.vervan.chat.data.db.entities.ModelEngine): String? {
+        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) return null
+        return if (mode == "OFF") "<think>\n\n</think>\n\n" else "<think>\n"
     }
 
     /**
@@ -1456,8 +1589,20 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         noEvidenceFound: Boolean = false,
         historyTrimmed: Boolean = false,
         enabledToolIds: Set<String> = ToolRegistry.tools.map { it.name }.toSet()
-    ): String = buildPromptSections(persona, projectInstructions, memories, history, passages, toolsEnabled, stylePreference, reasoning, userProfile, noEvidenceFound, historyTrimmed, enabledToolIds)
-        .joinToString("") { it.second }
+    ): Pair<String, String> {
+        val sections = buildPromptSections(persona, projectInstructions, memories, history, passages, toolsEnabled, stylePreference, reasoning, userProfile, noEvidenceFound, historyTrimmed, enabledToolIds)
+        // Split into a real "system" turn (persona/instructions/tools/memory — content every chat
+        // template treats as higher-trust, model-behavior-shaping context) and a "user" turn
+        // (sources/history/the actual question) instead of flattening everything into one "user"
+        // message. Squashing persona instructions into a user turn is a real chat-template
+        // violation most instruction-tuned models were never trained on — RLHF gives system and
+        // user content different trust/priority, and a model that never sees a system turn at all
+        // can behave far worse here than in a dedicated llama.cpp front-end sending proper roles,
+        // which is the most likely reason "models that work fine elsewhere" misbehave in this app.
+        val system = sections.filter { it.first in SYSTEM_SECTION_LABELS }.joinToString("") { it.second }
+        val user = sections.filter { it.first !in SYSTEM_SECTION_LABELS }.joinToString("") { it.second }
+        return system to user
+    }
 
     /**
      * Same inputs as [buildPrompt], but returned as labeled sections instead of one string —
@@ -1487,7 +1632,6 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (!projectInstructions.isNullOrBlank()) sections += "Project instructions" to (projectInstructions + "\n\n")
         if (userProfile.isNotBlank()) sections += "User profile" to (userProfile + "\n\n")
         if (stylePreference.isNotBlank()) sections += "Style preference" to (stylePreference + "\n\n")
-        if (reasoning.isNotBlank()) sections += "Reasoning mode" to (reasoning + "\n\n")
         sections += "Clarification" to (
             "If an essential detail is missing and guessing would materially change the result, pause and ask one concise question. " +
                 "Return the question as <clarify>{\"question\":\"...\",\"options\":[\"...\",\"...\"]}</clarify> with 2 to 4 short, useful options. " +
@@ -1548,6 +1692,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             }
         }
         if (historyText.isNotBlank()) sections += "Conversation history" to historyText
+        // Placed as close as possible to the final "Assistant:" marker, not up near the system
+        // instructions — Qwen-family think/no-think detection keys off the tail end of the
+        // user turn, so burying this directive under tools/memory/sources/history made it
+        // effectively invisible to the model on any non-trivial prompt.
+        if (reasoning.isNotBlank()) sections += "Reasoning mode" to (reasoning + "\n\n")
         sections += "Current request" to "Assistant: "
         return sections
     }
@@ -1565,8 +1714,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val projectInstructions = chatRow?.projectId?.let { db.projectDao().get(it)?.instructions }
         val memories = db.memoryDao().getApplicable(chatRow?.personaId, chatRow?.projectId)
         val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow?.activeLeafId)
-        val model = chatRow?.modelId?.let { db.modelDao().get(it)?.takeIf { m -> m.role == ModelRole.GENERATION } }
-            ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
+        val model = resolveGenerationModelForChat(chatRow)
         val contextLimitTokens = effectiveContextLimitTokens(model, profile)
         val history = trimHistoryToBudget(fullHistory, contextLimitTokens)
         val passages = if (chatRow?.sourceGrounded == true && chatRow.kbIdList().isNotEmpty() && draftText.isNotBlank() && profile.retrievalTopK > 0) {
@@ -1592,6 +1740,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Spec §20 — "two or three meaningful user-assistant exchanges."
         private const val AUTO_TITLE_TRIGGER_REPLIES = 2
         private val CUT_OFF_STATES = setOf(MessageState.CANCELLED, MessageState.FAILED)
+        // Section labels from buildPromptSections() that belong in the chat template's "system"
+        // turn rather than the "user" turn — see buildPrompt().
+        private val SYSTEM_SECTION_LABELS = setOf(
+            "Current date & time", "Persona", "Project instructions", "User profile",
+            "Style preference", "Clarification", "Tool catalog", "Memory"
+        )
     }
 }
 

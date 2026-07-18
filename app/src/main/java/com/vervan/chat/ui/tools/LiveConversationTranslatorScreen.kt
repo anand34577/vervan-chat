@@ -13,13 +13,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,11 +34,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,10 +51,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.OneShotLlm
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -76,6 +88,8 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
     var turns by remember { mutableStateOf(listOf<TranslatedTurn>()) }
     var isBusy by remember { mutableStateOf(false) }
     var modelName by remember { mutableStateOf("model") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         modelName = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)?.displayName ?: "model"
@@ -99,11 +113,17 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
         val targetLang = if (fromA) langB else langA
         isBusy = true
         scope.launch {
-            val prompt = "Translate the following from $sourceLang to $targetLang. Respond with ONLY the translation.\n\nText:\n$text"
-            val translated = OneShotLlm.run(app, prompt)?.trim().orEmpty()
-            turns = turns + TranslatedTurn(fromA, text, translated)
-            isBusy = false
-            speak(translated, targetLang)
+            try {
+                val prompt = "Translate the following from $sourceLang to $targetLang. Respond with ONLY the translation.\n\nText:\n$text"
+                val translated = OneShotLlm.run(app, prompt)?.trim()
+                    ?: throw IllegalStateException("No generation model is active. Load one from Models to translate.")
+                turns = turns + TranslatedTurn(fromA, text, translated)
+                speak(translated, targetLang)
+            } catch (t: Throwable) {
+                snackbarHostState.showSnackbar(t.toUserMessage())
+            } finally {
+                isBusy = false
+            }
         }
     }
 
@@ -140,15 +160,31 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                 title = { Text("Live conversation translator") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Keep the newest translated turn visible as the conversation grows.
+        LaunchedEffect(turns.size) { if (turns.isNotEmpty()) runCatching { listState.animateScrollToItem(turns.lastIndex) } }
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize()) {
+            ToolIntro(
+                icon = Icons.Filled.Translate,
+                title = "Two people, one private translator",
+                body = "Choose two languages and take turns speaking. Translation stays local.",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+            Row(Modifier.fillMaxWidth().padding(12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Badge("STT: Android Offline")
                 Badge("Translation: $modelName")
                 Badge("TTS: Android System")
             }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (isBusy) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Text("Translating…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(turns) { turn ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (turn.fromA) Arrangement.Start else Arrangement.End) {
                         Card(
@@ -190,6 +226,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                     ) { Icon(Icons.Filled.Mic, "Person B speaks") }
                 }
             }
+        }
         }
     }
 }

@@ -54,6 +54,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.ModelBackend
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.MemoryScope
@@ -99,6 +100,8 @@ class Converters {
     @TypeConverter fun toFileDownloadStatus(v: String) = FileDownloadStatus.valueOf(v)
     @TypeConverter fun fromModelFileRole(v: ModelFileRole) = v.name
     @TypeConverter fun toModelFileRole(v: String) = ModelFileRole.valueOf(v)
+    @TypeConverter fun fromModelEngine(v: ModelEngine) = v.name
+    @TypeConverter fun toModelEngine(v: String) = ModelEngine.valueOf(v)
 }
 
 @Database(
@@ -110,7 +113,7 @@ class Converters {
         Workspace::class, Expense::class, TtsVoiceModel::class,
         DownloadPackage::class, DownloadFile::class
     ],
-    version = 34,
+    version = 37,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

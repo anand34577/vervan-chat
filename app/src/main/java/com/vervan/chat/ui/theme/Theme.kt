@@ -130,17 +130,27 @@ private val VervanShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
+    // M3 Expressive pushes `large` past 16dp toward 20–24dp for surfaces that should feel soft
+    // and friendly (cards, sheets, composer). 24dp here gives bubbles and modern surfaces a
+    // rounder, more "physical" feel than the previous conservative 24 already on large.
     large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    extraLarge = RoundedCornerShape(32.dp)
 )
 
-/** Shapes outside Material3's fixed five-token [Shapes] scale (§3.5) — hero/composer surfaces
- * read as one deliberate size (22dp), distinct from both cards (16dp) and dialogs (24dp), and
- * the message bubble gets its own asymmetric shape instead of every screen hand-rolling one. */
+/** Shapes outside Material3's fixed five-token [Shapes] scale (§3.5 + M3 Expressive additions).
+ *  - hero/composer surfaces read as one deliberate size, distinct from both cards and dialogs
+ *  - message bubbles get an asymmetric "tail" shape instead of every screen hand-rolling one
+ *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
+ *  - extra-extra-large (48dp) is the M3 Expressive max — used for hero gradients and big FABs. */
 object VervanExtraShapes {
-    val hero = RoundedCornerShape(22.dp)
-    val userBubble = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp)
-    val assistantBubble = RoundedCornerShape(18.dp)
+    val hero = RoundedCornerShape(28.dp)
+    val composer = RoundedCornerShape(28.dp)
+    val userBubble = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp)
+    val assistantBubble = RoundedCornerShape(20.dp)
+    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape. */
+    val pill = RoundedCornerShape(100.dp)
+    val datePill = RoundedCornerShape(100.dp)
+    val extraExtraLarge = RoundedCornerShape(48.dp)
 }
 
 /** Reserved for technical/metadata text (timestamps, token counts, model backend

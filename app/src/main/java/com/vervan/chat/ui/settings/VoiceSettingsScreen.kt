@@ -22,6 +22,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,7 +60,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
+        ScrollablePage(padding) {
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Read-aloud speed", style = MaterialTheme.typography.bodyMedium)
@@ -84,7 +85,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(12.dp)) {
                     Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Which text-to-speech engine the realtime voice chat pipeline uses. Auto tries Piper, then the device's built-in engine.",
+                        "Choose the voice engine. Auto tries Piper, then the device voice.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
@@ -101,7 +102,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         Column(Modifier.weight(1f)) {
                             Text("Higher quality voice (slower)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Kokoro sounds noticeably better than Piper but can take 2-3 minutes of processing per minute of speech on budget devices — never used automatically, only when explicitly selected above.",
+                                "Kokoro sounds better but can be much slower on budget devices.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -112,7 +113,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         Column(Modifier.weight(1f)) {
                             Text("Interrupt by speaking (barge-in)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Talk over a reply to cut it off, like a phone call. Needs hardware echo cancellation — falls back to a tap-to-interrupt button on devices without it.",
+                                "Speak to interrupt a reply. Unsupported devices use a Stop button.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -125,14 +126,14 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(12.dp)) {
                     Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Realtime voice chat tries the loaded chat model's own transcription first (when it supports audio input, e.g. Gemma 4 E2B). This controls the fallback used when that model can't transcribe, or does it poorly:",
+                        "Uses the active model first, then the fallback selected below.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Use offline speech-to-text model", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "On: use the downloaded Whisper model (Model Manager) when available. Off: fall back straight to the device's built-in speech recognizer.",
+                                "Use downloaded Whisper when available; otherwise use device speech recognition.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -149,7 +150,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(12.dp)) {
                     Text("Voice models", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Hindi and English voices are downloaded and managed from Model Manager — same pause/resume/cancel/delete controls as any other model. Without one downloaded, realtime voice chat falls back to the device's built-in text-to-speech.",
+                        "Manage downloaded Hindi and English voices in Model Manager. Device speech is the fallback.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     androidx.compose.material3.TextButton(
@@ -163,7 +164,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(12.dp)) {
                     Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Kokoro isn't in Model Manager yet (it needs an extra step Model Manager's downloader doesn't do) — download it here instead.",
+                        "Download the optional Kokoro voice here.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     com.vervan.chat.voice.TtsVoiceCatalog.entries.forEach { entry ->

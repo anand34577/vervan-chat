@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.MessageRole
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,8 +67,9 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
             )
         }
     ) { padding ->
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
+            Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
@@ -119,7 +121,10 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             if (bitmap != null) {
                                 Image(bitmap, "Shared image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             } else {
-                                Icon(Icons.Filled.Image, null, Modifier.fillMaxSize().padding(24.dp))
+                                // Same "Shared image" description as the decoded-bitmap branch
+                                // above — this Card is the tappable target either way, so a
+                                // screen reader needs an announcement for a failed thumbnail too.
+                                Icon(Icons.Filled.Image, "Shared image", Modifier.fillMaxSize().padding(24.dp))
                             }
                         }
                     }
@@ -144,6 +149,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                     leadingContent = { Icon(Icons.Filled.Link, null) }
                 )
             }
+        }
         }
     }
     previewPath?.let { path ->

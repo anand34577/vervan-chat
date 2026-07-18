@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 
 /**
  * §7.6.9 — one screen with filter chips, not the list-then-detail navigation this screen used
@@ -64,7 +65,8 @@ fun SmartCollectionsScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -83,7 +85,7 @@ fun SmartCollectionsScreen(
                 EmptyState(
                     icon = Icons.Filled.Collections,
                     title = "Nothing here yet",
-                    body = "This collection fills in automatically as it finds matching chats, notes, and documents."
+                    body = "Matching chats, notes, and documents appear here automatically."
                 )
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
@@ -107,6 +109,7 @@ fun SmartCollectionsScreen(
                     }
                 }
             }
+        }
         }
     }
 }

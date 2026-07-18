@@ -41,7 +41,13 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Memory
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +58,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
     val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsState(initial = 0)
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<Memory?>(null) }
     val listState = rememberLazyListState()
     LaunchedEffect(memories, highlightMemoryId) {
         if (highlightMemoryId != null) {
@@ -80,18 +87,37 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
             FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = "Add memory") }
         }
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp), state = listState) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
             item {
-                Text(
-                    "Only memories you approve are used. Nothing here was added without you confirming it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(8.dp)
+                FeatureHero(
+                    eyebrow = "Private and approved",
+                    title = "What the assistant remembers",
+                    body = "Review, disable, or delete details saved for future chats.",
+                    icon = Icons.Filled.Lightbulb,
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
                 )
+            }
+            item {
+                VervanSectionHeader(
+                    title = "Saved memories",
+                    count = memories.size,
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
+                )
+            }
+            if (memories.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Filled.Lightbulb,
+                        title = "No memories saved",
+                        body = "Save a preference, fact, or instruction for future chats."
+                    )
+                }
             }
             items(memories, key = { it.id }) { memory ->
                 val highlighted = memory.id == highlightMemoryId
                 Card(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
                     colors = if (highlighted) {
                         androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                     } else {
@@ -107,10 +133,11 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         Switch(checked = memory.enabled, onCheckedChange = { checked ->
                             scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
                         })
-                        TextButton(onClick = { scope.launch { app.container.db.memoryDao().update(memory.copy(deletedAt = System.currentTimeMillis())) } }) { Text("Delete") }
+                        TextButton(onClick = { pendingDelete = memory }) { Text("Delete") }
                     }
                 }
             }
+        }
         }
     }
 
@@ -159,6 +186,20 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } }
+        )
+    }
+
+    pendingDelete?.let { memory ->
+        ConfirmDialog(
+            title = "Delete memory?",
+            body = "\"${memory.text}\" will be permanently deleted.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = {
+                pendingDelete = null
+                scope.launch { app.container.db.memoryDao().update(memory.copy(deletedAt = System.currentTimeMillis())) }
+            },
+            onDismiss = { pendingDelete = null }
         )
     }
 }

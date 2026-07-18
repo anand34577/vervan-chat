@@ -60,6 +60,13 @@ class RawTfliteEmbedder(context: Context, modelPath: String, tokenizerModelPath:
     fun embed(text: String, isQuery: Boolean = false, title: String? = null): FloatArray {
         val prefixed = if (isQuery) "task: search result | query: $text" else "title: ${title?.takeIf { it.isNotBlank() } ?: "none"} | text: $text"
         val ids = tokenizer.encode(prefixed)
+        if (ids.size > seqLen) {
+            // Silent truncation here means the tail of whatever text the caller is embedding
+            // (often a document chunk shown to the user as a cited source) never reaches the
+            // model at all — logged so a chunk that's still oversized despite Chunker's own
+            // splitting is diagnosable instead of just quietly under-retrieving.
+            Log.w(TAG, "embed() truncating ${ids.size} tokens to seqLen=$seqLen (isQuery=$isQuery)")
+        }
         val n = minOf(ids.size, seqLen)
         val idsBuf = IntArray(seqLen)
         val maskBuf = IntArray(seqLen)

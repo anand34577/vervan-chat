@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import kotlinx.coroutines.launch
@@ -90,16 +91,16 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (notes.isEmpty()) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          if (notes.isEmpty()) {
             EmptyState(
                 icon = Icons.AutoMirrored.Filled.Note,
                 title = "No notes yet",
-                body = "Jot down ideas, meeting minutes, or anything worth keeping — tap + to start one.",
-                modifier = Modifier.padding(padding)
+                body = "Capture ideas, meeting notes, and anything worth keeping.",
+                modifier = Modifier
             )
-            return@Scaffold
-        }
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+          } else {
+            LazyColumn(Modifier.fillMaxSize()) {
             items(notes, key = { it.id }) { note ->
                 NoteRow(
                     note = note,
@@ -110,6 +111,8 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                     onEnterSelection = { selectionMode = true; selected = selected + note.id }
                 )
             }
+            }
+          }
         }
     }
 }

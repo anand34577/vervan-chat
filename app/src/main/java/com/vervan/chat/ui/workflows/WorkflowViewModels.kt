@@ -170,25 +170,29 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 return@launch
             }
             try {
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    for (index in resumeIndex until wf.steps.size) {
-                        if (pauseRequested) {
-                            resumeIndex = index
-                            _paused.value = true
-                            _running.value = false
-                            return@withLlm
-                        }
-                        val instruction = wf.steps[index]
-                        var output = ""
-                        engine.generate("$instruction\n\n$carryText").collect { chunk ->
-                            output += chunk
-                            _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, false) }
-                        }
-                        _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, true) }
-                        carryText = output
-                        resumeIndex = index + 1
+                val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                for (index in resumeIndex until wf.steps.size) {
+                    if (pauseRequested) {
+                        resumeIndex = index
+                        _paused.value = true
+                        _running.value = false
+                        return@launch
                     }
+                    val instruction = wf.steps[index]
+                    var output = ""
+                    app.container.generate(
+                        model, "$instruction\n\n$carryText", null, null,
+                        params.temperature, params.topP, params.topK, params.seed,
+                        params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+                    ).collect { chunk ->
+                        output += chunk
+                        _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, false) }
+                    }
+                    _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, true) }
+                    carryText = output
+                    resumeIndex = index + 1
                 }
             } catch (t: Throwable) {
                 // Throwable, not just Exception — a multi-step run's accumulated carryText can
