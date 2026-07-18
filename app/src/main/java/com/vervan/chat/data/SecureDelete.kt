@@ -20,7 +20,13 @@ import java.security.SecureRandom
 object SecureDelete {
     private const val CHUNK_BYTES = 1 shl 20 // 1 MB
 
-    fun overwriteAndDelete(file: File) {
+    /** Returns whether [file] is actually gone afterward (already-absent counts as success) —
+     * callers that need to know deletion truly happened (e.g. before dropping the DB row that
+     * references it, per Model Loading Strategy §4.4 step 7) must check this instead of assuming
+     * success, since [File.delete] can silently fail (locked file, read-only/ejected removable
+     * storage) and previously that failure was discarded with no way for a caller to notice. */
+    fun overwriteAndDelete(file: File): Boolean {
+        if (!file.exists()) return true
         if (file.isFile) {
             runCatching {
                 val length = file.length()
@@ -43,7 +49,7 @@ object SecureDelete {
                 Log.w(TAG, "overwriteAndDelete: overwrite failed for ${file.name}, deleting without a secure wipe", it)
             }
         }
-        file.delete()
+        return file.delete()
     }
 
     private const val TAG = "SecureDelete"

@@ -11,3 +11,13 @@ local.properties
 .kotlin/
 
 *.hprf
+
+*.cmd
+# llama.cpp (GGUF) backend — machine-local build output, copied in by the syncLlamaCppLibs
+# Gradle task from whatever local.properties' llamacpp.dir points at. Not source, not portable
+# across machines/ABIs, so not committed (unlike the LiteRT-LM accelerator .so files already
+# checked into this same directory, which ARE meant to be committed).
+/app/src/main/jniLibs/arm64-v8a/libllama.so
+/app/src/main/jniLibs/arm64-v8a/libggml*.so
+/app/src/main/jniLibs/arm64-v8a/libmtmd.so
+/app/src/main/jniLibs/arm64-v8a/libc++_shared.so

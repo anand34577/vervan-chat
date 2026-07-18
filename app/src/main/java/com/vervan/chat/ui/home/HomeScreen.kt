@@ -1,7 +1,5 @@
 package com.vervan.chat.ui.home
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,7 +38,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,11 +74,14 @@ import com.vervan.chat.ui.common.ActionTile
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.SectionCard
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.StatusChip
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -240,8 +240,8 @@ private fun HomePrimaryAction(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f))
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Card(
@@ -305,7 +305,7 @@ private fun HomeAlert(thermalLevel: ThermalLevel, indexingCount: Int, onOpenKnow
         )
         indexingCount > 0 -> SystemStatusStrip(
             title = "Preparing your knowledge",
-            body = "$indexingCount document${if (indexingCount == 1) " is" else "s are"} being indexed for grounded answers.",
+            body = "Indexing $indexingCount document${if (indexingCount == 1) "" else "s"} for search.",
             tone = StatusTone.Running,
             actionLabel = "View",
             onAction = onOpenKnowledge
@@ -358,61 +358,51 @@ private fun ContinueSection(
     onOpenProject: (String) -> Unit,
     onStartChat: () -> Unit
 ) {
+    val chevron: @Composable () -> Unit = {
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     Column {
         VervanSectionHeader("Continue where you left off", count = chats.take(2).size + projects.take(1).size)
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f))
-        ) {
-            val items = buildList {
-                chats.take(2).forEach { chat ->
-                    add(RecentItem(Icons.AutoMirrored.Filled.Chat, "Chat", chat.title, chat.draft.ifBlank { "Continue the conversation" }) { onOpenChat(chat.id) })
-                }
-                projects.take(1).forEach { project ->
-                    add(RecentItem(Icons.AutoMirrored.Filled.MenuBook, "Project", project.name, project.instructions.ifBlank { "Open project workspace" }) { onOpenProject(project.id) })
+        val rows = buildList<@Composable () -> Unit> {
+            chats.take(2).forEach { chat ->
+                add {
+                    SectionRow(
+                        icon = Icons.AutoMirrored.Filled.Chat,
+                        eyebrow = "Chat",
+                        title = chat.title,
+                        subtitle = chat.draft.ifBlank { "Continue the conversation" },
+                        onClick = { onOpenChat(chat.id) },
+                        trailing = chevron
+                    )
                 }
             }
-            if (items.isEmpty()) {
+            projects.take(1).forEach { project ->
+                add {
+                    SectionRow(
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        eyebrow = "Project",
+                        title = project.name,
+                        subtitle = project.instructions.ifBlank { "Open project workspace" },
+                        onClick = { onOpenProject(project.id) },
+                        trailing = chevron
+                    )
+                }
+            }
+        }
+        if (rows.isEmpty()) {
+            SectionCard(items = listOf<@Composable () -> Unit>({
                 Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     IconAffordance(Icons.AutoMirrored.Filled.Chat, size = IconAffordanceSize.Default)
                     Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                         Text("A fresh workspace", style = MaterialTheme.typography.titleSmall)
-                        Text("Your recent conversations and projects will appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Recent chats and projects will appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(onClick = onStartChat) { Text("Start") }
                 }
-            } else {
-                items.forEachIndexed { index, item ->
-                    RecentRow(item)
-                    if (index != items.lastIndex) HorizontalDivider(Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.outlineVariant)
-                }
-            }
+            }))
+        } else {
+            SectionCard(items = rows)
         }
-    }
-}
-
-private data class RecentItem(
-    val icon: ImageVector,
-    val eyebrow: String,
-    val title: String,
-    val body: String,
-    val onClick: () -> Unit
-)
-
-@Composable
-private fun RecentRow(item: RecentItem) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 80.dp).clickable(onClick = item.onClick).padding(Space.lg),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconAffordance(item.icon, size = IconAffordanceSize.Compact)
-        Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-            Text(item.eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -456,53 +446,38 @@ private fun WorkspaceStatusSection(
     onOpenModels: () -> Unit,
     onOpenWorkspaces: () -> Unit
 ) {
+    val modelTone = if (model == null) StatusTone.Warning else StatusTone.Ready
+    val indexTone = if (indexingCount > 0) StatusTone.Running else StatusTone.Info
     Column {
         VervanSectionHeader("Local workspace")
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f))
-        ) {
-            StatusRow(
-                Icons.Outlined.Memory,
-                model?.displayName ?: "No generation model",
-                model?.lastWorkingBackend?.label() ?: "Choose a model to enable chat",
-                if (model == null) StatusTone.Warning else StatusTone.Ready,
-                onOpenModels
-            )
-            HorizontalDivider(Modifier.padding(horizontal = Space.lg), color = MaterialTheme.colorScheme.outlineVariant)
-            StatusRow(
-                Icons.Filled.GridView,
-                workspaceName ?: "Personal workspace",
-                if (indexingCount > 0) "$indexingCount document${if (indexingCount == 1) "" else "s"} indexing" else "Everything is up to date",
-                if (indexingCount > 0) StatusTone.Running else StatusTone.Info,
-                onOpenWorkspaces
-            )
-        }
+        SectionCard(items = listOf<@Composable () -> Unit>(
+            {
+                SectionRow(
+                    icon = Icons.Outlined.Memory,
+                    title = model?.displayName ?: "No generation model",
+                    subtitle = model?.lastWorkingBackend?.label() ?: "Choose a model to enable chat",
+                    onClick = onOpenModels,
+                    trailing = { StatusChip(statusLabel(modelTone), modelTone) }
+                )
+            },
+            {
+                SectionRow(
+                    icon = Icons.Filled.GridView,
+                    title = workspaceName ?: "Personal workspace",
+                    subtitle = if (indexingCount > 0) "$indexingCount document${if (indexingCount == 1) "" else "s"} indexing" else "Everything is up to date",
+                    onClick = onOpenWorkspaces,
+                    trailing = { StatusChip(statusLabel(indexTone), indexTone) }
+                )
+            }
+        ))
     }
 }
 
-@Composable
-private fun StatusRow(icon: ImageVector, title: String, body: String, tone: StatusTone, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 76.dp).clickable(onClick = onClick).padding(Space.lg),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconAffordance(icon, size = IconAffordanceSize.Compact)
-        Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        StatusChip(
-            when (tone) {
-                StatusTone.Ready -> "Selected"
-                StatusTone.Running -> "Working"
-                StatusTone.Warning -> "Setup"
-                else -> "Open"
-            },
-            tone
-        )
-    }
+private fun statusLabel(tone: StatusTone): String = when (tone) {
+    StatusTone.Ready -> "Selected"
+    StatusTone.Running -> "Working"
+    StatusTone.Warning -> "Setup"
+    else -> "Open"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -525,7 +500,7 @@ private fun ToolsSection(
     Column {
         VervanSectionHeader("Choose a mode", actionLabel = "See all", onAction = onOpenAllTools)
         Text(
-            "Start with the kind of work you want to do. The complete toolkit is organized by outcome in Tools.",
+                    "Choose a task below, or browse the full toolkit in Tools.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,10 @@ import com.vervan.chat.data.backup.BackupManager
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
+import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.system.toUserMessage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,6 +51,8 @@ fun BackupScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
+    var resultIsError by remember { mutableStateOf(false) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
 
     val fileName = remember {
         "vervan-backup-${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}.json"
@@ -58,35 +65,45 @@ fun BackupScreen(onBack: () -> Unit) {
             // but never did — this is the first real call site for it.
             val job = JobRecord(type = JobType.BACKUP, label = fileName, state = JobState.RUNNING)
             app.container.db.jobDao().upsert(job)
+            resultIsError = false
             resultMessage = try {
                 app.contentResolver.openOutputStream(uri)?.use { BackupManager.export(app.container.db, it) }
                 app.container.db.jobDao().upsert(job.copy(state = JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
                 "Backup saved."
             } catch (e: Exception) {
                 app.container.db.jobDao().upsert(job.copy(state = JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = e.message ?: ""))
-                "Export failed: ${e.message}"
+                resultIsError = true
+                "Export failed. ${e.toUserMessage()}"
             }
             busy = false
         }
     }
+    // File selection just stages the URI — the actual merge (which overwrites any item with a
+    // matching ID) only runs once the user confirms via the ConfirmDialog below, matching every
+    // other destructive/overwriting action in the app.
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri != null) pendingImportUri = uri
+    }
+    fun runImport(uri: Uri) {
         scope.launch {
             busy = true
             val job = JobRecord(type = JobType.BACKUP, label = "Restore backup", state = JobState.RUNNING)
             app.container.db.jobDao().upsert(job)
+            resultIsError = false
             resultMessage = try {
                 val summary = app.contentResolver.openInputStream(uri)?.use { BackupManager.import(app.container.db, it) }
                 app.container.db.jobDao().upsert(job.copy(state = JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
                 if (summary != null) {
-                    "Restored ${summary.chats} chats, ${summary.notes} notes, ${summary.personas} personas, " +
-                        "${summary.templates} templates, ${summary.workflows} workflows, ${summary.memories} memories, " +
-                        "${summary.projects} projects, ${summary.workspaces} workspaces, ${summary.knowledgeBases} knowledge bases, " +
-                        "${summary.savedOutputs} saved outputs, ${summary.studyCards} flashcards."
-                } else "Could not open the selected file."
+                    "Restored ${summary.chats} chats, ${summary.notes} notes, ${summary.projects} projects, " +
+                        "${summary.workspaces} workspaces, and other saved items."
+                } else {
+                    resultIsError = true
+                    "Could not open the selected file."
+                }
             } catch (e: Exception) {
                 app.container.db.jobDao().upsert(job.copy(state = JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = e.message ?: ""))
-                "Import failed: ${e.message ?: "malformed backup file"}"
+                resultIsError = true
+                "Restore failed. ${e.toUserMessage()}"
             }
             busy = false
         }
@@ -100,13 +117,12 @@ fun BackupScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        ScrollablePage(padding) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Export backup", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "A JSON file with your chats, notes, personas, templates, workflows, memories, projects, knowledge bases, saved outputs, and flashcards. " +
-                            "Imported model files and knowledge-base documents are not included — re-import those from Models/Knowledge.",
+                        "Includes app data, but not model files or imported documents.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -118,7 +134,7 @@ fun BackupScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Restore from backup", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Restoring merges into what's already here — matching IDs are overwritten, everything else is added.",
+                        "Adds backup data and replaces matching items.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -127,13 +143,37 @@ fun BackupScreen(onBack: () -> Unit) {
                 }
             }
             if (busy) {
-                CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp).size(24.dp), strokeWidth = 2.dp)
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Working with your backup",
+                    body = "Reading or saving local data. Keep this screen open.",
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
             resultMessage?.let {
-                Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                    Text(it, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                if (resultIsError) {
+                    com.vervan.chat.ui.common.OperationErrorCard(
+                        title = "Backup operation failed",
+                        message = it,
+                        recovery = "Your data is safe. Check the file and free storage, then try again.",
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                } else {
+                    Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                        Text(it, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }
+    }
+
+    pendingImportUri?.let { uri ->
+        ConfirmDialog(
+            title = "Restore from backup?",
+            body = "Matching items will be replaced. Other local data stays unchanged.",
+            confirmLabel = "Restore",
+            destructive = true,
+            onConfirm = { pendingImportUri = null; runImport(uri) },
+            onDismiss = { pendingImportUri = null }
+        )
     }
 }

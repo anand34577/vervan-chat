@@ -1,6 +1,7 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -10,7 +11,8 @@ import java.util.UUID
  * here (no parentFolderId) because deep trees are what Projects are for, and flat folders
  * are simpler to reason about. Soft-deletable.
  */
-@Entity(tableName = "folders")
+// workspaceId backs the per-workspace folder list/count/delete-all. See Migration(36, 37).
+@Entity(tableName = "folders", indices = [Index("workspaceId")])
 data class Folder(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String,

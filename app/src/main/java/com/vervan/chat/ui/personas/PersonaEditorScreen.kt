@@ -35,10 +35,15 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -46,6 +51,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
 import kotlinx.coroutines.launch
@@ -68,6 +75,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val responseLength by vm.responseLength.collectAsState()
     val language by vm.language.collectAsState()
     val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -79,7 +87,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                         IconButton(onClick = { onTest(personaId) }) { Icon(Icons.Filled.Science, contentDescription = "Test bench") }
                     }
                     if (personaId != null && !isBuiltIn) {
-                        IconButton(onClick = { vm.delete(); onBack() }) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
                         }
                     }
@@ -87,7 +95,8 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
                 Box(
                     Modifier.size(64.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
@@ -96,7 +105,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             }
             if (isBuiltIn) {
                 Text(
-                    "This is a built-in — saving creates your own editable copy instead of changing the original.",
+                "Saving creates an editable copy. The built-in stays unchanged.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp)
@@ -133,7 +142,10 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             DialRow(listOf("BALANCED", "SHORT", "LONG"), responseLength, vm::setResponseLength)
 
             Text("Creativity: ${String.format("%.1f", creativity)}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
-            Slider(value = creativity, onValueChange = vm::setCreativity, valueRange = 0f..1f)
+            Slider(
+                value = creativity, onValueChange = vm::setCreativity, valueRange = 0f..1f,
+                modifier = Modifier.semantics { contentDescription = "Creativity, ${String.format("%.1f", creativity)}" }
+            )
 
             SectionHeader("Defaults")
             OutlinedTextField(
@@ -154,6 +166,17 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save changes") }
             }
         }
+        }
+    }
+    if (showDeleteConfirm) {
+        ConfirmDialog(
+            title = "Delete persona?",
+            body = "\"$name\" will be permanently deleted.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
+            onDismiss = { showDeleteConfirm = false }
+        )
     }
 }
 

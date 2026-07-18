@@ -1,12 +1,15 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 
-@Entity(tableName = "chunks")
+// documentId backs delete-for-document and the per-document chunk viewer; knowledgeBaseId backs
+// RetrievalEngine's own scoped fetch — both full scans without this. See Migration(36, 37).
+@Entity(tableName = "chunks", indices = [Index("documentId"), Index("knowledgeBaseId")])
 data class Chunk(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val documentId: String,

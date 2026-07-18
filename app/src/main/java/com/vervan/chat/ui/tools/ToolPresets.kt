@@ -159,7 +159,7 @@ private val jsonLogActions = listOf(
 )
 
 @Composable fun CodeExplainerScreen(onBack: () -> Unit) =
-    TextActionScreen("Code explainer", codeExplainerActions, onBack, hint = "Paste code (keep it short — small on-device models have a limited context window)")
+    TextActionScreen("Code explainer", codeExplainerActions, onBack, hint = "Paste a short code sample")
 
 @Composable fun RegexSqlHelperScreen(onBack: () -> Unit) =
     TextActionScreen("Regex & SQL helper", regexSqlActions, onBack, hint = "Describe what you want, or paste a regex/SQL query to explain")
@@ -246,7 +246,7 @@ private val habitActions = listOf(
     TextActionScreen("Smart checklist generator", checklistActions, onBack, hint = "Optional: add details (destination, dates, etc.)", requireInput = false)
 
 @Composable fun DailyPlannerScreen(onBack: () -> Unit) =
-    TextActionScreen("Daily planner", plannerActions, onBack, hint = "e.g. \"I need to finish the report, exercise, and prep for tomorrow's interview\"", allowVoice = true)
+    TextActionScreen("Daily planner", plannerActions, onBack, hint = "List today's tasks and priorities", allowVoice = true)
 
 @Composable fun GoalBreakdownScreen(onBack: () -> Unit) =
     TextActionScreen("Goal breakdown", goalBreakdownActions, onBack, hint = "Describe the goal", allowVoice = true, allowSaveAsNote = true)
@@ -335,6 +335,6 @@ fun StudyMaterialScreen(onBack: () -> Unit, scannedText: String) =
 @Composable fun LanguagePracticeScreen(onBack: () -> Unit) = TurnBasedChatScreen(
     title = "Language practice",
     systemInstruction = "You are role-playing a real-life conversation scenario with the user to help them practice a language. Stay in character for the scenario. After each of the user's replies, gently correct any grammar mistakes and suggest better phrasing or vocabulary in brackets, then continue the roleplay.",
-    setupHint = "Pick a scenario, e.g. restaurant, job interview, airport, hotel, doctor appointment, customer support, casual conversation — and which language to practice",
+        setupHint = "Choose a language and scenario, such as a restaurant or interview",
     onBack = onBack
 )

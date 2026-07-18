@@ -32,6 +32,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.theme.VervanMono
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,33 +66,52 @@ fun JobQueueScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        if (jobs.isEmpty()) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          if (jobs.isEmpty()) {
             EmptyState(
                 icon = Icons.AutoMirrored.Filled.ListAlt,
                 title = "No background jobs yet",
-                body = "Document indexing, model verification, benchmarks, index rebuilds, and backups appear here while running.",
-                modifier = Modifier.padding(padding)
+                body = "Track indexing, model checks, benchmarks, and backups.",
+                modifier = Modifier
             )
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+          } else {
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(jobs, key = { it.id }) { job ->
                     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(Modifier.padding(12.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(job.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(job.state.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    when (job.state) {
+                                        JobState.WAITING -> "Waiting"
+                                        JobState.PREPARING -> "Preparing"
+                                        JobState.RUNNING -> "In progress"
+                                        JobState.PAUSED -> "Paused"
+                                        JobState.COMPLETED -> "Completed"
+                                        JobState.FAILED -> "Needs attention"
+                                        JobState.CANCELLED -> "Cancelled"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (job.state == JobState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
                             }
                             Text(job.type.name, style = MaterialTheme.typography.labelSmall, fontFamily = VervanMono)
                             if (job.state == JobState.RUNNING || job.state == JobState.PREPARING) {
                                 LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
                             }
                             if (job.detail.isNotBlank()) {
-                                Text(job.detail, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                                Text(
+                                    if (job.state == JobState.FAILED) job.detail.toUserMessage() else job.detail,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (job.state == JobState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
                             }
                         }
                     }
                 }
             }
+          }
         }
     }
 }

@@ -34,4 +34,15 @@ interface MessageDao : BaseDao<Message> {
 
     @Query("SELECT COUNT(*) FROM messages WHERE chatId = :chatId AND role != 'SYSTEM'")
     suspend fun countForChat(chatId: String): Int
+
+    // Chat-list last-message preview — one row per chat (the most recent non-SYSTEM message)
+    // observed as a single Flow so the chat list refreshes instantly when any conversation
+    // gets a new message, without each row spinning up its own per-chat query. Used by
+    // ChatListViewModel.lastMessageByChat.
+    @Query(
+        "SELECT m.* FROM messages m INNER JOIN (" +
+            "SELECT chatId, MAX(createdAt) AS maxCreated FROM messages WHERE role != 'SYSTEM' GROUP BY chatId" +
+            ") latest ON m.chatId = latest.chatId AND m.createdAt = latest.maxCreated"
+    )
+    fun observeLatestPerChat(): Flow<List<Message>>
 }

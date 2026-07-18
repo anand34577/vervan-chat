@@ -18,7 +18,6 @@ object TitleGenerator {
      * conversation content to summarize yet — callers must leave the existing title alone. */
     suspend fun generate(app: VervanApp, chatId: String): String? {
         val db = app.container.db
-        val engine = app.container.llmEngine
         val allMessages = db.messageDao().getMessages(chatId)
         val chat = db.chatDao().getChat(chatId) ?: return null
         val history = BranchUtil.pathTo(allMessages, chat.activeLeafId)
@@ -36,11 +35,7 @@ object TitleGenerator {
             "\"New Chat\" or \"Conversation\". Respond with ONLY the title text, nothing else.\n\n" +
             "Conversation:\n$transcript"
 
-        var raw = ""
-        app.container.withLlm {
-            if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-            engine.generate(prompt).collect { raw += it }
-        }
+        val raw = OneShotLlm.run(app, prompt) ?: return null
         val title = raw.trim().trim('"', '“', '”').lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().take(80)
         return title.ifBlank { null }
     }

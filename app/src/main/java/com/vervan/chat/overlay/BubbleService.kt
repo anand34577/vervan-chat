@@ -244,23 +244,27 @@ class BubbleService : Service() {
                 // often different (e.g. a chat pinned to a specific model), and unconditionally
                 // insisting on the "active" one forced an unload+reload of a perfectly usable
                 // already-loaded model on every single Explain tap.
-                val loadedPath = app.container.llmEngine.loadedModelPath
-                val model = loadedPath?.let { path -> db.modelDao().observeModels().first().find { it.filePath == path } }
+                val loadedId = app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId
+                val model = loadedId?.let { db.modelDao().get(it) }
                     ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
                     ?: error("No chat model selected. Import or activate one in Models.")
                 val answer = StringBuilder()
                 var lastPersistAt = 0L
-                app.container.withLlm { engine ->
-                    if (engine.loadedModelPath != model.filePath) withContext(Dispatchers.IO) { engine.load(model.filePath) }
-                    if (!engine.visionEnabled) error("The active model (${model.displayName}) doesn't support image understanding.")
-                    engine.generate(prompt, imagePath = file.path).collect { chunk ->
-                        answer.append(chunk)
-                        showResult(answer.toString())
-                        val now = android.os.SystemClock.elapsedRealtime()
-                        if (now - lastPersistAt >= 100L) {
-                            db.messageDao().update(reply.copy(content = answer.toString(), state = MessageState.STREAMING))
-                            lastPersistAt = now
-                        }
+                val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                check(app.container.visionEnabled(model)) { "The active model (${model.displayName}) doesn't support image understanding." }
+                val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                app.container.generate(
+                    model, prompt, file.path, null,
+                    params.temperature, params.topP, params.topK, params.seed,
+                    params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+                ).collect { chunk ->
+                    answer.append(chunk)
+                    showResult(answer.toString())
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastPersistAt >= 100L) {
+                        db.messageDao().update(reply.copy(content = answer.toString(), state = MessageState.STREAMING))
+                        lastPersistAt = now
                     }
                 }
                 db.messageDao().update(reply.copy(content = answer.toString(), state = MessageState.COMPLETE))

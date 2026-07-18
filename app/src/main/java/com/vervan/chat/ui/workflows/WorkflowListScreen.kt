@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,21 +54,23 @@ fun WorkflowListScreen(onOpenWorkflow: (String) -> Unit, onNewWorkflow: () -> Un
             )
         }
     ) { padding ->
-        if (workflows.isEmpty()) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          if (workflows.isEmpty()) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.Widgets,
                 title = "No workflows yet",
                 body = "Chain prompts into a repeatable multi-step task.",
-                modifier = Modifier.padding(padding),
+                modifier = Modifier,
                 actionLabel = "New workflow",
                 onAction = onNewWorkflow
             )
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+          } else {
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(workflows, key = { it.id }) { wf ->
                     WorkflowRow(wf, onClick = { onOpenWorkflow(wf.id) }, onEdit = { onEditWorkflow(wf.id) })
                 }
             }
+          }
         }
     }
 }

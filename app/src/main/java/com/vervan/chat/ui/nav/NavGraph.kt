@@ -3,6 +3,7 @@ package com.vervan.chat.ui.nav
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -201,6 +202,7 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
                     Icon(Icons.Filled.Add, contentDescription = "Create")
                 }
                 tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
+                Spacer(Modifier.weight(1f))
                 trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
             }
         }

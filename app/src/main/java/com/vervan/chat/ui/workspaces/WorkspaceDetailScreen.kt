@@ -59,8 +59,10 @@ import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.DeleteMenuItem
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,7 +101,7 @@ fun WorkspaceDetailScreen(
                 app.contentResolver.openOutputStream(uri)?.use { com.vervan.chat.data.backup.BackupManager.exportWorkspace(app.container.db, workspaceId, it) }
                 "Workspace exported."
             } catch (e: Exception) {
-                "Export failed: ${e.message}"
+                "Export failed. ${e.toUserMessage()}"
             }
         }
     }
@@ -176,7 +178,8 @@ fun WorkspaceDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (ws == null) return@Scaffold
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
             if (ws.description.isNotBlank()) {
                 Text(ws.description, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
             }
@@ -346,6 +349,7 @@ fun WorkspaceDetailScreen(
                 }
             }
         }
+        }
     }
 
     if (editing && ws != null) {
@@ -366,7 +370,7 @@ fun WorkspaceDetailScreen(
     if (pendingDelete && ws != null) {
         ConfirmDialog(
             title = "Delete workspace forever?",
-            body = "\"${ws.name}\" and all of its chats, folders, and documents will be permanently deleted. This can't be undone.",
+            body = "Permanently delete \"${ws.name}\" and all its content?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = { scope.launch { vm.delete(); pendingDelete = false; onBack() } },
@@ -379,7 +383,7 @@ fun WorkspaceDetailScreen(
         AlertDialog(
             onDismissRequest = { showBatchTitleOptions = false },
             title = { Text("Generate titles for ${selectedChatIds.size} chats") },
-            text = { Text("Existing custom titles are always preserved (spec §18) — this only replaces titles the app generated or the default \"New chat\".") },
+            text = { Text("Custom titles stay unchanged. Only default or generated titles are replaced.") },
             confirmButton = {
                 TextButton(onClick = {
                     vm.startTitleBatch(selectedChatIds.toList(), onlyUntitled = true)
@@ -592,7 +596,7 @@ private fun WorkspaceKbPickerDialog(
         text = {
             Column {
                 if (kbs.isEmpty()) {
-                    Text("No knowledge bases yet — import documents from the Knowledge tab first.", style = MaterialTheme.typography.bodySmall)
+                    Text("No knowledge bases yet. Import a document in Knowledge.", style = MaterialTheme.typography.bodySmall)
                 }
                 kbs.forEach { kb ->
                     Row(verticalAlignment = Alignment.CenterVertically) {

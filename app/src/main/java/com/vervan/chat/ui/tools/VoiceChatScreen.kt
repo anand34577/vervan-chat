@@ -320,7 +320,7 @@ private fun VoiceEmptyState() {
             }
             Text("A private voice conversation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.md))
             Text(
-                "Speak naturally. The readable transcript stays here while Vervan listens, thinks, and responds on your device.",
+            "Speak naturally. Vervan listens and replies on your device.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

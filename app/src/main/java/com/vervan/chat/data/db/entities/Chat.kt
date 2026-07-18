@@ -1,10 +1,17 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "chats")
+@Entity(
+    tableName = "chats",
+    // Every one of these backs a WHERE clause ChatDao actually runs (workspace/folder/project
+    // scoped lists, plus the messages.chatId EXISTS subquery in the main chat-list query relies
+    // on messages' own index, not this one) — see Migration(36, 37).
+    indices = [Index("workspaceId"), Index("folderId"), Index("projectId")]
+)
 data class Chat(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String = "New chat",

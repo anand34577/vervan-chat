@@ -83,7 +83,7 @@ class LocalApiServer(
         val messages = json.optJSONArray("messages") ?: JSONArray()
         val stream = json.optBoolean("stream", false)
         val requestedModel = json.optString("model").ifBlank { null }
-        val prompt = buildPrompt(messages)
+        val (systemPrompt, prompt) = buildPrompt(messages)
 
         val model = runBlocking {
             requestedModel?.let { name ->
@@ -97,12 +97,16 @@ class LocalApiServer(
             val pipedOut = PipedOutputStream(pipedIn)
             streamingScope.launch {
                 try {
-                    app.container.withLlm { engine ->
-                        if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                        engine.generate(prompt).collect { chunk ->
-                            pipedOut.write(sseChunk(completionId, model.displayName, chunk).toByteArray())
-                            pipedOut.flush()
-                        }
+                    val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                    check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                    val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                    app.container.generate(
+                        model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
+                        params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
+                        systemPrompt = systemPrompt
+                    ).collect { chunk ->
+                        pipedOut.write(sseChunk(completionId, model.displayName, chunk).toByteArray())
+                        pipedOut.flush()
                     }
                     pipedOut.write("data: [DONE]\n\n".toByteArray())
                 } catch (t: Throwable) {
@@ -116,28 +120,40 @@ class LocalApiServer(
         } else {
             val text = runBlocking {
                 val sb = StringBuilder()
-                app.container.withLlm { engine ->
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    engine.generate(prompt).collect { chunk -> sb.append(chunk) }
-                }
+                val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                app.container.generate(
+                    model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
+                    params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
+                    systemPrompt = systemPrompt
+                ).collect { chunk -> sb.append(chunk) }
                 sb.toString()
             }
             jsonResponse(Response.Status.OK, chatCompletionJson(completionId, model.displayName, text))
         }
     }
 
-    /** No chat template applied — this is a much simpler prompt than
-     * [com.vervan.chat.ui.chat.ChatViewModel]'s (no persona/memory/retrieval/tools), by design:
-     * an OpenAI-API client is expected to send the full context it wants in `messages` itself. */
-    private fun buildPrompt(messages: JSONArray): String = buildString {
+    /** No chat template *content* assembly beyond role separation — a much simpler prompt than
+     * [com.vervan.chat.ui.chat.ChatViewModel]'s (no persona/memory/retrieval/tools), by design: an
+     * OpenAI-API client is expected to send the full context it wants in `messages` itself. Still
+     * returns `system`-role messages separately (first) from the rest (second, flattened + a
+     * trailing "Assistant:") so the llama.cpp bridge can send them as a real `"system"` template
+     * turn instead of folding them into the `"user"` turn — a client sending a `system` message
+     * is explicitly asking for system-role behavior; silently downgrading it to user-role text
+     * would defeat the point of an OpenAI-compatible endpoint. */
+    private fun buildPrompt(messages: JSONArray): Pair<String, String> {
+        val system = StringBuilder()
+        val user = StringBuilder()
         for (i in 0 until messages.length()) {
             val m = messages.optJSONObject(i) ?: continue
             val role = m.optString("role", "user")
             val content = m.optString("content")
-            if (role == "system") { appendLine(content); appendLine() }
-            else appendLine("${role.replaceFirstChar(Char::uppercase)}: $content")
+            if (role == "system") { system.appendLine(content); system.appendLine() }
+            else user.appendLine("${role.replaceFirstChar(Char::uppercase)}: $content")
         }
-        append("Assistant:")
+        user.append("Assistant:")
+        return system.toString() to user.toString()
     }
 
     private fun sseChunk(id: String, model: String, delta: String): String {

@@ -40,6 +40,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -49,6 +51,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ScrollablePage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,14 +78,14 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
+        ScrollablePage(padding) {
             Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("App lock", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Require biometrics or a PIN to open the app, matching your device's lock screen security.",
+                                "Require biometrics or a PIN when opening Vervan.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -122,7 +125,10 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                             value = timeoutSeconds.toFloat(),
                             onValueChange = { vm.setAutoLockTimeoutSeconds(it.toInt()) },
                             valueRange = 0f..600f,
-                            steps = 11
+                            steps = 11,
+                            modifier = Modifier.semantics {
+                                contentDescription = "Auto-lock timeout, $timeoutSeconds seconds"
+                            }
                         )
                         Text(
                             if (timeoutSeconds == 0) "Locks immediately every time the app leaves the foreground."
@@ -140,9 +146,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         Column(Modifier.weight(1f)) {
                             Text("Block screenshots & screen recording", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Applies everywhere in the app, not just one chat — the recent-apps switcher also " +
-                                    "shows a blank thumbnail instead of your chats. App lock (above) blocks these too, " +
-                                    "for as long as it's on, independent of this switch.",
+                                "Protect every screen and hide content in the recent-apps preview.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -160,7 +164,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                 Column(Modifier.padding(12.dp)) {
                     Text("Local API server", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Turns this app into an OpenAI-compatible endpoint other tools on your device (or LAN, opt-in) can call.",
+                        "Let trusted apps use the active model through a local API.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -173,8 +177,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                 Column(Modifier.padding(12.dp)) {
                     Text("Privacy", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "No crash reporting or analytics of any kind is built into this app. Diagnostics are generated " +
-                            "locally and only ever leave the device when you manually copy them yourself.",
+                        "No analytics or crash reports are sent. Diagnostics stay local unless you copy them.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
@@ -197,7 +200,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         modifier = Modifier.padding(top = 12.dp)
                     )
                     Text(
-                        "Moves them to the recycle bin, same as deleting by hand — pinned and temporary chats are never touched.",
+                        "Moves old chats to the bin. Pinned and temporary chats are kept.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -205,16 +208,17 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         value = retentionDays.toFloat(),
                         onValueChange = { vm.setAutoDeleteAfterDays(it.toInt()) },
                         valueRange = 0f..180f,
-                        steps = 17
+                        steps = 17,
+                        modifier = Modifier.semantics {
+                            contentDescription = if (retentionDays == 0) "Auto-delete old chats, off" else "Auto-delete old chats, $retentionDays days"
+                        }
                     )
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text("Panic wipe", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
                     Text(
-                        "Immediately and permanently erases every chat, note, document, and model on this device, and " +
-                            "closes the app. This cannot be undone — there is no backup step here; use Settings → " +
-                            "Storage & data → Backup first if you want to keep anything.",
+                        "Erases all chats, notes, documents, and models, then closes the app. Back up first.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -232,7 +236,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
     if (confirmWipeStep1) {
         ConfirmDialog(
             title = "Wipe everything?",
-            body = "This permanently erases every chat, note, document, and model on this device. There is no undo.",
+            body = "Permanently erase all chats, notes, documents, and models?",
             confirmLabel = "Continue",
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
@@ -242,7 +246,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
     if (confirmWipeStep2) {
         ConfirmDialog(
             title = "Are you sure?",
-            body = "Last chance — this cannot be undone, and the app will close immediately once it starts.",
+            body = "This cannot be undone. The app will close when the wipe starts.",
             confirmLabel = "Wipe everything",
             destructive = true,
             onConfirm = {
@@ -357,7 +361,7 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
         Column(Modifier.padding(12.dp)) {
             Text("On-device data sources", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Lets the model read this data to answer your questions — entirely on-device, nothing leaves the phone. Off by default.",
+                "Allow selected local data sources. Off by default and processed on-device.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -370,7 +374,7 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
             }
             DataSourceRow(
                 "SMS", sms,
-                subtitle = "Outside Play Store distribution only — see note below."
+                subtitle = "Only available outside the Play Store."
             ) { turnOn ->
                 if (turnOn) requestSms.launch(android.Manifest.permission.READ_SMS) else vm.setSmsToolEnabled(false)
             }
@@ -449,8 +453,7 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
                 Column(Modifier.weight(1f)) {
                     Text("Quick-action bubble", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "A small floating button that captures a single screenshot and explains it using the " +
-                            "active model's vision support. Needs the \"draw over other apps\" permission.",
+                        "Show a floating button to explain one screenshot locally. Requires overlay permission.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

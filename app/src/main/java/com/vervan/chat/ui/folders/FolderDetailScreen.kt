@@ -44,6 +44,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ValidationLimits
 import kotlinx.coroutines.launch
 
@@ -60,6 +62,7 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
     val knowledgeBases = app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList()).value
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -68,14 +71,15 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     TextButton(onClick = { renaming = true }, enabled = folder != null) { Text("Rename") }
-                    TextButton(onClick = { folder?.let { vm.delete(it); onBack() } }, enabled = folder != null) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { showDeleteConfirm = true }, enabled = folder != null) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                 }
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        ScrollablePage(contentPadding = padding) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text("Folder defaults", style = MaterialTheme.typography.titleSmall)
-            Text("New chats in this folder start with these defaults.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+            Text("Applied to new chats in this folder.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
 
             Text("Default persona", style = MaterialTheme.typography.labelMedium)
             Text(
@@ -122,6 +126,7 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                 }
             }
         }
+        }
     }
 
     folder?.let { current ->
@@ -133,6 +138,16 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                 text = { BoundedTextField(value = name, onValueChange = { name = it }, singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
                 confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(name.trim()); renaming = false } }, enabled = name.isNotBlank()) { Text("Save") } },
                 dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } }
+            )
+        }
+        if (showDeleteConfirm) {
+            ConfirmDialog(
+                title = "Delete folder?",
+                body = "Delete \"${current.name}\"? Its items will become unfiled.",
+                confirmLabel = "Delete",
+                destructive = true,
+                onConfirm = { showDeleteConfirm = false; vm.delete(current); onBack() },
+                onDismiss = { showDeleteConfirm = false }
             )
         }
     }

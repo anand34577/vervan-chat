@@ -6,6 +6,8 @@ import androidx.room.withTransaction
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Folder
+import com.vervan.chat.data.db.entities.Message
+import com.vervan.chat.data.db.entities.ModelInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +34,20 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
 
     val folderNames: StateFlow<Map<String, String>> = folders
         .map { folders -> folders.associate { it.id to it.name } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Last message preview per chat — a single Flow from one DAO query rather than N per-row
+    // queries. Used by the chat list row to show "what was the last thing said", the way every
+    // other chat app does, instead of the previous pattern of showing the user's unsent draft.
+    val lastMessageByChat: StateFlow<Map<String, Message>> = db.messageDao().observeLatestPerChat()
+        .map { messages -> messages.associateBy { it.chatId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Model display name lookup — so the chat row can show a small badge identifying which
+    // model this conversation used. Distinct from active-model state: a chat retains its model
+    // identity even when the user later switches the global active model.
+    val modelNames: StateFlow<Map<String, String>> = db.modelDao().observeModels()
+        .map { models -> models.associate { it.id to it.displayName } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _filter = MutableStateFlow(ChatFilter.ALL)

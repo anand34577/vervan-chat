@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.ChipTone
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SemanticChip
 import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,7 +87,8 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp), state = listState) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp), state = listState) {
             items(rows, key = { it.first.id }) { (message, depth) ->
                 TreeRow(
                     message = message,
@@ -96,6 +98,7 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
                     onClick = { vm.jumpTo(message.id); onBack() }
                 )
             }
+        }
         }
     }
 }

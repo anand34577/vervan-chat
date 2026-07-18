@@ -1,6 +1,7 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -10,7 +11,10 @@ enum class MessageRole { USER, ASSISTANT, SYSTEM }
 // or are explicitly created as STREAMING) — removed rather than kept as dead state.
 enum class MessageState { STREAMING, COMPLETE, CANCELLED, INTERRUPTED, FAILED, AWAITING_CONFIRMATION }
 
-@Entity(tableName = "messages")
+// chatId is the single busiest lookup column in the whole schema — every message list load, the
+// chat-list screen's own EXISTS-has-messages subquery, and delete-for-chat all filter on it. See
+// Migration(36, 37).
+@Entity(tableName = "messages", indices = [Index("chatId")])
 data class Message(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val chatId: String,

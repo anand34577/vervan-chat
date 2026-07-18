@@ -37,13 +37,16 @@ class RetrievalEngine(
         topK: Int = 5
     ): List<SourcePassage> {
         if (kbIds.isEmpty() || query.isBlank()) return emptyList()
-        var chunks = chunkDao.getForKnowledgeBases(kbIds)
+        // Fetch one past the cap so an oversized KB is still detectable/loggable below, without
+        // pulling the full unbounded result set into memory first (the cap used to be applied
+        // only after the whole scope had already been read).
+        var chunks = chunkDao.getForKnowledgeBases(kbIds, MAX_CHUNKS_PER_QUERY + 1)
         if (chunks.isEmpty()) return emptyList()
         if (chunks.size > MAX_CHUNKS_PER_QUERY) {
             // ponytail: brute-force scan has no size guard (B9) — cap rather than let a large
             // KB silently balloon memory/latency. Upgrade to an FTS/ANN index if imports
             // routinely exceed this in practice.
-            android.util.Log.w("RetrievalEngine", "KB scope has ${chunks.size} chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
+            android.util.Log.w("RetrievalEngine", "KB scope has more than $MAX_CHUNKS_PER_QUERY chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
             chunks = chunks.take(MAX_CHUNKS_PER_QUERY)
         }
 

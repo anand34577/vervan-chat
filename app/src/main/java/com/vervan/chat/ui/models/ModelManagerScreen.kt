@@ -10,15 +10,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +36,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import com.vervan.chat.ui.theme.vervanBorder
+import com.vervan.chat.ui.theme.vervanSubtleDividerColor
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -72,10 +73,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,12 +94,14 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.FileDownloadStatus
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.data.db.entities.ToolApprovalMode
 import com.vervan.chat.data.db.entities.displayName
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
+import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.PageContainer
@@ -105,6 +111,8 @@ import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.Space
+import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -115,6 +123,10 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
     })
     val models by vm.models.collectAsStateWithLifecycle()
     val defaults by vm.defaults.collectAsStateWithLifecycle()
+    val expertMode by vm.expertMode.collectAsStateWithLifecycle()
+    val useMlockDefault by vm.useMlockDefault.collectAsStateWithLifecycle()
+    val flashAttentionModeDefault by vm.flashAttentionModeDefault.collectAsStateWithLifecycle()
+    val kvCacheTypeDefault by vm.kvCacheTypeDefault.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val importing by vm.importing.collectAsStateWithLifecycle()
     val busyModelId by vm.busyModelId.collectAsStateWithLifecycle()
@@ -146,6 +158,17 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
     }
     val pickTokenizerFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { pendingTokenizerUri = it }
+    }
+
+    // GGUF (llama.cpp) import — model file required, mtmd projector optional.
+    var showLlamaCppImportDialog by remember { mutableStateOf(false) }
+    var pendingLlamaCppModelUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingMmprojUri by remember { mutableStateOf<Uri?>(null) }
+    val pickLlamaCppModelFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { pendingLlamaCppModelUri = it }
+    }
+    val pickMmprojFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { pendingMmprojUri = it }
     }
 
     // Press-and-hold selects one or more models for bulk delete; tapping a card while in
@@ -193,7 +216,7 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                     )
                     generationReady -> Triple(
                         com.vervan.chat.ui.common.StatusTone.Ready, "Chat ready",
-                        "A generation model is loaded. No embedding model loaded — semantic search falls back to keyword search."
+                        "No embedding model loaded. Search is using keywords."
                     )
                     generationModels.isEmpty() -> Triple(
                         com.vervan.chat.ui.common.StatusTone.Warning, "No generation model",
@@ -201,7 +224,7 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                     )
                     else -> Triple(
                         com.vervan.chat.ui.common.StatusTone.Info, "Not loaded",
-                        "${generationModels.size} generation model(s) installed but none is loaded yet — load one to start chatting."
+                        "${generationModels.size} generation model(s) installed. Load one to chat."
                     )
                 }
                 com.vervan.chat.ui.common.SystemStatusStrip(
@@ -215,18 +238,18 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
             // read from, so this screen can never show a different story about why loading a
             // model didn't work.
             generationLoadInfo.error?.let { err ->
-                com.vervan.chat.ui.common.SystemStatusStrip(
+                com.vervan.chat.ui.common.OperationErrorCard(
                     title = "Generation model load failed",
-                    body = err.errorMessage ?: "Unknown error",
-                    tone = com.vervan.chat.ui.common.StatusTone.Warning,
+                    message = err.errorMessage.toUserMessage(),
+                    recovery = "Retry from the model card, or use a smaller model or another runtime.",
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
             embeddingLoadInfo.error?.let { err ->
-                com.vervan.chat.ui.common.SystemStatusStrip(
+                com.vervan.chat.ui.common.OperationErrorCard(
                     title = "Embedding model load failed",
-                    body = err.errorMessage ?: "Unknown error",
-                    tone = com.vervan.chat.ui.common.StatusTone.Warning,
+                    message = err.errorMessage.toUserMessage(),
+                    recovery = "Retry the model. Keyword search still works without it.",
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
@@ -279,11 +302,20 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                         pendingTokenizerUri = null
                         showEmbeddingImportDialog = true
                     }
+                },
+                onImportGguf = {
+                    pendingLlamaCppModelUri = null
+                    pendingMmprojUri = null
+                    showLlamaCppImportDialog = true
                 }
             )
 
             if (importing) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = busyLabel ?: "Importing model",
+                    body = "Copying and checking the model. Keep the app open.",
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
             status?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
@@ -314,7 +346,7 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
             if (embeddingModels.isNotEmpty()) {
                 SectionHeader("Embedding models", Icons.Outlined.Storage)
                 Text(
-                    "Loaded and unloaded automatically wherever semantic search is used — you don't need to load these by hand.",
+                    "Used automatically for semantic search.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -347,6 +379,10 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
         ModelEditDialog(
             model = model,
             defaults = defaults,
+            expertMode = expertMode,
+            useMlockDefault = useMlockDefault,
+            flashAttentionModeDefault = flashAttentionModeDefault,
+            kvCacheTypeDefault = kvCacheTypeDefault,
             onDismiss = { editingModel = null },
             onSave = { vm.update(it); editingModel = null }
         )
@@ -366,10 +402,24 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
         )
     }
 
+    if (showLlamaCppImportDialog) {
+        LlamaCppImportDialog(
+            modelUri = pendingLlamaCppModelUri,
+            mmprojUri = pendingMmprojUri,
+            onPickModel = { pickLlamaCppModelFile.launch(arrayOf("*/*")) },
+            onPickMmproj = { pickMmprojFile.launch(arrayOf("*/*")) },
+            onDismiss = { showLlamaCppImportDialog = false },
+            onImport = { modelUri, mmprojUri ->
+                vm.importLlamaCppModel(modelUri, mmprojUri)
+                showLlamaCppImportDialog = false
+            }
+        )
+    }
+
     if (confirmBulkDelete) {
         ConfirmDialog(
-            title = "Delete selected models forever?",
-            body = "Permanently remove ${selectedIds.size} model file${if (selectedIds.size == 1) "" else "s"} from this device? This can't be undone.",
+            title = "Delete selected models?",
+            body = "Remove ${selectedIds.size} model file${if (selectedIds.size == 1) "" else "s"} permanently?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = {
@@ -387,10 +437,8 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
             title = { Text("Before you activate this model") },
             text = {
                 Text(
-                    "\"${model.displayName}\" was brought in from a file you picked — this app didn't fetch or verify it, " +
-                        "so it can't show you its actual license terms. Model weights are typically covered by their " +
-                        "publisher's own license (for example Gemma's usage terms on Hugging Face or Kaggle). " +
-                        "You're responsible for having the right to use this model under whatever terms apply to it."
+                    "This model came from your file, so Vervan cannot verify its license. " +
+                        "Check the publisher's terms before using it."
                 )
             },
             confirmButton = {
@@ -408,10 +456,8 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
             title = { Text("New version detected") },
             text = {
                 Text(
-                    "\"${newModel.displayName}\" looks like a new version of \"${previous.displayName}\". " +
-                        "Make it the default and update folders that default to the old one? " +
-                        "\"${previous.displayName}\" stays installed either way — existing chats keep using " +
-                        "whichever model they already used."
+                    "Use \"${newModel.displayName}\" as the default and update folders using the old default? " +
+                        "Existing chats and \"${previous.displayName}\" stay unchanged."
                 )
             },
             confirmButton = {
@@ -435,42 +481,59 @@ private fun SectionHeader(text: String, icon: androidx.compose.ui.graphics.vecto
     }
 }
 
-/** Modernized entry point: two clearly-labeled cards instead of a plain button pair, with a
- * short explanation of what each model type is for right where the choice is made. */
+/** Keeps the runtime choice explicit. LiteRT-LM and llama.cpp are peers, while embeddings are
+ * supporting infrastructure; stacking these options on phones avoids unreadably narrow cards. */
 @Composable
-private fun ImportCard(importing: Boolean, onImport: (ModelRole) -> Unit) {
+private fun ImportCard(importing: Boolean, onImport: (ModelRole) -> Unit, onImportGguf: () -> Unit) {
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Import a model", style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.padding(Space.lg)) {
+            Text("Add a local model", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Bring in a .task, .litertlm, or .litert package from your device.",
+                "Choose the runtime that matches your model file.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
+                modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
             )
-            Row(
-                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ImportChoiceCard(
-                    title = "Generation model",
-                    subtitle = "Chat, write, reason",
-                    icon = Icons.Filled.Bolt,
-                    enabled = !importing,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    onClick = { onImport(ModelRole.GENERATION) }
-                )
-                ImportChoiceCard(
-                    title = "Embedding model",
-                    subtitle = "Select model + tokenizer file",
-                    icon = Icons.Outlined.Storage,
-                    enabled = !importing,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    onClick = { onImport(ModelRole.EMBEDDING) }
-                )
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 600.dp
+                val choiceWidth = if (compact) 1f else 0.31f
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.md),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm),
+                    maxItemsInEachRow = if (compact) 1 else 3
+                ) {
+                    ImportChoiceCard(
+                        title = "LiteRT-LM",
+                        subtitle = "Android-optimized • .task / .litertlm",
+                        icon = Icons.Filled.Bolt,
+                        enabled = !importing,
+                        modifier = Modifier.fillMaxWidth(choiceWidth),
+                        horizontal = compact,
+                        onClick = { onImport(ModelRole.GENERATION) }
+                    )
+                    ImportChoiceCard(
+                        title = "llama.cpp",
+                        subtitle = "Broad GGUF support • Vulkan / CPU",
+                        icon = Icons.Filled.Bolt,
+                        enabled = !importing,
+                        modifier = Modifier.fillMaxWidth(choiceWidth),
+                        horizontal = compact,
+                        onClick = onImportGguf
+                    )
+                    ImportChoiceCard(
+                        title = "Embeddings",
+                        subtitle = "Semantic search • model + tokenizer",
+                        icon = Icons.Outlined.Storage,
+                        enabled = !importing,
+                        modifier = Modifier.fillMaxWidth(choiceWidth),
+                        horizontal = compact,
+                        onClick = { onImport(ModelRole.EMBEDDING) }
+                    )
+                }
             }
         }
     }
@@ -499,8 +562,7 @@ private fun EmbeddingImportDialog(
         text = {
             Column {
                 Text(
-                    "Two files are required: the embedding model, and its SentencePiece tokenizer " +
-                        "(e.g. sentencepiece.model / tokenizer.model) — the model file alone can't be tokenized.",
+                    "Choose the embedding model and its SentencePiece tokenizer.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 14.dp)
@@ -526,10 +588,64 @@ private fun EmbeddingImportDialog(
             TextButton(onClick = {
                 validationError = when {
                     modelUri == null -> "Select the embedding model file first."
-                    tokenizerUri == null -> "The tokenizer file (sentencepiece.model) is required — select it before importing."
+                    tokenizerUri == null -> "Choose a SentencePiece tokenizer before importing."
                     else -> null
                 }
                 if (modelUri != null && tokenizerUri != null) onImport(modelUri, tokenizerUri)
+            }) { Text("Import") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Model file required, mtmd projector optional (vision) — unlike the embedding pair, both
+ * files share the .gguf extension so there's no way to auto-tell them apart by name. */
+@Composable
+private fun LlamaCppImportDialog(
+    modelUri: Uri?,
+    mmprojUri: Uri?,
+    onPickModel: () -> Unit,
+    onPickMmproj: () -> Unit,
+    onDismiss: () -> Unit,
+    onImport: (Uri, Uri?) -> Unit
+) {
+    val context = LocalContext.current
+    var validationError by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import GGUF model") },
+        text = {
+            Column {
+                Text(
+                    "Add an mmproj file only for vision models.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 14.dp)
+                )
+                EmbeddingImportStep(
+                    stepNumber = 1,
+                    label = "Model file (.gguf)",
+                    fileName = modelUri?.let { queryDisplayName(context, it) },
+                    onPick = { validationError = null; onPickModel() }
+                )
+                EmbeddingImportStep(
+                    stepNumber = 2,
+                    label = "Vision projector (optional)",
+                    fileName = mmprojUri?.let { queryDisplayName(context, it) },
+                    onPick = { validationError = null; onPickMmproj() }
+                )
+                validationError?.let {
+                    ValidationMessage(it, modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (modelUri == null) {
+                    validationError = "Select the GGUF model file first."
+                } else {
+                    onImport(modelUri, mmprojUri)
+                }
             }) { Text("Import") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -568,18 +684,37 @@ private fun ImportChoiceCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    horizontal: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = vervanBorder()
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (horizontal) {
+            Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(Space.sm).size(22.dp)
+                    )
+                }
+                Column(Modifier.padding(start = Space.md)) {
+                    Text(title, style = MaterialTheme.typography.labelLarge)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            Column(Modifier.padding(Space.md)) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.sm))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -626,17 +761,19 @@ private fun ModelCard(
                     }
                     Column(Modifier.padding(end = 8.dp)) {
                         Text(model.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            formatModelSize(model.fileSizeBytes),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = VervanMono,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (model.role == ModelRole.GENERATION) {
                             Text(
-                                formatModelSize(model.fileSizeBytes), style = MaterialTheme.typography.labelSmall,
-                                fontFamily = VervanMono, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                model.runtimeSummary(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = VervanMono,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            if (model.role == ModelRole.GENERATION) {
-                                Text(
-                                    " · ${model.preferredBackend.name}", style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = VervanMono, color = MaterialTheme.colorScheme.primary
-                                )
-                            }
                         }
                         if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {
                             Text(
@@ -741,8 +878,8 @@ private fun ModelCard(
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete model forever?",
-            body = "\"${model.displayName}\" will be permanently removed from this device. This can't be undone.",
+            title = "Delete model?",
+            body = "Remove \"${model.displayName}\" permanently?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },
@@ -753,7 +890,16 @@ private fun ModelCard(
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss: () -> Unit, onSave: (ModelInfo) -> Unit) {
+private fun ModelEditDialog(
+    model: ModelInfo,
+    defaults: ModelDefaults,
+    expertMode: Boolean,
+    useMlockDefault: Boolean,
+    flashAttentionModeDefault: String,
+    kvCacheTypeDefault: String,
+    onDismiss: () -> Unit,
+    onSave: (ModelInfo) -> Unit
+) {
     var displayName by remember(model.id) { mutableStateOf(model.displayName) }
     // Toggle instead of Auto/On/Off (user ask): a model's capability is simply on or off,
     // defaulting to on until the model actually proves otherwise (see reconcileCapabilities).
@@ -780,6 +926,63 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
     var context by remember(model.id) { mutableStateOf((model.contextTokens ?: defaults.contextTokens).toFloat()) }
     var seedOn by remember(model.id) { mutableStateOf(model.seed != null) }
     var seed by remember(model.id) { mutableStateOf((model.seed ?: 0).toString()) }
+
+    // Common (both engines) — always visible.
+    var minPOn by remember(model.id) { mutableStateOf(model.minP != null) }
+    var minP by remember(model.id) { mutableStateOf(model.minP ?: defaults.minP) }
+    var repetitionPenaltyOn by remember(model.id) { mutableStateOf(model.repetitionPenalty != null) }
+    var repetitionPenalty by remember(model.id) { mutableStateOf(model.repetitionPenalty ?: defaults.repetitionPenalty) }
+    var maxOutputTokensOn by remember(model.id) { mutableStateOf(model.maxOutputTokens != null) }
+    var maxOutputTokens by remember(model.id) { mutableStateOf((model.maxOutputTokens ?: defaults.maxOutputTokens).toFloat()) }
+    var stopSequencesOn by remember(model.id) { mutableStateOf(model.stopSequences != null) }
+    var stopSequences by remember(model.id) { mutableStateOf(model.stopSequences ?: "") }
+
+    // llama.cpp-only, expert-tier.
+    var gpuLayerCountOn by remember(model.id) { mutableStateOf(model.gpuLayerCount != null) }
+    var gpuLayerCount by remember(model.id) { mutableStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
+    var cpuThreadsOn by remember(model.id) { mutableStateOf(model.cpuThreads != null) }
+    var cpuThreads by remember(model.id) { mutableStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
+    var nBatchOn by remember(model.id) { mutableStateOf(model.nBatch != null) }
+    var nBatch by remember(model.id) { mutableStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
+    var nUbatchOn by remember(model.id) { mutableStateOf(model.nUbatch != null) }
+    var nUbatch by remember(model.id) { mutableStateOf((model.nUbatch ?: defaults.nUbatch).toFloat()) }
+    var useMlockOn by remember(model.id) { mutableStateOf(model.useMlock != null) }
+    var useMlock by remember(model.id) { mutableStateOf(model.useMlock ?: useMlockDefault) }
+    var flashAttentionOn by remember(model.id) { mutableStateOf(model.flashAttention != null) }
+    var flashAttentionMode by remember(model.id) {
+        mutableStateOf(model.flashAttention?.let { if (it) "On" else "Off" } ?: flashAttentionModeDefault.lowercase().replaceFirstChar(Char::uppercase))
+    }
+    var kvCacheTypeOn by remember(model.id) { mutableStateOf(model.kvCacheType != null) }
+    var kvCacheType by remember(model.id) { mutableStateOf(model.kvCacheType ?: kvCacheTypeDefault) }
+    var vulkanDeviceIndexOn by remember(model.id) { mutableStateOf(model.vulkanDeviceIndex != null) }
+    var vulkanDeviceIndex by remember(model.id) { mutableStateOf((model.vulkanDeviceIndex ?: 0).toFloat()) }
+    var ropeFreqBaseOn by remember(model.id) { mutableStateOf(model.ropeFreqBase != null) }
+    var ropeFreqBase by remember(model.id) { mutableStateOf((model.ropeFreqBase ?: 0f).toString()) }
+    var ropeFreqScaleOn by remember(model.id) { mutableStateOf(model.ropeFreqScale != null) }
+    var ropeFreqScale by remember(model.id) { mutableStateOf((model.ropeFreqScale ?: 0f).toString()) }
+    var chatTemplateOverrideOn by remember(model.id) { mutableStateOf(model.chatTemplateOverride != null) }
+    var chatTemplateOverride by remember(model.id) { mutableStateOf(model.chatTemplateOverride ?: "") }
+    var loraPath by remember(model.id) { mutableStateOf(model.loraPath) }
+    var loraScaleOn by remember(model.id) { mutableStateOf(model.loraScale != null) }
+    var loraScale by remember(model.id) { mutableStateOf(model.loraScale ?: 1.0f) }
+    var loraError by remember(model.id) { mutableStateOf<String?>(null) }
+
+    val loraApp = LocalContext.current.applicationContext as VervanApp
+    val loraScope = rememberCoroutineScope()
+    // Copies the picked file into internal storage (same reasoning as the mmproj import flow —
+    // a content:// Uri isn't a real filesystem path the native loader can fopen) rather than
+    // storing the raw picked Uri.
+    val pickLoraFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            loraScope.launch {
+                when (val result = loraApp.container.modelImportManager.importLoraAdapter(model, it)) {
+                    is com.vervan.chat.model.ImportResult.Success -> { loraPath = result.model.loraPath; loraError = null }
+                    is com.vervan.chat.model.ImportResult.Rejected -> loraError = result.reason
+                    is com.vervan.chat.model.ImportResult.Duplicate -> Unit
+                }
+            }
+        }
+    }
 
     val isGeneration = model.role == ModelRole.GENERATION
 
@@ -809,7 +1012,24 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
                                         mtpEnabled = mtpEnabled,
                                         preferredBackend = backend,
                                         seed = seed.toIntOrNull().takeIf { seedOn },
-                                        toolApprovalMode = approvalMode
+                                        toolApprovalMode = approvalMode,
+                                        minP = minP.takeIf { minPOn },
+                                        repetitionPenalty = repetitionPenalty.takeIf { repetitionPenaltyOn },
+                                        maxOutputTokens = maxOutputTokens.toInt().takeIf { maxOutputTokensOn },
+                                        stopSequences = stopSequences.takeIf { stopSequencesOn },
+                                        gpuLayerCount = gpuLayerCount.toInt().takeIf { gpuLayerCountOn },
+                                        cpuThreads = cpuThreads.toInt().takeIf { cpuThreadsOn },
+                                        nBatch = nBatch.toInt().takeIf { nBatchOn },
+                                        nUbatch = nUbatch.toInt().takeIf { nUbatchOn },
+                                        useMlock = useMlock.takeIf { useMlockOn },
+                                        flashAttention = (when (flashAttentionMode) { "On" -> true; "Off" -> false; else -> null }).takeIf { flashAttentionOn },
+                                        kvCacheType = kvCacheType.takeIf { kvCacheTypeOn },
+                                        vulkanDeviceIndex = vulkanDeviceIndex.toInt().takeIf { vulkanDeviceIndexOn },
+                                        ropeFreqBase = ropeFreqBase.toFloatOrNull().takeIf { ropeFreqBaseOn },
+                                        ropeFreqScale = ropeFreqScale.toFloatOrNull().takeIf { ropeFreqScaleOn },
+                                        chatTemplateOverride = chatTemplateOverride.takeIf { chatTemplateOverrideOn && chatTemplateOverride.isNotBlank() },
+                                        loraPath = loraPath,
+                                        loraScale = loraScale.takeIf { loraScaleOn }
                                     )
                                 } else {
                                     model.copy(displayName = displayName.ifBlank { model.displayName }.trim())
@@ -837,22 +1057,56 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
                     // generation — an embedding model only ever turns text into a vector, so
                     // none of these apply and showing them was pure confusion.
                     if (isGeneration) {
+                        val isLlamaCpp = model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP
                         SectionLabel("Performance mode")
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU",
-                                BackendChoice.CPU to "CPU", BackendChoice.NPU to "NPU"
-                            ).forEach { (choice, label) ->
-                                FilterChip(selected = backend == choice, onClick = { backend = choice }, label = { Text(label) })
+                        if (expertMode) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // llama.cpp/Vulkan has no NPU backend — hide that chip for a GGUF model.
+                                (if (isLlamaCpp) {
+                                    listOf(BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU", BackendChoice.CPU to "CPU")
+                                } else {
+                                    listOf(
+                                        BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU",
+                                        BackendChoice.CPU to "CPU", BackendChoice.NPU to "NPU"
+                                    )
+                                }).forEach { (choice, label) ->
+                                    FilterChip(selected = backend == choice, onClick = { backend = choice }, label = { Text(label) })
+                                }
+                            }
+                            Text(
+                                when {
+                                    isLlamaCpp && backend == BackendChoice.AUTO -> "Tries GPU (Vulkan), then falls back to CPU."
+                                    backend == BackendChoice.AUTO -> "Tries NPU, then GPU, then falls back to CPU."
+                                    else -> "Strict: use ${backend.name} only, with no fallback."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        } else {
+                            // Simplified view: a single on/off toggle instead of the full
+                            // AUTO/GPU/CPU/NPU chip row — maps straight onto the same
+                            // BackendChoice the expert row edits.
+                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Use GPU acceleration", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = backend != BackendChoice.CPU,
+                                    onCheckedChange = { backend = if (it) BackendChoice.GPU else BackendChoice.CPU }
+                                )
                             }
                         }
-                        Text(
-                            if (backend == BackendChoice.AUTO) "Tries NPU, then GPU, then falls back to CPU."
-                            else "Strict: loads only on ${backend.name} — fails with an error instead of falling back.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
+                        if (isLlamaCpp && model.modelDesc != null) {
+                            Text(
+                                buildString {
+                                    append(model.modelDesc)
+                                    model.layerCount?.let { append(" · $it layers") }
+                                    model.nativeMaxContext?.let { append(" · ${it} native max context") }
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
 
                         SectionDivider()
                         SectionLabel("Capabilities")
@@ -864,7 +1118,7 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
                         // auto-turns it off here (see reconcileCapabilities) instead of quietly
                         // pretending it still works — surfacing that as a plain fact, not an error.
                         Text(
-                            "Turned off automatically if a load can't actually deliver it — you'll see a message when that happens.",
+                            "Turns off if the loaded model cannot support it.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
@@ -884,26 +1138,29 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
                             }
                         }
 
-                        SectionDivider()
-                        SectionLabel("Speculative decoding (MTP)")
-                        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                when (model.mtpSupported) {
-                                    false -> "Last attempt failed on this model/backend — turning it on will retry on next load."
-                                    true -> "Speeds up generation on GPU; no effect on CPU/NPU."
-                                    null -> "Tried automatically on load; auto-disabled if unsupported."
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f).padding(end = 8.dp)
-                            )
-                            Switch(checked = mtpEnabled, onCheckedChange = { mtpEnabled = it })
+                        // No MTP equivalent wired up for llama.cpp in this pass.
+                        if (!isLlamaCpp) {
+                            SectionDivider()
+                            SectionLabel("Speculative decoding (MTP)")
+                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    when (model.mtpSupported) {
+                                        false -> "Last attempt failed. Turn on to retry at the next load."
+                                        true -> "Speeds up generation on GPU; no effect on CPU/NPU."
+                                        null -> "Tried automatically on load; auto-disabled if unsupported."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                )
+                                Switch(checked = mtpEnabled, onCheckedChange = { mtpEnabled = it })
+                            }
                         }
 
                         SectionDivider()
                         SectionLabel("Generation defaults")
                         Text(
-                            "Off uses the app-wide default from Settings; switch on to override it just for this model.",
+                            "Turn on to override the app default for this model.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp)
@@ -911,15 +1168,103 @@ private fun ModelEditDialog(model: ModelInfo, defaults: ModelDefaults, onDismiss
                         OverrideSlider("Temperature", temperatureOn, { temperatureOn = it }, temperature, { temperature = it }, defaults.temperature, "%.2f", 0f..2f)
                         OverrideSlider("Top-p", topPOn, { topPOn = it }, topP, { topP = it }, defaults.topP, "%.2f", 0.1f..1f)
                         OverrideSlider("Top-k", topKOn, { topKOn = it }, topK, { topK = it }, defaults.topK.toFloat(), "%.0f", 1f..64f)
+                        OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
+                        OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
+                        OverrideSlider("Max output tokens", maxOutputTokensOn, { maxOutputTokensOn = it }, maxOutputTokens, { maxOutputTokens = it }, defaults.maxOutputTokens.toFloat(), "%.0f", 64f..4096f, steps = 20)
                         OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
                         OverrideSlider(
                             "Context length", contextOn, { contextOn = it }, context, { context = it }, defaults.contextTokens.toFloat(),
-                            "%.0f", 1024f..32768f, steps = 30
+                            "%.0f", 1024f..(model.nativeMaxContext?.toFloat() ?: 32768f), steps = 30
                         )
-                        OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
+                        OverrideField(
+                            "Stop sequences", stopSequencesOn, { stopSequencesOn = it }, stopSequences, { stopSequences = it },
+                            "None", singleLine = false
+                        )
+                        if (expertMode) {
+                            OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
+                            if (seedOn) {
+                                TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                            }
+                        }
+
+                        if (isLlamaCpp && expertMode) {
+                            SectionDivider()
+                            SectionLabel("Advanced (llama.cpp)")
+                            OverrideSlider(
+                                "GPU layers", gpuLayerCountOn, { gpuLayerCountOn = it }, gpuLayerCount, { gpuLayerCount = it },
+                                (model.layerCount ?: 32).toFloat(), "%.0f", 0f..(model.layerCount?.toFloat() ?: 100f), steps = 10
+                            )
+                            OverrideSlider(
+                                "CPU threads", cpuThreadsOn, { cpuThreadsOn = it }, cpuThreads, { cpuThreads = it },
+                                Runtime.getRuntime().availableProcessors().toFloat(), "%.0f", 1f..16f
+                            )
+                            OverrideSlider("Batch size (n_batch)", nBatchOn, { nBatchOn = it }, nBatch, { nBatch = it }, defaults.nBatch.toFloat(), "%.0f", 128f..4096f, steps = 30)
+                            OverrideSlider("Physical batch size (n_ubatch)", nUbatchOn, { nUbatchOn = it }, nUbatch, { nUbatch = it }, defaults.nUbatch.toFloat(), "%.0f", 32f..2048f, steps = 30)
+                            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(
+                                    if (useMlockOn) (if (useMlock) "On" else "Off") else "Default (${if (useMlockDefault) "On" else "Off"})",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(end = 10.dp)
+                                )
+                                Switch(checked = useMlockOn, onCheckedChange = { useMlockOn = it })
+                            }
+                            if (useMlockOn) {
+                                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Enabled", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Switch(checked = useMlock, onCheckedChange = { useMlock = it })
+                                }
+                            }
+                            OverrideDropdown(
+                                "Flash attention", flashAttentionOn, { flashAttentionOn = it }, flashAttentionMode,
+                                { flashAttentionMode = it }, listOf("Auto", "On", "Off"),
+                                defaultValue = flashAttentionModeDefault.lowercase().replaceFirstChar(Char::uppercase)
+                            )
+                            OverrideDropdown(
+                                "KV cache type", kvCacheTypeOn, { kvCacheTypeOn = it }, kvCacheType,
+                                { kvCacheType = it }, listOf("f16", "q8_0", "q4_0"), defaultValue = kvCacheTypeDefault
+                            )
+                            OverrideSlider("Vulkan device index", vulkanDeviceIndexOn, { vulkanDeviceIndexOn = it }, vulkanDeviceIndex, { vulkanDeviceIndex = it }, 0f, "%.0f", 0f..4f)
+                            OverrideField("RoPE freq base", ropeFreqBaseOn, { ropeFreqBaseOn = it }, ropeFreqBase, { ropeFreqBase = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
+                            OverrideField("RoPE freq scale", ropeFreqScaleOn, { ropeFreqScaleOn = it }, ropeFreqScale, { ropeFreqScale = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
+                            OverrideField(
+                                "Chat template override", chatTemplateOverrideOn, { chatTemplateOverrideOn = it }, chatTemplateOverride,
+                                { chatTemplateOverride = it }, "From model (embedded)", singleLine = false
+                            )
+                            if (chatTemplateOverrideOn) {
+                                Text(
+                                    "Built-in preset names: ${com.vervan.chat.llm.LlamaCppEngine.builtinChatTemplates.joinToString(", ")}. " +
+                                        "Type one of these, or paste custom Jinja template text.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+
+                            SectionDivider()
+                            SectionLabel("LoRA adapter")
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    loraPath?.let { File(it).name } ?: "None attached",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { pickLoraFile.launch(arrayOf("*/*")) }) { Text(if (loraPath != null) "Replace" else "Attach") }
+                                if (loraPath != null) {
+                                    TextButton(onClick = { loraPath = null }) { Text("Remove") }
+                                }
+                            }
+                            loraError?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+                            }
+                            if (loraPath != null) {
+                                OverrideSlider("LoRA scale", loraScaleOn, { loraScaleOn = it }, loraScale, { loraScale = it }, 1.0f, "%.2f", 0f..2f)
+                            }
+                        }
                     } else {
                         Text(
-                            "Embedding models only turn text into vectors for semantic search — they don't have capabilities or generation parameters to configure.",
+                            "Embedding models power semantic search and have no generation settings.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 12.dp)
@@ -939,7 +1284,7 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun SectionDivider() {
-    HorizontalDivider(Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    HorizontalDivider(Modifier.padding(top = 10.dp), color = vervanSubtleDividerColor())
 }
 
 @Composable
@@ -976,13 +1321,16 @@ private fun OverrideSlider(
             )
             Switch(checked = override, onCheckedChange = onOverrideChange)
         }
+        val effectiveValue = if (override) value else defaultValue
         Slider(
-            value = if (override) value else defaultValue,
+            value = effectiveValue,
             onValueChange = onValueChange,
             valueRange = range,
             steps = steps,
             enabled = override,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).semantics {
+                contentDescription = "$label, ${String.format(format, effectiveValue)}"
+            }
         )
     }
 }
@@ -996,7 +1344,8 @@ private fun OverrideField(
     onOverrideChange: (Boolean) -> Unit,
     value: String,
     onValueChange: (String) -> Unit,
-    defaultLabel: String
+    defaultLabel: String,
+    singleLine: Boolean = true
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1011,9 +1360,46 @@ private fun OverrideField(
         }
         if (override) {
             OutlinedTextField(
-                value, onValueChange, singleLine = true,
+                value, onValueChange, singleLine = singleLine,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
+        }
+    }
+}
+
+/** Same override-switch header as [OverrideSlider]/[OverrideField], but for a fixed set of
+ * string choices (KV cache type, flash-attention Auto/On/Off) instead of a numeric range. */
+@Composable
+private fun OverrideDropdown(
+    label: String,
+    override: Boolean,
+    onOverrideChange: (Boolean) -> Unit,
+    value: String,
+    onValueChange: (String) -> Unit,
+    options: List<String>,
+    defaultValue: String
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(
+                if (override) value else "Default ($defaultValue)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 10.dp)
+            )
+            Switch(checked = override, onCheckedChange = onOverrideChange)
+        }
+        if (override) {
+            Box(Modifier.padding(top = 6.dp)) {
+                TextButton(onClick = { expanded = true }) { Text(value) }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    options.forEach { option ->
+                        DropdownMenuItem(text = { Text(option) }, onClick = { onValueChange(option); expanded = false })
+                    }
+                }
+            }
         }
     }
 }
@@ -1023,6 +1409,20 @@ private fun formatModelSize(bytes: Long): String = when {
     bytes >= 1024 * 1024 -> String.format("%.1f MiB", bytes / (1024.0 * 1024))
     bytes >= 1024 -> String.format("%.0f KiB", bytes / 1024.0)
     else -> "$bytes B"
+}
+
+private fun ModelInfo.runtimeSummary(): String {
+    val runtime = when (engine) {
+        ModelEngine.LITERT_LM -> "LiteRT-LM"
+        ModelEngine.LLAMA_CPP -> "llama.cpp"
+    }
+    val hardware = when (preferredBackend) {
+        BackendChoice.AUTO -> if (engine == ModelEngine.LLAMA_CPP) "Auto: Vulkan → CPU" else "Auto: NPU → GPU → CPU"
+        BackendChoice.GPU -> if (engine == ModelEngine.LLAMA_CPP) "Vulkan GPU" else "GPU"
+        BackendChoice.CPU -> "CPU"
+        BackendChoice.NPU -> "NPU"
+    }
+    return "$runtime • $hardware"
 }
 
 /** "Available for Download" — collapsed by default, grouped by category, each category
@@ -1071,7 +1471,7 @@ private fun AvailableForDownloadSection(
                 onClick = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f))
+                border = vervanBorder()
             ) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -1327,12 +1727,12 @@ private fun DownloadPackageCard(
             }
 
             state.error?.let {
-                ValidationMessage(it.message.ifBlank { it.code.name }, modifier = Modifier.padding(top = Space.md))
+                ValidationMessage(it.message.ifBlank { it.code.name }.toUserMessage(), modifier = Modifier.padding(top = Space.md))
             }
 
             if (expanded) {
                 Column(Modifier.padding(top = Space.md)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f))
+                    HorizontalDivider(color = vervanSubtleDividerColor())
                     Text(
                         "Package files · ${state.completedFileCount} of ${state.totalFileCount} complete",
                         style = MaterialTheme.typography.labelMedium,
@@ -1405,7 +1805,7 @@ private fun DownloadPackageCard(
     if (confirmStop) {
         ConfirmDialog(
             title = "Stop downloading?",
-            body = "The transfer and its partial data will be removed. Use Pause instead if you want to resume later.",
+            body = "This removes the download and partial file. Pause to resume later.",
             confirmLabel = "Stop",
             destructive = true,
             onConfirm = { confirmStop = false; onStop() },
@@ -1415,7 +1815,7 @@ private fun DownloadPackageCard(
     if (confirmDelete) {
         ConfirmDialog(
             title = if (state.status == ModelStatus.READY) "Delete downloaded voice?" else "Delete partial download?",
-            body = "Downloaded data for \"${state.displayName}\" will be removed from this device.",
+            body = "Remove downloaded data for \"${state.displayName}\"?",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },

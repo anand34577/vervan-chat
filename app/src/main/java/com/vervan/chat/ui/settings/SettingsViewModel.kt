@@ -62,10 +62,19 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topP = settings.topP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.95f)
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
-    val autoLoadDefaultModel = settings.autoLoadDefaultModel.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
+    val minP = settings.minP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.05f)
+    val repetitionPenalty = settings.repetitionPenalty.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.1f)
+    val maxOutputTokens = settings.maxOutputTokens.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 512)
+    val cpuThreads = settings.cpuThreads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val nBatch = settings.nBatch.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2048)
+    val nUbatch = settings.nUbatch.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 512)
+    val useMlock = settings.useMlock.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val flashAttentionMode = settings.flashAttentionMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val kvCacheType = settings.kvCacheType.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "f16")
+    val vulkanDeviceIndex = settings.vulkanDeviceIndex.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val oledTrueBlack: StateFlow<Boolean> = settings.oledTrueBlack
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val accentTheme: StateFlow<AccentTheme> = settings.accentTheme
@@ -233,9 +242,18 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTopP(value: Float) { viewModelScope.launch { settings.setTopP(value) } }
     fun setTopK(value: Int) { viewModelScope.launch { settings.setTopK(value) } }
     fun setPreferredBackend(value: String) { viewModelScope.launch { settings.setPreferredBackend(value) } }
-    fun setAutoLoadDefaultModel(enabled: Boolean) { viewModelScope.launch { settings.setAutoLoadDefaultModel(enabled) } }
     fun setMaxNumImages(value: Int) { viewModelScope.launch { settings.setMaxNumImages(value) } }
     fun setRandomSeed(value: Int) { viewModelScope.launch { settings.setRandomSeed(value) } }
+    fun setMinP(value: Float) { viewModelScope.launch { settings.setMinP(value) } }
+    fun setRepetitionPenalty(value: Float) { viewModelScope.launch { settings.setRepetitionPenalty(value) } }
+    fun setMaxOutputTokens(value: Int) { viewModelScope.launch { settings.setMaxOutputTokens(value) } }
+    fun setCpuThreads(value: Int) { viewModelScope.launch { settings.setCpuThreads(value) } }
+    fun setNBatch(value: Int) { viewModelScope.launch { settings.setNBatch(value) } }
+    fun setNUbatch(value: Int) { viewModelScope.launch { settings.setNUbatch(value) } }
+    fun setUseMlock(value: Boolean) { viewModelScope.launch { settings.setUseMlock(value) } }
+    fun setFlashAttentionMode(value: String) { viewModelScope.launch { settings.setFlashAttentionMode(value) } }
+    fun setKvCacheType(value: String) { viewModelScope.launch { settings.setKvCacheType(value) } }
+    fun setVulkanDeviceIndex(value: Int) { viewModelScope.launch { settings.setVulkanDeviceIndex(value) } }
 
     fun refreshCacheSize() {
         viewModelScope.launch {

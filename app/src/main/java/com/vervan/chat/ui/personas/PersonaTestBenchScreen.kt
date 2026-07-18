@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.VervanMono
@@ -60,7 +61,8 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
             persona?.let { p ->
                 Text("System instruction", style = MaterialTheme.typography.labelMedium)
                 Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
@@ -91,7 +93,21 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                 }
             }
 
-            error?.let { ErrorCard("Persona test couldn't run", it, Modifier.padding(top = 12.dp)) }
+            if (running) {
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Testing this persona",
+                    body = "Testing the persona with your sample prompt."
+                )
+            }
+
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Persona test couldn't run",
+                    message = it,
+                    recovery = "Your work is safe. Load a model, then try again.",
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
 
             response?.let { resp ->
                 Text("Response preview", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
@@ -99,6 +115,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                     Text(resp, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
                 }
             }
+        }
         }
     }
 }

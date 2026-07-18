@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.setText
+import com.vervan.chat.ui.common.ScrollablePage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,10 +106,10 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+        ScrollablePage(padding) {
             sections.forEach { (title, rows) -> DiagnosticCard(title, rows) }
             Text(
-                "Compatibility is determined by real initialization and sanity inference during import; filenames are not capability declarations.",
+                "Compatibility is tested during import, not guessed from filenames.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
