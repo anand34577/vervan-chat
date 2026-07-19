@@ -44,7 +44,11 @@ class ApiServerService : Service() {
             runBlocking {
                 val port = settings.apiServerPort.first()
                 val lan = settings.lanApiServerEnabled.first()
-                val requireAuth = settings.apiServerRequireAuth.first()
+                // A LAN-exposed server is never allowed to run unauthenticated, regardless of the
+                // auth toggle — otherwise two independent switches could quietly serve an open
+                // LLM API to the whole network, which breaks this app's core privacy promise.
+                // Localhost-only binding still honors the user's auth choice.
+                val requireAuth = settings.apiServerRequireAuth.first() || lan
                 val host = if (lan) null else "127.0.0.1" // null hostname = bind all interfaces (NanoHTTPD convention)
                 val auth = app.container.apiServerAuth
                 if (requireAuth) auth.tokenOrGenerate() // ensure a token exists before anything can connect

@@ -3,7 +3,9 @@ package com.vervan.chat.ui.settings
 import android.app.ActivityManager
 import android.os.Build
 import android.os.StatFs
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,11 +25,15 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +92,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var crashLogs by remember { mutableStateOf(app.crashLogManager.listLogs()) }
 
     Scaffold(
         topBar = {
@@ -108,12 +115,77 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     ) { padding ->
         ScrollablePage(padding) {
             sections.forEach { (title, rows) -> DiagnosticCard(title, rows) }
+            CrashReportsCard(
+                logs = crashLogs,
+                onShare = { file ->
+                    val text = runCatching { file.readText() }.getOrDefault("")
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Vervan crash report ${file.nameWithoutExtension}")
+                        putExtra(android.content.Intent.EXTRA_TEXT, text)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(send, "Share crash report"))
+                },
+                onClear = {
+                    app.crashLogManager.clear()
+                    crashLogs = emptyList()
+                    scope.launch { snackbarHostState.showSnackbar("Crash reports cleared") }
+                }
+            )
             Text(
                 "Compatibility is tested during import, not guessed from filenames.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
             )
+        }
+    }
+}
+
+/** Crash/system-exit history (see [com.vervan.chat.system.CrashLogManager]) — the offline
+ * substitute for a remote crash reporter. Expand a row to read it in place; Share hands the
+ * plain text to any messaging/email app so the user can send it to the developer. */
+@Composable
+private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -> Unit, onClear: () -> Unit) {
+    var expanded by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Crash reports", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (logs.isNotEmpty()) {
+                    TextButton(onClick = onClear) { Text("Clear") }
+                }
+            }
+            if (logs.isEmpty()) {
+                Text(
+                    "No crashes recorded. If the app ever crashes or is stopped by the system, a report appears here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            logs.forEach { file ->
+                val headline = remember(file.name) {
+                    runCatching { file.useLines { it.firstOrNull() } }.getOrNull() ?: file.name
+                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .clickable { expanded = if (expanded == file.name) null else file.name }
+                ) {
+                    Text(headline, style = MaterialTheme.typography.bodyMedium)
+                    Text(file.nameWithoutExtension, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (expanded == file.name) {
+                        Text(
+                            runCatching { file.readText() }.getOrDefault("(unreadable)"),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        TextButton(onClick = { onShare(file) }) { Text("Share") }
+                    }
+                }
+            }
         }
     }
 }

@@ -11,8 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,7 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.vervan.chat.ui.common.rememberOnResumeTick
 import com.vervan.chat.ui.common.ScrollablePage
-import com.vervan.chat.ui.theme.vervanSuccess
+import com.vervan.chat.ui.common.StatusChip
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 private data class PermissionInfo(val permission: String, val label: String, val why: String)
 
@@ -40,14 +41,11 @@ private data class PermissionInfo(val permission: String, val label: String, val
 private val PERMISSIONS = listOf(
     PermissionInfo(Manifest.permission.RECORD_AUDIO, "Microphone", "Record voice messages and use offline dictation."),
     PermissionInfo(Manifest.permission.CAMERA, "Camera", "Take photos and scan documents locally."),
-    PermissionInfo(Manifest.permission.POST_NOTIFICATIONS, "Notifications", "Show generation, import, and job progress."),
-    PermissionInfo(Manifest.permission.READ_CONTACTS, "Contacts", "Let enabled tools search contact names locally."),
+    PermissionInfo(Manifest.permission.POST_NOTIFICATIONS, "Notifications", "Show generation, import, job, and quick-action bubble status."),
     PermissionInfo(Manifest.permission.READ_CALENDAR, "Calendar", "Let enabled tools search upcoming events locally."),
-    PermissionInfo(Manifest.permission.READ_SMS, "SMS", "Let enabled tools search message text locally."),
-    PermissionInfo(Manifest.permission.READ_CALL_LOG, "Call log", "Let enabled tools search recent calls locally."),
     PermissionInfo(Manifest.permission.ACCESS_COARSE_LOCATION, "Location", "Share approximate coordinates with enabled local tools."),
     PermissionInfo(Manifest.permission.READ_EXTERNAL_STORAGE, "Files", "Search Downloads by filename on Android 12 or older."),
-    PermissionInfo("android.permission.SYSTEM_ALERT_WINDOW", "Draw over other apps", "Show the optional quick-action bubble.")
+    PermissionInfo("android.permission.SYSTEM_ALERT_WINDOW", "Draw over other apps", "Show the optional bubble above other apps. Screen capture is approved separately each time.")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,17 +83,20 @@ fun PermissionsScreen(onBack: () -> Unit) {
                         ContextCompat.checkSelfPermission(context, info.permission) == PackageManager.PERMISSION_GRANTED
                     }
                 }
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Card(
+                    Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                    colors = SurfaceRole.Card.cardColors(),
+                    border = SurfaceRole.Card.border()
+                ) {
+                    Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(info.label, style = MaterialTheme.typography.bodyMedium)
-                            Text(info.why, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(info.label, style = MaterialTheme.typography.titleSmall)
+                            Text(info.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Icon(
-                            if (granted) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                            contentDescription = if (granted) "Granted" else "Not granted",
-                            tint = if (granted) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp)
+                        StatusChip(
+                            label = if (granted) "Granted" else "Not granted",
+                            tone = if (granted) StatusTone.Ready else StatusTone.Info,
+                            modifier = Modifier.padding(start = Space.sm)
                         )
                     }
                 }

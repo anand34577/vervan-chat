@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class NotesListViewModel(app: VervanApp) : ViewModel() {
@@ -59,6 +62,10 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving
+    private var saveJob: Job? = null
+
     init {
         viewModelScope.launch { _note.value = db.noteDao().get(noteId) }
     }
@@ -79,15 +86,29 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     }
 
     fun save(title: String, content: String, tags: String = _note.value?.tags ?: "") {
-        viewModelScope.launch {
-            val current = _note.value ?: return@launch
-            val updated = current.copy(
-                title = title.ifBlank { "Untitled note" }, content = content, tags = tags.trim(),
-                updatedAt = System.currentTimeMillis()
-            )
-            db.noteDao().update(updated)
-            _note.value = updated
+        saveJob?.cancel()
+        _saving.value = true
+        saveJob = viewModelScope.launch(NonCancellable) { persist(title, content, tags) }
+    }
+
+    fun scheduleSave(title: String, content: String, tags: String = _note.value?.tags ?: "") {
+        saveJob?.cancel()
+        _saving.value = true
+        saveJob = viewModelScope.launch {
+            delay(450)
+            persist(title, content, tags)
         }
+    }
+
+    private suspend fun persist(title: String, content: String, tags: String) {
+        val current = _note.value ?: run { _saving.value = false; return }
+        val updated = current.copy(
+            title = title.ifBlank { "Untitled note" }, content = content, tags = tags.trim(),
+            updatedAt = System.currentTimeMillis()
+        )
+        db.noteDao().update(updated)
+        _note.value = updated
+        _saving.value = false
     }
 
     /** Runs [action] over [content] and returns the result — caller decides whether to replace or append. */

@@ -14,10 +14,7 @@ import android.os.Process
 import android.os.StatFs
 import android.provider.AlarmClock
 import android.provider.CalendarContract
-import android.provider.CallLog
-import android.provider.ContactsContract
 import android.provider.MediaStore
-import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import com.vervan.chat.data.db.entities.Expense
 import com.vervan.chat.data.db.entities.Memory
@@ -81,8 +78,8 @@ object ToolRegistry {
             execute = { app, params ->
                 val text = params.optString("text")
                 if (text.isBlank()) return@ToolDefinition ToolResult(false, "remember needs a non-empty 'text'")
-                app.container.db.memoryDao().upsert(Memory(text = text))
-                ToolResult(true, "Remembered: $text")
+                val saved = app.container.memoryRepository.upsert(Memory(text = text))
+                ToolResult(true, "Saved to memory${if (saved.indexed) " and semantic index" else ""}: $text")
             }
         ),
         ToolDefinition(
@@ -181,30 +178,6 @@ object ToolRegistry {
         // user hasn't opted into gets a graceful no, not a crash or a permission-request popup
         // mid-conversation. See gatedResult() below.
         ToolDefinition(
-            name = "search_contacts",
-            description = "Search the user's on-device contacts by name.",
-            paramNames = listOf("query"),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, params ->
-                val query = params.optString("query")
-                if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_contacts needs a non-empty 'query'")
-                gatedResult(app, app.container.settingsRepository.contactsToolEnabled, Manifest.permission.READ_CONTACTS, "Contacts") {
-                    withContext(Dispatchers.IO) {
-                        val results = mutableListOf<String>()
-                        app.contentResolver.query(
-                            ContactsContract.Contacts.CONTENT_URI,
-                            arrayOf(ContactsContract.Contacts.DISPLAY_NAME),
-                            "${ContactsContract.Contacts.DISPLAY_NAME} LIKE ?", arrayOf("%$query%"),
-                            "${ContactsContract.Contacts.DISPLAY_NAME} ASC"
-                        )?.use { cursor ->
-                            while (cursor.moveToNext() && results.size < 10) results += cursor.getString(0)
-                        }
-                        if (results.isEmpty()) "No contacts matched \"$query\"." else results.joinToString("\n") { "- $it" }
-                    }
-                }
-            }
-        ),
-        ToolDefinition(
             name = "search_calendar",
             description = "Search the user's on-device calendar events by title, from now onward.",
             paramNames = listOf("query"),
@@ -229,37 +202,6 @@ object ToolRegistry {
                             }
                         }
                         if (results.isEmpty()) "No upcoming events matched \"$query\"." else results.joinToString("\n") { "- $it" }
-                    }
-                }
-            }
-        ),
-        ToolDefinition(
-            name = "search_sms",
-            description = "Search the user's on-device SMS messages by content.",
-            paramNames = listOf("query"),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, params ->
-                val query = params.optString("query")
-                if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_sms needs a non-empty 'query'")
-                gatedResult(app, app.container.settingsRepository.smsToolEnabled, Manifest.permission.READ_SMS, "SMS") {
-                    withContext(Dispatchers.IO) {
-                        val results = mutableListOf<String>()
-                        app.contentResolver.query(
-                            Telephony.Sms.CONTENT_URI,
-                            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-                            "${Telephony.Sms.BODY} LIKE ?", arrayOf("%$query%"),
-                            "${Telephony.Sms.DATE} DESC"
-                        )?.use { cursor ->
-                            while (cursor.moveToNext() && results.size < 10) {
-                                // BODY/ADDRESS can legitimately be null for some rows (MMS
-                                // placeholder rows, drafts) — this threw NullPointerException
-                                // before, reported as an unhelpful "Tool failed: null".
-                                val address = cursor.getString(0) ?: "(unknown)"
-                                val body = cursor.getString(1) ?: ""
-                                results += "$address: ${body.take(150)}"
-                            }
-                        }
-                        if (results.isEmpty()) "No messages matched \"$query\"." else results.joinToString("\n") { "- $it" }
                     }
                 }
             }
@@ -300,10 +242,12 @@ object ToolRegistry {
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_memories needs a non-empty 'query'")
-                val matches = app.container.db.memoryDao().observeAll().first()
-                    .filter { it.text.contains(query, true) }.take(10)
-                if (matches.isEmpty()) ToolResult(true, "No remembered facts matched \"$query\".")
-                else ToolResult(true, matches.joinToString("\n") { "- ${it.text}" })
+                val recall = app.container.memoryRepository.search(query)
+                if (recall.matches.isEmpty()) ToolResult(true, "No remembered facts matched \"$query\".")
+                else ToolResult(
+                    true,
+                    recall.matches.joinToString("\n", "Matched memories (${recall.mode.name.lowercase()}):\n") { "- ${it.memory.text}" }
+                )
             }
         ),
         ToolDefinition(
@@ -477,41 +421,6 @@ object ToolRegistry {
                 }
             }
         ),
-        ToolDefinition(
-            name = "search_call_log",
-            description = "Search the user's recent call log by contact name or number.",
-            paramNames = listOf("query"),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, params ->
-                val query = params.optString("query")
-                gatedResult(app, app.container.settingsRepository.callLogToolEnabled, Manifest.permission.READ_CALL_LOG, "Call log") {
-                    withContext(Dispatchers.IO) {
-                        val results = mutableListOf<String>()
-                        val selection = if (query.isBlank()) null else "${CallLog.Calls.CACHED_NAME} LIKE ? OR ${CallLog.Calls.NUMBER} LIKE ?"
-                        val args = if (query.isBlank()) null else arrayOf("%$query%", "%$query%")
-                        app.contentResolver.query(
-                            CallLog.Calls.CONTENT_URI,
-                            arrayOf(CallLog.Calls.CACHED_NAME, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.TYPE, CallLog.Calls.DURATION),
-                            selection, args,
-                            "${CallLog.Calls.DATE} DESC"
-                        )?.use { cursor ->
-                            val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
-                            while (cursor.moveToNext() && results.size < 10) {
-                                val name = cursor.getString(0) ?: cursor.getString(1) ?: "Unknown"
-                                val type = when (cursor.getInt(3)) {
-                                    CallLog.Calls.INCOMING_TYPE -> "incoming"
-                                    CallLog.Calls.OUTGOING_TYPE -> "outgoing"
-                                    CallLog.Calls.MISSED_TYPE -> "missed"
-                                    else -> "call"
-                                }
-                                results += "$name — $type, ${fmt.format(java.util.Date(cursor.getLong(2)))}, ${cursor.getInt(4)}s"
-                            }
-                        }
-                        if (results.isEmpty()) "No matching calls found." else results.joinToString("\n") { "- $it" }
-                    }
-                }
-            }
-        ),
         // Tasks reuse the existing Note entity/table tagged "task" (and "task-done" once
         // completed) instead of a new entity+DAO+migration — Notes already has full CRUD,
         // search, and a UI, so a task is really just a note with a status.
@@ -570,19 +479,6 @@ object ToolRegistry {
                     if (launchIntent == null) ToolResult(false, "No installed app matched \"$name\".")
                     else launch(app, launchIntent, pm.getApplicationLabel(match).toString())
                 }
-            }
-        ),
-        ToolDefinition(
-            name = "compose_sms",
-            description = "Open the SMS app with a recipient and message prefilled. Does not send.",
-            paramNames = listOf("to", "message"),
-            risk = ToolRisk.EXTERNAL_ACTION,
-            execute = { app, params ->
-                val to = params.optString("to")
-                if (to.isBlank()) return@ToolDefinition ToolResult(false, "compose_sms needs a non-empty 'to'")
-                launch(app, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(to)}")).apply {
-                    putExtra("sms_body", params.optString("message"))
-                }, "text message draft")
             }
         ),
         ToolDefinition(
@@ -684,50 +580,6 @@ object ToolRegistry {
                     "Battery ${battery ?: "unknown"}%."
                 }
                 ToolResult(true, if (sections.isEmpty()) "Nothing to report — no calendar/task sources enabled." else sections.joinToString("\n\n"))
-            }
-        ),
-        ToolDefinition(
-            name = "catch_me_up",
-            description = "A digest of recent unread-worthy SMS and upcoming calendar events.",
-            paramNames = emptyList(),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, _ ->
-                val sections = mutableListOf<String>()
-                val settings = app.container.settingsRepository
-                if (settings.smsToolEnabled.first() && ContextCompat.checkSelfPermission(app, Manifest.permission.READ_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    withContext(Dispatchers.IO) {
-                        val messages = mutableListOf<String>()
-                        app.contentResolver.query(
-                            Telephony.Sms.CONTENT_URI,
-                            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY),
-                            null, null, "${Telephony.Sms.DATE} DESC"
-                        )?.use { cursor ->
-                            while (cursor.moveToNext() && messages.size < 5) {
-                                val address = cursor.getString(0) ?: "(unknown)"
-                                val body = cursor.getString(1) ?: ""
-                                messages += "$address: ${body.take(100)}"
-                            }
-                        }
-                        if (messages.isNotEmpty()) sections += "Recent messages:\n" + messages.joinToString("\n") { "- $it" }
-                    }
-                }
-                if (settings.calendarToolEnabled.first() && ContextCompat.checkSelfPermission(app, Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    withContext(Dispatchers.IO) {
-                        val events = mutableListOf<String>()
-                        val now = System.currentTimeMillis()
-                        app.contentResolver.query(
-                            CalendarContract.Events.CONTENT_URI,
-                            arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART),
-                            "${CalendarContract.Events.DTSTART} >= ?", arrayOf(now.toString()),
-                            "${CalendarContract.Events.DTSTART} ASC"
-                        )?.use { cursor ->
-                            val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
-                            while (cursor.moveToNext() && events.size < 5) events += "${fmt.format(java.util.Date(cursor.getLong(1)))} — ${cursor.getString(0)}"
-                        }
-                        if (events.isNotEmpty()) sections += "Upcoming events:\n" + events.joinToString("\n") { "- $it" }
-                    }
-                }
-                ToolResult(true, if (sections.isEmpty()) "Nothing new — no message/calendar sources enabled." else sections.joinToString("\n\n"))
             }
         )
     )

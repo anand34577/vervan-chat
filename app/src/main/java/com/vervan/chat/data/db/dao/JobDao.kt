@@ -18,4 +18,10 @@ interface JobDao : BaseDao<JobRecord> {
 
     @Query("DELETE FROM jobs WHERE state IN ('COMPLETED','FAILED','CANCELLED') AND updatedAt < :cutoff")
     suspend fun purgeFinishedBefore(cutoff: Long)
+
+    @Query("DELETE FROM jobs WHERE state IN ('COMPLETED','FAILED','CANCELLED')")
+    suspend fun clearFinished()
+
+    @Query("UPDATE jobs SET state = 'CANCELLED', detail = 'Stopped by user', updatedAt = :timestamp WHERE id = :id AND state IN ('WAITING','PREPARING','RUNNING','PAUSED')")
+    suspend fun requestStop(id: String, timestamp: Long = System.currentTimeMillis())
 }

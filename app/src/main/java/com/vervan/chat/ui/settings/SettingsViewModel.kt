@@ -54,6 +54,9 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
     val contextTokenLimit: StateFlow<Int> = settings.contextTokenLimit
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4096)
+    val autoContextSummarization: StateFlow<Boolean> = settings.autoContextSummarization
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    fun setAutoContextSummarization(v: Boolean) { viewModelScope.launch { settings.setAutoContextSummarization(v) } }
     val responseLength: StateFlow<String> = settings.responseLength
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "BALANCED")
     val responseTone: StateFlow<String> = settings.responseTone
@@ -62,6 +65,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topP = settings.topP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.95f)
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val allowLowMemoryModelLoads = settings.allowLowMemoryModelLoads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
@@ -117,12 +121,10 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setQuickActionBubbleEnabled(v: Boolean) {
         viewModelScope.launch { settings.setQuickActionBubbleEnabled(v) }
-        // Settings is only ever open while the app is in the foreground, and the bubble is only
-        // meant to show once the app is backgrounded (see VervanApp's ProcessLifecycleOwner
-        // observer) — so turning this on here doesn't start it immediately, it just arms it for
-        // the next background transition. Turning off does stop it right away, defensively, in
-        // case it's already showing.
-        if (!v) com.vervan.chat.overlay.BubbleService.stop(app)
+        // Start while Settings is visible. Android 12+ can reject foreground-service starts
+        // after the app has already moved to the background.
+        if (v) com.vervan.chat.overlay.BubbleService.start(app)
+        else com.vervan.chat.overlay.BubbleService.stop(app)
     }
 
     // ---- Local API server (Phase J) ----
@@ -155,21 +157,15 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setApiServerRequireAuth(v: Boolean) { viewModelScope.launch { settings.setApiServerRequireAuth(v) }; restartIfRunning() }
 
     // ---- On-device data sources (Phase G) ----
-    val contactsToolEnabled: StateFlow<Boolean> = settings.contactsToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val smsToolEnabled: StateFlow<Boolean> = settings.smsToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val filesToolEnabled: StateFlow<Boolean> = settings.filesToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val locationToolEnabled: StateFlow<Boolean> = settings.locationToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val callLogToolEnabled: StateFlow<Boolean> = settings.callLogToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val screenTimeToolEnabled: StateFlow<Boolean> = settings.screenTimeToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    fun setContactsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setContactsToolEnabled(v) } }
     fun setCalendarToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCalendarToolEnabled(v) } }
-    fun setSmsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setSmsToolEnabled(v) } }
     fun setDeviceStatusToolEnabled(v: Boolean) { viewModelScope.launch { settings.setDeviceStatusToolEnabled(v) } }
     fun setFilesToolEnabled(v: Boolean) { viewModelScope.launch { settings.setFilesToolEnabled(v) } }
     fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
-    fun setCallLogToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCallLogToolEnabled(v) } }
     fun setScreenTimeToolEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenTimeToolEnabled(v) } }
 
     // ---- Tool catalog (Settings → Tools) ----
@@ -242,6 +238,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTopP(value: Float) { viewModelScope.launch { settings.setTopP(value) } }
     fun setTopK(value: Int) { viewModelScope.launch { settings.setTopK(value) } }
     fun setPreferredBackend(value: String) { viewModelScope.launch { settings.setPreferredBackend(value) } }
+    fun setAllowLowMemoryModelLoads(value: Boolean) { viewModelScope.launch { settings.setAllowLowMemoryModelLoads(value) } }
     fun setMaxNumImages(value: Int) { viewModelScope.launch { settings.setMaxNumImages(value) } }
     fun setRandomSeed(value: Int) { viewModelScope.launch { settings.setRandomSeed(value) } }
     fun setMinP(value: Float) { viewModelScope.launch { settings.setMinP(value) } }

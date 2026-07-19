@@ -17,7 +17,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
@@ -162,7 +162,7 @@ private fun FlowChips(options: List<Pair<String, String?>>, selected: String?, o
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         options.forEach { (label, id) ->
-            FilterChip(selected = selected == id, onClick = { onSelect(id) }, label = { Text(label, maxLines = 1) })
+            VervanFilterChip(selected = selected == id, onClick = { onSelect(id) }, label = { Text(label, maxLines = 1) })
         }
     }
 }
@@ -177,7 +177,7 @@ private fun MultiSelectChips(options: List<Pair<String, String>>, selected: List
     ) {
         options.forEach { (label, id) ->
             val isSelected = id in selected
-            FilterChip(
+            VervanFilterChip(
                 selected = isSelected,
                 onClick = { onToggle(if (isSelected) selected - id else selected + id) },
                 label = { Text(label, maxLines = 1) }

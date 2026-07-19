@@ -1,10 +1,15 @@
 package com.vervan.chat.ui.chats
 
 import android.content.Intent
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,16 +46,14 @@ import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,7 +62,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -97,6 +105,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
         initializer { ChatListViewModel(app) }
     })
     val chats by vm.chats.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
     val filter by vm.filter.collectAsState()
     val projectNames by vm.projectNames.collectAsState()
     val folders by vm.folders.collectAsState()
@@ -110,20 +119,6 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     var selectionMode by remember { mutableStateOf(false) }
     var showFolders by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    // Loading state — `chats` is a StateFlow seeded with emptyList(), so on cold start the
-    // user used to briefly see "No chats here" before the first DB emit arrived. This flag
-    // tracks the very first emit so we can show skeletons during that gap and a real empty
-    // state only when the DB says it's actually empty.
-    var initialLoaded by remember { mutableStateOf(false) }
-    LaunchedEffect(chats) { if (chats.isNotEmpty()) initialLoaded = true }
-    // The DB also emits an empty list legitimately (a user with no chats). Use the chats' size
-    // *or* having ever emitted anything — the simplest robust signal is "has the chats flow
-    // ever been collected once" which is impossible to observe directly without snapshot.
-    // Pragmatic proxy: once we observe any other list (folders, projects) emit non-empty OR
-    // chats emit non-empty, the load is done.
-    LaunchedEffect(folders, projectNames) {
-        if (folders.isNotEmpty() || projectNames.isNotEmpty()) initialLoaded = true
-    }
     val visibleChats = remember(chats, query) {
         if (query.isBlank()) chats else chats.filter {
             it.title.contains(query, ignoreCase = true) ||
@@ -165,10 +160,17 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                 onExit = { selected = emptySet(); selectionMode = false },
                 onDelete = {
                     val count = selected.size
+                    val trashed = chats.filter { it.id in selected }
                     vm.moveToTrash(selected)
                     selected = emptySet()
                     selectionMode = false
-                    scope.launch { snackbarHostState.showSnackbar("Moved $count chat${if (count == 1) "" else "s"} to the recycle bin") }
+                    scope.launch {
+                        if (snackbarHostState.showSnackbar(
+                                "Moved $count chat${if (count == 1) "" else "s"} to the recycle bin",
+                                "Undo"
+                            ) == SnackbarResult.ActionPerformed
+                        ) vm.restoreFromTrash(trashed)
+                    }
                 },
                 deleteContentDescription = "Move selected to recycle bin",
                 extraActions = {
@@ -178,12 +180,35 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                     if (filter == ChatFilter.ARCHIVED) {
                         TextButton(
                             enabled = selected.isNotEmpty(),
-                            onClick = { vm.unarchive(selected); selected = emptySet(); selectionMode = false }
+                            onClick = {
+                                val count = selected.size
+                                vm.unarchive(selected)
+                                selected = emptySet()
+                                selectionMode = false
+                                scope.launch {
+                                    if (snackbarHostState.showSnackbar("Restored $count chat${if (count == 1) "" else "s"} to All", "View") == SnackbarResult.ActionPerformed) {
+                                        vm.setFilter(ChatFilter.ALL)
+                                    }
+                                }
+                            }
                         ) { Text("Restore") }
                     } else {
                         IconButton(
                             enabled = selected.isNotEmpty(),
-                            onClick = { vm.archive(selected); selected = emptySet(); selectionMode = false }
+                            onClick = {
+                                val ids = selected
+                                val count = ids.size
+                                vm.archive(ids)
+                                selected = emptySet()
+                                selectionMode = false
+                                scope.launch {
+                                    if (snackbarHostState.showSnackbar(
+                                            "Archived $count chat${if (count == 1) "" else "s"}",
+                                            "Undo"
+                                        ) == SnackbarResult.ActionPerformed
+                                    ) vm.unarchive(ids)
+                                }
+                            }
                         ) { Icon(Icons.Filled.Archive, "Archive selected") }
                     }
                     Box {
@@ -211,12 +236,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
             )
             // Skeleton state during cold start — the previous behavior flashed "No chats here"
             // before the DB had emitted anything, which read as data loss.
-            if (!initialLoaded && chats.isEmpty()) {
+            if (isLoading) {
                 LoadingSkeletonList(rows = 7, modifier = Modifier.padding(top = Space.md))
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 96.dp),
+                    contentPadding = PaddingValues(bottom = Space.md),
                     verticalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     buckets.forEach { (bucketLabel, bucketChats) ->
@@ -238,10 +263,27 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                     selected = if (chat.id in selected) selected - chat.id else selected + chat.id
                                 },
                                 onTogglePin = { vm.togglePin(chat) },
-                                onToggleArchive = { vm.toggleArchive(chat) },
+                                onToggleArchive = {
+                                    val restoring = chat.archived
+                                    vm.toggleArchive(chat)
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            if (restoring) "Chat restored to All" else "Chat archived",
+                                            actionLabel = if (restoring) "View" else "Undo"
+                                        )
+                                        if (restoring && result == SnackbarResult.ActionPerformed) vm.setFilter(ChatFilter.ALL)
+                                        if (!restoring && result == SnackbarResult.ActionPerformed) vm.unarchive(setOf(chat.id))
+                                    }
+                                },
                                 onMoveToTrash = {
                                     vm.moveToTrash(chat)
-                                    scope.launch { snackbarHostState.showSnackbar("Moved chat to the recycle bin") }
+                                    scope.launch {
+                                        if (snackbarHostState.showSnackbar(
+                                                "Moved chat to the recycle bin",
+                                                "Undo"
+                                            ) == SnackbarResult.ActionPerformed
+                                        ) vm.restoreFromTrash(listOf(chat))
+                                    }
                                 },
                                 onRename = { renameTarget = chat },
                                 onDuplicate = { vm.duplicate(chat) },
@@ -391,51 +433,81 @@ private fun ChatListRow(
     onExport: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    // §7.2.1 swipe right = pin, swipe left = archive. Observe the reached anchor, perform the
-    // action, then reset so the row remains reusable after the list re-sorts/re-filters.
-    val dismissState = rememberSwipeToDismissBoxState()
-    LaunchedEffect(dismissState.currentValue) {
-        when (dismissState.currentValue) {
-            SwipeToDismissBoxValue.StartToEnd -> {
-                onTogglePin()
-                dismissState.reset()
-            }
-            SwipeToDismissBoxValue.EndToStart -> {
-                onToggleArchive()
-                dismissState.reset()
-            }
-            SwipeToDismissBoxValue.Settled -> Unit
-        }
+    // Swipe right to pin and left to archive. The reveal stays bounded so the row never leaves
+    // the viewport, then returns to rest before the list re-sorts or filters the changed chat.
+    val density = LocalDensity.current
+    val maxRevealPx = remember(density) { with(density) { 104.dp.toPx() } }
+    val actionThresholdPx = remember(density) { with(density) { 64.dp.toPx() } }
+    var swipeOffsetPx by remember(chat.id) { mutableFloatStateOf(0f) }
+    val pinLabel = if (chat.pinned) "Unpin" else "Pin"
+    val archiveLabel = if (chat.archived) "Unarchive" else "Archive"
+    val draggableState = rememberDraggableState { delta ->
+        swipeOffsetPx = clampedChatSwipeOffset(swipeOffsetPx, delta, maxRevealPx)
     }
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = !selectionMode,
-        enableDismissFromEndToStart = !selectionMode,
-        backgroundContent = {
-            val toStart = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
-            val color = if (toStart) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
-            val icon = if (toStart) Icons.Filled.PushPin else Icons.Filled.Archive
-            val label = if (toStart) (if (chat.pinned) "Unpin" else "Pin") else (if (chat.archived) "Unarchive" else "Archive")
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .padding(vertical = Space.xs)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(color)
-                    .padding(horizontal = Space.xxl),
-                horizontalArrangement = if (toStart) Arrangement.Start else Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!toStart) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = Space.sm))
-                Icon(icon, contentDescription = label)
-                if (toStart) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+    val actionModifier = if (selectionMode) Modifier else Modifier
+        .draggable(
+            state = draggableState,
+            orientation = Orientation.Horizontal,
+            onDragStopped = {
+                val action = when {
+                    swipeOffsetPx >= actionThresholdPx -> onTogglePin
+                    swipeOffsetPx <= -actionThresholdPx -> onToggleArchive
+                    else -> null
+                }
+                // Do not remove/disable this draggable while its onDragStopped coroutine is
+                // suspended: doing so cancels the modifier node that owns the animation and
+                // leaves the card frozen at its revealed offset. The finally block also makes
+                // an interrupted animation snap home before applying the committed action.
+                try {
+                    animate(
+                        initialValue = swipeOffsetPx,
+                        targetValue = 0f,
+                        animationSpec = tween(durationMillis = 160)
+                    ) { value, _ -> swipeOffsetPx = value }
+                } finally {
+                    swipeOffsetPx = 0f
+                    action?.invoke()
+                }
             }
+        )
+        .semantics {
+            customActions = listOf(
+                CustomAccessibilityAction("$pinLabel chat") { onTogglePin(); true },
+                CustomAccessibilityAction("$archiveLabel chat") { onToggleArchive(); true }
+            )
         }
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().then(actionModifier)) {
+        val revealsPin = swipeOffsetPx >= 0f
+        val color = if (revealsPin) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
+        val icon = if (revealsPin) Icons.Filled.PushPin else Icons.Filled.Archive
+        val label = if (revealsPin) pinLabel else archiveLabel
+        Row(
+            Modifier
+                .matchParentSize()
+                .padding(vertical = 3.dp)
+                .clip(MaterialTheme.shapes.large)
+                .background(color)
+                .padding(horizontal = Space.xxl),
+            horizontalArrangement = if (revealsPin) Arrangement.Start else Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = Space.sm))
+            Icon(icon, contentDescription = null)
+            if (revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+        }
+    // Each conversation is a resting card on the page — container tint + border from the
+    // surface-role system, so the history reads as a stack of distinct, tappable conversations
+    // rather than an undifferentiated flat list. Selection swaps to the app-wide selected tint.
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs).animateContentSize(),
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else vervanBorder(com.vervan.chat.ui.theme.VervanBorderProminence.Subtle)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .graphicsLayer { translationX = swipeOffsetPx },
+        shape = MaterialTheme.shapes.large,
+        colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        else com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
+        else com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Row(
             Modifier
@@ -456,18 +528,45 @@ private fun ChatListRow(
                     colors = CheckboxDefaults.colors(uncheckedColor = MaterialTheme.colorScheme.outline)
                 )
             }
-            IconAffordance(
-                icon = Icons.AutoMirrored.Filled.Chat,
-                size = IconAffordanceSize.Default,
-                tint = if (chat.pinned) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                containerColor = if (chat.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
-            )
+            // Colored initial avatar — a stable per-chat accent (hashed from the id) with the
+            // title's first letter, so the list scans by color+letter the way modern chat and
+            // mail apps do, instead of forty identical chat glyphs.
+            run {
+                val accent = com.vervan.chat.ui.theme.vervanAccentFor(chat.id.hashCode())
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(
+                            // Pinned chats carry the brand gradient — the app-wide "important"
+                            // mark — while everything else keeps its stable categorical accent.
+                            if (chat.pinned) com.vervan.chat.ui.theme.vervanBrandGradient()
+                            else androidx.compose.ui.graphics.SolidColor(accent.container)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val initial = chat.title.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
+                    val fg = if (chat.pinned) MaterialTheme.colorScheme.onPrimary else accent.onContainer
+                    if (initial != null) {
+                        Text(initial.toString(), style = MaterialTheme.typography.titleMedium, color = fg)
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
             Column(Modifier.weight(1f).padding(start = Space.md)) {
-                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         chat.title, style = MaterialTheme.typography.titleSmall, maxLines = 1,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                     )
+                    if (chat.pinned) {
+                        Icon(
+                            Icons.Filled.PushPin, contentDescription = "Pinned",
+                            modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
                         relativeTime(chat.updatedAt), style = MaterialTheme.typography.labelSmall,
                         fontFamily = VervanMono, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -518,6 +617,9 @@ private fun ChatListRow(
     }
     }
 }
+
+internal fun clampedChatSwipeOffset(currentOffset: Float, dragDelta: Float, maxReveal: Float): Float =
+    (currentOffset + dragDelta).coerceIn(-maxReveal, maxReveal)
 
 private fun relativeTime(epochMs: Long): String {
     val diffMin = (System.currentTimeMillis() - epochMs) / 60000

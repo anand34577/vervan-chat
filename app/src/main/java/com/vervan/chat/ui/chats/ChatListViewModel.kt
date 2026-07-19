@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,7 +23,11 @@ enum class ChatFilter { ALL, PINNED, ARCHIVED }
 class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
     private val allChats: StateFlow<List<Chat>> = db.chatDao().observeListableChats()
+        .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val projectNames: StateFlow<Map<String, String>> = db.projectDao().observeAll()
@@ -67,20 +72,29 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     fun setFilter(filter: ChatFilter) { _filter.value = filter }
 
     fun togglePin(chat: Chat) {
-        viewModelScope.launch { db.chatDao().update(chat.copy(pinned = !chat.pinned)) }
+        viewModelScope.launch { db.chatDao().setPinned(chat.id, !chat.pinned) }
     }
 
     fun toggleArchive(chat: Chat) {
-        viewModelScope.launch { db.chatDao().update(chat.copy(archived = !chat.archived)) }
+        viewModelScope.launch { db.chatDao().setArchived(chat.id, !chat.archived) }
     }
 
     fun moveToTrash(chat: Chat) {
         viewModelScope.launch { db.chatDao().update(chat.copy(deletedAt = System.currentTimeMillis())) }
     }
 
-    fun archive(ids: Set<String>) = updateSelected(ids) { it.copy(archived = true) }
-    fun unarchive(ids: Set<String>) = updateSelected(ids) { it.copy(archived = false) }
+    fun archive(ids: Set<String>) {
+        if (ids.isNotEmpty()) viewModelScope.launch { db.chatDao().setArchived(ids, true) }
+    }
+    fun unarchive(ids: Set<String>) {
+        if (ids.isNotEmpty()) viewModelScope.launch { db.chatDao().setArchived(ids, false) }
+    }
     fun moveToTrash(ids: Set<String>) = updateSelected(ids) { it.copy(deletedAt = System.currentTimeMillis()) }
+    fun restoreFromTrash(chats: List<Chat>) {
+        if (chats.isNotEmpty()) viewModelScope.launch {
+            chats.forEach { db.chatDao().upsert(it.copy(deletedAt = null)) }
+        }
+    }
     fun moveToFolder(ids: Set<String>, folderId: String?) = updateSelected(ids) { it.copy(folderId = folderId) }
 
     private fun updateSelected(ids: Set<String>, transform: (Chat) -> Chat) {

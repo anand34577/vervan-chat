@@ -486,7 +486,7 @@ class ModelLoadCoordinator(
         if (role == ModelRole.EMBEDDING && embeddingPoisoned) {
             return engineUnavailableResult(role, model)
         }
-        if (role == ModelRole.GENERATION || role == ModelRole.EMBEDDING) {
+        if ((role == ModelRole.GENERATION || role == ModelRole.EMBEDDING) && !defaults.allowLowMemoryModelLoads()) {
             val contextTokens = if (role == ModelRole.GENERATION) resolveContextTokens(model, contextTokensOverride) else 0
             checkResourceBudget(role, model, contextTokens)?.let { insufficient ->
                 publishFailure(role, insufficient)
@@ -631,7 +631,9 @@ class ModelLoadCoordinator(
         }
         val (reconciled, _) = model.reconcileCapabilities(
             dbBackend, engine.visionEnabled, engine.audioEnabled,
-            mtpAttempted = useMtp, mtpActive = engine.speculativeDecodingActive
+            mtpAttempted = useMtp, mtpActive = engine.speculativeDecodingActive,
+            audioProvenUnsupported = (engine as? LlmEngine)?.audioProvenUnsupported ?: true,
+            visionProvenUnsupported = (engine as? LlmEngine)?.visionProvenUnsupported ?: true
         )
         return reconciled to result.fellBackToCpu
     }

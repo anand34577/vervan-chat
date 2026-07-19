@@ -92,10 +92,11 @@ private class FakeModelDao(initial: List<ModelInfo> = emptyList()) : ModelDao {
     }
 }
 
-private class FakeGenerationDefaults : GenerationDefaults {
+private class FakeGenerationDefaults(private val allowLowMemoryLoads: Boolean = false) : GenerationDefaults {
     override suspend fun contextTokenLimit() = 4096
     override suspend fun maxNumImages() = 1
     override suspend fun preferredBackend() = "AUTO"
+    override suspend fun allowLowMemoryModelLoads() = allowLowMemoryLoads
     override suspend fun cpuThreads() = 0
     override suspend fun nBatch() = 2048
     override suspend fun nUbatch() = 512
@@ -228,15 +229,18 @@ class ModelLoadCoordinatorConcurrencyTest {
         val scope = CoroutineScope(Dispatchers.Default)
 
         // a's load starts and blocks on the gate — the "currently in flight" load.
+        // Generous settling delays: on a loaded machine 100ms was occasionally not enough for the
+        // async launches on Dispatchers.Default to reach their queue registration, which let two
+        // requests race past dedupe and produced a flaky fourth engine load.
         val aResult = scope.async { coordinator.ensureLoaded(a, LoadTrigger.CHAT_AUTOLOAD) }
-        kotlinx.coroutines.delay(100) // let a actually become the in-flight load first
+        kotlinx.coroutines.delay(300) // let a actually become the in-flight load first
 
         // While a is in flight, b (low-priority automatic) and c (high-priority manual) both
         // queue up for the same role — b first, to prove priority beats arrival order.
         val bResult = scope.async { coordinator.ensureLoaded(b, LoadTrigger.CHAT_AUTOLOAD) }
-        kotlinx.coroutines.delay(50)
+        kotlinx.coroutines.delay(150)
         val cResult = scope.async { coordinator.loadManually(c) }
-        kotlinx.coroutines.delay(100) // let both b and c actually register as waiters
+        kotlinx.coroutines.delay(300) // let both b and c actually register as waiters
 
         gate.complete(Unit) // let a finish; b and c now race to go next
 
@@ -331,6 +335,23 @@ class ModelLoadCoordinatorResourceBudgetTest {
             kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
             FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default),
             FakeResourceMonitor(8L * 1024 * 1024 * 1024) // 8GB available
+        )
+
+        val result = coordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND)
+
+        assertTrue(result.success)
+        assertEquals(1, generationEngine.loadCallCount.get())
+    }
+
+    @Test
+    fun lowMemoryOverrideLetsTheNativeEngineTryTheLoad() = runBlocking {
+        val generationEngine = FakeGenerationEngine(CompletableDeferred(Unit))
+        val huge = model("huge_override").copy(isActive = true, fileSizeBytes = 20_000_000_000L)
+        val coordinator = ModelLoadCoordinator(
+            FakeModelDao(listOf(huge)), generationEngine, FakeGenerationEngine(CompletableDeferred(Unit)), FakeEmbeddingEngine(),
+            kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+            FakeGenerationDefaults(allowLowMemoryLoads = true), CoroutineScope(Dispatchers.Default),
+            FakeResourceMonitor(200L * 1024 * 1024)
         )
 
         val result = coordinator.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND)

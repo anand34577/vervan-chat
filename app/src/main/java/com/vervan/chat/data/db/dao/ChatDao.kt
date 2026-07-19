@@ -68,4 +68,13 @@ interface ChatDao : BaseDao<Chat> {
 
     @Query("UPDATE chats SET folderId = NULL WHERE folderId = :folderId")
     suspend fun clearFolder(folderId: String)
+
+    @Query("UPDATE chats SET archived = :archived, updatedAt = :updatedAt WHERE id = :chatId AND deletedAt IS NULL")
+    suspend fun setArchived(chatId: String, archived: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE chats SET archived = :archived, updatedAt = :updatedAt WHERE id IN (:chatIds) AND deletedAt IS NULL")
+    suspend fun setArchived(chatIds: Set<String>, archived: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE chats SET pinned = :pinned, updatedAt = :updatedAt WHERE id = :chatId AND deletedAt IS NULL")
+    suspend fun setPinned(chatId: String, pinned: Boolean, updatedAt: Long = System.currentTimeMillis())
 }

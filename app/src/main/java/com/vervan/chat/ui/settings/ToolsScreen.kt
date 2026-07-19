@@ -39,6 +39,10 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.tools.ToolDefinition
 import com.vervan.chat.tools.ToolRegistry
 import com.vervan.chat.tools.ToolRisk
+import com.vervan.chat.ui.common.StatusChip
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 /**
  * Global tool catalog — every [ToolRegistry] entry, searchable, each individually switchable.
@@ -77,8 +81,12 @@ fun ToolsScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
             )
 
-            Card(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Card(
+                Modifier.fillMaxWidth().padding(bottom = Space.xs),
+                colors = SurfaceRole.Card.cardColors(),
+                border = SurfaceRole.Card.border()
+            ) {
+                Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Always tell the model the date & time", style = MaterialTheme.typography.bodyMedium)
                         Text(
@@ -114,15 +122,23 @@ fun ToolsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun ToolRow(tool: ToolDefinition, enabled: Boolean, onToggle: (Boolean) -> Unit) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
+    ) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(tool.name, style = MaterialTheme.typography.bodyMedium)
-                Text(tool.description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    riskLabel(tool.risk),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                Text(tool.name, style = MaterialTheme.typography.titleSmall)
+                Text(tool.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                StatusChip(
+                    label = riskLabel(tool.risk),
+                    tone = when (tool.risk) {
+                        ToolRisk.READ_ONLY -> StatusTone.Ready
+                        ToolRisk.REVERSIBLE_WRITE -> StatusTone.Warning
+                        ToolRisk.EXTERNAL_ACTION -> StatusTone.Info
+                    },
+                    modifier = Modifier.padding(top = Space.xs)
                 )
             }
             Switch(checked = enabled, onCheckedChange = onToggle)

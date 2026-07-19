@@ -143,18 +143,30 @@ fun ModelInfo.reconcileCapabilities(
     // Whether this load attempt actually requested MTP at all — a validate/verify load that
     // never asked for speculative decoding shouldn't be read as "MTP failed" and disable it.
     mtpAttempted: Boolean,
-    mtpActive: Boolean
+    mtpActive: Boolean,
+    // Whether the load ladder actually *proved* the modality is absent from the model package
+    // (same-backend degraded retry succeeded after a modality-specific failure), vs. merely
+    // ending up degraded for some transient reason (memory pressure, flaky backend attempt).
+    // Latching supportsX=false on a transient failure is permanent — the known-capability skip
+    // in LlmEngine.load() then never retries the modality — so only proven absence may latch.
+    audioProvenUnsupported: Boolean = true,
+    visionProvenUnsupported: Boolean = true
 ): Pair<ModelInfo, List<String>> {
     var updated = copy(lastWorkingBackend = lastWorkingBackend)
     val disabled = mutableListOf<String>()
-    if (supportsVision != false && (maxNumImages ?: 1) > 0 && !visionEnabled) {
+    if (supportsVision != false && (maxNumImages ?: 1) > 0 && !visionEnabled && visionProvenUnsupported) {
         updated = updated.copy(supportsVision = false)
         disabled += "Vision"
     }
-    if (supportsAudio != false && !audioEnabled) {
+    if (supportsAudio != false && !audioEnabled && audioProvenUnsupported) {
         updated = updated.copy(supportsAudio = false)
         disabled += "Audio"
     }
+    // Symmetric positive latch: a load that came up with the modality actually working is proof
+    // it's supported — without this, supportsAudio stays null forever unless the user manually
+    // configures it, and the voice-chat UI (which gates on supportsAudio == true) never appears.
+    if (supportsVision != true && visionEnabled) updated = updated.copy(supportsVision = true)
+    if (supportsAudio != true && audioEnabled) updated = updated.copy(supportsAudio = true)
     if (mtpAttempted && mtpEnabled && !mtpActive) {
         updated = updated.copy(mtpEnabled = false, mtpSupported = false)
         disabled += "Speculative decoding (MTP)"

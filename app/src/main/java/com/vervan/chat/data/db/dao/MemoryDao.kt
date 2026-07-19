@@ -13,9 +13,12 @@ interface MemoryDao : BaseDao<Memory> {
     @Query(
         "SELECT * FROM memories WHERE deletedAt IS NULL AND enabled = 1 AND (scope = 'GLOBAL' " +
             "OR (scope = 'PERSONA' AND scopeRefId = :personaId) " +
-            "OR (scope = 'PROJECT' AND scopeRefId = :projectId))"
+            "OR (scope = 'PROJECT' AND scopeRefId = :projectId)) ORDER BY createdAt DESC"
     )
     suspend fun getApplicable(personaId: String?, projectId: String?): List<Memory>
+
+    @Query("SELECT * FROM memories WHERE deletedAt IS NULL AND enabled = 1 ORDER BY createdAt DESC")
+    suspend fun getEnabled(): List<Memory>
 
     @Query("SELECT * FROM memories WHERE key = :key AND scope = :scope AND (scopeRefId IS :scopeRefId) AND deletedAt IS NULL LIMIT 1")
     suspend fun findByKey(key: String, scope: com.vervan.chat.data.db.entities.MemoryScope, scopeRefId: String?): Memory?

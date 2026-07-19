@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -50,6 +51,10 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,10 +101,11 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                 icon = Icons.Filled.Folder,
                 title = "No folders yet",
                 body = "Group chats and notes with shared AI defaults.",
-                modifier = Modifier
+                actionLabel = "Create a folder",
+                onAction = { showCreate = true }
             )
           } else {
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {
                 items(folders, key = { it.id }) { folder ->
                     val isSelected = folder.id in selected
                     Card(
@@ -110,12 +116,15 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                                 onToggleSelected = { selected = if (isSelected) selected - folder.id else selected + folder.id },
                                 onEnterSelection = { selectionMode = true; selected = selected + folder.id }
                             ),
-                        colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
+                        colors = if (isSelected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else SurfaceRole.Card.cardColors(),
+                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else SurfaceRole.Card.border()
                     ) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Row(Modifier.padding(Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             if (selectionMode) {
                                 Checkbox(checked = isSelected, onCheckedChange = { selected = if (isSelected) selected - folder.id else selected + folder.id })
+                            } else {
+                                IconAffordance(Icons.Filled.Folder, size = IconAffordanceSize.Default)
+                                androidx.compose.foundation.layout.Spacer(Modifier.width(Space.md))
                             }
                             Column(Modifier.weight(1f)) {
                                 Text(folder.name, style = MaterialTheme.typography.titleMedium)

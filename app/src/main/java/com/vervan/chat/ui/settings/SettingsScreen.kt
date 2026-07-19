@@ -115,6 +115,8 @@ fun SettingsScreen(
     val memoryCount by app.container.db.memoryDao().observeAll().collectAsState(initial = emptyList())
     val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsState(initial = 0)
     val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
+    val userName by app.container.settingsRepository.userName.collectAsState(initial = "")
+    val userOccupation by app.container.settingsRepository.userOccupation.collectAsState(initial = "")
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
@@ -139,7 +141,6 @@ fun SettingsScreen(
             "Privacy & personalization",
             listOf(
                 SettingsDestination(Icons.Filled.Lock, "Security", "App lock, biometrics, PIN, and auto-lock", onOpenSecurity),
-                SettingsDestination(Icons.Outlined.Person, "User profile", "Name, occupation, languages, and preferences", onOpenProfile),
                 SettingsDestination(Icons.Filled.Psychology, "Personal memory", "${memoryCount.size} memories saved", onOpenMemory),
                 SettingsDestination(Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions pending review", onOpenMemorySuggestions)
             )
@@ -166,12 +167,49 @@ fun SettingsScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.Filled.Lock,
-                eyebrow = "Local by design",
-                title = "Your workspace, your rules",
-                body = "Manage local AI, privacy, appearance, and data."
-            )
+            // Profile header — the modern settings anchor: who this workspace belongs to, with a
+            // one-tap path to the full profile. Replaces the generic hero card, which repeated
+            // the privacy message the About footer already carries.
+            Card(
+                onClick = onOpenProfile,
+                modifier = Modifier.fillMaxWidth(),
+                shape = com.vervan.chat.ui.theme.VervanExtraShapes.hero,
+                colors = com.vervan.chat.ui.theme.SurfaceRole.Raised.cardColors(),
+                border = com.vervan.chat.ui.theme.SurfaceRole.Raised.border()
+            ) {
+                Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(56.dp)
+                            .background(com.vervan.chat.ui.theme.vervanBrandGradient(), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val initial = userName.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
+                        if (initial != null) {
+                            Text(initial.toString(), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Outlined.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(26.dp))
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(start = Space.lg)) {
+                        Text(
+                            userName.trim().ifBlank { "Set up your profile" },
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            userOccupation.trim().ifBlank { "Personalize how Vervan responds to you" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
@@ -191,26 +229,26 @@ fun SettingsScreen(
                 }
             }
             SectionLabel("About")
-            Card(
-                Modifier.fillMaxWidth().padding(vertical = Space.xs),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                ListItem(
-                    headlineContent = { Text("Vervan Chat") },
-                    supportingContent = { Text("Private on-device AI workspace · version 0.1") }
+            com.vervan.chat.ui.common.SectionCard(
+                modifier = Modifier.padding(bottom = Space.xxl),
+                items = listOf(
+                    {
+                        com.vervan.chat.ui.common.SectionRow(
+                            title = "Vervan Chat",
+                            icon = Icons.Filled.AutoAwesome,
+                            subtitle = "Private on-device AI workspace · version 0.1"
+                        )
+                    },
+                    {
+                        Text(
+                            "AI can be wrong. Review important answers and confirm actions.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(Space.lg)
+                        )
+                    }
                 )
-            }
-            Card(
-                Modifier.fillMaxWidth().padding(top = Space.sm, bottom = Space.xxl),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                Text(
-                "AI can be wrong. Review important answers and confirm actions.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(Space.lg)
-                )
-            }
+            )
           }
         }
     }
@@ -235,11 +273,15 @@ private fun SettingsGroup(destinations: List<SettingsDestination>) {
                     )
                 },
                 leadingContent = {
+                    // Stable categorical accent per destination (hashed from the title, so it
+                    // survives search filtering) — a wall of identical primary-tinted icons made
+                    // every row read the same; distinct hues make the hub scannable at a glance.
+                    val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
                     IconAffordance(
                         icon = destination.icon,
                         size = IconAffordanceSize.Default,
-                        tint = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
+                        tint = accent.onContainer,
+                        containerColor = accent.container
                     )
                 },
                 trailingContent = {

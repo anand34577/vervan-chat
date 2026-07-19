@@ -14,6 +14,11 @@ endif()
 if(NOT DEFINED LLAMA_CPP_LIBS_DIR)
     set(LLAMA_CPP_LIBS_DIR "${LLAMA_CPP_DIR}/build-android/bin")
 endif()
+# 32-bit builds link against the separate armeabi-v7a llama.cpp output (llamacpp.dir32 in
+# local.properties). Gradle only enables this ABI when those libs exist, so the dir is valid here.
+if(ANDROID_ABI STREQUAL "armeabi-v7a" AND DEFINED LLAMA_CPP_LIBS32_DIR AND NOT LLAMA_CPP_LIBS32_DIR STREQUAL "")
+    set(LLAMA_CPP_LIBS_DIR "${LLAMA_CPP_LIBS32_DIR}")
+endif()
 
 # --- Prebuilt llama.cpp shared libraries -----------------------------------------------------
 # Built separately by the user's own CMake+NDK+Vulkan invocation (see the plan/PR description) —

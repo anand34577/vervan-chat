@@ -392,5 +392,32 @@ val MIGRATIONS = arrayOf(
             db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_workspaceId ON folders(workspaceId)")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_download_files_packageId ON download_files(packageId)")
         }
+    },
+    object : Migration(37, 38) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Character card import (SillyTavern PNG cards) — see Persona.avatarPath.
+            db.execSQL("ALTER TABLE personas ADD COLUMN avatarPath TEXT")
+            // Long-chat context management — see Chat.contextSummary/summaryCoversUpToMessageId.
+            db.execSQL("ALTER TABLE chats ADD COLUMN contextSummary TEXT")
+            db.execSQL("ALTER TABLE chats ADD COLUMN summaryCoversUpToMessageId TEXT")
+        }
+    },
+    object : Migration(38, 39) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // reconcileCapabilities used to latch supportsAudio/supportsVision = false after ANY
+            // degraded load (including transient memory-pressure failures), permanently hiding
+            // audio/vision — including voice chat — for models that actually support them. The
+            // latch logic is fixed to require proven absence; reset existing latched values so
+            // affected LiteRT-LM models re-probe their real capabilities on next load.
+            db.execSQL("UPDATE models SET supportsAudio = NULL WHERE engine = 'LITERT_LM' AND supportsAudio = 0")
+            db.execSQL("UPDATE models SET supportsVision = NULL WHERE engine = 'LITERT_LM' AND supportsVision = 0")
+        }
+    },
+    object : Migration(39, 40) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE memories ADD COLUMN embedding BLOB")
+            db.execSQL("ALTER TABLE memories ADD COLUMN embeddingModelId TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN memoryActivityJson TEXT")
+        }
     }
 )

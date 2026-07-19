@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ChipInputField
@@ -53,7 +53,6 @@ fun UserProfileScreen(onBack: () -> Unit) {
     val expertise by vm.expertise.collectAsState()
     val interests by vm.interests.collectAsState()
     val languages by vm.languages.collectAsState()
-    val coding by vm.coding.collectAsState()
     val units by vm.units.collectAsState()
     val avoid by vm.avoid.collectAsState()
     val goals by vm.goals.collectAsState()
@@ -89,20 +88,9 @@ fun UserProfileScreen(onBack: () -> Unit) {
             Text("Languages", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 LanguageOptions.common.forEach { lang ->
-                    FilterChip(
+                    VervanFilterChip(
                         selected = lang in languages,
                         onClick = { vm.toggleLanguage(lang, languages) },
-                        label = { Text(lang) }
-                    )
-                }
-            }
-
-            Text("Coding languages", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                LanguageOptions.coding.forEach { lang ->
-                    FilterChip(
-                        selected = lang in coding,
-                        onClick = { vm.toggleCoding(lang, coding) },
                         label = { Text(lang) }
                     )
                 }
@@ -156,5 +144,4 @@ private fun ProfileField(label: String, value: String, placeholder: String = "",
 
 object LanguageOptions {
     val common = listOf("English", "Spanish", "French", "German", "Hindi", "Chinese", "Japanese", "Arabic", "Portuguese", "Russian")
-    val coding = listOf("Kotlin", "Java", "Python", "JavaScript", "TypeScript", "Swift", "Rust", "Go", "C++", "SQL")
 }

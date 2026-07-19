@@ -146,7 +146,9 @@ fun VervanSearchField(
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp).semantics {
+            contentDescription = placeholder
+        },
         enabled = enabled,
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,

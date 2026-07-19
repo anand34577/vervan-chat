@@ -108,7 +108,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = lan, onCheckedChange = { vm.setLanApiServerEnabled(it) })
+                        Switch(checked = lan, onCheckedChange = { vm.setLanApiServerEnabled(it); if (it) token = vm.apiServerToken })
                     }
                 }
             }
@@ -135,20 +135,24 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("Require an API key", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Requests must include a bearer token. Required for safe Wi-Fi access.",
+                                if (lan) "Always on while Wi-Fi access is enabled — the server never runs open on the network."
+                                else "Requests must include a bearer token.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        // ApiServerService enforces auth whenever LAN exposure is on; mirror that
+                        // here so the switch can't show a state the server will refuse to honor.
                         Switch(
-                            checked = requireAuth,
+                            checked = requireAuth || lan,
+                            enabled = !lan,
                             onCheckedChange = {
                                 vm.setApiServerRequireAuth(it)
                                 if (it) token = vm.apiServerToken
                             }
                         )
                     }
-                    if (requireAuth) {
+                    if (requireAuth || lan) {
                         Text(token, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
                         Row(Modifier.padding(top = 8.dp)) {
                             OutlinedButton(onClick = { clipboard.setSensitiveText(token, scope) }) { Text("Copy") }

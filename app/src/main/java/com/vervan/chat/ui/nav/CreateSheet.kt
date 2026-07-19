@@ -15,7 +15,12 @@ import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -29,11 +34,15 @@ data class CreateAction(val icon: ImageVector, val label: String, val descriptio
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: () -> Unit) {
+    var showAll by rememberSaveable { mutableStateOf(false) }
+    val quickLabels = setOf("New chat", "New note", "New project", "Scan image")
+    val visibleActions = if (showAll) actions else actions.filter { it.label in quickLabels }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg).padding(bottom = Space.md)) {
             Text("Create", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Space.xs))
             Text(
-                "Start content here; other buttons across Vervan are shortcuts into these same flows.",
+                if (showAll) "Choose what you want to create or import." else "Start with a common action.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -42,7 +51,7 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.sm).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            actions.groupBy { it.group }.forEach { (group, groupedActions) ->
+            visibleActions.groupBy { if (showAll) it.group else "Quick start" }.forEach { (group, groupedActions) ->
                 item(key = "group-$group") {
                     VervanSectionHeader(group, modifier = Modifier.padding(horizontal = Space.sm))
                 }
@@ -70,6 +79,14 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
                             }
                         )
                     }
+                }
+            }
+            item(key = "more-actions") {
+                TextButton(
+                    onClick = { showAll = !showAll },
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                ) {
+                    Text(if (showAll) "Show fewer actions" else "More create and import actions")
                 }
             }
         }

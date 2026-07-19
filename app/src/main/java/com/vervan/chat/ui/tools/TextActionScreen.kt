@@ -34,7 +34,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
@@ -279,7 +279,7 @@ fun TextActionScreen(
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 actions.forEach { action ->
-                    FilterChip(
+                    VervanFilterChip(
                         selected = activeLabel == action.label,
                         onClick = { runAction(action) },
                         label = { Text(action.label) },

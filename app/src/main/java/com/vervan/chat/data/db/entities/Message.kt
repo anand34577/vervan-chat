@@ -36,6 +36,9 @@ data class Message(
     // JSON array of {chunkId, documentName, sectionPath, excerpt, score} — org.json,
     // not a real table, because it's display-only provenance for this one message.
     val sourcesJson: String? = null,
+    // Persisted audit of memory context used/saved around this response. Kept on the message so
+    // scrolling back later still shows exactly what the model knew at that turn.
+    val memoryActivityJson: String? = null,
     // {"tool": name, "params": {...}} — set while state == AWAITING_CONFIRMATION, i.e. a
     // reversible-write tool call the model proposed that the user hasn't approved yet.
     val toolCallJson: String? = null,

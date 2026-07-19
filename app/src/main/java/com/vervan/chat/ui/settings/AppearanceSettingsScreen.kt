@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.data.settings.ThemeMode
 
@@ -63,12 +63,12 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
                     Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ThemeMode.entries.forEach { mode ->
-                            FilterChip(
+                            VervanFilterChip(
                                 selected = themeMode == mode,
                                 onClick = { vm.setThemeMode(mode) },
                                 label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }

@@ -16,7 +16,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -43,6 +47,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.ui.common.JobProgressCard
@@ -55,6 +60,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 private enum class DocFilter(val label: String) { ALL("All"), READY("Ready"), PROCESSING("Processing"), FAILED("Failed"), UNSUPPORTED("Unsupported") }
 
@@ -102,19 +111,30 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                     },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = { confirmBulkDeleteDocs = true },
-                    deleteContentDescription = "Delete selected documents"
+                    deleteContentDescription = "Delete selected documents",
+                    extraActions = {
+                        IconButton(
+                            onClick = {
+                                vm.reindexDocuments(selected)
+                                selected = emptySet()
+                                selectionMode = false
+                            },
+                            enabled = selected.isNotEmpty()
+                        ) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index selected documents") }
+                    }
                 )
             } else {
                 TopAppBar(
                     title = { Text("Documents") },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                     actions = {
+                        IconButton(onClick = { selectionMode = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = "Select documents")
+                        }
                         IconButton(onClick = { confirmDeleteKb = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete knowledge base")
                         }
                     }
-                    // Long-press a document row to enter selection mode — no separate
-                    // top-bar entry point, matching every other list screen in the app.
                 )
             }
         }
@@ -145,7 +165,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
             ) {
                 DocFilter.entries.forEach { f ->
-                    FilterChip(
+                    VervanFilterChip(
                         selected = filter == f,
                         onClick = { filter = f },
                         label = { Text("${f.label} (${documents.count { it.status.matchesFilter(f) }})") }
@@ -248,6 +268,7 @@ private fun DocumentRow(
     onEnterSelection: () -> Unit
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var showActions by remember { mutableStateOf(false) }
     val inProgress = document.status !in setOf(DocumentStatus.READY, DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)
     if (inProgress) {
         JobProgressCard(
@@ -266,15 +287,18 @@ private fun DocumentRow(
                 onToggleSelected = onToggleSelected,
                 onEnterSelection = onEnterSelection
             ),
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
+        colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else SurfaceRole.Card.cardColors(),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else SurfaceRole.Card.border()
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode) {
                 Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
+            } else {
+                IconAffordance(Icons.Filled.Description, size = IconAffordanceSize.Default)
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(start = Space.md))
             }
             Column(Modifier.weight(1f)) {
-                Text(document.displayName)
+                Text(document.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 val failed = document.status == DocumentStatus.FAILED || document.status == DocumentStatus.UNSUPPORTED
                 val statusText = when (document.status) {
                     DocumentStatus.READY -> document.failureReason
@@ -294,7 +318,21 @@ private fun DocumentRow(
                 }
             }
             if (!selectionMode) {
-                TextButton(onClick = { confirmDelete = true }) { Text("Delete") }
+                androidx.compose.foundation.layout.Box {
+                    IconButton(onClick = { showActions = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Document actions") }
+                    DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Re-index") },
+                            leadingIcon = { Icon(Icons.Filled.Refresh, null) },
+                            onClick = { showActions = false; onRetry() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { showActions = false; confirmDelete = true }
+                        )
+                    }
+                }
             }
         }
     }
