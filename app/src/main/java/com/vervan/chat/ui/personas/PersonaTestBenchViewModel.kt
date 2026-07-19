@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Persona
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,15 +52,10 @@ class PersonaTestBenchViewModel(private val app: VervanApp, private val personaI
                 }
                 val prompt = "${p.systemInstruction}\n\nUser: ${_samplePrompt.value}\nAssistant:"
                 val sb = StringBuilder()
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) {
-                        engine.load(model.filePath, app.container.settingsRepository.contextTokenLimit.first())
-                    }
-                    engine.generate(prompt).collect { sb.append(it) }
-                }
+                com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { sb.append(it) }
                 _response.value = sb.toString()
             } catch (t: Throwable) {
-                _error.value = "Failed: ${t.message}"
+                _error.value = t.toUserMessage()
             } finally {
                 _running.value = false
             }

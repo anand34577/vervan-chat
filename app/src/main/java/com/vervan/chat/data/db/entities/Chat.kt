@@ -1,10 +1,17 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-@Entity(tableName = "chats")
+@Entity(
+    tableName = "chats",
+    // Every one of these backs a WHERE clause ChatDao actually runs (workspace/folder/project
+    // scoped lists, plus the messages.chatId EXISTS subquery in the main chat-list query relies
+    // on messages' own index, not this one) — see Migration(36, 37).
+    indices = [Index("workspaceId"), Index("folderId"), Index("projectId")]
+)
 data class Chat(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String = "New chat",
@@ -29,7 +36,7 @@ data class Chat(
     val thinkingMode: String = "OFF",
     // Tip of the currently active branch. Null means empty chat (no messages yet).
     val activeLeafId: String? = null,
-    // ponytail: comma-separated KB ids instead of a join table — a chat only ever
+    // comma-separated KB ids instead of a join table — a chat only ever
     // needs "which KBs am I asking against", not a queryable many-to-many. Add a
     // join table if cross-KB reporting ever needs it.
     val knowledgeBaseIds: String = "",
@@ -69,7 +76,17 @@ data class Chat(
     // even if globally enabled. Absent from the map means "inherit the global setting". Same
     // hand-rolled delimited-string shape as knowledgeBaseIds above, for the same reason: this
     // only ever needs "what's this chat's override for tool X", never a queryable join.
-    val toolOverrides: String = ""
+    val toolOverrides: String = "",
+    // Long-chat context management — a running summary of turns older than
+    // [summaryCoversUpToMessageId], generated in the background once history approaches the
+    // model's context budget (see ChatViewModel.maybeSummarizeOlderHistory). Substituted for
+    // the raw dropped turns in buildPromptSections instead of just omitting them outright, so a
+    // long conversation on a small-context model degrades to "knows the gist of what came
+    // before" rather than "forgot everything before the last few turns". Null means no summary
+    // has been generated yet (short chat, or the feature is off) — the old drop-oldest-silently
+    // behavior applies unchanged.
+    val contextSummary: String? = null,
+    val summaryCoversUpToMessageId: String? = null
 ) {
     fun kbIdList(): List<String> = knowledgeBaseIds.split(',').filter { it.isNotBlank() }
 

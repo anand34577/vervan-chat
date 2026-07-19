@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -58,10 +60,14 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
     private val _busyDocumentId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val busyDocumentId: StateFlow<String?> = _busyDocumentId
 
+    private val _error = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
     fun reindexAll() {
         if (_busy.value) return
         viewModelScope.launch {
             _busy.value = true
+            _error.value = null
             try {
                 val docs = documents.value.filter { it.status == DocumentStatus.READY || it.status == DocumentStatus.FAILED }
                 _status.value = "Re-indexing ${docs.size} documents…"
@@ -71,6 +77,9 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
                     app.container.documentImportManager.reindexLocal(doc.id)
                 }
                 _status.value = "Re-indexed ${docs.size} documents."
+            } catch (t: Throwable) {
+                _status.value = null
+                _error.value = t.toUserMessage()
             } finally {
                 _busy.value = false
             }
@@ -82,11 +91,15 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch {
             _busy.value = true
             _busyDocumentId.value = documentId
+            _error.value = null
             try {
                 _status.value = "Re-indexing…"
                 ensureEmbeddingModelLoaded()
                 app.container.documentImportManager.reindexLocal(documentId)
                 _status.value = "Done."
+            } catch (t: Throwable) {
+                _status.value = null
+                _error.value = t.toUserMessage()
             } finally {
                 _busy.value = false
                 _busyDocumentId.value = null
@@ -96,9 +109,10 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
 
     private suspend fun ensureEmbeddingModelLoaded() {
         val active = db.modelDao().getActiveModel(ModelRole.EMBEDDING) ?: return
-        app.container.withEmbedding { engine ->
-            if (engine.loadedModelPath != active.filePath) engine.load(active.filePath, active.tokenizerPath)
-        }
+        val result = app.container.modelLoadCoordinator.ensureLoaded(
+            active, com.vervan.chat.modelload.LoadTrigger.RAG_RETRIEVAL
+        )
+        require(result.success) { result.errorMessage ?: "Embedding model could not be loaded" }
     }
 }
 
@@ -111,6 +125,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
     val status by vm.status.collectAsState()
     val busy by vm.busy.collectAsState()
     val busyDocumentId by vm.busyDocumentId.collectAsState()
+    val error by vm.error.collectAsState()
 
     Scaffold(
         topBar = {
@@ -120,16 +135,29 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(12.dp)) {
-            Text("Re-build the search index after changing the embedding model, or to repair a corrupted index. Existing chunks are replaced.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          Column(Modifier.fillMaxSize().padding(vertical = 8.dp)) {
+            Text("Rebuild after changing the embedding model or to repair search.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
             Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = 8.dp)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                 Text("Re-index all documents")
             }
             if (busy && busyDocumentId == null) {
-                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 8.dp))
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Rebuilding the search index",
+                    body = status ?: "Preparing documents for local search. Keep this screen open.",
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
             }
-            status?.let {
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Index rebuild failed",
+                    message = it,
+                    recovery = "Documents are safe. Check the model and free storage, then try again.",
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            status?.takeIf { !busy }?.let {
                 Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                     Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
                 }
@@ -153,6 +181,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                     }
                 }
             }
+          }
         }
     }
 }

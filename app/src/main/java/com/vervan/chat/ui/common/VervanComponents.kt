@@ -4,8 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -26,8 +30,10 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,12 +51,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanBorderProminence
+import com.vervan.chat.ui.theme.vervanBorder
+import com.vervan.chat.ui.theme.vervanDividerColor
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
 
@@ -60,13 +73,35 @@ enum class StatusTone { Ready, Running, Warning, Error, Info }
 @Composable
 fun PageContainer(
     modifier: Modifier = Modifier,
+    maxContentWidth: Dp = 1040.dp,
     content: @Composable () -> Unit
 ) {
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val horizontalPadding = if (maxWidth < 600.dp) Space.lg else Space.xxl
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 1040.dp).padding(horizontal = horizontalPadding),
+            Modifier.fillMaxWidth().widthIn(max = maxContentWidth).padding(horizontal = horizontalPadding),
         ) { content() }
+    }
+}
+
+/** Standard body for detail, form, settings, and editor screens. It owns the content width,
+ * adaptive gutters, vertical rhythm, and scroll behavior so each destination does not recreate
+ * a slightly different phone-only column. */
+@Composable
+fun ScrollablePage(
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+    maxContentWidth: Dp = 840.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    PageContainer(
+        modifier = modifier.padding(contentPadding),
+        maxContentWidth = maxContentWidth
+    ) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm),
+            content = content
+        )
     }
 }
 
@@ -95,7 +130,7 @@ fun VervanTopAppBar(
             colors = colors,
             scrollBehavior = scrollBehavior
         )
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f))
+        HorizontalDivider(color = vervanDividerColor())
     }
 }
 
@@ -111,7 +146,9 @@ fun VervanSearchField(
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp).semantics {
+            contentDescription = placeholder
+        },
         enabled = enabled,
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,
@@ -155,8 +192,8 @@ fun FeatureHero(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.56f))
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
     ) {
         Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             IconAffordance(
@@ -204,10 +241,11 @@ fun VervanSectionHeader(
     modifier: Modifier = Modifier,
     count: Int? = null,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    topPadding: Dp = Space.lg,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm),
+        modifier = modifier.fillMaxWidth().padding(top = topPadding, bottom = Space.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -301,7 +339,7 @@ fun ActionTile(
         modifier = modifier,
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        border = vervanBorder(VervanBorderProminence.Standard)
     ) {
         Row(
             Modifier.fillMaxWidth().padding(Space.md),
@@ -345,6 +383,65 @@ fun ErrorCard(
         body = body,
         tone = StatusTone.Error,
         modifier = modifier,
+        actionLabel = actionLabel,
+        onAction = onAction
+    )
+}
+
+/** A named, announced busy state for operations that may take more than a moment. */
+@Composable
+fun OperationProgressCard(
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    progress: Float? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text(title, style = MaterialTheme.typography.labelLarge)
+                    Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel) }
+            }
+            progress?.let {
+                LinearProgressIndicator(
+                    progress = { it.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                )
+                Text(
+                    "${(it.coerceIn(0f, 1f) * 100).toInt()}% complete",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+            }
+        }
+    }
+}
+
+/** A failure message that explains both what happened and the next safe action. */
+@Composable
+fun OperationErrorCard(
+    title: String,
+    message: String,
+    recovery: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    ErrorCard(
+        title = title,
+        body = "$message\n$recovery",
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
         actionLabel = actionLabel,
         onAction = onAction
     )
@@ -401,7 +498,14 @@ fun BoundedTextField(
     enabled: Boolean = true
 ) {
     val count = value.length
+    // `value` can still exceed maxLength if it was set from outside this field (e.g. loaded
+    // from a DB row written before this cap existed) — isError/overLimit stays keyed on that
+    // raw count so pre-existing oversized data is still flagged, but new input is clamped below
+    // so a fresh keystroke or paste can never grow it further. `atLimit` (using the clamped
+    // length) drives the "Limit reached" message so the user sees it exactly when clamping
+    // kicks in, not only in the legacy over-limit case.
     val overLimit = count > maxLength
+    val atLimit = count >= maxLength
     val nearLimit = count >= (maxLength * 0.8f).toInt()
     val counterColor = when {
         overLimit -> MaterialTheme.colorScheme.error
@@ -410,7 +514,9 @@ fun BoundedTextField(
     }
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { newValue ->
+            onValueChange(if (newValue.length > maxLength) newValue.take(maxLength) else newValue)
+        },
         modifier = modifier,
         label = label?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it) } },
@@ -425,9 +531,9 @@ fun BoundedTextField(
         supportingText = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (overLimit) "Limit reached. Shorten this text before saving or sending." else supportingText.orEmpty(),
+                    if (atLimit) "Limit reached. Shorten this text before saving or sending." else supportingText.orEmpty(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (overLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (atLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
                 Text(

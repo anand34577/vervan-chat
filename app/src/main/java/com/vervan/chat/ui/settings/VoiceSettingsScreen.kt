@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -21,6 +22,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,7 +37,7 @@ import com.vervan.chat.VervanApp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
+fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
@@ -44,6 +46,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
     val ttsEnginePreference by vm.ttsEnginePreference.collectAsState()
     val kokoroQualityEnabled by vm.kokoroQualityEnabled.collectAsState()
     val bargeInEnabled by vm.bargeInEnabled.collectAsState()
+    val inbuiltSttEnabled by vm.inbuiltSttEnabled.collectAsState()
     val downloadedVoiceModels by vm.downloadedVoiceModels.collectAsState()
     val activeVoiceDownloadJobs by vm.activeVoiceDownloadJobs.collectAsState()
 
@@ -57,9 +60,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+        ScrollablePage(padding) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Read-aloud speed", style = MaterialTheme.typography.bodyMedium)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
@@ -78,11 +81,11 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Which text-to-speech engine the realtime voice chat pipeline uses. Auto tries Piper, then the device's built-in engine.",
+                        "Choose the voice engine. Auto tries Piper, then the device voice.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
@@ -99,7 +102,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                         Column(Modifier.weight(1f)) {
                             Text("Higher quality voice (slower)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Kokoro sounds noticeably better than Piper but can take 2-3 minutes of processing per minute of speech on budget devices — never used automatically, only when explicitly selected above.",
+                                "Kokoro sounds better but can be much slower on budget devices.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -110,7 +113,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                         Column(Modifier.weight(1f)) {
                             Text("Interrupt by speaking (barge-in)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Talk over a reply to cut it off, like a phone call. Needs hardware echo cancellation — falls back to a tap-to-interrupt button on devices without it.",
+                                "Speak to interrupt a reply. Unsupported devices use a Stop button.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -119,11 +122,49 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+                    Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Uses the active model first, then the fallback selected below.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Use offline speech-to-text model", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Use downloaded Whisper when available; otherwise use device speech recognition.",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = inbuiltSttEnabled, onCheckedChange = { vm.setInbuiltSttEnabled(it) })
+                    }
+                    androidx.compose.material3.TextButton(
+                        onClick = onOpenModelManager,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) { Text("Download Whisper in Model Manager") }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Voice models", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Downloaded once and cached on-device. Without these, realtime voice chat falls back to the device's built-in text-to-speech.",
+                        "Manage downloaded Hindi and English voices in Model Manager. Device speech is the fallback.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.TextButton(
+                        onClick = onOpenModelManager,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) { Text("Open Model Manager") }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+                    Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Download the optional Kokoro voice here.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     com.vervan.chat.voice.TtsVoiceCatalog.entries.forEach { entry ->
@@ -145,10 +186,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            if (!downloaded && activeJob == null) {
-                                androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
-                            } else if (activeJob != null) {
-                                androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            when {
+                                downloaded -> IconButton(onClick = { vm.deleteVoiceModel(entry) }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete downloaded voice")
+                                }
+                                activeJob != null -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                else -> androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
                             }
                         }
                     }

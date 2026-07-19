@@ -42,9 +42,11 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
         .map { it?.name }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    suspend fun createChat(): String {
+    /** [draft], when non-blank, lands pre-filled in the new chat's composer — the Home hero's
+     * quick-ask field routes through this so typing starts on Home and finishes in the chat. */
+    suspend fun createChat(draft: String = ""): String {
         val chat = app.container.workspaceManager.applyDefaults(
-            Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+            Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first(), draft = draft.trim())
         )
         db.chatDao().upsert(chat)
         return chat.id

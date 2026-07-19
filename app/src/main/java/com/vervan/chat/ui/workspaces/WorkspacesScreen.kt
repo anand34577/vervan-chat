@@ -63,6 +63,10 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.foundation.BorderStroke
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,20 +120,18 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
             FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New workspace") }
         }
     ) { padding ->
-        LazyColumn(Modifier.fillMaxWidth().padding(padding).padding(8.dp)) {
+        PageContainer(Modifier.padding(padding)) {
+          LazyColumn(Modifier.fillMaxWidth()) {
             item {
-                // Phase E copy fix — disambiguates the container hierarchy, which the DB
-                // relationship already enforces (workspaceId is a FK on chats/folders/
-                // documents) but was never actually said anywhere in the UI.
-                Text(
-                    "A workspace holds its own chats, folders, and documents — Projects live inside a workspace " +
-                        "too, grouping specific chats/notes/files around one goal. Switch workspaces for a hard " +
-                        "separation (e.g. Personal vs. Work); use Projects within one for day-to-day organization.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)
+                FeatureHero(
+                    icon = Icons.Filled.Dashboard,
+                    eyebrow = "Separate contexts",
+                    title = "Your workspaces",
+                    body = "Separate personal, work, and research content and defaults.",
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
+            item { VervanSectionHeader("Active workspaces", count = workspaces.size, actionLabel = "New", onAction = { showCreate = true }) }
             items(workspaces, key = { it.id }) { workspace ->
                 WorkspaceCard(
                     workspace = workspace,
@@ -181,6 +183,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                     }
                 }
             }
+          }
         }
     }
 
@@ -198,7 +201,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
     pendingDelete?.let { workspace ->
         ConfirmDialog(
             title = "Delete workspace forever?",
-            body = "\"${workspace.name}\" and all of its chats, folders, and documents will be permanently deleted. This can't be undone.",
+            body = "Permanently delete \"${workspace.name}\" and all its content?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = { vm.delete(workspace); pendingDelete = null },
@@ -210,7 +213,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
         val toDelete = selectableWorkspaces.filter { it.id in selected }
         ConfirmDialog(
             title = "Delete selected workspaces forever?",
-            body = "${toDelete.size} workspace${if (toDelete.size == 1) "" else "s"} and all of their chats, folders, and documents will be permanently deleted. This can't be undone.",
+            body = "Permanently delete ${toDelete.size} workspace${if (toDelete.size == 1) "" else "s"} and all their content?",
             confirmLabel = "Delete forever",
             destructive = true,
             onConfirm = {

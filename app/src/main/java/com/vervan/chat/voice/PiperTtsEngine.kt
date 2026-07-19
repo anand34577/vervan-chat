@@ -1,6 +1,7 @@
 package com.vervan.chat.voice
 
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
+import java.io.File
 
 /**
  * Wraps sherpa-onnx offline TTS running Piper `hi_IN` and `en_IN` VITS voices — the fallback
@@ -10,7 +11,7 @@ import com.vervan.chat.data.db.dao.TtsVoiceModelDao
  * else -> English voice. Code-mixed sentences route by whichever script dominates — a v1
  * heuristic, not per-word switching (revisit only if real usage shows it's a problem).
  *
- * ponytail: sherpa-onnx's real `OfflineTts`/`OfflineTtsVitsModelConfig` Kotlin API is isolated
+ * sherpa-onnx's real `OfflineTts`/`OfflineTtsVitsModelConfig` Kotlin API is isolated
  * to this file — confirm exact field names/required files (Piper VITS voices typically need
  * `model.onnx` + `tokens.txt` + an `espeak-ng-data` directory for phonemization) against the
  * actual AAR at first Gradle sync. [TtsVoiceModel.filePath] is treated as a per-voice
@@ -41,10 +42,16 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
     }
 
     private fun loadVoice(voiceDir: String): com.k2fsa.sherpa.onnx.OfflineTts {
+        // MMS-TTS voices (the current Hindi/English default catalog — see
+        // com.vervan.chat.modeldownload.ModelCatalog) ship with no espeak-ng-data at all; only a
+        // "real" Piper voice needs it for phonemization. Checking for the directory's actual
+        // presence (rather than a hardcoded catalog flag) works for either voice shape through
+        // the same code path.
+        val espeakDataDir = File(voiceDir, "espeak-ng-data")
         val vits = com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig(
             model = "$voiceDir/model.onnx",
             tokens = "$voiceDir/tokens.txt",
-            dataDir = "$voiceDir/espeak-ng-data",
+            dataDir = if (espeakDataDir.isDirectory) espeakDataDir.path else "",
             lengthScale = 1.0f
         )
         val config = com.k2fsa.sherpa.onnx.OfflineTtsConfig(
@@ -56,7 +63,16 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
         // AssetManager argument is null — OfflineTts branches on that internally
         // (newFromAsset vs. newFromFile). Real Kotlin parameter names for this constructor
         // weren't visible via javap on the compiled AAR, hence positional over named.
-        return com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        val tts = com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        // Constructing successfully doesn't guarantee the engine can actually synthesize (a bad
+        // provider/NNAPI combo can "load" fine and fail at generate time) — run one real
+        // synthesis call before trusting a candidate rather than only trusting the constructor.
+        val selfTest = tts.generate("test", 0, 1.0f)
+        if (selfTest.samples.isEmpty()) {
+            tts.release()
+            throw IllegalStateException("Voice loaded but self-test synthesis produced no audio")
+        }
+        return tts
     }
 
     override suspend fun synthesize(text: String, lang: String): TtsAudio {

@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
  * job is to hold foreground priority + an ongoing notification for as long as something is
  * actually active, and to run [ModelDownloadRepository.recoverOnStartup] once per process start.
  *
- * ponytail: this is the one mechanism for background execution on every Android version here,
+ * this is the one mechanism for background execution on every Android version here,
  * rather than branching to a separate user-initiated-data-transfer job API on 14+ — a foreground
  * service already satisfies the real requirements (survives backgrounding, ongoing notification
  * with actions, reconciles on restart); the newer API mainly trades a little battery-attribution

@@ -15,13 +15,15 @@ import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.vervan.chat.modelload.GenerationLoadable
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 
-class LlmEngine(private val context: Context) {
+class LlmEngine(private val context: Context) : GenerationLoadable {
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null
@@ -32,19 +34,45 @@ class LlmEngine(private val context: Context) {
     private var generateCallCounter = 0
     private val sendInFlight = AtomicBoolean(false)
     private val stoppedSinceLastSend = AtomicBoolean(false)
-    var loadedModelPath: String? = null
+    private data class LoadKey(
+        val modelPath: String,
+        val maxTokens: Int,
+        val maxNumImages: Int,
+        val backendPreference: BackendPreference,
+        val speculativeDecoding: Boolean
+    )
+    private var loadedKey: LoadKey? = null
+    override var loadedModelPath: String? = null
         private set
-    var activeBackend: ModelBackend = ModelBackend.UNVERIFIED
+    override val loadedContextTokens: Int? get() = loadedKey?.maxTokens
+    override var activeBackend: ModelBackend = ModelBackend.UNVERIFIED
         private set
-    var visionEnabled: Boolean = false
+    override var visionEnabled: Boolean = false
         private set
-    var audioEnabled: Boolean = false
+    override var audioEnabled: Boolean = false
+        private set
+    // True only when a degraded load *proved* the modality is missing from the model package
+    // (see the ladder in load()) — consumed by ModelLoadCoordinator's reconcileCapabilities call
+    // so transient failures don't permanently latch supportsAudio/supportsVision = false.
+    var audioProvenUnsupported: Boolean = false
+        private set
+    var visionProvenUnsupported: Boolean = false
         private set
     // Whether the currently-loaded model actually ran with MTP (speculative decoding) active —
     // distinct from [ModelInfo.mtpSupported]/[ModelInfo.mtpEnabled], which are the detected
     // capability and the user's on/off choice; this is what actually happened on this load.
-    var speculativeDecodingActive: Boolean = false
+    override var speculativeDecodingActive: Boolean = false
         private set
+
+    /**
+     * Set by `ModelLoadCoordinator.doLoadGeneration` immediately before calling [loadModel], for
+     * exactly the duration of that single call — mirrors [LlamaCppEngine.pendingMmprojPath]'s
+     * side-channel pattern, since [GenerationLoadable]'s shared signature has no room for an
+     * engine-specific "capabilities already known from a prior load" hint. Not thread-hazardous:
+     * every load for this engine already runs under the coordinator's own engine mutex.
+     */
+    var pendingKnownAudioSupported: Boolean? = null
+    var pendingKnownVisionSupported: Boolean? = null
 
     enum class ModelBackend { GPU, CPU, NPU, UNVERIFIED }
     enum class BackendPreference { AUTO, GPU_ONLY, CPU_ONLY, NPU_ONLY }
@@ -74,10 +102,19 @@ class LlmEngine(private val context: Context) {
         preferredBackendHint: ModelBackend? = null,
         // Only takes effect on the GPU backend attempt, matching LiteRT-LM's own MTP support
         // surface — CPU/NPU decoding doesn't have a speculative-decoding path today.
-        enableSpeculativeDecoding: Boolean = false
+        enableSpeculativeDecoding: Boolean = false,
+        // null = unknown, probe for it as usual (first-ever load). false = a previous load
+        // attempt on this exact model already proved the capability isn't there (see
+        // ModelInfo.reconcileCapabilities) — skip straight past the doomed attempt instead of
+        // paying for a full GPU engine init (OpenCL shader compile, ~9s) just to watch it fail
+        // with the same NOT_FOUND every time this model loads.
+        knownAudioSupported: Boolean? = null,
+        knownVisionSupported: Boolean? = null
     ): LoadResult {
+        require(File(modelPath).isFile) { "Model file does not exist: $modelPath" }
+        val requestedKey = LoadKey(modelPath, maxTokens, maxNumImages, backendPreference, enableSpeculativeDecoding)
         Log.i(TAG, "load() requested: ${File(modelPath).name}, maxTokens=$maxTokens, maxNumImages=$maxNumImages, backendPreference=$backendPreference, preferredBackendHint=$preferredBackendHint")
-        if (loadedModelPath == modelPath && engine != null && conversation != null && !stoppedSinceLastSend.get()) {
+        if (loadedKey == requestedKey && engine != null && conversation != null && !stoppedSinceLastSend.get()) {
             Log.i(TAG, "load() short-circuit: '${File(modelPath).name}' already loaded on $activeBackend, reusing")
             return LoadResult(activeBackend, fellBackToCpu = false)
         }
@@ -105,15 +142,30 @@ class LlmEngine(private val context: Context) {
         Log.i(TAG, "load() backend attempt order: ${backendOrder.map { it.name }}")
         var gpuFailed = false
         var lastError: Throwable? = null
+        audioProvenUnsupported = false
+        visionProvenUnsupported = false
         // Try each backend at full capability (vision + audio) first, then the same backend
         // with audio dropped, then with vision dropped too — a model whose .task/.litertlm
         // package has no audio (or vision) encoder can fail Engine.initialize() outright when
         // an unsupported modality backend is requested, and previously we asked for
         // audioBackend unconditionally on every load regardless of what the model actually
         // supports. This mirrors spec §2.5's graceful-degradation principle instead of treating
-        // that as a hard failure and moving straight to the next hardware backend.
+        // that as a hard failure and moving straight to the next hardware backend. A modality
+        // already proven absent on a prior load (knownAudioSupported/knownVisionSupported ==
+        // false) skips its doomed attempt entirely rather than re-discovering the same failure.
+        val capabilitiesToTry = buildList {
+            if (knownAudioSupported != false) add(Capability.FULL)
+            if (knownVisionSupported != false) add(Capability.NO_AUDIO)
+            add(Capability.TEXT_ONLY)
+        }
         for (backend in backendOrder) {
-            for (capability in listOf(Capability.FULL, Capability.NO_AUDIO, Capability.TEXT_ONLY)) {
+            // Per-backend record of why the richer capability tiers failed — a degraded success
+            // on the SAME backend right after a modality-specific (NOT_FOUND) failure is proof
+            // the model package lacks that modality; any other failure reason is treated as
+            // transient so the next load retries the full capability.
+            var fullFailedModalityMissing = false
+            var noAudioFailedModalityMissing = false
+            for (capability in capabilitiesToTry) {
                 // Try with MTP first (if requested and on GPU), then retry the same backend/
                 // capability without it — a GPU init failure caused specifically by speculative
                 // decoding shouldn't take the whole GPU backend out of the running, it should
@@ -134,13 +186,17 @@ class LlmEngine(private val context: Context) {
                                 visionBackend = if (maxNumImages > 0 && capability != Capability.TEXT_ONLY) Backend.GPU() else null,
                                 audioBackend = if (capability == Capability.FULL) Backend.CPU() else null,
                                 maxNumTokens = maxTokens,
+                                maxNumImages = maxNumImages.takeIf { it > 0 },
                                 cacheDir = context.cacheDir.absolutePath
                             )
                         )
-                        newEngine.initialize()
+                        // Keep ownership before initialize so a partial native initialization is
+                        // still released by close() if initialize/createConversation throws.
                         engine = newEngine
+                        newEngine.initialize()
                         conversation = newEngine.createConversation(ConversationConfig())
                         loadedModelPath = modelPath
+                        loadedKey = requestedKey
                         activeBackend = when (backend) {
                             is Backend.GPU -> ModelBackend.GPU
                             is Backend.NPU -> ModelBackend.NPU
@@ -148,6 +204,8 @@ class LlmEngine(private val context: Context) {
                         }
                         visionEnabled = capability != Capability.TEXT_ONLY && maxNumImages > 0
                         audioEnabled = capability == Capability.FULL
+                        if (capability != Capability.FULL) audioProvenUnsupported = fullFailedModalityMissing
+                        if (capability == Capability.TEXT_ONLY) visionProvenUnsupported = noAudioFailedModalityMissing
                         speculativeDecodingActive = useMtp
                         stoppedSinceLastSend.set(false)
                         Log.i(
@@ -160,17 +218,21 @@ class LlmEngine(private val context: Context) {
                         close()
                         lastError = e
                         if (backend is Backend.GPU) gpuFailed = true
+                        val modalityMissing = e.message?.contains("NOT_FOUND", ignoreCase = true) == true
+                        if (capability == Capability.FULL) fullFailedModalityMissing = modalityMissing
+                        if (capability == Capability.NO_AUDIO) noAudioFailedModalityMissing = modalityMissing
                         Log.w(
                             TAG,
                             "load() FAILED ${backend.name} ($capability) for ${File(modelPath).name} after " +
                                 "${System.currentTimeMillis() - attemptStart}ms: ${e::class.simpleName}: ${e.message}",
                             e
                         )
+                    } finally {
+                        ExperimentalFlags.enableSpeculativeDecoding = false
                     }
                 }
             }
         }
-        ExperimentalFlags.enableSpeculativeDecoding = false
         Log.e(TAG, "load() exhausted all backends for ${File(modelPath).name} with preference=$backendPreference", lastError)
         throw IllegalStateException(
             "Could not load '${File(modelPath).name}' with LiteRT-LM. Error: ${lastError?.message ?: lastError ?: "unknown error"}",
@@ -187,7 +249,16 @@ class LlmEngine(private val context: Context) {
         temperature: Float = 0.8f,
         topP: Float = 0.95f,
         topK: Int = 40,
-        randomSeed: Int? = null
+        randomSeed: Int? = null,
+        // Routed into ConversationConfig.systemInstruction below — the SDK has a real system-role
+        // channel (see [Role.SYSTEM]/[com.google.ai.edge.litertlm.Message.Companion.system]) that
+        // this app previously never used, instead folding persona/tool/memory/thinking-mode
+        // instructions into the same plain [prompt] text as the actual question. System content
+        // gets materially different trust/priority than user content from an instruction-tuned
+        // model, so this is why per-chat behavior overrides (e.g. disabling thinking) could be
+        // set and persist correctly yet have no visible effect: the instruction asking for it was
+        // never distinguished from ordinary conversation text.
+        systemPrompt: String? = null
     ): Flow<String> = callbackFlow flow@{
         val conv = conversation ?: run {
             Log.e(TAG, "generate() called with no model loaded")
@@ -201,7 +272,11 @@ class LlmEngine(private val context: Context) {
             // another full Bitmap allocation and PNG recompression on every generation.
             contents += Content.ImageBytes(image.readBytes())
         }
-        audioPath?.let { path -> contents += Content.AudioBytes(File(path).readBytes()) }
+        audioPath?.let { path ->
+            val audio = File(path).takeIf { it.isFile }
+                ?: throw IllegalStateException("Could not read audio at $path")
+            contents += Content.AudioBytes(audio.readBytes())
+        }
         if (prompt.isNotBlank()) contents += Content.Text(prompt)
 
         val sampler = SamplerConfig(
@@ -228,7 +303,12 @@ class LlmEngine(private val context: Context) {
         // the upstream reference implementation's closeConversationAsync avoids blocking on a
         // native session that might still be unwinding.
         val previousConversation = conversation
-        conversation = engine?.createConversation(ConversationConfig(samplerConfig = sampler))
+        conversation = engine?.createConversation(
+            ConversationConfig(
+                systemInstruction = systemPrompt?.takeIf { it.isNotBlank() }?.let { Contents.of(it) },
+                samplerConfig = sampler
+            )
+        )
         if (previousConversation != null) {
             Thread {
                 runCatching { previousConversation.close() }
@@ -280,9 +360,32 @@ class LlmEngine(private val context: Context) {
                 runCatching { activeConversation.cancelProcess() }
             }
         }
+        // Unbounded buffer: the native callback delivers tokens faster than the collector's
+        // Room-persist cycle can drain during bursts, and callbackFlow's default 64-slot buffer
+        // makes trySend silently DROP overflowing tokens — visibly missing words mid-response.
+    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    override fun loadModel(
+        modelPath: String,
+        maxTokens: Int,
+        maxNumImages: Int,
+        backendPreference: BackendPreference,
+        preferredBackendHint: ModelBackend?,
+        enableSpeculativeDecoding: Boolean
+    ): LoadResult {
+        // MediaPipe/LiteRT-LM ships no 32-bit native libs — on an armeabi-v7a-only device the
+        // first native call dies with UnsatisfiedLinkError. Fail up front with an actionable
+        // message instead (GGUF models via llama.cpp remain the 32-bit path).
+        check(android.os.Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) {
+            "LiteRT-LM models need a 64-bit device. On this device, use a GGUF model instead."
+        }
+        return load(
+            modelPath, maxTokens, maxNumImages, backendPreference, preferredBackendHint, enableSpeculativeDecoding,
+            knownAudioSupported = pendingKnownAudioSupported, knownVisionSupported = pendingKnownVisionSupported
+        )
     }
 
-    fun close() {
+    override fun close() {
         // Read into a local val instead of a separate null-check + `!!` — a concurrent close()
         // on another thread could null loadedModelPath between the two, which would NPE here.
         // All current callers happen to hold llmMutex/tryLock, so this was latent, not live, but
@@ -293,6 +396,7 @@ class LlmEngine(private val context: Context) {
         conversation = null
         engine = null
         loadedModelPath = null
+        loadedKey = null
         activeBackend = ModelBackend.UNVERIFIED
         visionEnabled = false
         audioEnabled = false
@@ -303,6 +407,13 @@ class LlmEngine(private val context: Context) {
     private fun close(error: Throwable) {
         Log.e(TAG, "LiteRT-LM generation failed", error)
         close()
+    }
+
+    override fun cancelActiveGeneration() {
+        if (sendInFlight.getAndSet(false)) {
+            stoppedSinceLastSend.set(true)
+            runCatching { conversation?.cancelProcess() }
+        }
     }
 
     companion object {

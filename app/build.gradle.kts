@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -7,9 +9,49 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// llama.cpp (GGUF) backend support — optional, machine-local. `llamacpp.dir` in local.properties
+// (uncommitted, same convention as `sdk.dir`) points at a llama.cpp checkout that's already been
+// built for Android separately (this project does not build llama.cpp itself — see
+// app/src/main/cpp/CMakeLists.txt). Absent property -> the whole native target is skipped, so a
+// checkout without llama.cpp built still compiles/runs everything else normally.
+val localProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
+val llamaCppLibsDir = llamaCppDir?.let { "$it/build-android/bin" }
+val llamaCppRequiredFiles = listOf(
+    "include/llama.h",
+    "build-android/bin/libllama.so",
+    "build-android/bin/libggml.so",
+    "build-android/bin/libggml-base.so",
+    "build-android/bin/libggml-cpu.so",
+    "build-android/bin/libggml-vulkan.so"
+)
+val llamaCppAvailable = llamaCppDir?.let { dir ->
+    llamaCppRequiredFiles.all { File(dir, it).isFile }
+} == true
+val llamaCppVisionAvailable = llamaCppAvailable && File(llamaCppDir!!, "build-android/bin/libmtmd.so").isFile
+// Optional 32-bit llama.cpp build — `llamacpp.dir32` in local.properties points at a second
+// llama.cpp checkout/build made with -DANDROID_ABI=armeabi-v7a. When present, the APK also ships
+// armeabi-v7a so 32-bit devices can install and run GGUF models. LiteRT-LM (MediaPipe) is
+// 64-bit-only upstream, so 32-bit devices get llama.cpp only (guarded at runtime in LlmEngine).
+val llamaCpp32Dir: String? = localProperties.getProperty("llamacpp.dir32")
+val llamaCpp32LibsDir = llamaCpp32Dir?.let { "$it/build-android/bin" }
+val llamaCpp32Available = llamaCpp32Dir?.let { dir ->
+    llamaCppRequiredFiles.filter { it.endsWith(".so") }.all { File(dir, it).isFile }
+} == true
+if (llamaCpp32Dir != null && !llamaCpp32Available) {
+    logger.warn("llamacpp.dir32 is set, but its .so files are missing; 32-bit GGUF support is disabled.")
+}
+if (llamaCppDir != null && !llamaCppAvailable) {
+    logger.warn("llamacpp.dir is set, but required headers/libraries are missing; GGUF support is disabled for debug builds.")
+}
+
 android {
     namespace = "com.vervan.chat"
     compileSdk = 35
+    ndkVersion = "28.1.13356709"
 
     defaultConfig {
         applicationId = "com.vervan.chat"
@@ -17,11 +59,58 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
+        buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
+
+        // armeabi-v7a is always packaged so 32-bit devices can install; on them LiteRT-LM is
+        // unavailable (MediaPipe ships no 32-bit libs) and GGUF works only if a 32-bit llama.cpp
+        // build was supplied via llamacpp.dir32.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        if (llamaCppAvailable) {
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf(
+                        "-DLLAMA_CPP_DIR=$llamaCppDir",
+                        "-DLLAMA_CPP_LIBS_DIR=$llamaCppLibsDir",
+                        "-DLLAMA_CPP_LIBS32_DIR=${llamaCpp32LibsDir ?: ""}",
+                        "-DANDROID_STL=c++_shared"
+                    )
+                    // The JNI bridge links against the prebuilt libllama for its ABI — only build
+                    // it for ABIs we actually have llama.cpp libs for.
+                    abiFilters += "arm64-v8a"
+                    if (llamaCpp32Available) abiFilters += "armeabi-v7a"
+                }
+            }
+        }
+    }
+
+    if (llamaCppAvailable) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Shrinking only — obfuscation is disabled in proguard-rules.pro because crash
+            // reporting is on-device plain text (CrashLogManager) with no retrace step.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    testOptions {
+        unitTests {
+            // Plain JVM unit tests (testDebugUnitTest) run without the real Android framework —
+            // any unmocked android.* call (e.g. Log.w/Log.e) throws instead of no-opping unless
+            // this is set. Coordinator logic increasingly logs on its failure/warning paths
+            // (§9/§11 diagnostics), so tests exercising those paths need this to run at all.
+            isReturnDefaultValues = true
         }
     }
 
@@ -32,21 +121,11 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
-    // ponytail: the "not compatible with 16 KB devices" warning traces to exactly one
-    // bundled .so — libmediapipe_tasks_text_jni.so from tasks-text:0.10.21 (embeddings),
-    // whose LOAD segments are 4 KB-aligned; verified with the NDK's llvm-readelf that every
-    // other native lib here (tasks-genai, MLKit OCR, AndroidX) is already 16 KB-aligned.
-    // 0.10.21 is the only tasks-text build in the offline cache, so there's no newer,
-    // aligned build to pull in yet. Forcing legacy (compressed, extract-on-install)
-    // packaging sidesteps the check entirely — Google's own 16 KB guidance notes
-    // extractNativeLibs="true" APKs aren't subject to it, since libs land on disk at
-    // install time instead of being mmap'd straight out of the APK. Costs a bit of app
-    // size and first-install extraction time; revert once tasks-text ships 16 KB-aligned.
     packaging {
         jniLibs {
-            useLegacyPackaging = true
             // LiteRT-LM bundles LiteRT native libs for generation, and the standalone LiteRT
             // runtime bundles the newer copies needed by raw EmbeddingGemma. Package the first
             // resolved set; assemble verification checks libLiteRt.so stays the 2.1.6 library.
@@ -60,6 +139,17 @@ android {
     androidResources {
         noCompress += listOf("onnx")
     }
+}
+
+val verifyLlamaCppRelease by tasks.registering {
+    doLast {
+        check(llamaCppAvailable) {
+            "Release builds require a complete llama.cpp Android/Vulkan build. Set llamacpp.dir in local.properties."
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(verifyLlamaCppRelease)
 }
 
 kotlin {
@@ -113,7 +203,7 @@ dependencies {
     // only loads Task Bundle-packaged models. A raw exported .tflite graph (no bundled
     // tokenizer/metadata) needs the plain TFLite Interpreter instead, which EmbeddingEngine
     // falls back to (see EmbeddingEngine.kt / RawTfliteEmbedder.kt).
-    implementation("com.google.mediapipe:tasks-text:0.10.21")
+    implementation("com.google.mediapipe:tasks-text:0.10.35")
     // Raw EmbeddingGemma exports use newer TFLite ops (for example EMBEDDING_LOOKUP v4).
     // The legacy org.tensorflow:tensorflow-lite line stops at 2.16.1, which cannot load them,
     // so use the current LiteRT runtime. It preserves the org.tensorflow.lite Java API.
@@ -168,6 +258,10 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.2")
 
     testImplementation("junit:junit:4.13.2")
+    // Android's android.jar ships org.json as a throwing stub (real parsing is stripped out),
+    // so plain JVM unit tests that exercise JSONObject parsing (ToolCallParserTest) need the
+    // real reference implementation on the test classpath instead.
+    testImplementation("org.json:json:20240303")
 
     // Settings storage
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -189,4 +283,30 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Copies the user's separately-built llama.cpp shared libraries into jniLibs so they actually
+// land in the APK — Gradle's CMake integration only auto-packages libraries *built* by this
+// project's own CMake invocation; these are IMPORTED (prebuilt elsewhere), so they need this
+// explicit copy step, same loose-.so-under-jniLibs/ precedent this repo already uses for
+// LiteRT-LM's supplementary accelerator libraries. No-op (and no error) when llamacpp.dir isn't
+// set, or when the expected .so files aren't there yet (e.g. build still in progress).
+tasks.register<Copy>("syncLlamaCppLibs") {
+    onlyIf { llamaCppLibsDir != null && file(llamaCppLibsDir).exists() }
+    from(llamaCppLibsDir ?: ".") {
+        include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+    }
+    into("src/main/jniLibs/arm64-v8a")
+}
+
+tasks.register<Copy>("syncLlamaCppLibs32") {
+    onlyIf { llamaCpp32Available }
+    from(llamaCpp32LibsDir ?: ".") {
+        include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+    }
+    into("src/main/jniLibs/armeabi-v7a")
+}
+
+tasks.named("preBuild") {
+    dependsOn("syncLlamaCppLibs", "syncLlamaCppLibs32")
 }

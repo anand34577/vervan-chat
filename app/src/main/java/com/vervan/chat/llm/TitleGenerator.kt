@@ -18,7 +18,6 @@ object TitleGenerator {
      * conversation content to summarize yet — callers must leave the existing title alone. */
     suspend fun generate(app: VervanApp, chatId: String): String? {
         val db = app.container.db
-        val engine = app.container.llmEngine
         val allMessages = db.messageDao().getMessages(chatId)
         val chat = db.chatDao().getChat(chatId) ?: return null
         val history = BranchUtil.pathTo(allMessages, chat.activeLeafId)
@@ -26,7 +25,11 @@ object TitleGenerator {
         // §21 "Empty or minimal chat" — skip rather than title off a single message.
         if (history.count { it.role == MessageRole.ASSISTANT } < 1 || history.size < 2) return null
 
-        val model = db.modelDao().getActiveModel(ModelRole.GENERATION) ?: return null
+        // Honor a per-chat model pin (Chat.modelId) before the app-wide active model, so the
+        // model this resolves — and passes to OneShotLlm below — is the one the chat actually
+        // just generated with and that is still resident.
+        val model = chat.modelId?.let { id -> db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION } }
+            ?: db.modelDao().getActiveModel(ModelRole.GENERATION) ?: return null
         // §21 "Context too large" — recent meaningful exchanges only, not the full transcript.
         val transcript = history.takeLast(10).joinToString("\n") { m ->
             "${if (m.role == MessageRole.USER) "User" else "Assistant"}: ${m.content.take(500)}"
@@ -36,11 +39,10 @@ object TitleGenerator {
             "\"New Chat\" or \"Conversation\". Respond with ONLY the title text, nothing else.\n\n" +
             "Conversation:\n$transcript"
 
-        var raw = ""
-        app.container.withLlm {
-            if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-            engine.generate(prompt).collect { raw += it }
-        }
+        // Pass the chat's resolved model (honoring a per-chat Chat.modelId override), not the
+        // app-wide active one — titling runs right after that model generated the reply, so this
+        // reuses the resident model instead of swapping to the global default.
+        val raw = OneShotLlm.run(app, prompt, model = model) ?: return null
         val title = raw.trim().trim('"', '“', '”').lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().take(80)
         return title.ifBlank { null }
     }

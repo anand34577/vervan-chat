@@ -32,6 +32,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bargeInEnabled: StateFlow<Boolean> = settings.bargeInEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val inbuiltSttEnabled: StateFlow<Boolean> = settings.inbuiltSttEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     // ---- Realtime voice — Piper/Kokoro voice model downloads ----
     val downloadedVoiceModels: StateFlow<List<com.vervan.chat.data.db.entities.TtsVoiceModel>> =
@@ -45,10 +47,16 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
             app.container.ttsModelDownloadManager.downloadArchiveVoice(entry.engine, entry.language, entry.label, entry.archiveUrl)
         }
     }
+    fun deleteVoiceModel(entry: com.vervan.chat.voice.TtsVoiceCatalogEntry) {
+        viewModelScope.launch { app.container.ttsModelDownloadManager.deleteVoice(entry.engine, entry.language) }
+    }
     val fontScale: StateFlow<Float> = settings.fontScale
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
     val contextTokenLimit: StateFlow<Int> = settings.contextTokenLimit
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4096)
+    val autoContextSummarization: StateFlow<Boolean> = settings.autoContextSummarization
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    fun setAutoContextSummarization(v: Boolean) { viewModelScope.launch { settings.setAutoContextSummarization(v) } }
     val responseLength: StateFlow<String> = settings.responseLength
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "BALANCED")
     val responseTone: StateFlow<String> = settings.responseTone
@@ -57,10 +65,20 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topP = settings.topP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.95f)
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
-    val autoLoadDefaultModel = settings.autoLoadDefaultModel.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val allowLowMemoryModelLoads = settings.allowLowMemoryModelLoads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
+    val minP = settings.minP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.05f)
+    val repetitionPenalty = settings.repetitionPenalty.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.1f)
+    val maxOutputTokens = settings.maxOutputTokens.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 512)
+    val cpuThreads = settings.cpuThreads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val nBatch = settings.nBatch.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2048)
+    val nUbatch = settings.nUbatch.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 512)
+    val useMlock = settings.useMlock.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val flashAttentionMode = settings.flashAttentionMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val kvCacheType = settings.kvCacheType.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "f16")
+    val vulkanDeviceIndex = settings.vulkanDeviceIndex.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val oledTrueBlack: StateFlow<Boolean> = settings.oledTrueBlack
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val accentTheme: StateFlow<AccentTheme> = settings.accentTheme
@@ -103,12 +121,10 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setQuickActionBubbleEnabled(v: Boolean) {
         viewModelScope.launch { settings.setQuickActionBubbleEnabled(v) }
-        // Settings is only ever open while the app is in the foreground, and the bubble is only
-        // meant to show once the app is backgrounded (see VervanApp's ProcessLifecycleOwner
-        // observer) — so turning this on here doesn't start it immediately, it just arms it for
-        // the next background transition. Turning off does stop it right away, defensively, in
-        // case it's already showing.
-        if (!v) com.vervan.chat.overlay.BubbleService.stop(app)
+        // Start while Settings is visible. Android 12+ can reject foreground-service starts
+        // after the app has already moved to the background.
+        if (v) com.vervan.chat.overlay.BubbleService.start(app)
+        else com.vervan.chat.overlay.BubbleService.stop(app)
     }
 
     // ---- Local API server (Phase J) ----
@@ -141,21 +157,15 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setApiServerRequireAuth(v: Boolean) { viewModelScope.launch { settings.setApiServerRequireAuth(v) }; restartIfRunning() }
 
     // ---- On-device data sources (Phase G) ----
-    val contactsToolEnabled: StateFlow<Boolean> = settings.contactsToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val smsToolEnabled: StateFlow<Boolean> = settings.smsToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val filesToolEnabled: StateFlow<Boolean> = settings.filesToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val locationToolEnabled: StateFlow<Boolean> = settings.locationToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val callLogToolEnabled: StateFlow<Boolean> = settings.callLogToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val screenTimeToolEnabled: StateFlow<Boolean> = settings.screenTimeToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    fun setContactsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setContactsToolEnabled(v) } }
     fun setCalendarToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCalendarToolEnabled(v) } }
-    fun setSmsToolEnabled(v: Boolean) { viewModelScope.launch { settings.setSmsToolEnabled(v) } }
     fun setDeviceStatusToolEnabled(v: Boolean) { viewModelScope.launch { settings.setDeviceStatusToolEnabled(v) } }
     fun setFilesToolEnabled(v: Boolean) { viewModelScope.launch { settings.setFilesToolEnabled(v) } }
     fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
-    fun setCallLogToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCallLogToolEnabled(v) } }
     fun setScreenTimeToolEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenTimeToolEnabled(v) } }
 
     // ---- Tool catalog (Settings → Tools) ----
@@ -211,6 +221,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
     fun setKokoroQualityEnabled(v: Boolean) { viewModelScope.launch { settings.setKokoroQualityEnabled(v) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
+    fun setInbuiltSttEnabled(v: Boolean) { viewModelScope.launch { settings.setInbuiltSttEnabled(v) } }
     fun setFontScale(scale: Float) { viewModelScope.launch { settings.setFontScale(scale) } }
     fun setOledTrueBlack(enabled: Boolean) { viewModelScope.launch { settings.setOledTrueBlack(enabled) } }
     fun setAccentTheme(theme: AccentTheme) { viewModelScope.launch { settings.setAccentTheme(theme) } }
@@ -227,9 +238,19 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTopP(value: Float) { viewModelScope.launch { settings.setTopP(value) } }
     fun setTopK(value: Int) { viewModelScope.launch { settings.setTopK(value) } }
     fun setPreferredBackend(value: String) { viewModelScope.launch { settings.setPreferredBackend(value) } }
-    fun setAutoLoadDefaultModel(enabled: Boolean) { viewModelScope.launch { settings.setAutoLoadDefaultModel(enabled) } }
+    fun setAllowLowMemoryModelLoads(value: Boolean) { viewModelScope.launch { settings.setAllowLowMemoryModelLoads(value) } }
     fun setMaxNumImages(value: Int) { viewModelScope.launch { settings.setMaxNumImages(value) } }
     fun setRandomSeed(value: Int) { viewModelScope.launch { settings.setRandomSeed(value) } }
+    fun setMinP(value: Float) { viewModelScope.launch { settings.setMinP(value) } }
+    fun setRepetitionPenalty(value: Float) { viewModelScope.launch { settings.setRepetitionPenalty(value) } }
+    fun setMaxOutputTokens(value: Int) { viewModelScope.launch { settings.setMaxOutputTokens(value) } }
+    fun setCpuThreads(value: Int) { viewModelScope.launch { settings.setCpuThreads(value) } }
+    fun setNBatch(value: Int) { viewModelScope.launch { settings.setNBatch(value) } }
+    fun setNUbatch(value: Int) { viewModelScope.launch { settings.setNUbatch(value) } }
+    fun setUseMlock(value: Boolean) { viewModelScope.launch { settings.setUseMlock(value) } }
+    fun setFlashAttentionMode(value: String) { viewModelScope.launch { settings.setFlashAttentionMode(value) } }
+    fun setKvCacheType(value: String) { viewModelScope.launch { settings.setKvCacheType(value) } }
+    fun setVulkanDeviceIndex(value: Int) { viewModelScope.launch { settings.setVulkanDeviceIndex(value) } }
 
     fun refreshCacheSize() {
         viewModelScope.launch {

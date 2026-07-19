@@ -128,7 +128,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
     }
 
     // Chat Screen spec §19 — batch AI title generation, launched from the workspace's chat
-    // list. ponytail: progress/pause/cancel work within this one run (an in-memory cursor and
+    // list. progress/pause/cancel work within this one run (an in-memory cursor and
     // a cancellable coroutine, checked between chats); a JobRecord row gives it visibility in
     // the Job Queue screen, but there's no true resume-after-process-death — cancelling and
     // starting over is the recovery path if the process is killed mid-batch.
@@ -159,6 +159,10 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
             var cancelled = false
             try {
                 for (id in chatIds) {
+                    if (db.jobDao().get(jobRecord.id)?.state == JobState.CANCELLED) {
+                        cancelled = true
+                        break
+                    }
                     while (batchPaused) delay(300)
                     val chatRow = db.chatDao().getChat(id)
                     if (chatRow == null || (onlyUntitled && chatRow.title != "New chat")) {

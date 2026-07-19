@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -20,6 +21,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,13 +49,30 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         if (models.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-                Text("No models imported yet.", style = MaterialTheme.typography.bodyMedium)
+            Column(Modifier.fillMaxSize().padding(12.dp)) {
+                ToolIntro(
+                    icon = Icons.Filled.Memory,
+                    title = "Know what each model can do",
+                    body = "Compare model features, context, and compatible runtimes."
+                )
+                EmptyState(
+                    icon = Icons.Filled.Memory,
+                    title = "No models to compare",
+                    body = "Import a model to see its features and device compatibility."
+                )
             }
-            return@Scaffold
-        }
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(12.dp)) {
+        } else {
+        LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+            item {
+                ToolIntro(
+                    icon = Icons.Filled.Memory,
+                    title = "Know what each model can do",
+                    body = "Compare model features, context, and compatible runtimes.",
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
             items(models, key = { it.id }) { model ->
                 Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                     Column(Modifier.padding(12.dp)) {
@@ -73,6 +93,8 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+        }
         }
     }
 }

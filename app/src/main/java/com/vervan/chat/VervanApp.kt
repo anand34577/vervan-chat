@@ -15,8 +15,12 @@ import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.data.repo.BuiltInPersonas
 import com.vervan.chat.data.repo.BuiltInPromptTemplates
 import com.vervan.chat.data.repo.BuiltInWorkflows
+import com.vervan.chat.data.db.entities.ModelEngine
+import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.settings.SettingsRepository
+import com.vervan.chat.llm.LlamaCppEngine
 import com.vervan.chat.llm.LlmEngine
+import com.vervan.chat.llm.stoppingAt
 import com.vervan.chat.model.DocumentImportManager
 import com.vervan.chat.model.ModelImportManager
 import com.vervan.chat.model.WorkspaceManager
@@ -25,7 +29,11 @@ import com.vervan.chat.retrieval.RetrievalEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,10 +47,12 @@ class AppContainer(app: Application) {
         .addMigrations(*MIGRATIONS)
         .build()
     val llmEngine = LlmEngine(app)
+    val llamaCppEngine = LlamaCppEngine(app)
     val embeddingEngine = EmbeddingEngine(app)
-    // ponytail: one global native-engine lock; split per model instance if parallel native
+    // one global native-engine lock; split per model instance if parallel native
     // sessions become a measured need.
     val llmMutex = Mutex()
+    val llamaCppMutex = Mutex()
     val embeddingMutex = Mutex()
     val modelImportManager = ModelImportManager(app, db.modelDao())
     val documentImportManager = DocumentImportManager(app, db.documentDao(), db.chunkDao(), embeddingEngine, db.jobDao())
@@ -58,7 +68,47 @@ class AppContainer(app: Application) {
     private val modelDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val modelDownloadRepository = com.vervan.chat.modeldownload.ModelDownloadRepository(
         app, db.downloadPackageDao(), db.downloadFileDao(), db.modelDao(), modelImportManager,
-        settingsRepository, networkAuditLog, hfTokenStore, modelDownloadScope
+        db.ttsVoiceModelDao(), settingsRepository, networkAuditLog, hfTokenStore, modelDownloadScope
+    )
+    // Application-scoped for the same reason as modelDownloadScope above — an ensureLoaded()
+    // call started from one screen (e.g. RealtimeVoiceController) must keep running/be
+    // join-able even if that screen goes away before the load finishes.
+    private val modelLoadScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val modelLoadCoordinator = com.vervan.chat.modelload.ModelLoadCoordinator(
+        db.modelDao(), llmEngine, llamaCppEngine, embeddingEngine, llmMutex, llamaCppMutex, embeddingMutex,
+        object : com.vervan.chat.modelload.GenerationDefaults {
+            override suspend fun contextTokenLimit() = settingsRepository.contextTokenLimit.first()
+            override suspend fun maxNumImages() = settingsRepository.maxNumImages.first()
+            override suspend fun preferredBackend() = settingsRepository.preferredBackend.first()
+            override suspend fun allowLowMemoryModelLoads() = settingsRepository.allowLowMemoryModelLoads.first()
+            override suspend fun cpuThreads() = settingsRepository.cpuThreads.first()
+            override suspend fun nBatch() = settingsRepository.nBatch.first()
+            override suspend fun nUbatch() = settingsRepository.nUbatch.first()
+            override suspend fun useMlock() = settingsRepository.useMlock.first()
+            override suspend fun flashAttentionMode() = settingsRepository.flashAttentionMode.first()
+            override suspend fun kvCacheType() = settingsRepository.kvCacheType.first()
+            override suspend fun vulkanDeviceIndex() = settingsRepository.vulkanDeviceIndex.first()
+        },
+        modelLoadScope,
+        // Model Loading Strategy §13 — real ActivityManager-backed estimate, queried fresh on
+        // every check (not cached) since available memory shifts constantly with whatever else
+        // is running on the device.
+        object : com.vervan.chat.modelload.ResourceMonitor {
+            private val activityManager = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            override fun availableMemoryBytes(): Long {
+                val info = android.app.ActivityManager.MemoryInfo()
+                activityManager.getMemoryInfo(info)
+                // .memClass (per-app heap cap) doesn't apply to native/mmap allocations the way
+                // it does to the Java heap, so system-wide availMem is the relevant figure here —
+                // but subtract the OS's own low-memory threshold as a safety margin, since
+                // availMem crossing zero is already "the OS is about to start killing things",
+                // not "there's zero free room".
+                return (info.availMem - info.threshold).coerceAtLeast(0L)
+            }
+        }
+    )
+    val memoryRepository = com.vervan.chat.data.repo.MemoryRepository(
+        db.memoryDao(), db.modelDao(), modelLoadCoordinator, embeddingEngine, embeddingMutex
     )
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
@@ -73,17 +123,102 @@ class AppContainer(app: Application) {
     suspend fun <T> withLlm(block: suspend (LlmEngine) -> T): T = withContext(Dispatchers.Default) {
         llmMutex.withLock { block(llmEngine) }
     }
+    suspend fun <T> withLlamaCpp(block: suspend (LlamaCppEngine) -> T): T = withContext(Dispatchers.Default) {
+        llamaCppMutex.withLock { block(llamaCppEngine) }
+    }
     suspend fun <T> withEmbedding(block: suspend (EmbeddingEngine) -> T): T = withContext(Dispatchers.Default) {
         embeddingMutex.withLock { block(embeddingEngine) }
+    }
+
+    fun visionEnabled(model: ModelInfo): Boolean = when (model.engine) {
+        ModelEngine.LITERT_LM -> llmEngine.visionEnabled
+        ModelEngine.LLAMA_CPP -> llamaCppEngine.visionEnabled
+    }
+
+    fun audioEnabled(model: ModelInfo): Boolean = when (model.engine) {
+        ModelEngine.LITERT_LM -> llmEngine.audioEnabled
+        ModelEngine.LLAMA_CPP -> llamaCppEngine.audioEnabled
+    }
+
+    /** Single generation entry point for callers (Chat, Voice) that don't want to hand-roll a
+     * `when (model.engine)` themselves — routes to whichever engine [model] actually needs.
+     * A cold `flow{}` (not `withLlm`/`withLlamaCpp` returning the inner `Flow` directly) is
+     * deliberate: the mutex must stay held for the whole duration of collection (native token
+     * generation), not just for the instant the `Flow` object itself is constructed — the same
+     * requirement `RealtimeVoiceController` already documents at its own `withLlm {... .collect
+     * {...} }` call sites. Locks the mutex directly (not via `withLlm`/`withLlamaCpp`, which
+     * wrap in `withContext(Dispatchers.Default)`) because `emitAll` inside a nested `withContext`
+     * trips kotlinx.coroutines' flow context-preservation check ("Flow invariant is violated") —
+     * callers already dispatch generation off Main themselves, so no extra dispatch is needed
+     * here. [audioPath] is silently ignored for a llama.cpp model (no audio-input JNI in this
+     * pass); callers that need to gate on that ahead of time should check
+     * `model.engine`/`model.supportsAudio` themselves (a GGUF model never has
+     * `supportsAudio == true`, since nothing in this pass ever sets it, so this is a safe
+     * no-op rather than a silent expectation mismatch). */
+    fun generate(
+        model: ModelInfo,
+        prompt: String,
+        imagePath: String?,
+        audioPath: String?,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        seed: Int?,
+        minP: Float = 0.05f,
+        repetitionPenalty: Float = 1.1f,
+        maxOutputTokens: Int = 512,
+        stopSequences: List<String> = emptyList(),
+        assistantPrefill: String? = null,
+        systemPrompt: String? = null
+    ): Flow<String> = flow {
+        when (model.engine) {
+            // llama.cpp already gets an exact native output-token cap (nativeGenerate's maxTokens
+            // loop bound) — only LiteRT-LM's MediaPipe session has no per-turn cap of its own, so
+            // `.take` approximates one client-side (one emission per generated token/piece, same
+            // as llama.cpp's own token-per-emission granularity).
+            ModelEngine.LITERT_LM -> llmMutex.withLock {
+                check(llmEngine.loadedModelPath == model.filePath) {
+                    "${model.displayName} is not the model currently loaded in LiteRT-LM"
+                }
+                require(imagePath == null || llmEngine.visionEnabled) { "${model.displayName} does not support image input" }
+                require(audioPath == null || llmEngine.audioEnabled) { "${model.displayName} does not support audio input" }
+                emitAll(
+                    llmEngine.generate(prompt, imagePath, audioPath, temperature, topP, topK, seed, systemPrompt = systemPrompt)
+                        .take(maxOutputTokens)
+                        .stoppingAt(stopSequences)
+                )
+            }
+            ModelEngine.LLAMA_CPP -> llamaCppMutex.withLock {
+                check(llamaCppEngine.loadedModelPath == model.filePath) {
+                    "${model.displayName} is not the model currently loaded in llama.cpp"
+                }
+                require(imagePath == null || llamaCppEngine.visionEnabled) { "${model.displayName} has no loaded vision projector" }
+                require(audioPath == null) { "llama.cpp audio input is not supported" }
+                emitAll(
+                    llamaCppEngine.generate(
+                        prompt, imagePath, temperature, topP, topK, seed, maxOutputTokens, minP,
+                        repetitionPenalty, chatTemplateOverride = model.chatTemplateOverride,
+                        assistantPrefill = assistantPrefill, systemPrompt = systemPrompt
+                    ).stoppingAt(stopSequences)
+                )
+            }
+        }
     }
 }
 
 class VervanApp : Application() {
     lateinit var container: AppContainer
         private set
+    lateinit var crashLogManager: com.vervan.chat.system.CrashLogManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
+        // First thing, before any other init: container construction itself (Room migrations,
+        // native lib loading) is a realistic crash site, and an offline app has no remote
+        // reporter — an uninstalled handler here means an invisible field failure.
+        crashLogManager = com.vervan.chat.system.CrashLogManager(this)
+        crashLogManager.install()
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
         // App-wide backgrounded/foregrounded detection for auto-lock (Phase A) — observes the
@@ -92,30 +227,33 @@ class VervanApp : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
-                // The quick-action bubble only makes sense while the user is doing something
-                // else — showing it over the app's own UI is pointless, and (re-)starting it on
-                // every single background transition, rather than only once when the setting was
-                // first turned on, is what makes it self-healing: if the OS silently killed the
-                // service earlier (a background-restarted START_STICKY service can't always
-                // re-call startForeground()), the very next time the app backgrounds it comes
-                // back on its own instead of needing an off/on toggle in Settings.
+                // Quick stays available while the app process is running, in foreground or background.
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first()) {
-                            com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                            !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
+                        ) {
+                            withContext(Dispatchers.Main.immediate) {
+                                if (!com.vervan.chat.overlay.BubbleService.setVisible(true)) {
+                                    com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                                }
+                            }
                         }
                     }.onFailure { Log.e(TAG, "onAppBackgrounded housekeeping failed", it) }
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
-                // The transparent capture-consent/region activity belongs to the bubble flow;
-                // stopping the service here would remove its required mediaProjection FGS just
-                // before getMediaProjection(). Normal app foregrounding still hides the bubble.
-                if (!com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()) {
-                    com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
-                }
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching {
+                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                            !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
+                        ) {
+                            withContext(Dispatchers.Main.immediate) {
+                                if (!com.vervan.chat.overlay.BubbleService.setVisible(true)) {
+                                    com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                                }
+                            }
+                        }
                         if (container.settingsRepository.appLockEnabled.first()) {
                             container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
                         }
@@ -129,6 +267,9 @@ class VervanApp : Application() {
         // unsupervised coroutine before this fix, which crashes the whole process even though
         // it's background housekeeping — every launch, until the underlying issue cleared.
         CoroutineScope(Dispatchers.IO).launch { runCatching {
+            // Native crashes, ANRs, and low-memory kills never reach the in-process handler —
+            // ApplicationExitInfo on the next launch is the only way to learn about them.
+            crashLogManager.recordSystemExits()
             container.db.messageDao().getUnfinished().forEach {
                 container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
             }
@@ -238,22 +379,42 @@ class VervanApp : Application() {
     }
 
     /**
-     * Frees the loaded native model under real memory pressure (spec §40) rather than
-     * letting the OS kill the process outright. Safe to do at any time — [LlmEngine] is
-     * lazily reloaded by whichever ChatViewModel/workspace next calls `generate()`, same
-     * path as a cold start; the only cost is that next call re-pays the model load time.
+     * Frees the loaded native model under real memory pressure (spec §40 / Model Loading
+     * Strategy §6.2) rather than letting the OS kill the process outright. Safe to do at any
+     * time — [LlmEngine] is lazily reloaded by whichever ChatViewModel/workspace next calls
+     * `generate()`, same path as a cold start; the only cost is that next call re-pays the model
+     * load time. Legacy callback (pre-API 14 fallback, and some OEMs still fire it alongside
+     * `onTrimMemory`) — routed through the same handler as [onTrimMemory]'s CRITICAL tier so
+     * there's exactly one place that decides what "critical" does.
      */
     override fun onLowMemory() {
         super.onLowMemory()
-        // Native models are rebuildable caches, so release both before the OS has to kill
-        // the process. A later generation or retrieval request loads them again normally.
-        if (container.llmMutex.tryLock()) {
-            val unloadedPath = container.llmEngine.loadedModelPath
-            try { container.llmEngine.close() } finally { container.llmMutex.unlock() }
-            if (unloadedPath != null) notifyModelUnloadedBySystem(unloadedPath)
+        handleMemoryPressure(com.vervan.chat.modelload.MemoryPressureLevel.CRITICAL)
+    }
+
+    /** §6.2's actual moderate/critical distinction — [onLowMemory] only ever signals the most
+     * severe tier, so without this override the app never learns about pressure building up
+     * *before* it's already critical, and the "moderate: stop speculative preloading" tier the
+     * spec calls out has nothing to trigger it. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val mapped = when (level) {
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> com.vervan.chat.modelload.MemoryPressureLevel.CRITICAL
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE,
+            android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> com.vervan.chat.modelload.MemoryPressureLevel.MODERATE
+            else -> com.vervan.chat.modelload.MemoryPressureLevel.NORMAL
         }
-        if (container.embeddingMutex.tryLock()) {
-            try { container.embeddingEngine.close() } finally { container.embeddingMutex.unlock() }
+        handleMemoryPressure(mapped)
+    }
+
+    private fun handleMemoryPressure(level: com.vervan.chat.modelload.MemoryPressureLevel) {
+        val unloadedPath = container.llmEngine.loadedModelPath
+        val unloadedRoles = container.modelLoadCoordinator.onMemoryPressure(level)
+        if (com.vervan.chat.data.db.entities.ModelRole.GENERATION in unloadedRoles && unloadedPath != null) {
+            notifyModelUnloadedBySystem(unloadedPath)
         }
     }
 

@@ -5,7 +5,7 @@ package com.vervan.chat.model
  * §11.12) from their display names alone — there's no explicit family/version field on
  * [com.vervan.chat.data.db.entities.ModelInfo], so this strips common version/date suffixes
  * and compares what's left.
- * ponytail: name-based heuristic, not a real family id. Good enough to prompt a relink
+ * name-based heuristic, not a real family id. Good enough to prompt a relink
  * question at import time; false positives/negatives just mean the user sees (or doesn't
  * see) an optional dialog, never data loss. Upgrade to a persisted `family` field if this
  * misfires often in practice.

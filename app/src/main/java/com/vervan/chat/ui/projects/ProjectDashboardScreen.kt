@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ValidationLimits
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +44,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Note
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.relativeTime
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,7 +97,8 @@ fun ProjectDashboardScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
             Text("Instructions", style = MaterialTheme.typography.titleSmall)
             Text(
                 "Applied to every chat in this project, alongside its persona.",
@@ -98,7 +109,7 @@ fun ProjectDashboardScreen(
                 value = instructions,
                 onValueChange = { instructions = it; vm.saveInstructions(it) },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
-                placeholder = "e.g. Always answer in formal English and cite sources when available.",
+                placeholder = "Example: Use formal English and cite available sources.",
                 maxLength = ValidationLimits.PROJECT_INSTRUCTIONS
             )
 
@@ -107,19 +118,40 @@ fun ProjectDashboardScreen(
                 OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text("New note") }
             }
 
-            Text("Chats", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
+            VervanSectionHeader("Chats", count = chats.size)
+            if (chats.isEmpty()) {
+                Text(
+                    "Chats you start here stay grouped with this project.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             chats.forEach { chat ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), onClick = { onOpenChat(chat.id) }) {
-                    Text(chat.title, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
+                ProjectItemRow(
+                    icon = Icons.AutoMirrored.Filled.Chat,
+                    title = chat.title,
+                    timeLabel = relativeTime(chat.updatedAt),
+                    onClick = { onOpenChat(chat.id) }
+                )
             }
 
-            Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
-            notes.forEach { note ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), onClick = { onOpenNote(note.id) }) {
-                    Text(note.title, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
+            VervanSectionHeader("Notes", count = notes.size)
+            if (notes.isEmpty()) {
+                Text(
+                    "Notes created here stay grouped with this project.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+            notes.forEach { note ->
+                ProjectItemRow(
+                    icon = Icons.AutoMirrored.Filled.Note,
+                    title = note.title,
+                    timeLabel = relativeTime(note.updatedAt),
+                    onClick = { onOpenNote(note.id) }
+                )
+            }
+        }
         }
     }
 
@@ -135,12 +167,47 @@ fun ProjectDashboardScreen(
     }
 
     if (pendingDelete && project != null) {
-        AlertDialog(
-            onDismissRequest = { pendingDelete = false },
-            title = { Text("Delete \"${project!!.name}\"?") },
-            text = { Text("Its chats and notes are kept but unlinked from the project. This can be recovered from the recycle bin.") },
-            confirmButton = { TextButton(onClick = { vm.delete(); pendingDelete = false; onBack() }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { pendingDelete = false }) { Text("Cancel") } }
+        ConfirmDialog(
+            title = "Delete \"${project!!.name}\"?",
+            body = "Chats and notes stay available but leave this project.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = { vm.delete(); pendingDelete = false; onBack() },
+            onDismiss = { pendingDelete = false }
         )
+    }
+}
+
+@Composable
+private fun ProjectItemRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    timeLabel: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        onClick = onClick,
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
+    ) {
+        Row(
+            Modifier.padding(Space.md),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            IconAffordance(icon, size = IconAffordanceSize.Compact)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = Space.md)
+            )
+            Text(
+                timeLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

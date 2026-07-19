@@ -60,6 +60,16 @@ object Chunker {
                 continue
             }
             val pTokens = tokenCounter(p)
+            if (pTokens > TARGET_TOKENS) {
+                // This single paragraph already exceeds the target on its own (a scanned page or
+                // minified text with no blank-line breaks) — flush whatever's buffered, then
+                // split the paragraph itself instead of flushing it whole as one oversized chunk.
+                flush(carryOverlap = true)
+                for (piece in splitOversized(p, tokenCounter)) {
+                    chunks += RawChunk(currentSection, piece, tokenCounter(piece))
+                }
+                continue
+            }
             if (bufferTokens + pTokens > TARGET_TOKENS && bufferTokens >= MIN_TOKENS) flush(carryOverlap = true)
             buffer += p
             bufferTokens += pTokens
@@ -93,6 +103,16 @@ object Chunker {
             sheet.rows.forEachIndexed { idx, row ->
                 val line = row.joinToString("\t")
                 val lineTokens = tokenCounter(line)
+                if (lineTokens > TARGET_TOKENS) {
+                    // A single row (e.g. one huge cell) already exceeds the target on its own —
+                    // flush whatever's buffered, split the row itself rather than emit it whole.
+                    flush(idx)
+                    startRow = idx + 1
+                    for (piece in splitOversized(line, tokenCounter)) {
+                        chunks += RawChunk("${sheet.name} · row ${idx + 1} (split)", piece, tokenCounter(piece))
+                    }
+                    return@forEachIndexed
+                }
                 if (bufferTokens + lineTokens > TARGET_TOKENS && buffer.isNotEmpty()) {
                     flush(idx)
                     startRow = idx + 1
@@ -122,4 +142,56 @@ object Chunker {
     }
 
     private fun wordProxyCount(text: String): Int = text.split(Regex("\\s+")).count { it.isNotBlank() }
+
+    /** Splits a single unit of text (a paragraph, table row, etc.) that already exceeds
+     * [TARGET_TOKENS] on its own — used when the natural split points ([chunk]'s blank-line
+     * paragraphs, [chunkTable]'s rows) still leave a piece too large to embed as one whole chunk.
+     * Tries sentence boundaries first so pieces stay readable; falls back to a fixed word window
+     * for text with no sentence punctuation at all (e.g. OCR output, minified/unbroken text). */
+    private fun splitOversized(text: String, tokenCounter: (String) -> Int): List<String> {
+        val sentences = text.split(Regex("(?<=[.!?])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+        val pieces = mutableListOf<String>()
+        val buffer = mutableListOf<String>()
+        var bufferTokens = 0
+        fun flushBuffer() {
+            if (buffer.isEmpty()) return
+            pieces += buffer.joinToString(" ")
+            buffer.clear()
+            bufferTokens = 0
+        }
+        for (s in sentences) {
+            val sTokens = tokenCounter(s)
+            if (sTokens > TARGET_TOKENS) {
+                // Even a single sentence is too large (no usable punctuation) — hard-split by words.
+                flushBuffer()
+                pieces += splitByWordWindow(s, tokenCounter)
+                continue
+            }
+            if (bufferTokens + sTokens > TARGET_TOKENS && buffer.isNotEmpty()) flushBuffer()
+            buffer += s
+            bufferTokens += sTokens
+        }
+        flushBuffer()
+        return pieces.ifEmpty { splitByWordWindow(text, tokenCounter) }
+    }
+
+    private fun splitByWordWindow(text: String, tokenCounter: (String) -> Int): List<String> {
+        val words = text.split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return listOf(text)
+        val pieces = mutableListOf<String>()
+        val buffer = mutableListOf<String>()
+        var bufferTokens = 0
+        for (w in words) {
+            val wTokens = tokenCounter(w).coerceAtLeast(1)
+            if (bufferTokens + wTokens > TARGET_TOKENS && buffer.isNotEmpty()) {
+                pieces += buffer.joinToString(" ")
+                buffer.clear()
+                bufferTokens = 0
+            }
+            buffer += w
+            bufferTokens += wTokens
+        }
+        if (buffer.isNotEmpty()) pieces += buffer.joinToString(" ")
+        return pieces
+    }
 }

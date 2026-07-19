@@ -183,7 +183,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             text = {
                 Column {
                     if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet — import documents from the Knowledge tab first.")
+                        Text("No knowledge bases yet. Import a document in Knowledge.")
                     }
                     knowledgeBases.forEach { kb ->
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

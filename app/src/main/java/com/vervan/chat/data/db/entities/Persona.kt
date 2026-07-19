@@ -20,5 +20,9 @@ data class Persona(
     val responseLength: String = "BALANCED", // SHORT, BALANCED, LONG
     val language: String = "", // free-text preferred reply language; blank = no preference
     // Recycle bin coverage (Phase 6, spec §34) — same soft-delete pattern as Chat/Note/Document/Folder.
-    val deletedAt: Long? = null
+    val deletedAt: Long? = null,
+    // Character card import (SillyTavern PNG cards, see CharacterCardImporter) — a copy of the
+    // card's embedded portrait under filesDir/personas/avatars/, shown in place of the generic
+    // person icon. Null for hand-authored personas; not user-editable beyond re-importing.
+    val avatarPath: String? = null
 )

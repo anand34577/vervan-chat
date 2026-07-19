@@ -10,7 +10,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,13 +32,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
+fun ExperienceControlsSettingsScreen(
+    onBack: () -> Unit,
+    onOpenGeneration: () -> Unit = {},
+    onOpenModels: () -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
     val expertMode by vm.expertMode.collectAsState()
@@ -60,15 +65,13 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(Space.lg)
-        ) {
+        ScrollablePage(padding) {
             SystemStatusStrip(
                 title = if (expertMode) "Expert mode active" else "Standard mode",
                 body = if (expertMode) {
-                    "Exact model, retrieval, context, and generation controls are visible. Switching back preserves custom values."
+                    "Shows exact model, retrieval, context, and generation controls."
                 } else {
-                    "Recommended outcome presets stay up front. Exact custom values remain preserved in the background."
+                    "Shows recommended presets while preserving custom values."
                 },
                 tone = if (expertMode) StatusTone.Info else StatusTone.Ready
             )
@@ -77,7 +80,7 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
             androidx.compose.material3.Card(Modifier.padding(top = Space.xs)) {
                 ListItem(
                     headlineContent = { Text("Expert mode") },
-                    supportingContent = { Text("Show exact model, context, retrieval, generation, and diagnostic controls.") },
+                    supportingContent = { Text("Show model, context, retrieval, and diagnostic controls.") },
                     leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                     trailingContent = {
                         Switch(
@@ -95,8 +98,22 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
             SettingsRow(Icons.Filled.Speed, "Response length", responseLength.lowercase().replaceFirstChar { it.uppercase() }) {}
             SettingsRow(Icons.Filled.Tune, "Performance", preferredBackend.lowercase().replaceFirstChar { it.uppercase() }) {}
 
+            SectionLabel(if (expertMode) "Raw controls unlocked" else "Configuration")
+            SettingsRow(
+                Icons.Filled.Tune,
+                "Generation settings",
+                if (expertMode) "Temperature, sampling, context, and llama.cpp parameters" else "Simple response style and length controls",
+                onOpenGeneration
+            )
+            SettingsRow(
+                Icons.Filled.Memory,
+                "Per-model settings",
+                if (expertMode) "Raw overrides for each installed model" else "Easy model-specific presets",
+                onOpenModels
+            )
+
             Text(
-                "Standard presets never silently overwrite exact values. Choose a preset in Generation & retrieval to replace a custom expert value.",
+                "Custom values stay unchanged until you choose a new preset.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.lg)
@@ -105,14 +122,12 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
     }
 
     if (confirmExpert) {
-        AlertDialog(
-            onDismissRequest = { confirmExpert = false },
-            title = { Text("Enable Expert mode?") },
-            text = { Text("Your current settings will be preserved. You can switch back to Standard mode at any time without losing custom values.") },
-            confirmButton = {
-                TextButton(onClick = { vm.setExpertMode(true); confirmExpert = false }) { Text("Enable") }
-            },
-            dismissButton = { TextButton(onClick = { confirmExpert = false }) { Text("Cancel") } }
+        ConfirmDialog(
+            title = "Enable Expert mode?",
+            body = "This reveals raw model and generation parameters. Existing values are preserved when you switch modes.",
+            confirmLabel = "Enable",
+            onConfirm = { vm.setExpertMode(true); confirmExpert = false },
+            onDismiss = { confirmExpert = false }
         )
     }
 }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +41,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.setText
@@ -69,7 +70,8 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
             BoundedTextField(
                 value = code, onValueChange = { code = it },
                 label = "Paste code", minLines = 6, maxLength = ValidationLimits.DEVELOPER_INPUT,
@@ -81,11 +83,24 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 DevAction.entries.forEach { action ->
-                    FilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
+                    VervanFilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
                 }
             }
-            if (running) CircularProgressIndicator(Modifier.padding(top = 16.dp).size(24.dp), strokeWidth = 2.dp)
-            error?.let { ErrorCard("Couldn't complete the code action", it, Modifier.padding(top = 12.dp)) }
+            if (running) {
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Working on the code",
+                    body = "Analyzing your input with the local model.",
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't complete the code action",
+                    message = it,
+                    recovery = "Your code is safe. Shorten it or load a compatible model, then try again.",
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
             if (output.isNotBlank()) {
                 Text("Result", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
                 Card(Modifier.fillMaxWidth()) {
@@ -97,6 +112,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                     TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
                 }
             }
+        }
         }
     }
 }

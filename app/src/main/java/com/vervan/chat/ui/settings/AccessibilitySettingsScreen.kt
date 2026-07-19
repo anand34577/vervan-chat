@@ -27,11 +27,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.rememberReducedMotion
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,9 +60,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(Space.lg)
-        ) {
+        ScrollablePage(padding) {
             SectionLabel("Reading")
             androidx.compose.material3.Card {
                 Column(Modifier.padding(Space.lg)) {
@@ -72,7 +73,10 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
                         value = fontScale,
                         onValueChange = { vm.setFontScale(it) },
                         valueRange = 0.85f..1.5f,
-                        steps = 12
+                        steps = 12,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Text size, ${String.format("%.0f", fontScale * 100)} percent"
+                        }
                     )
                 }
             }
@@ -81,7 +85,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             androidx.compose.material3.Card {
                 ListItem(
                     headlineContent = { Text("High contrast") },
-                    supportingContent = { Text("Strengthens muted text and borders so state never relies on a faint tint alone.") },
+                    supportingContent = { Text("Makes muted text and borders easier to see.") },
                     leadingContent = { Icon(Icons.Filled.Contrast, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = highContrast, onCheckedChange = vm::setHighContrast)
@@ -93,7 +97,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             androidx.compose.material3.Card {
                 ListItem(
                     headlineContent = { Text("Large touch targets") },
-                    supportingContent = { Text("Prefer roomier controls for dense toolbars and compact rows.") },
+                    supportingContent = { Text("Use larger controls and roomier rows.") },
                     leadingContent = { Icon(Icons.Filled.TouchApp, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = largeTouchTargets, onCheckedChange = vm::setLargeTouchTargets)
@@ -103,7 +107,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
                     headlineContent = { Text("Haptic feedback") },
-                    supportingContent = { Text("Use brief physical feedback for confirmations and generation controls.") },
+                    supportingContent = { Text("Vibrate briefly for key actions.") },
                     leadingContent = { Icon(Icons.Filled.Vibration, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = hapticsEnabled, onCheckedChange = vm::setHapticsEnabled)
@@ -115,12 +119,12 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             androidx.compose.material3.Card {
                 ListItem(
                     headlineContent = { Text(if (reducedMotion) "Reduced motion is on" else "Reduced motion is off") },
-                    supportingContent = { Text("Vervan follows the Android system animation scale and replaces large movement with simpler fades where supported.") },
+                    supportingContent = { Text("Uses your Android animation setting and simpler transitions.") },
                     leadingContent = { Icon(Icons.Filled.Animation, contentDescription = null) }
                 )
             }
             Text(
-                "TalkBack labels, 48dp touch areas, readable status text, and non-color-only state indicators are treated as release requirements throughout the redesign.",
+                "Vervan uses TalkBack labels, large touch targets, and text-based status cues.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.lg)

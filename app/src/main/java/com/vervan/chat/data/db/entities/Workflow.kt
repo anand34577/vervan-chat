@@ -8,7 +8,7 @@ import org.json.JSONArray
 /**
  * A workflow is an ordered list of instructions run against on-device generation, each
  * step's output feeding the next as input (step 1 runs against the user-supplied text).
- * ponytail: steps are plain instruction strings, JSON-array-encoded — no per-step config
+ * steps are plain instruction strings, JSON-array-encoded — no per-step config
  * (model choice, temperature, branching) beyond "what to tell the model to do".
  */
 @Entity(tableName = "workflows")

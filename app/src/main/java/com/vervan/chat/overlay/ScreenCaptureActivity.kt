@@ -1,6 +1,7 @@
 package com.vervan.chat.overlay
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -11,6 +12,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +26,7 @@ import com.vervan.chat.ui.theme.VervanTheme
 import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -49,10 +52,14 @@ class ScreenCaptureActivity : ComponentActivity() {
     }
 
     private val state = MutableStateFlow<CaptureState>(CaptureState.Capturing)
+    private var waitingForHostApp = false
+    private var hostAppVisible = CompletableDeferred<Unit>()
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK || result.data == null) {
-            state.value = CaptureState.Failed("Screen-capture permission was denied.")
+            moveTaskToBack(true)
+            BubbleService.captureFailed("Screen capture wasn't allowed.")
+            finish()
         } else {
             capture(result.resultCode, result.data!!)
         }
@@ -65,11 +72,15 @@ class ScreenCaptureActivity : ComponentActivity() {
                 val current by state.collectAsState()
                 ScreenExplainScreen(
                     state = current,
-                    onDismiss = { finish() },
+                    onDismiss = {
+                        moveTaskToBack(true)
+                        finish()
+                    },
                     onConfirmSelection = { crop -> saveAndHandOff(crop) }
                 )
             }
         }
+        if (savedInstanceState != null) return
         val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         runCatching {
             val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -86,7 +97,9 @@ class ScreenCaptureActivity : ComponentActivity() {
         }
             .onFailure {
                 android.util.Log.w(TAG, "Could not launch screen capture consent", it)
-                state.value = CaptureState.Failed("Screen capture isn't available on this device.")
+                moveTaskToBack(true)
+                BubbleService.captureFailed("Screen capture isn't available on this device.")
+                finish()
             }
     }
 
@@ -95,18 +108,44 @@ class ScreenCaptureActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (waitingForHostApp) hostAppVisible.complete(Unit)
+    }
+
     private fun capture(resultCode: Int, data: Intent) {
         // The system consent sheet resumes this transparent activity before delivering its
         // result. Put Vervan's task back behind the app the user was viewing, then allow that
         // window one frame to redraw; otherwise MediaProjection faithfully captures Vervan.
-        moveTaskToBack(true)
+        waitingForHostApp = true
+        hostAppVisible = CompletableDeferred()
+        if (!moveTaskToBack(true)) {
+            waitingForHostApp = false
+            BubbleService.captureFailed("Couldn't return to the app you wanted to capture.")
+            finish()
+            return
+        }
         lifecycleScope.launch {
-            delay(350)
+            withTimeoutOrNull(1000) { hostAppVisible.await() }
+            delay(100)
+            waitingForHostApp = false
             val bitmap = withContext(Dispatchers.IO) { captureOneFrame(resultCode, data) }
             if (bitmap == null) {
-                state.value = CaptureState.Failed("Couldn't capture the screen.")
+                BubbleService.captureFailed("Couldn't capture the screen. Try again, and keep the selected app visible.")
+                finish()
             } else if (intent.getBooleanExtra(EXTRA_SELECT_AREA, false)) {
-                state.value = CaptureState.Selecting(bitmap)
+                // The task was moved behind the captured app so that Vervan itself was not in
+                // the screenshot. Bring it back only after capture, to show the crop controls.
+                if (runCatching {
+                        (getSystemService(ACTIVITY_SERVICE) as ActivityManager).moveTaskToFront(taskId, 0)
+                    }.isSuccess
+                ) {
+                    state.value = CaptureState.Selecting(bitmap)
+                } else {
+                    // Cropping is optional; still explain the valid full capture if an OEM blocks
+                    // bringing this task forward despite REORDER_TASKS.
+                    saveAndHandOff(null, bitmap)
+                }
             } else {
                 saveAndHandOff(null, bitmap)
             }
@@ -115,6 +154,7 @@ class ScreenCaptureActivity : ComponentActivity() {
 
     private fun saveAndHandOff(fraction: android.graphics.RectF?, source: Bitmap? = null) {
         val bitmap = source ?: (state.value as? CaptureState.Selecting)?.bitmap ?: return
+        if (source == null) moveTaskToBack(true)
         state.value = CaptureState.Generating
         lifecycleScope.launch {
             val file = try {
@@ -135,11 +175,15 @@ class ScreenCaptureActivity : ComponentActivity() {
                     }
                 }
             } catch (t: Throwable) {
-                state.value = CaptureState.Failed("Couldn't save the screenshot: ${t.toUserMessage()}")
+                BubbleService.captureFailed("Couldn't save the screenshot: ${t.toUserMessage()}")
+                finish()
                 return@launch
             }
             if (BubbleService.explainCapturedScreen(file)) finish()
-            else state.value = CaptureState.Failed("The floating assistant stopped before generation could begin.")
+            else {
+                BubbleService.captureFailed("The floating assistant stopped before generation could begin.")
+                finish()
+            }
         }
     }
 
@@ -156,15 +200,22 @@ class ScreenCaptureActivity : ComponentActivity() {
         }
         val callback = object : MediaProjection.Callback() {}
         projection.registerCallback(callback, handler)
-        val metrics = resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
+        val densityDpi = resources.configuration.densityDpi
+        val (width, height) = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }
+                .let { it.widthPixels to it.heightPixels }
+        }
         val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        val display = projection.createVirtualDisplay(
-            "VervanQuickCapture", width, height, metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null
-        )
+        var display: android.hardware.display.VirtualDisplay? = null
         return try {
+            display = projection.createVirtualDisplay(
+                "VervanQuickCapture", width, height, densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null
+            )
             withTimeoutOrNull(3000) {
                 suspendCancellableCoroutine { continuation ->
                     reader.setOnImageAvailableListener({ source ->
@@ -185,11 +236,14 @@ class ScreenCaptureActivity : ComponentActivity() {
                     }, handler)
                 }
             }
+        } catch (t: Throwable) {
+            android.util.Log.w(TAG, "Could not create screen-capture display", t)
+            null
         } finally {
             display?.release()
             reader.close()
-            projection.unregisterCallback(callback)
-            projection.stop()
+            runCatching { projection.unregisterCallback(callback) }
+            runCatching { projection.stop() }
             BubbleService.endCapture()
         }
     }

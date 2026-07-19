@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ScreenSearchDesktop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,28 +39,41 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.MarkdownLiteText
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import kotlin.math.abs
 
 @Composable
 fun ScreenExplainScreen(state: CaptureState, onDismiss: () -> Unit, onConfirmSelection: (RectF?) -> Unit = {}) {
     Surface(
-        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(16.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 3.dp
+        modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(Space.lg),
+        shape = VervanExtraShapes.hero,
+        color = SurfaceRole.Overlay.containerColor(),
+        border = SurfaceRole.Overlay.border(),
+        shadowElevation = SurfaceRole.Overlay.shadowElevation
     ) {
-        Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
-            Text("What's on screen", style = MaterialTheme.typography.titleMedium)
+        Column(Modifier.padding(Space.xl).verticalScroll(rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconAffordance(icon = Icons.Filled.ScreenSearchDesktop, size = IconAffordanceSize.Default)
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text("SCREEN ASSIST", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("What's on screen", style = MaterialTheme.typography.titleMedium)
+                }
+            }
             when (state) {
                 is CaptureState.Capturing, is CaptureState.Generating -> {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = Space.xxl), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Text(
                                 if (state is CaptureState.Capturing) "Capturing…" else "Reading the screenshot…",
                                 style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(top = 12.dp)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Space.md)
                             )
                         }
                     }
@@ -68,14 +84,14 @@ fun ScreenExplainScreen(state: CaptureState, onDismiss: () -> Unit, onConfirmSel
                 is CaptureState.Done -> {
                     MarkdownLiteText(
                         state.explanation.ifBlank { "(no response)" },
-                        modifier = Modifier.padding(top = 12.dp)
+                        modifier = Modifier.padding(top = Space.md)
                     )
                 }
                 is CaptureState.Failed -> {
-                    ErrorCard(title = "Couldn't explain the screen", body = state.message, modifier = Modifier.padding(top = 12.dp))
+                    ErrorCard(title = "Couldn't explain the screen", body = state.message, modifier = Modifier.padding(top = Space.md))
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Close") }
             }
         }
@@ -92,9 +108,9 @@ private fun SelectionStep(bitmap: android.graphics.Bitmap, onConfirmSelection: (
 
     Text(
         "Draw a box around just the part you want explained, or explain the whole screen.",
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+        modifier = Modifier.padding(top = Space.sm, bottom = Space.sm)
     )
     Box(
         Modifier
@@ -120,18 +136,22 @@ private fun SelectionStep(bitmap: android.graphics.Bitmap, onConfirmSelection: (
             }
         }
     }
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = Space.md),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.End),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (selection != null) {
             TextButton(onClick = { selection = null }) { Text("Clear") }
         }
         TextButton(onClick = { onConfirmSelection(null) }) { Text("Whole screen") }
-        TextButton(
+        FilledTonalButton(
             enabled = selection != null && canvasSize.width > 0,
             onClick = {
-                val r = selection ?: return@TextButton
+                val r = selection ?: return@FilledTonalButton
                 val left = minOf(r.left, r.right); val top = minOf(r.top, r.bottom)
                 val w = abs(r.width); val h = abs(r.height)
-                if (w < 8 || h < 8) { onConfirmSelection(null); return@TextButton }
+                if (w < 8 || h < 8) { onConfirmSelection(null); return@FilledTonalButton }
                 onConfirmSelection(
                     RectF(
                         (left / canvasSize.width).coerceIn(0f, 1f),

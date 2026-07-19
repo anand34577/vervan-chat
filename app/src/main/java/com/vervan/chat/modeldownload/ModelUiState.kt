@@ -6,7 +6,18 @@ import com.vervan.chat.data.db.entities.ModelOrigin
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.ModelStatus
 
-enum class ModelAction { DOWNLOAD, PAUSE, RESUME, CANCEL, RETRY, REMOVE, DELETE, LOAD, UNLOAD, DETAILS }
+enum class ModelAction { DOWNLOAD, PAUSE, RESUME, CANCEL, DELETE, LOAD, UNLOAD, DETAILS }
+
+internal fun downloadActionsFor(status: ModelStatus): Set<ModelAction> = when (status) {
+    ModelStatus.NOT_DOWNLOADED -> setOf(ModelAction.DOWNLOAD, ModelAction.DETAILS)
+    ModelStatus.QUEUED, ModelStatus.PREPARING, ModelStatus.WAITING_FOR_NETWORK,
+    ModelStatus.WAITING_FOR_WIFI, ModelStatus.WAITING_FOR_STORAGE, ModelStatus.DOWNLOADING ->
+        setOf(ModelAction.PAUSE, ModelAction.CANCEL, ModelAction.DETAILS)
+    ModelStatus.PAUSED, ModelStatus.FAILED -> setOf(ModelAction.RESUME, ModelAction.DELETE, ModelAction.DETAILS)
+    ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING -> setOf(ModelAction.DETAILS)
+    ModelStatus.PAUSING, ModelStatus.CANCELLING, ModelStatus.DELETING,
+    ModelStatus.READY, ModelStatus.CANCELLED -> emptySet()
+}
 
 data class ModelError(val code: ModelErrorCode, val message: String)
 

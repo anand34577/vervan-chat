@@ -3,7 +3,9 @@ package com.vervan.chat.model
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.vervan.chat.BuildConfig
 import com.vervan.chat.data.db.dao.ModelDao
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import java.io.File
@@ -19,7 +21,7 @@ sealed class ImportResult {
 
 /**
  * Copies a user-picked model file (via SAF) into app-managed storage and registers it.
- * ponytail: validation here is "does it look like a model file" (extension + non-empty +
+ * validation here is "does it look like a model file" (extension + non-empty +
  * enough free space) — real architecture/tokenizer/shard validation happens when
  * LlmEngine.load() actually tries to initialize it. Add a real pre-flight parser when
  * bad imports become a real support burden.
@@ -35,6 +37,11 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         onProgress: (String) -> Unit = {}
     ): ImportResult = withContext(Dispatchers.IO) {
         val name = safeFileName(queryDisplayName(uri) ?: uri.lastPathSegment ?: "model")
+        if (name.endsWith(".gguf", ignoreCase = true) && !BuildConfig.LLAMA_CPP_AVAILABLE) {
+            return@withContext ImportResult.Rejected(
+                "This app build does not include the llama.cpp Android/Vulkan runtime required for GGUF models."
+            )
+        }
         val supportedExtensions = supportedExtensions(role)
         if (!supportedExtensions.any { name.endsWith(it, ignoreCase = true) }) {
             return@withContext ImportResult.Rejected(
@@ -95,10 +102,98 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             filePath = dest.absolutePath,
             fileSizeBytes = bytesCopied,
             sha256 = hash,
-            role = role
+            role = role,
+            engine = if (name.endsWith(".gguf", ignoreCase = true)) ModelEngine.LLAMA_CPP else ModelEngine.LITERT_LM
         )
         modelDao.upsert(model)
         ImportResult.Success(model)
+    }
+
+    /** GGUF vision models need a second file, the mtmd projector — unlike the embedding
+     * model+tokenizer pair, both files share the same .gguf extension, so there's no way to
+     * auto-tell them apart by name; the caller (import dialog) asks for them via two distinct
+     * pickers instead. [mmprojUri] is optional — omit for a text-only GGUF model. */
+    suspend fun importLlamaCppModel(
+        modelUri: Uri,
+        mmprojUri: Uri? = null,
+        onProgress: (String) -> Unit = {}
+    ): ImportResult = withContext(Dispatchers.IO) {
+        if (!BuildConfig.LLAMA_CPP_AVAILABLE) {
+            return@withContext ImportResult.Rejected("This app build does not include GGUF/llama.cpp support.")
+        }
+        val modelName = safeFileName(queryDisplayName(modelUri) ?: modelUri.lastPathSegment ?: "model")
+        if (!modelName.endsWith(".gguf", ignoreCase = true)) {
+            return@withContext ImportResult.Rejected("llama.cpp generation models must be GGUF files.")
+        }
+        if (mmprojUri != null && !BuildConfig.LLAMA_CPP_VISION_AVAILABLE) {
+            return@withContext ImportResult.Rejected(
+                "This llama.cpp build has no mtmd vision support. Rebuild llama.cpp with LLAMA_BUILD_MTMD=ON first."
+            )
+        }
+        val modelResult = import(modelUri, ModelRole.GENERATION, onProgress)
+        val model = when (modelResult) {
+            is ImportResult.Success -> modelResult.model
+            is ImportResult.Duplicate -> modelResult.existing
+            is ImportResult.Rejected -> return@withContext modelResult
+        }
+        if (model.role != ModelRole.GENERATION || model.engine != ModelEngine.LLAMA_CPP) {
+            return@withContext ImportResult.Rejected("This file was already imported for a different runtime or role.")
+        }
+        if (mmprojUri == null) return@withContext ImportResult.Success(model)
+
+        onProgress("Copying vision projector…")
+        val mmprojName = safeFileName(queryDisplayName(mmprojUri) ?: mmprojUri.lastPathSegment ?: "mmproj.gguf")
+        if (!mmprojName.endsWith(".gguf", ignoreCase = true)) {
+            return@withContext ImportResult.Rejected("Vision projectors must be GGUF files.")
+        }
+        val mmprojDest = File(modelsDir, "${System.currentTimeMillis()}_$mmprojName")
+        try {
+            context.contentResolver.openInputStream(mmprojUri)?.use { input ->
+                mmprojDest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext ImportResult.Rejected("Could not open selected projector file")
+        } catch (e: java.io.IOException) {
+            mmprojDest.delete()
+            return@withContext ImportResult.Rejected("Ran out of storage while copying the projector (${e.message})")
+        }
+        if (mmprojDest.length() == 0L) {
+            mmprojDest.delete()
+            return@withContext ImportResult.Rejected("Selected projector file is empty")
+        }
+        val updated = model.copy(mmprojPath = mmprojDest.absolutePath, supportsVision = true)
+        modelDao.upsert(updated)
+        model.mmprojPath?.takeIf { it != updated.mmprojPath }?.let { File(it).delete() }
+        ImportResult.Success(updated)
+    }
+
+    /** Attaches (or replaces) a LoRA adapter on an already-imported llama.cpp model, copying it
+     * into internal storage the same way [importLlamaCppModel]'s mmproj does — a picked
+     * `content://` `Uri` isn't a real filesystem path the native loader can `fopen`, and isn't
+     * guaranteed to stay readable after this process exits. */
+    suspend fun importLoraAdapter(model: ModelInfo, loraUri: Uri): ImportResult = withContext(Dispatchers.IO) {
+        if (model.engine != ModelEngine.LLAMA_CPP) {
+            return@withContext ImportResult.Rejected("LoRA adapters can only be attached to llama.cpp models.")
+        }
+        val loraName = safeFileName(queryDisplayName(loraUri) ?: loraUri.lastPathSegment ?: "lora.gguf")
+        if (!loraName.endsWith(".gguf", ignoreCase = true)) {
+            return@withContext ImportResult.Rejected("LoRA adapters must be GGUF files.")
+        }
+        val loraDest = File(modelsDir, "${System.currentTimeMillis()}_$loraName")
+        try {
+            context.contentResolver.openInputStream(loraUri)?.use { input ->
+                loraDest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@withContext ImportResult.Rejected("Could not open selected LoRA file")
+        } catch (e: java.io.IOException) {
+            loraDest.delete()
+            return@withContext ImportResult.Rejected("Ran out of storage while copying the LoRA adapter (${e.message})")
+        }
+        if (loraDest.length() == 0L) {
+            loraDest.delete()
+            return@withContext ImportResult.Rejected("Selected LoRA file is empty")
+        }
+        val updated = model.copy(loraPath = loraDest.absolutePath)
+        modelDao.upsert(updated)
+        model.loraPath?.takeIf { it != updated.loraPath }?.let { File(it).delete() }
+        ImportResult.Success(updated)
     }
 
     /**
@@ -186,7 +281,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             .ifBlank { "model" }
 
     companion object {
-        private val GENERATION_EXTENSIONS = listOf(".task", ".tflite", ".litertlm", ".litert", ".bin")
+        private val GENERATION_EXTENSIONS = listOf(".task", ".litertlm", ".litert", ".gguf")
         private val EMBEDDING_EXTENSIONS = listOf(".task", ".tflite", ".bin", ".litert")
         fun supportedExtensions(role: ModelRole) =
             if (role == ModelRole.GENERATION) GENERATION_EXTENSIONS else EMBEDDING_EXTENSIONS

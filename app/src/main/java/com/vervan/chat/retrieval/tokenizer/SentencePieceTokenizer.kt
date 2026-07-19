@@ -11,7 +11,7 @@ import java.text.Normalizer
  * with a `repeated SentencePiece pieces = 1` field — see sentencepiece_model.proto) rather
  * than pulling in a full protobuf runtime for one message type.
  *
- * ponytail: segmentation is greedy longest-prefix-match with byte-fallback, not the reference
+ * segmentation is greedy longest-prefix-match with byte-fallback, not the reference
  * implementation's optimal Viterbi unigram search. SentencePiece vocabs are built so greedy
  * longest-match closely tracks the optimal segmentation for ordinary text, and what matters
  * for embedding quality is using the model's real vocab ids consistently between indexing and

@@ -59,6 +59,7 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.system.toUserMessage
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -90,14 +91,14 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 eyebrow = "Grounded answers",
                 title = "Your private knowledge",
-                body = "Organize documents into searchable bases. Retrieval, citations, and indexes stay on this device."
+                body = "Organize documents for private search and cited answers."
             )
             VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
             if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Build your first knowledge base",
-                    body = "Group PDFs, notes, and documents so chats can retrieve exact passages and cite their sources.",
+                    body = "Group documents so chats can find and cite exact passages.",
                     actionLabel = "Create knowledge base",
                     onAction = { showCreate = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
@@ -221,7 +222,11 @@ private fun DocRow(doc: Document) {
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(doc.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                doc.failureReason ?: doc.status.name.lowercase().replaceFirstChar { it.uppercase() },
+                if (doc.status in setOf(DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)) {
+                    doc.failureReason.toUserMessage()
+                } else {
+                    doc.failureReason ?: doc.status.name.lowercase().replaceFirstChar { it.uppercase() }
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

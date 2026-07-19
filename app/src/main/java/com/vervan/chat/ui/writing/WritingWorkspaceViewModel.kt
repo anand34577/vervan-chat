@@ -57,10 +57,8 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
             }
             val instruction = if (action == WritingAction.TRANSLATE) action.instruction.replace("{LANGUAGE}", targetLanguage) else action.instruction
             try {
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    engine.generate("$instruction\n\n$originalText").collect { chunk -> _revision.value += chunk }
-                }
+                com.vervan.chat.llm.OneShotLlm.stream(app, "$instruction\n\n$originalText")
+                    ?.collect { chunk -> _revision.value += chunk }
             } catch (t: Throwable) {
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }

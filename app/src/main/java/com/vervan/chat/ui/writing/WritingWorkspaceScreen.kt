@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +40,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.DiffViewer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
@@ -70,7 +71,8 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
             BoundedTextField(
                 value = original, onValueChange = { original = it },
                 label = "Your text", minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
@@ -86,11 +88,24 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 WritingAction.entries.forEach { action ->
-                    FilterChip(selected = false, onClick = { vm.run(action, original, targetLanguage) }, label = { Text(action.label) }, enabled = !running)
+                    VervanFilterChip(selected = false, onClick = { vm.run(action, original, targetLanguage) }, label = { Text(action.label) }, enabled = !running)
                 }
             }
-            if (running) CircularProgressIndicator(Modifier.padding(top = 16.dp).size(24.dp), strokeWidth = 2.dp)
-            error?.let { ErrorCard("Couldn't complete the writing action", it, Modifier.padding(top = 12.dp)) }
+            if (running) {
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Preparing the revision",
+                    body = "Rewriting locally. Your original stays unchanged.",
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
+            error?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't complete the writing action",
+                    message = it,
+                    recovery = "Your text is safe. Shorten it or check the model, then try again.",
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
             if (revision.isNotBlank()) {
                 Text("Revision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
                 DiffViewer(
@@ -104,6 +119,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                     TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
                 }
             }
+        }
         }
     }
 }

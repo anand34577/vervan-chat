@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
 
 /**
@@ -73,10 +74,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(12.dp)) {
+        ScrollablePage(padding) {
             Text(
-                "Exposes an OpenAI-compatible /v1/chat/completions and /v1/models endpoint, backed by whichever " +
-                    "model is active in this app. Off by default; nothing listens until you turn this on.",
+                "Use the active model through OpenAI-compatible local endpoints. Off by default.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -103,13 +103,12 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("Allow other devices on this Wi-Fi", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Off = only this phone can reach it (e.g. from Termux/Tasker). On = any device on the " +
-                                    "same network can reach it too — make sure auth is required below if you turn this on.",
+                                "Off allows this phone only. On allows devices on the same Wi-Fi; require an API key.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = lan, onCheckedChange = { vm.setLanApiServerEnabled(it) })
+                        Switch(checked = lan, onCheckedChange = { vm.setLanApiServerEnabled(it); if (it) token = vm.apiServerToken })
                     }
                 }
             }
@@ -136,20 +135,24 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("Require an API key", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Requests must send Authorization: Bearer <token>. Strongly recommended if the LAN toggle above is on.",
+                                if (lan) "Always on while Wi-Fi access is enabled — the server never runs open on the network."
+                                else "Requests must include a bearer token.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        // ApiServerService enforces auth whenever LAN exposure is on; mirror that
+                        // here so the switch can't show a state the server will refuse to honor.
                         Switch(
-                            checked = requireAuth,
+                            checked = requireAuth || lan,
+                            enabled = !lan,
                             onCheckedChange = {
                                 vm.setApiServerRequireAuth(it)
                                 if (it) token = vm.apiServerToken
                             }
                         )
                     }
-                    if (requireAuth) {
+                    if (requireAuth || lan) {
                         Text(token, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
                         Row(Modifier.padding(top = 8.dp)) {
                             OutlinedButton(onClick = { clipboard.setSensitiveText(token, scope) }) { Text("Copy") }
@@ -166,7 +169,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Requests this session: $requestCount", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Every request this server handles is logged in Diagnostics → Network activity, the same place that shows outbound calls.",
+                        "Requests appear in Diagnostics > Network activity.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -178,7 +181,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
     if (confirmRegenerate) {
         ConfirmDialog(
             title = "Regenerate API key?",
-            body = "The current key stops working immediately — anything using it (scripts, other apps) will need the new one.",
+            body = "The current key stops working immediately. Connected apps need the new key.",
             confirmLabel = "Regenerate",
             destructive = true,
             onConfirm = { token = vm.regenerateApiServerToken(); confirmRegenerate = false },

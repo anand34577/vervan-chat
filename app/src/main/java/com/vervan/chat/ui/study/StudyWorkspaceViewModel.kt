@@ -87,11 +87,8 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 "Respond with ONLY a JSON array where each item is {\"q\":\"question\",\"a\":\"answer\"}.\n\nSource:\n$sourceText"
             var raw = ""
             try {
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    _generationStage.value = "Creating $cardCount focused cards"
-                    engine.generate(prompt).collect { raw += it }
-                }
+                _generationStage.value = "Creating $cardCount focused cards"
+                com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { raw += it }
             } catch (t: Throwable) {
                 _error.value = "Generation failed: ${t.toUserMessage()}"
                 _generating.value = false
@@ -99,7 +96,7 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
             }
             val cards = parseCards(raw, setName)
             if (cards.isEmpty()) {
-                _error.value = "Could not read flashcards from the model's response — try shorter text or try again."
+                    _error.value = "Could not create the cards. Shorten the text, then try again."
             } else {
                 _generationStage.value = "Saving your deck"
                 db.withTransaction {

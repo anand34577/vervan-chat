@@ -104,7 +104,7 @@ class DocumentImportManager(
             dao.upsert(record)
             record
         }
-        val document = processLocalFile(kbId, name, dest, mimeType, hash)
+        val document = processLocalFile(kbId, name, dest, mimeType, hash, job?.id)
         reportJobOutcome(job, document, name)
         DocumentImportOutcome.Imported(document)
     }
@@ -136,13 +136,14 @@ class DocumentImportManager(
                 dao.upsert(record)
                 record
             }
-            val document = processLocalFile(existing.knowledgeBaseId, existing.displayName, File(tempFilePath), mimeType, hash)
+            val document = processLocalFile(existing.knowledgeBaseId, existing.displayName, File(tempFilePath), mimeType, hash, job?.id)
             reportJobOutcome(job, document, existing.displayName)
             document
         }
 
     private suspend fun reportJobOutcome(job: JobRecord?, result: Document, name: String) {
         if (job == null) return
+        if (jobDao?.get(job.id)?.state == JobState.CANCELLED) return
         val finalState = when (result.status) {
             DocumentStatus.READY -> JobState.COMPLETED
             DocumentStatus.UNSUPPORTED, DocumentStatus.FAILED -> JobState.FAILED
@@ -158,7 +159,7 @@ class DocumentImportManager(
         }
     }
 
-    private suspend fun processLocalFile(kbId: String, name: String, dest: File, mimeType: String, hash: String): Document {
+    private suspend fun processLocalFile(kbId: String, name: String, dest: File, mimeType: String, hash: String, jobId: String? = null): Document {
         var document = Document(
             knowledgeBaseId = kbId,
             displayName = name,
@@ -177,6 +178,7 @@ class DocumentImportManager(
         // failure here — including an Error, not just an Exception — is caught and recorded as
         // a normal FAILED status the user can see and re-attempt.
         return try {
+            ensureJobActive(jobId)
             when (val extracted = TextExtractor.extract(dest, name)) {
                 is ExtractResult.Unsupported -> {
                     document = document.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason)
@@ -184,23 +186,28 @@ class DocumentImportManager(
                     document
                 }
                 ExtractResult.NeedsOcr -> {
+                    ensureJobActive(jobId)
                     document = document.copy(status = DocumentStatus.OCR_RUNNING, failureReason = null)
                     documentDao.update(document)
                     val ocrText = try { runOcr(name, dest) } catch (t: Throwable) { "" }
                     document = if (ocrText.isBlank()) {
                         document.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")
                     } else {
-                        persistChunks(document, kbId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true)
+                        persistChunks(document, kbId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true, jobId = jobId)
                     }
                     documentDao.update(document)
                     document
                 }
                 else -> {
-                    document = persistChunks(document, kbId, chunksFor(extracted), ocrApplied = false)
+                    document = persistChunks(document, kbId, chunksFor(extracted), ocrApplied = false, jobId = jobId)
                     documentDao.update(document)
                     document
                 }
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            val failed = document.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped")
+            documentDao.update(failed)
+            failed
         } catch (t: Throwable) {
             val failed = document.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage())
             documentDao.update(failed)
@@ -234,7 +241,8 @@ class DocumentImportManager(
 
     /** Chunks, embeds, and stores [raw] for [document], returning its final status. Shared by
      * every extraction shape (direct text, OCR-recovered text, tables, slides). */
-    private suspend fun persistChunks(document: Document, kbId: String, raw: List<RawChunk>, ocrApplied: Boolean): Document {
+    private suspend fun persistChunks(document: Document, kbId: String, raw: List<RawChunk>, ocrApplied: Boolean, jobId: String? = null): Document {
+        ensureJobActive(jobId)
         var doc = document.copy(status = DocumentStatus.CHUNKING, ocrApplied = ocrApplied)
         documentDao.update(doc)
         if (raw.isEmpty()) {
@@ -243,6 +251,7 @@ class DocumentImportManager(
 
         doc = doc.copy(status = DocumentStatus.EMBEDDING)
         documentDao.update(doc)
+        ensureJobActive(jobId)
         var embedFailures = 0
         val chunks = raw.map { rc ->
             val embedding = if (embeddingEngine.isLoaded) embeddingEngine.embed(rc.text, title = rc.sectionPath)?.toBytes() else null
@@ -256,6 +265,7 @@ class DocumentImportManager(
                 embedding = embedding
             )
         }
+        ensureJobActive(jobId)
         chunkDao.insertAll(chunks)
 
         // B7: embedding failures used to be silently swallowed — surface a non-fatal warning
@@ -294,20 +304,29 @@ class DocumentImportManager(
                     if (ocrText.isBlank()) {
                         documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text"))
                     } else {
-                        documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true))
+                        documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true, jobId = job?.id))
                     }
                 }
                 else -> {
-                    documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false))
+                    documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false, jobId = job?.id))
                 }
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped"))
         } catch (t: Throwable) {
             documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage()))
         }
         job?.let {
+            if (jobDao?.get(it.id)?.state == JobState.CANCELLED) return@let
             val finalStatus = documentDao.get(documentId)?.status
             val state = if (finalStatus == DocumentStatus.READY) JobState.COMPLETED else JobState.FAILED
             jobDao?.upsert(it.copy(state = state, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    private suspend fun ensureJobActive(jobId: String?) {
+        if (jobId != null && jobDao?.get(jobId)?.state == JobState.CANCELLED) {
+            throw kotlinx.coroutines.CancellationException("Stopped by user")
         }
     }
 
