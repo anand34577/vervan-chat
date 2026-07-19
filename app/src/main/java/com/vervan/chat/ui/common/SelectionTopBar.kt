@@ -66,8 +66,14 @@ fun Modifier.selectableItem(
     selectionMode: Boolean,
     onClick: () -> Unit,
     onToggleSelected: () -> Unit,
-    onEnterSelection: () -> Unit
+    onEnterSelection: () -> Unit,
+    selectable: Boolean = true
 ): Modifier = combinedClickable(
-    onClick = { if (selectionMode) onToggleSelected() else onClick() },
-    onLongClick = onEnterSelection
+    onClick = {
+        when {
+            selectionMode && selectable -> onToggleSelected()
+            !selectionMode -> onClick()
+        }
+    },
+    onLongClick = { if (selectable) onEnterSelection() }
 )

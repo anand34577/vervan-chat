@@ -13,7 +13,7 @@ import java.io.File
  * this is what MediaPipe's [com.google.mediapipe.tasks.text.textembedder.TextEmbedder] can't
  * load, since it only accepts Task Bundles with embedded tokenizer metadata.
  *
- * ponytail: this model's exported graph has no named input/output tensors (confirmed by
+ * this model's exported graph has no named input/output tensors (confirmed by
  * inspecting the raw flatbuffer — no "input_ids"/"attention_mask" strings anywhere in it), so
  * there's no way to bind by name. Wiring follows the near-universal encoder-embedding export
  * convention — input 0 = token ids, input 1 = attention mask, optional input 2 = token type
@@ -60,6 +60,13 @@ class RawTfliteEmbedder(context: Context, modelPath: String, tokenizerModelPath:
     fun embed(text: String, isQuery: Boolean = false, title: String? = null): FloatArray {
         val prefixed = if (isQuery) "task: search result | query: $text" else "title: ${title?.takeIf { it.isNotBlank() } ?: "none"} | text: $text"
         val ids = tokenizer.encode(prefixed)
+        if (ids.size > seqLen) {
+            // Silent truncation here means the tail of whatever text the caller is embedding
+            // (often a document chunk shown to the user as a cited source) never reaches the
+            // model at all — logged so a chunk that's still oversized despite Chunker's own
+            // splitting is diagnosable instead of just quietly under-retrieving.
+            Log.w(TAG, "embed() truncating ${ids.size} tokens to seqLen=$seqLen (isQuery=$isQuery)")
+        }
         val n = minOf(ids.size, seqLen)
         val idsBuf = IntArray(seqLen)
         val maskBuf = IntArray(seqLen)

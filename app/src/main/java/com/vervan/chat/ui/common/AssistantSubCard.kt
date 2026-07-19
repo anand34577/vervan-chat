@@ -39,12 +39,13 @@ import com.vervan.chat.ui.theme.vervanWarning
  * (neutral), sources (informational/success), a reversible tool call (amber warning), an
  * external/irreversible action (error), and a plain tool result. One enum instead of every
  * screen picking its own ad hoc accent per card type. */
-enum class SubCardKind { Reasoning, Sources, ReversibleTool, ExternalAction, ToolResult, ContextOmission }
+enum class SubCardKind { Reasoning, Sources, Memory, ReversibleTool, ExternalAction, ToolResult, ContextOmission }
 
 @Composable
 private fun SubCardKind.color(): Color = when (this) {
     SubCardKind.Reasoning -> MaterialTheme.colorScheme.onSurfaceVariant
     SubCardKind.Sources -> MaterialTheme.colorScheme.vervanSuccess
+    SubCardKind.Memory -> MaterialTheme.colorScheme.primary
     SubCardKind.ReversibleTool -> MaterialTheme.colorScheme.vervanWarning
     SubCardKind.ExternalAction -> MaterialTheme.colorScheme.error
     SubCardKind.ToolResult -> MaterialTheme.colorScheme.secondary
@@ -54,6 +55,7 @@ private fun SubCardKind.color(): Color = when (this) {
 private fun SubCardKind.icon(): ImageVector = when (this) {
     SubCardKind.Reasoning -> Icons.Filled.Psychology
     SubCardKind.Sources -> Icons.Filled.Description
+    SubCardKind.Memory -> Icons.Filled.Psychology
     SubCardKind.ReversibleTool -> Icons.Filled.Build
     SubCardKind.ExternalAction -> Icons.Filled.Warning
     SubCardKind.ToolResult -> Icons.Filled.Build

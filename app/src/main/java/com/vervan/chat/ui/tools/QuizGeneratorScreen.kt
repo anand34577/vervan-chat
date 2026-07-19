@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,6 +29,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
@@ -49,7 +54,7 @@ private val DIFFICULTIES = listOf("Easy", "Medium", "Hard")
 
 /** Paste/scanned text -> LLM-generated quiz (JSON array), answered interactively, scored
  * client-side. Grading for free-text answers is a simple case-insensitive containment check —
- * ponytail: no semantic grading, good enough for self-check practice, not exam scoring. */
+ * no semantic grading, good enough for self-check practice, not exam scoring. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuizGeneratorScreen(onBack: () -> Unit) {
@@ -64,6 +69,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
     var questions by remember { mutableStateOf(listOf<QuizQuestion>()) }
     var answers by remember { mutableStateOf(mapOf<Int, String>()) }
     var submitted by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
     fun generate() {
         if (sourceText.isBlank()) return
@@ -71,28 +77,42 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
         questions = emptyList()
         answers = emptyMap()
         submitted = false
+        errorText = null
         scope.launch {
-            val prompt = "Generate 5 quiz questions from the following text, at $difficulty difficulty, mixing types " +
-                "multiple_choice, true_false, fill_in_blank, and short_answer. Respond with ONLY a JSON array, each " +
-                "object having exactly these keys: type, question, options (array of strings, only for multiple_choice " +
-                "or true_false, empty array otherwise), correctAnswer (string), explanation (one short sentence).\n\nText:\n$sourceText"
-            val raw = OneShotLlm.run(app, prompt)?.trim().orEmpty()
-            val jsonText = raw.substringAfter("[", "").let { if (it.isBlank()) raw else "[$it" }.substringBeforeLast("]", "").let { if (it.isBlank()) raw else "$it]" }
-            questions = runCatching {
-                val arr = JSONArray(jsonText)
-                (0 until arr.length()).map { i ->
-                    val obj = arr.getJSONObject(i)
-                    val opts = obj.optJSONArray("options")
-                    QuizQuestion(
-                        type = obj.optString("type", "short_answer"),
-                        question = obj.optString("question"),
-                        options = opts?.let { o -> (0 until o.length()).map { o.optString(it) } }.orEmpty(),
-                        correctAnswer = obj.optString("correctAnswer"),
-                        explanation = obj.optString("explanation")
-                    )
+            try {
+                val prompt = "Generate 5 quiz questions from the following text, at $difficulty difficulty, mixing types " +
+                    "multiple_choice, true_false, fill_in_blank, and short_answer. Respond with ONLY a JSON array, each " +
+                    "object having exactly these keys: type, question, options (array of strings, only for multiple_choice " +
+                    "or true_false, empty array otherwise), correctAnswer (string), explanation (one short sentence).\n\nText:\n$sourceText"
+                // run() (not stream()) — the whole JSON array must be complete before it can be parsed.
+                val raw = OneShotLlm.run(app, prompt)?.trim()
+                if (raw == null) {
+                    errorText = "No generation model is active. Load one from Models, then generate again."
+                } else {
+                    val jsonText = raw.substringAfter("[", "").let { if (it.isBlank()) raw else "[$it" }.substringBeforeLast("]", "").let { if (it.isBlank()) raw else "$it]" }
+                    questions = runCatching {
+                        val arr = JSONArray(jsonText)
+                        (0 until arr.length()).map { i ->
+                            val obj = arr.getJSONObject(i)
+                            val opts = obj.optJSONArray("options")
+                            QuizQuestion(
+                                type = obj.optString("type", "short_answer"),
+                                question = obj.optString("question"),
+                                options = opts?.let { o -> (0 until o.length()).map { o.optString(it) } }.orEmpty(),
+                                correctAnswer = obj.optString("correctAnswer"),
+                                explanation = obj.optString("explanation")
+                            )
+                        }
+                    }.getOrDefault(emptyList())
+                    if (questions.isEmpty()) {
+            errorText = "Could not create the quiz. Shorten the text, then try again."
+                    }
                 }
-            }.getOrDefault(emptyList())
-            isGenerating = false
+            } catch (t: Throwable) {
+                errorText = t.toUserMessage()
+            } finally {
+                isGenerating = false
+            }
         }
     }
 
@@ -112,7 +132,16 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
+            ToolIntro(
+                icon = Icons.Filled.Quiz,
+                title = "Turn material into active recall",
+                body = "Add study material and create a five-question local quiz."
+            )
             OutlinedTextField(
                 value = sourceText, onValueChange = { sourceText = it },
                 modifier = Modifier.fillMaxWidth(), minLines = 4,
@@ -128,12 +157,26 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                 Button(onClick = ::generate, enabled = sourceText.isNotBlank() && !isGenerating, modifier = Modifier.padding(start = 8.dp)) { Text("Generate quiz") }
             }
             if (isGenerating) {
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(Modifier.padding(end = 8.dp))
-                    Text("Generating…")
-                }
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Building your quiz",
+                    body = "Creating five $difficulty questions from your material."
+                )
+            }
+            errorText?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't generate a quiz",
+                    message = it,
+                    recovery = "Shorten the material or load a model, then try again.",
+                    actionLabel = "Try again",
+                    onAction = { generate() },
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
             if (submitted) {
+                ToolResultHeader(
+                    title = "Quiz complete",
+                    supportingText = "You answered $score of ${questions.size} correctly."
+                )
                 Card(
                     Modifier.fillMaxWidth().padding(top = 16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -179,6 +222,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
             if (questions.isNotEmpty() && !submitted) {
                 Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("Submit answers") }
             }
+        }
         }
     }
 }

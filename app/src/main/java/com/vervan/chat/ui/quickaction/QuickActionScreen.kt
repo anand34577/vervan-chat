@@ -2,7 +2,6 @@ package com.vervan.chat.ui.quickaction
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,9 +9,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -35,8 +35,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
-import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.OperationErrorCard
+import com.vervan.chat.ui.common.OperationProgressCard
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanExtraShapes
+import com.vervan.chat.ui.theme.vervanSubtleDividerColor
 import com.vervan.chat.ui.writing.WritingAction
 import com.vervan.chat.ui.writing.WritingWorkspaceViewModel
 
@@ -61,55 +69,104 @@ fun QuickActionScreen(
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var targetLanguage by remember { mutableStateOf("") }
+    var selectedAction by remember { mutableStateOf<WritingAction?>(null) }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(16.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 3.dp
+        modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(Space.lg),
+        shape = VervanExtraShapes.hero,
+        color = SurfaceRole.Overlay.containerColor(),
+        border = SurfaceRole.Overlay.border(),
+        shadowElevation = SurfaceRole.Overlay.shadowElevation
     ) {
-        Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-            Text("Vervan Chat", style = MaterialTheme.typography.titleMedium)
-            Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(Space.xl).verticalScroll(rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconAffordance(icon = Icons.Filled.AutoAwesome, size = IconAffordanceSize.Default)
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text("QUICK ACTION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("Edit with Vervan", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            Card(
+                Modifier.fillMaxWidth().padding(top = Space.md),
+                colors = SurfaceRole.Sunken.cardColors(),
+                border = SurfaceRole.Sunken.border()
+            ) {
                 Text(
                     originalText.take(300),
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(10.dp)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(Space.md)
                 )
             }
             Row(
-                Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Modifier.padding(top = Space.md).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 listOf(
                     WritingAction.REWRITE, WritingAction.SHORTEN, WritingAction.EXPAND,
                     WritingAction.SIMPLIFY, WritingAction.FIX_GRAMMAR, WritingAction.TRANSLATE
                 ).forEach { action ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { vm.run(action, originalText, targetLanguage) },
+                    VervanFilterChip(
+                        selected = selectedAction == action,
+                        onClick = {
+                            selectedAction = action
+                            if (action != WritingAction.TRANSLATE || targetLanguage.isNotBlank()) {
+                                vm.run(action, originalText, targetLanguage)
+                            }
+                        },
                         label = { Text(action.label) },
                         enabled = !running
                     )
                 }
             }
-            if (running) {
-                Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+            if (selectedAction == WritingAction.TRANSLATE) {
+                OutlinedTextField(
+                    value = targetLanguage,
+                    onValueChange = { targetLanguage = it },
+                    label = { Text("Translate to") },
+                    placeholder = { Text("e.g. Spanish") },
+                    singleLine = true,
+                    enabled = !running,
+                    trailingIcon = {
+                        TextButton(
+                            onClick = { vm.run(WritingAction.TRANSLATE, originalText, targetLanguage) },
+                            enabled = !running && targetLanguage.isNotBlank()
+                        ) { Text("Go") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                )
             }
-            error?.let { ErrorCard(title = "Couldn't generate", body = it, modifier = Modifier.padding(top = 12.dp)) }
+            if (running) {
+                OperationProgressCard(
+                    title = "Preparing your text",
+                    body = "Applying the selected action locally.",
+                    modifier = Modifier.padding(top = Space.lg)
+                )
+            }
+            error?.let {
+                OperationErrorCard(
+                    title = "Couldn't generate a result",
+                    message = it,
+                    recovery = "Your text is safe. Check the model, then try again.",
+                    modifier = Modifier.padding(top = Space.md)
+                )
+            }
             if (revision.isNotBlank()) {
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                Text(revision, style = MaterialTheme.typography.bodyMedium)
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                HorizontalDivider(Modifier.padding(vertical = Space.md), color = vervanSubtleDividerColor())
+                Text("RESULT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(revision, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = Space.md),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TextButton(onClick = { clipboard.setSensitiveText(revision, scope) }) { Text("Copy") }
                     if (canInsertBack) {
-                        TextButton(onClick = { onInsertBack(revision) }) { Text("Replace") }
+                        FilledTonalButton(onClick = { onInsertBack(revision) }) { Text("Replace") }
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Close") }
             }
         }

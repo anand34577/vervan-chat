@@ -49,10 +49,8 @@ class DevWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 return@launch
             }
             try {
-                app.container.withLlm {
-                    if (engine.loadedModelPath != model.filePath) engine.load(model.filePath)
-                    engine.generate("${action.instruction}\n\n```\n$code\n```").collect { chunk -> _output.value += chunk }
-                }
+                com.vervan.chat.llm.OneShotLlm.stream(app, "${action.instruction}\n\n```\n$code\n```")
+                    ?.collect { chunk -> _output.value += chunk }
             } catch (t: Throwable) {
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }

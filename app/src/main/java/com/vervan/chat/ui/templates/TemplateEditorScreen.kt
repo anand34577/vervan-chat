@@ -23,7 +23,10 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -32,6 +35,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ValidationLimits
 import kotlinx.coroutines.launch
 
@@ -47,6 +52,7 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
     val body by vm.body.collectAsState()
     val isBuiltIn by vm.isBuiltIn.collectAsState()
     val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -55,16 +61,17 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     if (templateId != null && !isBuiltIn) {
-                        TextButton(onClick = { vm.delete(); onBack() }) { Text("Delete") }
+                        TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }
                     }
                 }
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
             if (isBuiltIn) {
                 Text(
-                    "This is a built-in — saving creates your own editable copy instead of changing the original.",
+                "Saving creates an editable copy. The built-in stays unchanged.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -104,5 +111,16 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 ) { Text("Save") }
             }
         }
+        }
+    }
+    if (showDeleteConfirm) {
+        ConfirmDialog(
+            title = "Delete template?",
+            body = "\"/$name\" will be permanently deleted.",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
+            onDismiss = { showDeleteConfirm = false }
+        )
     }
 }

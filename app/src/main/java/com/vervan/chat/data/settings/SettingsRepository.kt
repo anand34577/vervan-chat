@@ -21,7 +21,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class AccentTheme { AMBER, BLUE, GREEN, VIOLET, ROSE }
 
 /**
- * Real user-facing settings (spec §41), DataStore-backed. ponytail: one flat preferences
+ * Real user-facing settings (spec §41), DataStore-backed. one flat preferences
  * file covering the settings screens actually built today, not placeholder keys for the
  * spec's unbuilt groups (retrieval-mode picker per source type, per-tool timeouts, etc).
  */
@@ -44,7 +44,9 @@ class SettingsRepository(context: Context) {
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
         val KOKORO_QUALITY_ENABLED = booleanPreferencesKey("kokoro_quality_enabled")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
+        val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
         val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
+        val AUTO_CONTEXT_SUMMARIZATION = booleanPreferencesKey("auto_context_summarization")
         val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val CONTEXT_TOKEN_LIMIT = intPreferencesKey("context_token_limit")
@@ -54,9 +56,22 @@ class SettingsRepository(context: Context) {
         val TOP_P = floatPreferencesKey("top_p")
         val TOP_K = intPreferencesKey("top_k")
         val PREFERRED_BACKEND = stringPreferencesKey("preferred_backend")
-        val AUTO_LOAD_DEFAULT_MODEL = booleanPreferencesKey("auto_load_default_model")
+        val ALLOW_LOW_MEMORY_MODEL_LOADS = booleanPreferencesKey("allow_low_memory_model_loads")
         val MAX_NUM_IMAGES = intPreferencesKey("max_num_images")
         val RANDOM_SEED = intPreferencesKey("random_seed")
+        // Full LLM config exposure — global fallbacks for fields with a real app-wide default
+        // (chatTemplateOverride/loraPath/gpuLayerCount are per-model-only, no global concept,
+        // same precedent as mmprojPath having no global counterpart).
+        val MIN_P = floatPreferencesKey("min_p")
+        val REPETITION_PENALTY = floatPreferencesKey("repetition_penalty")
+        val MAX_OUTPUT_TOKENS = intPreferencesKey("max_output_tokens")
+        val CPU_THREADS = intPreferencesKey("cpu_threads")
+        val N_BATCH = intPreferencesKey("n_batch")
+        val N_UBATCH = intPreferencesKey("n_ubatch")
+        val USE_MLOCK = booleanPreferencesKey("use_mlock")
+        val FLASH_ATTENTION_MODE = stringPreferencesKey("flash_attention_mode")
+        val KV_CACHE_TYPE = stringPreferencesKey("kv_cache_type")
+        val VULKAN_DEVICE_INDEX = intPreferencesKey("vulkan_device_index")
         val DEFAULT_PROFILE = stringPreferencesKey("default_profile")
         val DEFAULT_START_SCREEN = stringPreferencesKey("default_start_screen")
         val CONFIRM_DESTRUCTIVE = booleanPreferencesKey("confirm_destructive")
@@ -85,13 +100,10 @@ class SettingsRepository(context: Context) {
         // Phase G — on-device data sources. Each is a separate app-level opt-in, independent
         // of (and in addition to) the OS runtime permission — granting the Android permission
         // doesn't mean the model should always be allowed to query it.
-        val CONTACTS_TOOL_ENABLED = booleanPreferencesKey("contacts_tool_enabled")
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
-        val SMS_TOOL_ENABLED = booleanPreferencesKey("sms_tool_enabled")
         val DEVICE_STATUS_TOOL_ENABLED = booleanPreferencesKey("device_status_tool_enabled")
         val FILES_TOOL_ENABLED = booleanPreferencesKey("files_tool_enabled")
         val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
-        val CALL_LOG_TOOL_ENABLED = booleanPreferencesKey("call_log_tool_enabled")
         val SCREEN_TIME_TOOL_ENABLED = booleanPreferencesKey("screen_time_tool_enabled")
         // Phase I — floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
@@ -187,6 +199,15 @@ class SettingsRepository(context: Context) {
     val bargeInEnabled: Flow<Boolean> = store.data.map { it[Keys.BARGE_IN_ENABLED] ?: true }
     suspend fun setBargeInEnabled(v: Boolean) { store.edit { it[Keys.BARGE_IN_ENABLED] = v } }
 
+    /** Realtime voice pipeline's speech-to-text policy (see
+     * [com.vervan.chat.voice.RealtimeVoiceController]): the active generation model is tried
+     * first when it supports audio input; this toggle only controls whether the downloaded
+     * on-device Whisper model is used as the fallback tier (default on) or skipped straight to
+     * Android's system speech recognizer (off). Has no effect until the Whisper model is
+     * actually downloaded via Model Manager. */
+    val inbuiltSttEnabled: Flow<Boolean> = store.data.map { it[Keys.INBUILT_STT_ENABLED] ?: true }
+    suspend fun setInbuiltSttEnabled(v: Boolean) { store.edit { it[Keys.INBUILT_STT_ENABLED] = v } }
+
     /** Model downloader (see com.vervan.chat.modeldownload) network settings. Off by default —
      * a large model download simply waits for Wi-Fi instead of silently spending mobile data
      * when on. */
@@ -194,6 +215,14 @@ class SettingsRepository(context: Context) {
     suspend fun setWifiOnlyModelDownloads(v: Boolean) { store.edit { it[Keys.WIFI_ONLY_MODEL_DOWNLOADS] = v } }
     val autoResumeModelDownloads: Flow<Boolean> = store.data.map { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] ?: true }
     suspend fun setAutoResumeModelDownloads(v: Boolean) { store.edit { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] = v } }
+
+    /** Long-chat context management (ChatViewModel.summarizeOlderHistoryIfNeeded) — folds turns
+     * that are about to be dropped by context eviction into a running per-chat summary instead
+     * of just discarding them, at the cost of one extra background generation call on the
+     * already-loaded model. On by default since the alternative (silent truncation) is worse
+     * for small-context models; off is for users who'd rather not pay the extra generation. */
+    val autoContextSummarization: Flow<Boolean> = store.data.map { it[Keys.AUTO_CONTEXT_SUMMARIZATION] ?: true }
+    suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
 
     /** UI text scale multiplier, 0.85x-1.3x — spec §38's font-scale accessibility setting. */
     val fontScale: Flow<Float> = store.data.map { it[Keys.FONT_SCALE] ?: 1.0f }
@@ -229,10 +258,10 @@ class SettingsRepository(context: Context) {
     val preferredBackend: Flow<String> = store.data.map { it[Keys.PREFERRED_BACKEND] ?: "AUTO" }
     suspend fun setPreferredBackend(value: String) { store.edit { it[Keys.PREFERRED_BACKEND] = value } }
 
-    /** Load the chat's selected model when a conversation opens, before the user can send.
-     * Enabled by default because it removes a long, surprising wait after the first message. */
-    val autoLoadDefaultModel: Flow<Boolean> = store.data.map { it[Keys.AUTO_LOAD_DEFAULT_MODEL] ?: true }
-    suspend fun setAutoLoadDefaultModel(enabled: Boolean) { store.edit { it[Keys.AUTO_LOAD_DEFAULT_MODEL] = enabled } }
+    /** Opt-in escape hatch for devices that can successfully lean on Android's compressed RAM
+     * or swap despite the conservative pre-load estimate. Off keeps the current strict guard. */
+    val allowLowMemoryModelLoads: Flow<Boolean> = store.data.map { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] ?: false }
+    suspend fun setAllowLowMemoryModelLoads(value: Boolean) { store.edit { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] = value } }
 
     /** Vision token budget: how many images a single prompt can attach, for models loaded
      * with vision support. */
@@ -243,6 +272,39 @@ class SettingsRepository(context: Context) {
      * the engine for reproducible output. */
     val randomSeed: Flow<Int> = store.data.map { it[Keys.RANDOM_SEED] ?: -1 }
     suspend fun setRandomSeed(value: Int) { store.edit { it[Keys.RANDOM_SEED] = value } }
+
+    val minP: Flow<Float> = store.data.map { it[Keys.MIN_P] ?: 0.05f }
+    suspend fun setMinP(value: Float) { store.edit { it[Keys.MIN_P] = value.coerceIn(0f, 1f) } }
+
+    val repetitionPenalty: Flow<Float> = store.data.map { it[Keys.REPETITION_PENALTY] ?: 1.1f }
+    suspend fun setRepetitionPenalty(value: Float) { store.edit { it[Keys.REPETITION_PENALTY] = value.coerceIn(1f, 2f) } }
+
+    val maxOutputTokens: Flow<Int> = store.data.map { it[Keys.MAX_OUTPUT_TOKENS] ?: 512 }
+    suspend fun setMaxOutputTokens(value: Int) { store.edit { it[Keys.MAX_OUTPUT_TOKENS] = value } }
+
+    /** 0/null means "auto" (`Runtime.getRuntime().availableProcessors()`), llama.cpp-only. */
+    val cpuThreads: Flow<Int> = store.data.map { it[Keys.CPU_THREADS] ?: 0 }
+    suspend fun setCpuThreads(value: Int) { store.edit { it[Keys.CPU_THREADS] = value } }
+
+    val nBatch: Flow<Int> = store.data.map { it[Keys.N_BATCH] ?: 2048 }
+    suspend fun setNBatch(value: Int) { store.edit { it[Keys.N_BATCH] = value } }
+
+    val nUbatch: Flow<Int> = store.data.map { it[Keys.N_UBATCH] ?: 512 }
+    suspend fun setNUbatch(value: Int) { store.edit { it[Keys.N_UBATCH] = value } }
+
+    val useMlock: Flow<Boolean> = store.data.map { it[Keys.USE_MLOCK] ?: false }
+    suspend fun setUseMlock(value: Boolean) { store.edit { it[Keys.USE_MLOCK] = value } }
+
+    /** "AUTO" (default — degrades safely if unsupported), "ON", or "OFF". */
+    val flashAttentionMode: Flow<String> = store.data.map { it[Keys.FLASH_ATTENTION_MODE] ?: "AUTO" }
+    suspend fun setFlashAttentionMode(value: String) { store.edit { it[Keys.FLASH_ATTENTION_MODE] = value } }
+
+    /** "f16" (default), "q8_0", or "q4_0" — llama.cpp KV cache quantization. */
+    val kvCacheType: Flow<String> = store.data.map { it[Keys.KV_CACHE_TYPE] ?: "f16" }
+    suspend fun setKvCacheType(value: String) { store.edit { it[Keys.KV_CACHE_TYPE] = value } }
+
+    val vulkanDeviceIndex: Flow<Int> = store.data.map { it[Keys.VULKAN_DEVICE_INDEX] ?: 0 }
+    suspend fun setVulkanDeviceIndex(value: Int) { store.edit { it[Keys.VULKAN_DEVICE_INDEX] = value } }
 
     /** Default model profile for new chats (spec §11.9). One of ModelProfileType.id. */
     val defaultProfile: Flow<String> = store.data.map { it[Keys.DEFAULT_PROFILE] ?: "BALANCED" }
@@ -325,20 +387,14 @@ class SettingsRepository(context: Context) {
     suspend fun setAutoDeleteAfterDays(value: Int) { store.edit { it[Keys.AUTO_DELETE_AFTER_DAYS] = value.coerceAtLeast(0) } }
 
     // ---- On-device data sources (Phase G) — all off by default ----
-    val contactsToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CONTACTS_TOOL_ENABLED] ?: false }
-    suspend fun setContactsToolEnabled(v: Boolean) { store.edit { it[Keys.CONTACTS_TOOL_ENABLED] = v } }
     val calendarToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALENDAR_TOOL_ENABLED] ?: false }
     suspend fun setCalendarToolEnabled(v: Boolean) { store.edit { it[Keys.CALENDAR_TOOL_ENABLED] = v } }
-    val smsToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SMS_TOOL_ENABLED] ?: false }
-    suspend fun setSmsToolEnabled(v: Boolean) { store.edit { it[Keys.SMS_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
     suspend fun setDeviceStatusToolEnabled(v: Boolean) { store.edit { it[Keys.DEVICE_STATUS_TOOL_ENABLED] = v } }
     val filesToolEnabled: Flow<Boolean> = store.data.map { it[Keys.FILES_TOOL_ENABLED] ?: false }
     suspend fun setFilesToolEnabled(v: Boolean) { store.edit { it[Keys.FILES_TOOL_ENABLED] = v } }
     val locationToolEnabled: Flow<Boolean> = store.data.map { it[Keys.LOCATION_TOOL_ENABLED] ?: false }
     suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
-    val callLogToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALL_LOG_TOOL_ENABLED] ?: false }
-    suspend fun setCallLogToolEnabled(v: Boolean) { store.edit { it[Keys.CALL_LOG_TOOL_ENABLED] = v } }
     val screenTimeToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREEN_TIME_TOOL_ENABLED] ?: false }
     suspend fun setScreenTimeToolEnabled(v: Boolean) { store.edit { it[Keys.SCREEN_TIME_TOOL_ENABLED] = v } }
 
@@ -371,8 +427,6 @@ class SettingsRepository(context: Context) {
         if (expertise.isNotBlank()) parts += "The user's expertise level is $expertise."
         val langs = userLanguages.first()
         if (langs.isNotEmpty()) parts += "The user speaks ${langs.joinToString(", ")}."
-        val coding = userCodingLanguages.first()
-        if (coding.isNotEmpty()) parts += "For code, the user prefers ${coding.joinToString(", ")}."
         val units = userUnits.first()
         if (units == "imperial") parts += "The user prefers imperial units."
         val avoid = userTopicsAvoid.first()

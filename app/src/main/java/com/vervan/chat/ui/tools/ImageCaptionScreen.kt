@@ -11,24 +11,28 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
@@ -43,9 +47,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
+import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -74,17 +85,44 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
 
     var imagePath by remember { mutableStateOf<String?>(null) }
     var output by remember { mutableStateOf("") }
+    var errorText by remember { mutableStateOf<String?>(null) }
     var activeMode by remember { mutableStateOf<String?>(null) }
     var isRunning by remember { mutableStateOf(false) }
+    var genJob by remember { mutableStateOf<Job?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    var lastMode by remember { mutableStateOf<CaptionMode?>(null) }
 
     fun runMode(mode: CaptionMode) {
         val path = imagePath ?: return
+        genJob?.cancel()
         isRunning = true
         activeMode = mode.label
+        lastMode = mode
         output = ""
-        scope.launch {
-            output = OneShotLlm.run(app, mode.prompt, imagePath = path)?.trim().orEmpty()
-            isRunning = false
+        errorText = null
+        genJob = scope.launch {
+            try {
+                val flow = OneShotLlm.stream(app, mode.prompt, imagePath = path)
+                if (flow == null) {
+                    errorText = "No generation model is active. Load a vision-capable model from Models."
+                } else {
+                    val sb = StringBuilder()
+                    var lastEmit = 0L
+                    flow.collect {
+                        sb.append(it)
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmit > 60) { output = sb.toString().trim(); lastEmit = now }
+                    }
+                    output = sb.toString().trim()
+                    if (output.isBlank()) errorText = "The model returned an empty response. Try again."
+                }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                errorText = t.toUserMessage()
+            } finally {
+                isRunning = false
+            }
         }
     }
 
@@ -123,21 +161,31 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 title = { Text("Image caption & alt text") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
+            ToolIntro(
+                icon = Icons.Filled.ImageSearch,
+                title = "Describe an image for any audience",
+                body = "Create alt text, captions, or detailed image descriptions locally."
+            )
             if (visionAvailable == false) {
                 Text(
-                    "The active model doesn't declare vision support — switch to a vision-capable model in Model Manager to use this tool.",
+                "Load a vision-capable model to use this tool.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error
                 )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f), enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.height(18.dp)); Text(" Camera")
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(" Camera")
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, modifier = Modifier.weight(1f), enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.height(18.dp)); Text(" From files")
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text(" From files")
                 }
             }
             imagePath?.let { path ->
@@ -145,28 +193,52 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = 12.dp), contentScale = ContentScale.Fit) }
                 FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     CAPTION_MODES.forEach { mode ->
-                        FilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
+                        VervanFilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
                     }
                 }
             }
-            if (isRunning) {
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(Modifier.padding(end = 8.dp)); Text("Generating…")
+            when {
+                isRunning && output.isBlank() -> {
+                    com.vervan.chat.ui.common.OperationProgressCard(
+                        title = "Creating ${activeMode?.lowercase() ?: "description"}",
+                        body = "Analyzing the image on this device.",
+                        actionLabel = "Stop",
+                        onAction = { genJob?.cancel(); isRunning = false }
+                    )
                 }
-            } else if (output.isNotBlank()) {
-                Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(output, style = MaterialTheme.typography.bodyMedium)
-                        OutlinedButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Caption", output))
-                            },
-                            modifier = Modifier.padding(top = 8.dp)
-                        ) { Icon(Icons.Filled.ContentCopy, null, Modifier.height(18.dp)); Text(" Copy") }
+                output.isNotBlank() -> {
+                    ToolResultHeader(
+                        title = activeMode?.takeIf { it.isNotBlank() } ?: "Description ready",
+                        supportingText = if (isRunning) "Generating on-device…" else "Ready to copy and use"
+                    )
+                    Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(output, style = MaterialTheme.typography.bodyMedium)
+                            if (!isRunning) {
+                                OutlinedButton(
+                                    onClick = {
+                                        context.getSystemService(android.content.ClipboardManager::class.java)
+                                            .setPrimaryClip(android.content.ClipData.newPlainText("Caption", output))
+                                        scope.launch { snackbarHostState.showSnackbar("Copied") }
+                                    },
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" Copy") }
+                            }
+                        }
                     }
                 }
+                errorText != null -> {
+                    com.vervan.chat.ui.common.OperationErrorCard(
+                        title = "Couldn't generate a caption",
+                        message = errorText!!,
+                        recovery = "Load a vision model or choose a clearer image, then try again.",
+                        actionLabel = lastMode?.let { "Try again" },
+                        onAction = lastMode?.let { mode -> { runMode(mode) } },
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
             }
+        }
         }
     }
 }

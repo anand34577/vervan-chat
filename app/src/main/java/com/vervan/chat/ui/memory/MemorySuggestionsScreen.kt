@@ -42,7 +42,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.MemorySuggestion
 import com.vervan.chat.ui.common.BoundedTextField
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,21 +65,18 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         if (pending.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
-                Text("No pending suggestions.", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Suggestions land here when something looks worth remembering. Nothing is saved until you accept it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
+            EmptyState(
+                icon = Icons.Filled.Check,
+                title = "You’re all caught up",
+                body = "Useful details from conversations may appear here."
+            )
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(8.dp)) {
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(pending, key = { it.id }) { suggestion ->
                     val conflict = vm.conflictFor(suggestion)
-                    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
                         Column(Modifier.padding(12.dp)) {
                             Text(suggestion.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -109,6 +109,7 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 

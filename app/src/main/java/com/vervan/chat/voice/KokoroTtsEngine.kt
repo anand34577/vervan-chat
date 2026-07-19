@@ -8,7 +8,7 @@ import com.vervan.chat.data.db.dao.TtsVoiceModelDao
  * selected by [TtsEngineSelector]'s `AUTO` ordering since it can run 2-3 minutes of compute
  * per minute of audio on budget/mid-range devices — that would break the realtime feel.
  *
- * ponytail: same API-surface caveat as [PiperTtsEngine] — confirm
+ * same API-surface caveat as [PiperTtsEngine] — confirm
  * `OfflineTtsKokoroModelConfig`'s exact required fields against the real AAR at first sync.
  */
 class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
@@ -41,8 +41,15 @@ class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
             model = com.k2fsa.sherpa.onnx.OfflineTtsModelConfig(kokoro = kokoro, numThreads = 2, provider = "cpu"),
             maxNumSentences = 1
         )
-        // See PiperTtsEngine.loadVoice for why this is positional + a null AssetManager.
-        return com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        // See PiperTtsEngine.loadVoice for why this is positional + a null AssetManager, and why
+        // a self-test synthesis call follows rather than trusting construction alone.
+        val tts = com.k2fsa.sherpa.onnx.OfflineTts(null, config)
+        val selfTest = tts.generate("test", 0, 1.0f)
+        if (selfTest.samples.isEmpty()) {
+            tts.release()
+            throw IllegalStateException("Voice loaded but self-test synthesis produced no audio")
+        }
+        return tts
     }
 
     override suspend fun synthesize(text: String, lang: String): TtsAudio {

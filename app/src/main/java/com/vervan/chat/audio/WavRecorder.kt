@@ -11,7 +11,7 @@ import java.io.RandomAccessFile
 /**
  * Records mono 16kHz/16-bit PCM straight to a `.wav` file via [AudioRecord] — the exact
  * format `LlmInferenceSession.addAudio()` requires (see [com.vervan.chat.llm.LlmEngine]).
- * ponytail: a plain background [Thread] for the blocking read loop, not a coroutine —
+ * a plain background [Thread] for the blocking read loop, not a coroutine —
  * this is a bounded start/stop lifecycle, not a stream anything else needs to observe.
  * Caller must already hold RECORD_AUDIO before calling [start].
  */

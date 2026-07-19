@@ -4,7 +4,7 @@ import com.vervan.chat.data.db.entities.Message
 
 /**
  * Pure tree-walk helpers over a chat's full message list (every branch, not just the
- * active one). ponytail: no recursive SQL, no cached child-map — `all` is walked fresh
+ * active one). no recursive SQL, no cached child-map — `all` is walked fresh
  * each call. Fine at chat-sized message counts (tens to low hundreds); revisit if a
  * chat's total message count (across all branches) ever gets large enough to matter.
  */

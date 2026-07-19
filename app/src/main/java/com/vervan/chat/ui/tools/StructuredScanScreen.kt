@@ -10,13 +10,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -49,6 +49,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSectionHeader
@@ -60,10 +61,6 @@ import org.json.JSONObject
 import java.io.File
 
 enum class ScanKind(val title: String, val fields: List<Pair<String, String>>) {
-    BUSINESS_CARD(
-        "Business card scanner",
-        listOf("name" to "Name", "company" to "Company", "jobTitle" to "Job title", "phone" to "Phone", "email" to "Email", "website" to "Website", "address" to "Address")
-    ),
     RECEIPT(
         "Receipt scanner",
         listOf("merchant" to "Merchant", "date" to "Date", "total" to "Total", "tax" to "Tax", "currency" to "Currency", "paymentMethod" to "Payment method")
@@ -73,8 +70,8 @@ enum class ScanKind(val title: String, val fields: List<Pair<String, String>>) {
 }
 
 /**
- * Camera/file image -> OCR -> LLM extracts structured fields (JSON for business
- * card/receipt, a Markdown table for the table kind) -> editable fields + export.
+ * Camera/file image -> OCR -> LLM extracts structured fields (JSON for receipts/forms,
+ * a Markdown table for the table kind) -> editable fields + export.
  * One screen parameterized by [ScanKind] instead of three near-identical ones.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,10 +84,12 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     var imagePath by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
     var fields by remember { mutableStateOf(mapOf<String, String>()) }
     var lineItems by remember { mutableStateOf("") }
     var markdownTable by remember { mutableStateOf("") }
     var customFieldsInput by remember { mutableStateOf("") }
+    var lastFile by remember { mutableStateOf<File?>(null) }
     val activeFields = remember(kind, customFieldsInput) {
         if (kind == ScanKind.CUSTOM) customFieldsInput.split(",").map { it.trim() }.filter { it.isNotBlank() }.map { it to it }
         else kind.fields
@@ -98,26 +97,45 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
 
     fun runExtraction(file: File) {
         imagePath = file.absolutePath
+        lastFile = file
         isProcessing = true
+        errorText = null
+        statusMessage = null
+        fields = emptyMap()
+        markdownTable = ""
+        lineItems = ""
         scope.launch {
-            val ocrText = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("") }
-            if (kind == ScanKind.TABLE) {
-                val prompt = "Convert the table found in the following OCR text into a Markdown table (pipe-separated, with a header row). " +
-                    "Respond with ONLY the Markdown table, no explanation.\n\nOCR text:\n$ocrText"
-                markdownTable = OneShotLlm.run(app, prompt)?.trim().orEmpty()
-            } else {
-                val keys = activeFields.joinToString(", ") { it.first }
-                val prompt = "From the following OCR text" +
-                    (if (kind == ScanKind.BUSINESS_CARD) " (from a business card)" else if (kind == ScanKind.RECEIPT) " (from a receipt)" else " (from a document/ID/invoice/business card)") +
-                    ", extract a JSON object with exactly these keys: $keys" +
-                    (if (kind == ScanKind.RECEIPT) ", lineItems (an array of short strings like \"Item name - price\")" else "") +
-                    ". Use an empty string (or empty array) for anything not found. Respond with ONLY the JSON object, no markdown fences, no explanation.\n\nOCR text:\n$ocrText"
-                val raw = OneShotLlm.run(app, prompt)?.trim().orEmpty()
-                val json = runCatching { JSONObject(raw.substringAfter("{").let { "{$it" }.substringBeforeLast("}").let { "$it}" }) }.getOrNull()
-                fields = activeFields.associate { (key, _) -> key to (json?.optString(key).orEmpty()) }
-                lineItems = json?.optJSONArray("lineItems")?.let { arr -> (0 until arr.length()).joinToString("\n") { arr.optString(it) } }.orEmpty()
+            try {
+                val ocrText = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("") }
+                if (ocrText.isBlank()) {
+                    errorText = "No readable text was found in that image. Try a clearer, closer photo."
+                    return@launch
+                }
+                if (kind == ScanKind.TABLE) {
+                    val prompt = "Convert the table found in the following OCR text into a Markdown table (pipe-separated, with a header row). " +
+                        "Respond with ONLY the Markdown table, no explanation.\n\nOCR text:\n$ocrText"
+                    markdownTable = OneShotLlm.run(app, prompt)?.trim()
+                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                    if (markdownTable.isBlank()) errorText = "The model couldn't build a table from that image. Try again."
+                } else {
+                    val keys = activeFields.joinToString(", ") { it.first }
+                    val prompt = "From the following OCR text" +
+                        (if (kind == ScanKind.RECEIPT) " (from a receipt)" else " (from a document or image)") +
+                        ", extract a JSON object with exactly these keys: $keys" +
+                        (if (kind == ScanKind.RECEIPT) ", lineItems (an array of short strings like \"Item name - price\")" else "") +
+                        ". Use an empty string (or empty array) for anything not found. Respond with ONLY the JSON object, no markdown fences, no explanation.\n\nOCR text:\n$ocrText"
+                    val raw = OneShotLlm.run(app, prompt)?.trim()
+                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                    val json = runCatching { JSONObject(raw.substringAfter("{").let { "{$it" }.substringBeforeLast("}").let { "$it}" }) }.getOrNull()
+                    fields = activeFields.associate { (key, _) -> key to (json?.optString(key).orEmpty()) }
+                    lineItems = json?.optJSONArray("lineItems")?.let { arr -> (0 until arr.length()).joinToString("\n") { arr.optString(it) } }.orEmpty()
+                    if (fields.values.all { it.isBlank() }) errorText = "Couldn't extract those fields. You can edit the source photo and try again."
+                }
+            } catch (t: Throwable) {
+                errorText = t.toUserMessage()
+            } finally {
+                isProcessing = false
             }
-            isProcessing = false
         }
     }
 
@@ -186,7 +204,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 icon = Icons.Filled.PhotoCamera,
                 eyebrow = "Scan and extract",
                 title = kind.title,
-                body = "Capture a clear source, let the local model organize it, then correct and export the structured result."
+                body = "Capture a clear image, review the extracted fields, then export."
             )
             VervanSectionHeader("1 · Choose what to capture")
             if (kind == ScanKind.CUSTOM) {
@@ -200,11 +218,11 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             val captureEnabled = kind != ScanKind.CUSTOM || activeFields.isNotEmpty()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = captureEnabled, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.height(18.dp))
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                     Text(" Camera")
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = captureEnabled, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.height(18.dp))
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
                     Text(" From files")
                 }
             }
@@ -217,18 +235,28 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 Text(
-                    "No source added yet. Use the camera for paper in front of you, or choose an existing image from files.",
+                "Take a photo or choose an image to begin.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(Space.lg)
                 )
             }
             VervanSectionHeader("3 · Review extracted data")
+            errorText?.let {
+                com.vervan.chat.ui.common.OperationErrorCard(
+                    title = "Couldn't extract data",
+                    message = it,
+                    recovery = "Use a sharper, well-lit image, then try again.",
+                    actionLabel = lastFile?.let { "Try again" },
+                    onAction = lastFile?.let { file -> { runExtraction(file) } },
+                    modifier = Modifier.padding(bottom = Space.md)
+                )
+            }
             if (isProcessing) {
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(Modifier.padding(end = 8.dp))
-                    Text("Extracting…")
-                }
+                com.vervan.chat.ui.common.OperationProgressCard(
+                    title = "Extracting ${kind.title.lowercase()}",
+                    body = "Reading the image and organizing its contents locally."
+                )
             } else if (kind == ScanKind.TABLE) {
                 if (markdownTable.isNotBlank()) {
                     OutlinedTextField(
@@ -259,28 +287,6 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         )
                     }
                     when (kind) {
-                        ScanKind.BUSINESS_CARD -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val insertContact = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-                            OutlinedButton(
-                                onClick = {
-                                    insertContact.launch(
-                                        android.content.Intent(android.provider.ContactsContract.Intents.Insert.ACTION).apply {
-                                            type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.NAME, fields["name"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.COMPANY, fields["company"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.JOB_TITLE, fields["jobTitle"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, fields["phone"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.EMAIL, fields["email"])
-                                        }
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.ContactPage, null, Modifier.height(18.dp)); Text(" Save contact") }
-                            Button(
-                                onClick = { exportFile("contact-${System.currentTimeMillis()}.vcf", buildVCard(fields), "text/x-vcard") },
-                                modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.Share, null, Modifier.height(18.dp)); Text(" Export .vcf") }
-                        }
                         ScanKind.RECEIPT -> Column {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -290,7 +296,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                         exportFile("receipt-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                     },
                                     modifier = Modifier.weight(1f)
-                                ) { Icon(Icons.Filled.Share, null, Modifier.height(18.dp)); Text(" Export CSV") }
+                                ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Export CSV") }
                                 Button(
                                     onClick = {
                                         scope.launch {
@@ -325,7 +331,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                     exportFile("form-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.Share, null, Modifier.height(18.dp)); Text(" Export CSV") }
+                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Export CSV") }
                         }
                         else -> {}
                     }
@@ -335,19 +341,6 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
        }
       }
     }
-}
-
-private fun buildVCard(fields: Map<String, String>): String = buildString {
-    appendLine("BEGIN:VCARD")
-    appendLine("VERSION:3.0")
-    appendLine("FN:${fields["name"].orEmpty()}")
-    appendLine("ORG:${fields["company"].orEmpty()}")
-    appendLine("TITLE:${fields["jobTitle"].orEmpty()}")
-    appendLine("TEL:${fields["phone"].orEmpty()}")
-    appendLine("EMAIL:${fields["email"].orEmpty()}")
-    appendLine("URL:${fields["website"].orEmpty()}")
-    appendLine("ADR:;;${fields["address"].orEmpty()};;;;")
-    appendLine("END:VCARD")
 }
 
 private fun parseMarkdownRows(markdown: String): List<List<String>> =

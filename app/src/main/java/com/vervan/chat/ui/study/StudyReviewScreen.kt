@@ -1,8 +1,11 @@
 package com.vervan.chat.ui.study
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -37,6 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,6 +49,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
+import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 
@@ -60,9 +67,25 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     var shuffled by remember { mutableStateOf(false) }
     var sessionCorrect by remember { mutableIntStateOf(0) }
     var sessionSeen by remember { mutableIntStateOf(0) }
-    val sessionCards = remember(cards, shuffled) { if (shuffled) cards.shuffled() else cards }
-    fun resetSession() { index = 0; revealed = false; sessionCorrect = 0; sessionSeen = 0 }
+    // Snapshot the deck once per session instead of re-deriving from `cards` on every
+    // recomposition — `cards` re-emits on every markResult() write (it's backed by a Room Flow),
+    // which used to reshuffle the deck under the user mid-session and, with "Needs practice" on,
+    // could shrink the deck the instant a card was answered correctly and skip/end the session
+    // early. A session now only resets on an explicit user action (toggling the filter/shuffle
+    // chips, "Review again", "Practice missed cards") or the very first time real data arrives.
+    var sessionCards by remember { mutableStateOf<List<StudyCard>>(emptyList()) }
+    var sessionDataLoaded by remember { mutableStateOf(false) }
+    fun resetSession() {
+        sessionCards = if (shuffled) cards.shuffled() else cards
+        index = 0; revealed = false; sessionCorrect = 0; sessionSeen = 0
+    }
     LaunchedEffect(missedOnly, shuffled) { resetSession() }
+    LaunchedEffect(cards) {
+        if (!sessionDataLoaded && cards.isNotEmpty()) {
+            sessionDataLoaded = true
+            resetSession()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -79,13 +102,13 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
+                VervanFilterChip(
                     selected = missedOnly,
                     onClick = { vm.setMissedOnly(!missedOnly) },
                     label = { Text("Needs practice") },
                     leadingIcon = { Icon(Icons.Filled.School, contentDescription = null) }
                 )
-                FilterChip(
+                VervanFilterChip(
                     selected = shuffled,
                     onClick = { shuffled = !shuffled },
                     label = { Text("Shuffle") },
@@ -123,36 +146,51 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
 
             val card = sessionCards[index]
+            // Real 3D flashcard flip: front (question) and back (answer) share one Card whose
+            // rotationY animates 0→180; past 90° the content swaps and is counter-mirrored so
+            // the answer face isn't rendered as mirror text. Each card gets a stable categorical
+            // accent so a deck reads as a colorful stack instead of forty identical grey cards.
+            val accent = com.vervan.chat.ui.theme.vervanAccentFor(index)
+            val rotation by animateFloatAsState(if (revealed) 180f else 0f, tween(durationMillis = 380), label = "card-flip")
+            val showAnswer = rotation > 90f
             Card(
                 onClick = { revealed = !revealed },
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 20.dp).animateContentSize(),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 20.dp)
+                    .graphicsLayer {
+                        rotationY = rotation
+                        cameraDistance = 14f * density
+                    },
                 colors = CardDefaults.cardColors(
-                    containerColor = if (revealed) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainerLow
+                    containerColor = if (showAnswer) accent.container else MaterialTheme.colorScheme.surfaceContainerLow
                 ),
-                border = BorderStroke(1.dp, if (revealed) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(
+                    if (showAnswer) 1.dp else 2.dp,
+                    if (showAnswer) accent.onContainer.copy(alpha = 0.25f) else accent.container
+                )
             ) {
                 Column(
-                    Modifier.fillMaxSize().padding(28.dp),
+                    Modifier.fillMaxSize()
+                        .graphicsLayer { if (showAnswer) rotationY = 180f }
+                        .padding(28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        if (revealed) "ANSWER" else "QUESTION",
+                        if (showAnswer) "ANSWER" else "QUESTION",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (showAnswer) accent.onContainer else MaterialTheme.colorScheme.primary
                     )
-                    Crossfade(targetState = revealed, label = "flashcard-face") { showAnswer ->
-                        Text(
-                            if (showAnswer) card.answer else card.question,
-                            style = MaterialTheme.typography.headlineSmall,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 16.dp)
-                        )
-                    }
                     Text(
-                        if (revealed) "Tap to see the question" else "Think first, then tap to reveal",
+                        if (showAnswer) card.answer else card.question,
+                        style = MaterialTheme.typography.headlineSmall,
+                        textAlign = TextAlign.Center,
+                        color = if (showAnswer) accent.onContainer else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                    Text(
+                        if (showAnswer) "Tap to flip back" else "Think first, then tap to flip",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (showAnswer) accent.onContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 24.dp)
                     )
                 }
@@ -192,11 +230,25 @@ private fun SessionComplete(
 ) {
     val percent = if (seen == 0) 0 else correct * 100 / seen
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(20.dp))
+        // Animated score ring — sweeps up to the session score on entry.
+        val sweep by animateFloatAsState(percent / 100f, tween(durationMillis = 900), label = "score-ring")
+        val ringColor = MaterialTheme.colorScheme.primary
+        val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
+                val inset = stroke.width / 2
+                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke.width, size.height - stroke.width)
+                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+                drawArc(trackColor, -90f, 360f, useCenter = false, style = stroke, topLeft = topLeft, size = arcSize)
+                drawArc(ringColor, -90f, 360f * sweep, useCenter = false, style = stroke, topLeft = topLeft, size = arcSize)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text("$correct of $seen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Text("Review complete", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 20.dp))
-        Text("$percent% · $correct of $seen correct", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
         Text(
             if (percent >= 80) "Strong recall. A short review later will help it stick." else "Review the cards you missed while they are still fresh.",
             style = MaterialTheme.typography.bodyMedium,

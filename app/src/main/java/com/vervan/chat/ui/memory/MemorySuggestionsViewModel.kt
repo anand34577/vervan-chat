@@ -38,7 +38,7 @@ class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
             if (conflict != null && overwriteConflict) {
                 db.memoryDao().delete(conflict)
             }
-            db.memoryDao().upsert(
+            app.container.memoryRepository.upsert(
                 Memory(
                     text = suggestion.text,
                     key = suggestion.key,

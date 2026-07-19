@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
@@ -91,16 +92,34 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
             Surface(
                 modifier = Modifier.widthIn(max = 360.dp).padding(16.dp),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 1.dp
+                shape = com.vervan.chat.ui.theme.VervanExtraShapes.hero,
+                color = com.vervan.chat.ui.theme.SurfaceRole.Overlay.containerColor(),
+                border = com.vervan.chat.ui.theme.SurfaceRole.Overlay.border(),
+                shadowElevation = com.vervan.chat.ui.theme.SurfaceRole.Overlay.shadowElevation
             ) {
               Column(
                 Modifier.fillMaxWidth().padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
               ) {
-                IconAffordance(Icons.Filled.Lock, size = IconAffordanceSize.Feature)
+                // Brand-gradient lock mark — the same identity mark the nav dock and chat avatar
+                // carry, so the gate reads as Vervan rather than a generic dialog.
+                Box(
+                    Modifier
+                        .size(64.dp)
+                        .background(
+                            com.vervan.chat.ui.theme.vervanBrandGradient(),
+                            androidx.compose.foundation.shape.CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
                 Text("Vervan Chat is locked", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Your data stays on this device — unlock to continue.",

@@ -21,7 +21,7 @@ data class SourcePassage(
 )
 
 /**
- * ponytail: brute-force over every chunk in scope for both keyword (term overlap) and
+ * brute-force over every chunk in scope for both keyword (term overlap) and
  * semantic (cosine) scoring — no FTS index, no ANN index. Fine for a personal knowledge
  * base (hundreds to low thousands of chunks); revisit if imports grow past that.
  */
@@ -37,13 +37,16 @@ class RetrievalEngine(
         topK: Int = 5
     ): List<SourcePassage> {
         if (kbIds.isEmpty() || query.isBlank()) return emptyList()
-        var chunks = chunkDao.getForKnowledgeBases(kbIds)
+        // Fetch one past the cap so an oversized KB is still detectable/loggable below, without
+        // pulling the full unbounded result set into memory first (the cap used to be applied
+        // only after the whole scope had already been read).
+        var chunks = chunkDao.getForKnowledgeBases(kbIds, MAX_CHUNKS_PER_QUERY + 1)
         if (chunks.isEmpty()) return emptyList()
         if (chunks.size > MAX_CHUNKS_PER_QUERY) {
-            // ponytail: brute-force scan has no size guard (B9) — cap rather than let a large
+            // brute-force scan has no size guard (B9) — cap rather than let a large
             // KB silently balloon memory/latency. Upgrade to an FTS/ANN index if imports
             // routinely exceed this in practice.
-            android.util.Log.w("RetrievalEngine", "KB scope has ${chunks.size} chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
+            android.util.Log.w("RetrievalEngine", "KB scope has more than $MAX_CHUNKS_PER_QUERY chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
             chunks = chunks.take(MAX_CHUNKS_PER_QUERY)
         }
 
@@ -75,10 +78,22 @@ class RetrievalEngine(
             }
         }
 
+        // Below this, a match is noise (a single incidental keyword, or near-orthogonal
+        // cosine similarity) rather than actual evidence — don't let it fill a topK slot
+        // just because nothing better scored.
+        val minScore = if (mode == RetrievalMode.EXACT_PHRASE) 1f else MIN_RELEVANCE_SCORE
+
         val docNames = mutableMapOf<String, String>()
+        val perDocCount = mutableMapOf<String, Int>()
         return combined.entries
-            .filter { it.value > 0f }
+            .filter { it.value >= minScore }
             .sortedByDescending { it.value }
+            // Cap chunks-per-document so one large/matching document can't fill every topK
+            // slot with adjacent passages, leaving no room for other relevant documents.
+            .filter { (chunk, _) ->
+                val count = perDocCount.getOrDefault(chunk.documentId, 0)
+                (count < MAX_CHUNKS_PER_DOCUMENT).also { if (it) perDocCount[chunk.documentId] = count + 1 }
+            }
             .take(topK)
             .map { (chunk, score) ->
                 val docName = docNames.getOrPut(chunk.documentId) { documentDao.get(chunk.documentId)?.displayName ?: "Unknown" }
@@ -88,6 +103,8 @@ class RetrievalEngine(
 
     companion object {
         private const val MAX_CHUNKS_PER_QUERY = 4000
+        private const val MIN_RELEVANCE_SCORE = 0.15f
+        private const val MAX_CHUNKS_PER_DOCUMENT = 2
     }
 
     private fun keywordScore(query: String, chunks: List<Chunk>): Map<String, Float> {

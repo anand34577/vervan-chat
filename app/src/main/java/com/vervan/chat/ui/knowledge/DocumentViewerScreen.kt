@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -22,6 +24,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,7 +54,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(document?.displayName ?: "Document", maxLines = 1) },
+                title = { Text("Document preview", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     IconButton(
@@ -78,8 +83,45 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        androidx.compose.material3.Surface(
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.padding(Space.md).size(32.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                            Text(doc.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                            val file = java.io.File(doc.filePath)
+                            val size = if (file.exists()) {
+                                val bytes = file.length()
+                                if (bytes < 1024 * 1024) "%.1f KB".format(bytes / 1024.0) else "%.1f MB".format(bytes / (1024.0 * 1024.0))
+                            } else "Original unavailable"
+                            Text(
+                                "${doc.mimeType.substringAfterLast('/').uppercase()} · $size · ${chunks.size} sections",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Space.xs)
+                            )
+                            Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                                Text("Private on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
+                            }
+                        }
+                        IconButton(
+                            enabled = java.io.File(doc.filePath).exists(),
+                            onClick = { com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) }
+                        ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original document") }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                     Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text("${chunks.size} sections", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -88,6 +130,11 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
             error?.let {
                 com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             }
+            VervanSectionHeader(
+                title = "Searchable text",
+                count = chunks.size,
+                modifier = Modifier.padding(horizontal = Space.md)
+            )
             LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
                 items(chunks, key = { it.id }) { chunk ->
                     Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
@@ -102,10 +149,11 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
                 }
                 if (chunks.isEmpty()) {
                     item {
-                        Text("No indexed content. Tap re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+                        Text("No searchable text. Re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
                     }
                 }
             }
+        }
         }
     }
 }

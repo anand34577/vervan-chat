@@ -8,36 +8,39 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelBackend
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
-import com.vervan.chat.data.db.entities.reconcileCapabilities
 import com.vervan.chat.model.ImportResult
 import com.vervan.chat.llm.LlmEngine
+import com.vervan.chat.modelload.LoadTrigger
+import com.vervan.chat.modelload.ModelLoadInfo
+import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private fun BackendChoice.toEnginePreference(): LlmEngine.BackendPreference = when (this) {
-    BackendChoice.AUTO -> LlmEngine.BackendPreference.AUTO
-    BackendChoice.GPU -> LlmEngine.BackendPreference.GPU_ONLY
-    BackendChoice.CPU -> LlmEngine.BackendPreference.CPU_ONLY
-    BackendChoice.NPU -> LlmEngine.BackendPreference.NPU_ONLY
-}
-
-/** App-wide generation defaults (Settings) — a model's own temperature/topP/topK/context/seed
- * fields are null until the user overrides them in Configure, and fall back to these. */
+/** App-wide generation defaults (Settings) — a model's own temperature/topP/topK/context/seed/
+ * (and the newer minP/repetitionPenalty/maxOutputTokens/llama.cpp load knobs) fields are null
+ * until the user overrides them in Configure, and fall back to these. */
 data class ModelDefaults(
     val temperature: Float,
     val topP: Float,
     val topK: Int,
     val maxNumImages: Int,
     val contextTokens: Int,
-    val seed: Int
+    val seed: Int,
+    val minP: Float,
+    val repetitionPenalty: Float,
+    val maxOutputTokens: Int,
+    val cpuThreads: Int,
+    val nBatch: Int,
+    val nUbatch: Int,
+    val vulkanDeviceIndex: Int
 )
 
 class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
@@ -45,6 +48,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val importManager = app.container.modelImportManager
     private val settings = app.container.settingsRepository
     private val downloadRepo = app.container.modelDownloadRepository
+    private val coordinator = app.container.modelLoadCoordinator
 
     /** Catalogue entries not yet installed + anything actively downloading — "Available for
      * Download" and "Active Downloads" both render from this one flow, split by status. Ready
@@ -65,8 +69,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun cancelDownload(modelId: String, version: String, keepPartial: Boolean) {
         viewModelScope.launch { downloadRepo.cancelDownload(modelId, version, keepPartial) }
     }
-    fun retryDownload(modelId: String, version: String) {
-        viewModelScope.launch { downloadRepo.retryDownload(modelId, version) }
+    fun deleteDownload(modelId: String, version: String) {
+        viewModelScope.launch { downloadRepo.deleteDownload(modelId, version) }
     }
 
     companion object {
@@ -77,7 +81,9 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val defaults: StateFlow<ModelDefaults> = combine<Number, ModelDefaults>(
-        settings.temperature, settings.topP, settings.topK, settings.maxNumImages, settings.contextTokenLimit, settings.randomSeed
+        settings.temperature, settings.topP, settings.topK, settings.maxNumImages, settings.contextTokenLimit, settings.randomSeed,
+        settings.minP, settings.repetitionPenalty, settings.maxOutputTokens,
+        settings.cpuThreads, settings.nBatch, settings.nUbatch, settings.vulkanDeviceIndex
     ) { values ->
         ModelDefaults(
             temperature = values[0].toFloat(),
@@ -85,20 +91,40 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             topK = values[2].toInt(),
             maxNumImages = values[3].toInt(),
             contextTokens = values[4].toInt(),
-            seed = values[5].toInt()
+            seed = values[5].toInt(),
+            minP = values[6].toFloat(),
+            repetitionPenalty = values[7].toFloat(),
+            maxOutputTokens = values[8].toInt(),
+            cpuThreads = values[9].toInt(),
+            nBatch = values[10].toInt(),
+            nUbatch = values[11].toInt(),
+            vulkanDeviceIndex = values[12].toInt()
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelDefaults(0.8f, 0.95f, 40, 1, 4096, -1))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelDefaults(0.8f, 0.95f, 40, 1, 4096, -1, 0.05f, 1.1f, 512, 0, 2048, 512, 0))
+
+    // Simple non-Number defaults kept as their own tiny StateFlows rather than folded into the
+    // combine above (which is typed to a single Number element type) — same "stateIn a single
+    // Flow" pattern already used for downloadStates below.
+    val expertMode: StateFlow<Boolean> = settings.expertMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val useMlockDefault: StateFlow<Boolean> = settings.useMlock.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val flashAttentionModeDefault: StateFlow<String> = settings.flashAttentionMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val kvCacheTypeDefault: StateFlow<String> = settings.kvCacheType.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "f16")
 
     init {
-        // Single-model-per-role convenience (user ask): with only one generation (or
-        // embedding) model installed, it's simply "the" model — no manual "set as default"
-        // step needed. Re-evaluated on every models change so this also kicks in right after
-        // deleting down to a lone survivor, not just at import time.
+        // Auto-default convenience (user ask): whenever a role has installed models but none
+        // is active yet — the first import, or every model of that role having just been
+        // deactivated some other way — pick one automatically instead of leaving the role
+        // defaultless until the user visits Model Manager. Goes through setActive() (not
+        // straight to the coordinator) so the license-acknowledgment gate still applies: an
+        // unacknowledged sole model still raises the acknowledgment dialog instead of silently
+        // becoming the default. Re-evaluated on every models change, so this also covers
+        // deleting a role down to a lone survivor, not just import time.
         viewModelScope.launch {
             models.collect { list ->
                 ModelRole.entries.forEach { role ->
-                    val sole = list.filter { it.role == role }.singleOrNull()
-                    if (sole != null && !sole.isActive) setActive(sole)
+                    val ofRole = list.filter { it.role == role }
+                    val candidate = ofRole.firstOrNull()
+                    if (candidate != null && ofRole.none { it.isActive }) setActive(candidate)
                 }
             }
         }
@@ -127,20 +153,18 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val _pendingMigration = MutableStateFlow<Pair<ModelInfo, ModelInfo>?>(null)
     val pendingMigration: StateFlow<Pair<ModelInfo, ModelInfo>?> = _pendingMigration
 
-    /** Which model.filePath is actually resident in the (single, shared) generation/embedding
-     * engine right now — drives the single Load/Unload toggle per card instead of showing both
-     * buttons regardless of real state. Refreshed after every action that can change it; this
-     * screen is the only place that mutates engine state via user action, so polling on every
-     * recomposition isn't needed. */
-    private val _loadedGenerationPath = MutableStateFlow<String?>(app.container.llmEngine.loadedModelPath)
-    val loadedGenerationPath: StateFlow<String?> = _loadedGenerationPath
-    private val _loadedEmbeddingPath = MutableStateFlow<String?>(app.container.embeddingEngine.loadedModelPath)
-    val loadedEmbeddingPath: StateFlow<String?> = _loadedEmbeddingPath
+    /** Which model.id is actually resident in the (single, shared) generation/embedding engine
+     * right now — drives the single Load/Unload toggle per card instead of showing both buttons
+     * regardless of real state, and the per-role error banner (spec: load errors must also be
+     * visible in Model Manager). Sourced from the coordinator so this screen and chat/voice can
+     * never disagree about what's actually loaded or what just failed. */
+    val generationLoadInfo: StateFlow<ModelLoadInfo> = coordinator.observeState(ModelRole.GENERATION)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelLoadInfo(ModelRole.GENERATION))
+    val embeddingLoadInfo: StateFlow<ModelLoadInfo> = coordinator.observeState(ModelRole.EMBEDDING)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ModelLoadInfo(ModelRole.EMBEDDING))
 
-    fun refreshLoadedState() {
-        _loadedGenerationPath.value = app.container.llmEngine.loadedModelPath
-        _loadedEmbeddingPath.value = app.container.embeddingEngine.loadedModelPath
-    }
+    private fun loadInfoFor(role: ModelRole): ModelLoadInfo =
+        if (role == ModelRole.GENERATION) generationLoadInfo.value else embeddingLoadInfo.value
 
     fun importModel(uri: Uri, role: ModelRole) {
         Log.i(TAG, "importModel() requested: uri=$uri, role=$role")
@@ -162,12 +186,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                     is ImportResult.Rejected -> {
                         Log.w(TAG, "importModel() rejected: ${result.reason}")
-                        _status.value = "Import failed: ${result.reason}"
+                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importModel() threw unexpectedly", t)
-                _status.value = "Import failed: ${t.message ?: t::class.simpleName}"
+                _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -197,12 +221,46 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                     is ImportResult.Rejected -> {
                         Log.w(TAG, "importEmbeddingPair() rejected: ${result.reason}")
-                        _status.value = "Import failed: ${result.reason}"
+                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importEmbeddingPair() threw unexpectedly", t)
-                _status.value = "Import failed: ${t.message ?: t::class.simpleName}"
+                _status.value = "Import failed. ${t.toUserMessage()}"
+            } finally {
+                _importing.value = false
+                _busyLabel.value = null
+            }
+        }
+    }
+
+    /** [mmprojUri] is optional — omit for a text-only GGUF model. */
+    fun importLlamaCppModel(modelUri: Uri, mmprojUri: Uri? = null) {
+        Log.i(TAG, "importLlamaCppModel() requested: $modelUri, mmproj=$mmprojUri")
+        viewModelScope.launch {
+            _importing.value = true
+            _busyLabel.value = "Opening model…"
+            try {
+                when (val result = importManager.importLlamaCppModel(modelUri, mmprojUri) { progress ->
+                    _busyLabel.value = progress
+                    _status.value = progress
+                }) {
+                    is ImportResult.Success -> {
+                        Log.i(TAG, "importLlamaCppModel() copied file ok: ${result.model.displayName}")
+                        validateAndActivate(result.model)
+                    }
+                    is ImportResult.Duplicate -> {
+                        Log.i(TAG, "importLlamaCppModel() duplicate of ${result.existing.displayName}")
+                        _status.value = "Already imported as ${result.existing.displayName}"
+                    }
+                    is ImportResult.Rejected -> {
+                        Log.w(TAG, "importLlamaCppModel() rejected: ${result.reason}")
+                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "importLlamaCppModel() threw unexpectedly", t)
+                _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -230,59 +288,77 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         db.jobDao().upsert(job)
         try {
             val verified = withContext(Dispatchers.Default) {
-                    if (model.role == ModelRole.GENERATION) {
-                        app.container.withLlm { engine ->
-                            val result = engine.load(model.filePath)
-                            val output = StringBuilder()
-                            engine.generate("Reply with OK.").collect { chunk ->
-                                output.append(chunk)
-                                if (output.length > 10) return@collect
-                            }
-                            require(output.isNotBlank()) {
-                                "Model initialized but produced no output"
-                            }
-                        val mtpSupported = engine.detectSpeculativeDecodingSupport(model.filePath)
-                        Log.i(TAG, "validateAndActivate() ${model.displayName} mtpSupported=$mtpSupported")
-                        val dbBackend = when (result.backend) {
-                            LlmEngine.ModelBackend.GPU -> ModelBackend.GPU
-                            LlmEngine.ModelBackend.NPU -> ModelBackend.NPU
-                            else -> ModelBackend.CPU
+                val loadResult = coordinator.loadManually(model)
+                require(loadResult.success) { loadResult.errorMessage ?: "Model could not be loaded" }
+                if (model.role == ModelRole.GENERATION) {
+                    val persisted = db.modelDao().get(model.id) ?: model
+                    val params = com.vervan.chat.llm.resolveGenerationParams(persisted, app.container.settingsRepository)
+                    val output = StringBuilder()
+                    app.container.generate(
+                        persisted, "Reply with OK.", null, null,
+                        params.temperature, params.topP, params.topK, params.seed,
+                        params.minP, params.repetitionPenalty, params.maxOutputTokens.coerceAtMost(16), params.stopSequences
+                    ).collect {
+                        if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                            throw kotlinx.coroutines.CancellationException("Stopped by user")
                         }
-                        val (reconciled, _) = model.copy(mtpSupported = mtpSupported)
-                            .reconcileCapabilities(dbBackend, engine.visionEnabled, engine.audioEnabled, mtpAttempted = false, mtpActive = false)
-                        reconciled
+                        output.append(it)
+                    }
+                    require(output.isNotBlank()) { "Model initialized but produced no output" }
+                    if (persisted.engine == ModelEngine.LLAMA_CPP) {
+                        val metadata = app.container.withLlamaCpp { engine ->
+                            check(engine.loadedModelPath == persisted.filePath) { "Model changed during validation" }
+                            engine.readModelInfo()
+                        }
+                        if (metadata != null) persisted.copy(
+                            modelDesc = metadata.desc,
+                            nativeMaxContext = metadata.nativeMaxContext,
+                            layerCount = metadata.layerCount
+                        ) else persisted
+                    } else {
+                        val mtpSupported = app.container.llmEngine.detectSpeculativeDecodingSupport(persisted.filePath)
+                        persisted.copy(mtpSupported = mtpSupported)
                     }
                 } else {
                     app.container.withEmbedding { engine ->
-                        engine.load(model.filePath, model.tokenizerPath)
+                        check(engine.loadedModelPath == model.filePath) { "Model changed during validation" }
                         require(engine.embed("model validation")?.isNotEmpty() == true) {
                             "Embedding model returned no vector"
                         }
-                        val dbBackend = if (engine.activeBackend == com.vervan.chat.retrieval.EmbeddingBackend.GPU) ModelBackend.GPU else ModelBackend.CPU
-                        model.copy(lastWorkingBackend = dbBackend)
+                        db.modelDao().get(model.id) ?: model
                     }
                 }
+            }
+            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                _status.value = "Model validation stopped"
+                return
             }
             db.modelDao().upsert(verified)
             Log.i(TAG, "validateAndActivate() SUCCESS: ${verified.displayName} verified on ${verified.lastWorkingBackend}")
             _status.value = "Verified ${verified.displayName}"
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
-            refreshLoadedState()
-
             val previousVersion = db.modelDao().getOthersOfRole(verified.role, verified.id)
                 .firstOrNull { com.vervan.chat.model.ModelFamily.sameFamily(it.displayName, verified.displayName) }
             if (previousVersion != null) {
                 Log.i(TAG, "validateAndActivate() looks like a new version of ${previousVersion.displayName}; asking user")
                 _pendingMigration.value = verified to previousVersion
-            } else {
+            } else if (db.modelDao().getActiveModel(verified.role) == null) {
+                // Model Loading Strategy §4.2: only the *first* valid model of a type becomes the
+                // default automatically. Importing a second/third model of the same role must not
+                // silently steal default status from whatever the user already has active — it
+                // just joins the list, available to load/activate manually (§3.2).
                 setActive(verified)
             }
         } catch (t: Throwable) {
+            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                _status.value = "Model validation stopped"
+                return
+            }
             Log.e(TAG, "validateAndActivate() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
             db.modelDao().upsert(model.copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
-            _status.value = "Model could not be verified: ${t.message ?: t::class.simpleName}. " +
-                "The file is kept — try activating it manually, or delete it if it's incompatible."
+            _status.value = "Model could not be verified. ${t.toUserMessage()} " +
+                    "The file was kept. Retry activation or delete it."
         } finally {
             _busyModelId.value = null
             _busyLabel.value = null
@@ -296,18 +372,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             _pendingAcknowledgment.value = model
             return
         }
-        viewModelScope.launch {
-            db.modelDao().clearActive(model.role)
-            db.modelDao().upsert(model.copy(isActive = true))
-        }
+        viewModelScope.launch { coordinator.setDefault(model) }
     }
 
     fun acknowledgeAndActivate(model: ModelInfo) {
         _pendingAcknowledgment.value = null
-        viewModelScope.launch {
-            db.modelDao().clearActive(model.role)
-            db.modelDao().upsert(model.copy(isActive = true, licenseAcknowledged = true))
-        }
+        viewModelScope.launch { coordinator.setDefault(model.copy(licenseAcknowledged = true)) }
     }
 
     fun dismissAcknowledgment() { _pendingAcknowledgment.value = null }
@@ -332,40 +402,53 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             try {
                 val result = withContext(Dispatchers.Default) {
                     val started = System.nanoTime()
+                    val loadResult = coordinator.loadManually(model)
+                    require(loadResult.success) { loadResult.errorMessage ?: "Model could not be loaded" }
                     if (model.role == ModelRole.GENERATION) {
-                        app.container.withLlm { engine ->
-                            engine.load(
-                                model.filePath,
-                                backendPreference = model.preferredBackend.toEnginePreference(),
-                                enableSpeculativeDecoding = model.mtpEnabled
-                            )
-                            var chars = 0
-                            engine.generate("Explain local-first AI in two sentences.").collect { chars += it.length }
-                            val seconds = (System.nanoTime() - started) / 1_000_000_000.0
-                            "${String.format("%.1f", chars / seconds)} characters/sec on ${engine.activeBackend}" +
-                                (if (engine.speculativeDecodingActive) " (MTP active)" else "")
+                        val persisted = db.modelDao().get(model.id) ?: model
+                        val params = com.vervan.chat.llm.resolveGenerationParams(persisted, app.container.settingsRepository)
+                        var chars = 0
+                        app.container.generate(
+                            persisted, "Explain local-first AI in two sentences.", null, null,
+                            params.temperature, params.topP, params.topK, params.seed,
+                            params.minP, params.repetitionPenalty, params.maxOutputTokens.coerceAtMost(128), params.stopSequences
+                        ).collect {
+                            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                                throw kotlinx.coroutines.CancellationException("Stopped by user")
+                            }
+                            chars += it.length
                         }
+                        val seconds = (System.nanoTime() - started) / 1_000_000_000.0
+                        "${String.format("%.1f", chars / seconds)} characters/sec on ${persisted.lastWorkingBackend}" +
+                            (if (persisted.engine == ModelEngine.LITERT_LM && app.container.llmEngine.speculativeDecodingActive) " (MTP active)" else "")
                     } else {
                         app.container.withEmbedding { engine ->
-                            engine.load(model.filePath, model.tokenizerPath)
+                            check(engine.loadedModelPath == model.filePath) { "Model changed during benchmark" }
                             val dimension = engine.embed("benchmark")?.size ?: 0
                             val millis = (System.nanoTime() - started) / 1_000_000
                             "$dimension dimensions in ${millis}ms on ${engine.activeBackend}"
                         }
                     }
                 }
+                if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                    _status.value = "Benchmark stopped"
+                    return@launch
+                }
                 Log.i(TAG, "benchmark() SUCCESS for ${model.displayName}: $result")
                 _status.value = "Benchmark: $result"
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis(), detail = result))
             } catch (t: Throwable) {
+                if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                    _status.value = "Benchmark stopped"
+                    return@launch
+                }
                 Log.e(TAG, "benchmark() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
-                _status.value = "Benchmark failed: ${t.message ?: t::class.simpleName}"
+                _status.value = "Benchmark failed. ${t.toUserMessage()}"
             } finally {
                 _importing.value = false
                 _busyModelId.value = null
                 _busyLabel.value = null
-                refreshLoadedState()
             }
         }
     }
@@ -373,10 +456,9 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun load(model: ModelInfo) {
         if (_importing.value) return
         Log.i(TAG, "load() requested: ${model.displayName} (preferredBackend=${model.preferredBackend})")
-        // Already resident — LlmEngine.load() would no-op internally anyway, but skip the
-        // busy state/toast churn of "loading" a model that's already loaded.
-        val alreadyLoadedPath = if (model.role == ModelRole.GENERATION) _loadedGenerationPath.value else _loadedEmbeddingPath.value
-        if (alreadyLoadedPath == model.filePath) {
+        // Already resident — skip the busy state/toast churn of "loading" a model that's
+        // already loaded.
+        if (loadInfoFor(model.role).currentModelId == model.id) {
             _status.value = "${model.displayName} is already loaded"
             return
         }
@@ -393,95 +475,60 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             // Only one generation (or embedding) model is ever resident — remember what was
             // loaded before this call so the toast below can call out the auto-unload instead
             // of looking like nothing happened to the previous model.
-            val previousName = if (model.role == ModelRole.GENERATION) {
-                _loadedGenerationPath.value?.takeIf { it != model.filePath }
-                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
-            } else {
-                _loadedEmbeddingPath.value?.takeIf { it != model.filePath }
-                    ?.let { path -> models.value.find { it.filePath == path }?.displayName }
-            }
-            try {
-                var disabledCapabilities: List<String> = emptyList()
-                withContext(Dispatchers.Default) {
-                    if (model.role == ModelRole.GENERATION) {
-                        // Loading a new generation model always frees whatever was loaded before —
-                        // the engine is a single shared instance, so only one generation model is
-                        // ever resident at a time (LlmEngine.load() closes the previous one first).
-                        val (updated, disabled) = app.container.withLlm { engine ->
-                            val result = engine.load(
-                                model.filePath, model.contextTokens ?: 4096, model.maxNumImages ?: 1,
-                                model.preferredBackend.toEnginePreference(),
-                                enableSpeculativeDecoding = model.mtpEnabled
-                            )
-                            val dbBackend = when (result.backend) {
-                                LlmEngine.ModelBackend.GPU -> ModelBackend.GPU
-                                LlmEngine.ModelBackend.NPU -> ModelBackend.NPU
-                                else -> ModelBackend.CPU
-                            }
-                            model.reconcileCapabilities(dbBackend, engine.visionEnabled, engine.audioEnabled, mtpAttempted = model.mtpEnabled, mtpActive = engine.speculativeDecodingActive)
-                        }
-                        // Was never persisted here — a manual Load from this screen left the model
-                        // shown as "Unverified"/"Not tested yet" forever, even after it demonstrably
-                        // worked, because only the chat-triggered load path (ChatViewModel) wrote
-                        // lastWorkingBackend back to the DB.
-                        db.modelDao().upsert(updated)
-                        disabledCapabilities = disabled
-                        Log.i(TAG, "load() SUCCESS: ${model.displayName} loaded on ${updated.lastWorkingBackend}, disabled=$disabled")
-                    } else {
-                        val dbBackend = app.container.withEmbedding { engine ->
-                            engine.load(model.filePath, model.tokenizerPath)
-                            if (engine.activeBackend == com.vervan.chat.retrieval.EmbeddingBackend.GPU) ModelBackend.GPU else ModelBackend.CPU
-                        }
-                        db.modelDao().upsert(model.copy(lastWorkingBackend = dbBackend))
-                        Log.i(TAG, "load() SUCCESS: embedding model ${model.displayName} loaded on $dbBackend")
-                    }
-                }
-                _status.value = "Loaded ${model.displayName}"
+            val previousId = loadInfoFor(model.role).currentModelId?.takeIf { it != model.id }
+            val previousName = previousId?.let { id -> models.value.find { it.id == id }?.displayName }
+            val result = coordinator.loadManually(model)
+            if (result.success) {
+                // §11.3 — a delegate fallback (e.g. GPU requested but only CPU actually worked)
+                // is a materially different outcome from what was asked for, even though it's
+                // technically "success" — must be disclosed, not folded silently into a plain
+                // "Loaded" toast.
+                val fallbackNote = if (result.delegateFallback) " (fell back to CPU — the requested backend wasn't available)" else ""
+                _status.value = "Loaded ${model.displayName}$fallbackNote"
                 android.widget.Toast.makeText(
                     app,
-                    if (previousName != null) "Unloaded $previousName — loaded ${model.displayName}" else "Loaded ${model.displayName}",
-                    android.widget.Toast.LENGTH_SHORT
+                    (if (previousName != null) "Unloaded $previousName — loaded ${model.displayName}" else "Loaded ${model.displayName}") + fallbackNote,
+                    android.widget.Toast.LENGTH_LONG
                 ).show()
-                if (disabledCapabilities.isNotEmpty()) {
-                    android.widget.Toast.makeText(
-                        app, "${disabledCapabilities.joinToString(", ")} not supported on this model — disabled",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${t::class.simpleName}: ${t.message}", t)
+            } else {
+                Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${result.errorMessage}")
                 val backendNote = if (model.preferredBackend != BackendChoice.AUTO) " on ${model.preferredBackend}" else ""
-                _status.value = "Load failed$backendNote: ${t.message ?: t::class.simpleName}"
-            } finally {
-                _importing.value = false
-                _busyModelId.value = null
-                _busyLabel.value = null
-                refreshLoadedState()
+                _status.value = "Load failed$backendNote. ${result.errorMessage.toUserMessage()}"
             }
+            _importing.value = false
+            _busyModelId.value = null
+            _busyLabel.value = null
         }
     }
 
     fun unload(model: ModelInfo) {
         Log.i(TAG, "unload() requested: ${model.displayName}")
         viewModelScope.launch {
-            if (model.role == ModelRole.GENERATION) {
-                app.container.withLlm { if (it.loadedModelPath == model.filePath) it.close() }
-            } else {
-                app.container.withEmbedding { if (it.loadedModelPath == model.filePath) it.close() }
+            if (loadInfoFor(model.role).currentModelId == model.id) {
+                coordinator.unload(model.role)
+                _status.value = "Unloaded ${model.displayName}"
+                android.widget.Toast.makeText(app, "Unloaded ${model.displayName}", android.widget.Toast.LENGTH_SHORT).show()
             }
-            _status.value = "Unloaded ${model.displayName}"
-            android.widget.Toast.makeText(app, "Unloaded ${model.displayName}", android.widget.Toast.LENGTH_SHORT).show()
-            refreshLoadedState()
         }
     }
 
     fun setMtpEnabled(model: ModelInfo, enabled: Boolean) {
         Log.i(TAG, "setMtpEnabled(): ${model.displayName} -> $enabled")
-        viewModelScope.launch { db.modelDao().upsert(model.copy(mtpEnabled = enabled)) }
+        update(model.copy(mtpEnabled = enabled))
     }
 
     fun update(model: ModelInfo) {
-        viewModelScope.launch { db.modelDao().upsert(model) }
+        viewModelScope.launch {
+            val previous = db.modelDao().get(model.id)
+            if (previous != null && previous != model) coordinator.forceUnloadIfLoaded(previous)
+            db.modelDao().upsert(model)
+            withContext(Dispatchers.IO) {
+                previous?.mmprojPath?.takeIf { it != model.mmprojPath }
+                    ?.let { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
+                previous?.loraPath?.takeIf { it != model.loraPath }
+                    ?.let { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
+            }
+        }
     }
 
     /** Relinks every folder default pointing at [previous] to [newModel] and makes [newModel]
@@ -509,18 +556,40 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 // folder can't end up silently referencing a dangling model id.
                 db.folderDao().clearDefaultModel(model.id)
                 db.chatDao().clearModel(model.id)
-                app.container.withLlm { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
-                app.container.withEmbedding { engine -> if (engine.loadedModelPath == model.filePath) engine.close() }
-                withContext(Dispatchers.IO) {
-                    com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(model.filePath))
-                    model.tokenizerPath?.let { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
+                coordinator.forceUnloadIfLoaded(model)
+                if (model.isActive) {
+                    // Model Loading Strategy §4.4: default reassignment (step 4) must happen
+                    // *before* file deletion (step 5) is attempted, not after — so that if file
+                    // deletion fails below, the reassignment already stands (step 7) instead of
+                    // silently never having run.
+                    coordinator.reassignDefaultAfterDelete(model.role, model.id)
+                }
+                val filesDeleted = withContext(Dispatchers.IO) {
+                    listOfNotNull(model.filePath, model.tokenizerPath, model.mmprojPath, model.loraPath)
+                        .map { com.vervan.chat.data.SecureDelete.overwriteAndDelete(java.io.File(it)) }
+                        .all { it }
+                }
+                if (!filesDeleted) {
+                    // §4.4 step 7: the model is already unloaded and its default status already
+                    // reassigned — both stand. Keep the DB row (rather than deleting it) so the
+                    // broken not_loaded state is visible in Model Manager and the user can retry
+                    // instead of the app silently forgetting a model whose file is still on disk.
+                    Log.w(TAG, "delete() FAILED to remove all files for ${model.displayName}; keeping its row so the state is visible")
+            _status.value = "${model.displayName} was unloaded, but some files remain. Try deleting again."
+                    return@launch
                 }
                 db.modelDao().delete(model)
+                if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {
+                    val catalogId = model.catalogModelId
+                    val catalogVersion = model.catalogVersion
+                    if (catalogId != null && catalogVersion != null) {
+                        downloadRepo.forgetInstalledPackage(catalogId, catalogVersion)
+                    }
+                }
                 _status.value = "Deleted ${model.displayName}"
-                refreshLoadedState()
             } catch (t: Throwable) {
                 Log.e(TAG, "delete() failed for ${model.displayName}", t)
-                _status.value = "Delete failed: ${t.message ?: t::class.simpleName}"
+                _status.value = "Delete failed. ${t.toUserMessage()}"
             } finally {
                 _busyModelId.value = null
                 _busyLabel.value = null
@@ -529,7 +598,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     private fun canLoadSafely(model: ModelInfo): Boolean =
-        model.role != ModelRole.GENERATION || LlmEngine.mediaPipeCompatibilityIssue(model.filePath) == null
+        model.role != ModelRole.GENERATION || model.engine == ModelEngine.LLAMA_CPP ||
+            LlmEngine.mediaPipeCompatibilityIssue(model.filePath) == null
 
     private fun unsupportedRuntimeMessage(model: ModelInfo): String =
         "${model.displayName} was not loaded: ${LlmEngine.mediaPipeCompatibilityIssue(model.filePath) ?: "unsupported model package"}"

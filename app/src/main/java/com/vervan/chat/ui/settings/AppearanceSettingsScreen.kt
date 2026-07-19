@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -22,17 +21,21 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.data.settings.ThemeMode
 
@@ -59,13 +62,13 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+        ScrollablePage(padding) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
                     Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ThemeMode.entries.forEach { mode ->
-                            FilterChip(
+                            VervanFilterChip(
                                 selected = themeMode == mode,
                                 onClick = { vm.setThemeMode(mode) },
                                 label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
@@ -121,7 +124,10 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
                             value = fontScale, onValueChange = { vm.setFontScale(it) },
-                            valueRange = 0.85f..1.5f, modifier = Modifier.weight(1f)
+                            valueRange = 0.85f..1.5f,
+                            modifier = Modifier.weight(1f).semantics {
+                                contentDescription = "Font size, ${(fontScale * 100).toInt()} percent"
+                            }
                         )
                         Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))
                     }

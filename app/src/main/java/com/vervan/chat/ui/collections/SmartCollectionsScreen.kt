@@ -12,10 +12,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +38,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.StatusChip
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 /**
  * §7.6.9 — one screen with filter chips, not the list-then-detail navigation this screen used
@@ -64,49 +74,91 @@ fun SmartCollectionsScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 SmartCollection.entries.forEach { col ->
-                    FilterChip(selected = selected == col, onClick = { selected = col }, label = { Text(col.label) })
+                    VervanFilterChip(selected = selected == col, onClick = { selected = col }, label = { Text(col.label) })
                 }
             }
             Text(
                 "Automatic · ${selected.description}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                modifier = Modifier.padding(vertical = Space.xs)
             )
             if (contents.total == 0) {
                 EmptyState(
                     icon = Icons.Filled.Collections,
                     title = "Nothing here yet",
-                    body = "This collection fills in automatically as it finds matching chats, notes, and documents."
+                    body = "Matching chats, notes, and documents appear here automatically."
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {
                     items(contents.chats, key = { "c-${it.id}" }) { chat ->
-                        Card(onClick = { onOpenChat(chat.id) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text(chat.title, modifier = Modifier.padding(10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        }
+                        CollectionRow(
+                            icon = Icons.AutoMirrored.Filled.Chat,
+                            title = chat.title,
+                            onClick = { onOpenChat(chat.id) }
+                        )
                     }
                     items(contents.notes, key = { "n-${it.id}" }) { note ->
-                        Card(onClick = { onOpenNote(note.id) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text(note.title, modifier = Modifier.padding(10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        }
+                        CollectionRow(
+                            icon = Icons.AutoMirrored.Filled.Note,
+                            title = note.title,
+                            onClick = { onOpenNote(note.id) }
+                        )
                     }
                     items(contents.documents, key = { "d-${it.id}" }) { doc ->
-                        Card(onClick = { onOpenKnowledge(doc.knowledgeBaseId) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Column(Modifier.padding(10.dp)) {
-                                Text(doc.displayName, style = MaterialTheme.typography.bodyMedium)
-                                Text(doc.status.name, style = MaterialTheme.typography.labelSmall)
+                        CollectionRow(
+                            icon = Icons.Filled.Description,
+                            title = doc.displayName,
+                            onClick = { onOpenKnowledge(doc.knowledgeBaseId) },
+                            trailing = {
+                                StatusChip(
+                                    label = doc.status.name.lowercase().replaceFirstChar { it.uppercase() },
+                                    tone = when (doc.status.name) {
+                                        "READY" -> StatusTone.Ready
+                                        "FAILED" -> StatusTone.Error
+                                        else -> StatusTone.Running
+                                    }
+                                )
                             }
-                        }
+                        )
                     }
                 }
             }
+        }
+        }
+    }
+}
+
+@Composable
+private fun CollectionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
+    ) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+            IconAffordance(icon, size = IconAffordanceSize.Compact)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = Space.md)
+            )
+            trailing?.invoke()
         }
     }
 }

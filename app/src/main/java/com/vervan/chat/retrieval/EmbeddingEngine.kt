@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextEmbedderOptions
+import com.vervan.chat.modelload.EmbeddingLoadable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,14 +25,14 @@ enum class EmbeddingBackend { GPU, CPU }
  *   [RawTfliteEmbedder] instead, using a required companion SentencePiece `tokenizer.model`
  *   file imported alongside it.
  */
-class EmbeddingEngine(private val context: Context) {
+class EmbeddingEngine(private val context: Context) : EmbeddingLoadable {
 
     private var mediaPipeEmbedder: TextEmbedder? = null
     private var rawEmbedder: RawTfliteEmbedder? = null
     private val lock = Any()
-    var loadedModelPath: String? = null
+    override var loadedModelPath: String? = null
         private set
-    var activeBackend: EmbeddingBackend = EmbeddingBackend.CPU
+    override var activeBackend: EmbeddingBackend = EmbeddingBackend.CPU
         private set
 
     /** [tokenizerPath] is only required (and only used) for a raw, non-Task-Bundle graph. */
@@ -91,6 +92,8 @@ class EmbeddingEngine(private val context: Context) {
         throw IllegalStateException("Could not load '${File(modelPath).name}': ${lastError?.message}", lastError)
     }
 
+    override fun loadModel(modelPath: String, tokenizerPath: String?) = load(modelPath, tokenizerPath)
+
     val isLoaded: Boolean get() = synchronized(lock) { mediaPipeEmbedder != null || rawEmbedder != null }
 
     /** [isQuery] and [title] only affect [RawTfliteEmbedder] (see its doc comment on why) — a
@@ -116,7 +119,7 @@ class EmbeddingEngine(private val context: Context) {
      * fall back to a word-count proxy in that case). */
     fun countTokens(text: String): Int? = synchronized(lock) { rawEmbedder?.tokenCount(text) }
 
-    fun close() = synchronized(lock) {
+    override fun close() = synchronized(lock) {
         closeLocked()
     }
 

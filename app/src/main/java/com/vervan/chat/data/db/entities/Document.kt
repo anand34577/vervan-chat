@@ -1,6 +1,7 @@
 package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -8,7 +9,9 @@ import java.util.UUID
 // normal text extraction, and the UI can now tell the user which is happening.
 enum class DocumentStatus { READING, OCR_RUNNING, EXTRACTING, CHUNKING, EMBEDDING, READY, FAILED, UNSUPPORTED }
 
-@Entity(tableName = "documents")
+// knowledgeBaseId backs the KB detail screen's document list; workspaceId backs the per-
+// workspace document count/list. See Migration(36, 37).
+@Entity(tableName = "documents", indices = [Index("knowledgeBaseId"), Index("workspaceId")])
 data class Document(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val knowledgeBaseId: String,

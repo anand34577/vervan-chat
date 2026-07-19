@@ -15,8 +15,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Description
@@ -28,13 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,15 +46,11 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
-import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
@@ -66,7 +58,6 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.workflows.WorkflowListViewModel
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.SnackbarHost
@@ -88,28 +79,52 @@ fun LibraryScreen(
     onNewTemplate: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
-    var tab by remember { mutableIntStateOf(0) }
-    var query by remember { mutableStateOf("") }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val allPersonas by app.container.db.personaDao().observePersonas().collectAsState(initial = emptyList())
+    val allTemplates by app.container.db.promptTemplateDao().observeAll().collectAsState(initial = emptyList())
+    val allWorkflows by app.container.db.workflowDao().observeAll().collectAsState(initial = emptyList())
     val allOutputs by app.container.db.savedOutputDao().observeAll().collectAsState(initial = emptyList())
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val selectableIds = remember(tab, query, allPersonas, allTemplates, allWorkflows, allOutputs) {
+        when (tab) {
+            0 -> allPersonas.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
+            1 -> allTemplates.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
+            2 -> allWorkflows.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
+            else -> allOutputs.filter { it.content.contains(query, ignoreCase = true) }.map { it.id }.toSet()
+        }
+    }
 
     Scaffold(
         topBar = {
             if (selectionMode) {
                 SelectionTopBar(
                     selectedCount = selected.size,
-                    allSelected = selected.size == allOutputs.size && allOutputs.isNotEmpty(),
-                    onToggleSelectAll = { selected = if (selected.size == allOutputs.size && allOutputs.isNotEmpty()) emptySet() else allOutputs.map { it.id }.toSet() },
+                    allSelected = selectableIds.isNotEmpty() && selectableIds.all { it in selected },
+                    onToggleSelectAll = { selected = if (selectableIds.isNotEmpty() && selectableIds.all { it in selected }) selected - selectableIds else selected + selectableIds },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = {
-                        val count = selected.size
+                        val ids = selected
+                        val count = ids.size
+                        val targetTab = tab
                         scope.launch {
                             val now = System.currentTimeMillis()
-                            allOutputs.filter { it.id in selected }.forEach { app.container.db.savedOutputDao().upsert(it.copy(deletedAt = now)) }
-                            snackbarHostState.showSnackbar("Deleted $count saved output${if (count == 1) "" else "s"}")
+                            when (targetTab) {
+                                0 -> allPersonas.filter { it.id in ids && !it.isBuiltIn }.forEach { persona ->
+                                    app.container.db.chatDao().clearPersona(persona.id)
+                                    app.container.db.folderDao().clearDefaultPersona(persona.id)
+                                    app.container.db.projectDao().clearPersona(persona.id)
+                                    app.container.db.knowledgeBaseDao().clearDefaultPersona(persona.id)
+                                    app.container.db.personaDao().upsert(persona.copy(deletedAt = now))
+                                }
+                                1 -> allTemplates.filter { it.id in ids && !it.isBuiltIn }.forEach { app.container.db.promptTemplateDao().upsert(it.copy(deletedAt = now)) }
+                                2 -> allWorkflows.filter { it.id in ids && !it.isBuiltIn }.forEach { app.container.db.workflowDao().upsert(it.copy(deletedAt = now)) }
+                                else -> allOutputs.filter { it.id in ids }.forEach { app.container.db.savedOutputDao().upsert(it.copy(deletedAt = now)) }
+                            }
+                            snackbarHostState.showSnackbar("Moved $count item${if (count == 1) "" else "s"} to the recycle bin")
                         }
                         selected = emptySet()
                         selectionMode = false
@@ -138,23 +153,11 @@ fun LibraryScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize()) {
-            FeatureHero(
-                icon = Icons.Filled.AutoAwesome,
-                eyebrow = "Create once, reuse anywhere",
-                title = libTabs[tab],
-                body = when (tab) {
-                    0 -> "Give chats a focused voice, expertise, and working style."
-                    1 -> "Turn your best prompts into fast, consistent starting points."
-                    2 -> "Chain repeatable local actions into transparent workflows."
-                    else -> "Keep useful responses close for quick reuse."
-                },
-                modifier = Modifier.padding(top = Space.sm)
-            )
             androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
                 libTabs.forEachIndexed { index, label ->
                     Tab(
                         selected = tab == index,
-                        onClick = { tab = index; selectionMode = false; selected = emptySet() },
+                        onClick = { tab = index; query = ""; selectionMode = false; selected = emptySet() },
                         text = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                     )
                 }
@@ -166,9 +169,9 @@ fun LibraryScreen(
                 modifier = Modifier.padding(vertical = Space.sm)
             )
             when (tab) {
-                0 -> PersonasTab(app, query, onOpenPersona, onNewPersona)
-                1 -> TemplatesTab(app, query, onOpenTemplate)
-                2 -> WorkflowsTab(app, query, onOpenWorkflow, onEditWorkflow)
+                0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
                 3 -> SavedTab(
                     app = app,
                     query = query,
@@ -185,16 +188,39 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun PersonasTab(app: VervanApp, query: String, onOpenPersona: (String) -> Unit, onNewPersona: () -> Unit) {
-    val allPersonas by app.container.db.personaDao().observePersonas().collectAsState(initial = emptyList())
+private fun PersonasTab(
+    allPersonas: List<Persona>,
+    query: String,
+    onOpenPersona: (String) -> Unit,
+    onNewPersona: () -> Unit,
+    selectionMode: Boolean,
+    selected: Set<String>,
+    onToggleSelected: (String) -> Unit,
+    onEnterSelection: (String) -> Unit
+) {
     val personas = remember(allPersonas, query) { allPersonas.filter { it.name.contains(query, ignoreCase = true) } }
-    if (personas.isEmpty() && query.isNotBlank()) {
-        EmptyState(Icons.Outlined.Person, "No matching personas", "Try another name or clear your search.")
+    if (personas.isEmpty()) {
+        EmptyState(
+            Icons.Outlined.Person,
+            if (query.isBlank()) "No personas yet" else "No matching personas",
+            if (query.isBlank()) "Create a persona to give chats a reusable voice and working style." else "Try another name or clear your search.",
+            actionLabel = if (query.isBlank()) "New persona" else null,
+            onAction = if (query.isBlank()) onNewPersona else null
+        )
         return
     }
-    LazyVerticalGrid(columns = GridCells.Adaptive(220.dp), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-        items(personas, key = { it.id }) { persona -> PersonaCard(persona, onClick = { onOpenPersona(persona.id) }) }
-        item {
+    LazyVerticalGrid(columns = GridCells.Adaptive(220.dp), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+        items(personas, key = { it.id }) { persona ->
+            PersonaCard(
+                persona = persona,
+                onClick = { onOpenPersona(persona.id) },
+                selected = persona.id in selected,
+                selectionMode = selectionMode,
+                onToggleSelected = { onToggleSelected(persona.id) },
+                onEnterSelection = { onEnterSelection(persona.id) }
+            )
+        }
+        if (!selectionMode) item {
             Card(
                 onClick = onNewPersona,
                 modifier = Modifier.padding(6.dp).fillMaxWidth(),
@@ -210,13 +236,27 @@ private fun PersonasTab(app: VervanApp, query: String, onOpenPersona: (String) -
 }
 
 @Composable
-private fun PersonaCard(persona: Persona, onClick: () -> Unit) {
+private fun PersonaCard(
+    persona: Persona,
+    onClick: () -> Unit,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onToggleSelected: () -> Unit,
+    onEnterSelection: () -> Unit
+) {
     Card(
-        onClick = onClick,
-        modifier = Modifier.padding(6.dp).fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        modifier = Modifier.padding(6.dp).fillMaxWidth().selectableItem(
+            selectionMode = selectionMode,
+            onClick = onClick,
+            onToggleSelected = onToggleSelected,
+            onEnterSelection = onEnterSelection,
+            selectable = !persona.isBuiltIn
+        ),
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
     ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+            if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             Box(
                 Modifier.size(32.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer),
                 contentAlignment = Alignment.Center
@@ -235,8 +275,15 @@ private fun PersonaCard(persona: Persona, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TemplatesTab(app: VervanApp, query: String, onOpenTemplate: (String) -> Unit) {
-    val allTemplates by app.container.db.promptTemplateDao().observeAll().collectAsState(initial = emptyList())
+private fun TemplatesTab(
+    allTemplates: List<PromptTemplate>,
+    query: String,
+    onOpenTemplate: (String) -> Unit,
+    selectionMode: Boolean,
+    selected: Set<String>,
+    onToggleSelected: (String) -> Unit,
+    onEnterSelection: (String) -> Unit
+) {
     val templates = remember(allTemplates, query) { allTemplates.filter { it.name.contains(query, ignoreCase = true) } }
     if (templates.isEmpty()) {
         EmptyState(
@@ -246,15 +293,23 @@ private fun TemplatesTab(app: VervanApp, query: String, onOpenTemplate: (String)
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-        items(templates, key = { it.id }) { template -> TemplateCard(template, onClick = { onOpenTemplate(template.id) }) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+        items(templates, key = { it.id }) { template ->
+            TemplateCard(template, { onOpenTemplate(template.id) }, template.id in selected, selectionMode, { onToggleSelected(template.id) }, { onEnterSelection(template.id) })
+        }
     }
 }
 
 @Composable
-private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(Space.lg)) {
+private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit, selected: Boolean, selectionMode: Boolean, onToggleSelected: () -> Unit, onEnterSelection: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !template.isBuiltIn),
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
+    ) {
+        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+            if (selectionMode && !template.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
+            Column(Modifier.weight(1f)) {
             Text("/${template.name}", style = MaterialTheme.typography.titleSmall)
             if (template.description.isNotBlank()) {
                 Text(
@@ -262,14 +317,22 @@ private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp)
                 )
             }
+            }
         }
     }
 }
 
 @Composable
-private fun WorkflowsTab(app: VervanApp, query: String, onOpenWorkflow: (String) -> Unit, onEditWorkflow: (String) -> Unit) {
-    val vm: WorkflowListViewModel = viewModel(factory = viewModelFactory { initializer { WorkflowListViewModel(app) } })
-    val allWorkflows by vm.workflows.collectAsState()
+private fun WorkflowsTab(
+    allWorkflows: List<Workflow>,
+    query: String,
+    onOpenWorkflow: (String) -> Unit,
+    onEditWorkflow: (String) -> Unit,
+    selectionMode: Boolean,
+    selected: Set<String>,
+    onToggleSelected: (String) -> Unit,
+    onEnterSelection: (String) -> Unit
+) {
     val workflows = remember(allWorkflows, query) { allWorkflows.filter { it.name.contains(query, ignoreCase = true) } }
     if (workflows.isEmpty()) {
         EmptyState(
@@ -279,15 +342,22 @@ private fun WorkflowsTab(app: VervanApp, query: String, onOpenWorkflow: (String)
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-        items(workflows, key = { it.id }) { workflow -> WorkflowCard(workflow, onClick = { onOpenWorkflow(workflow.id) }, onEdit = { onEditWorkflow(workflow.id) }) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+        items(workflows, key = { it.id }) { workflow ->
+            WorkflowCard(workflow, { onOpenWorkflow(workflow.id) }, { onEditWorkflow(workflow.id) }, workflow.id in selected, selectionMode, { onToggleSelected(workflow.id) }, { onEnterSelection(workflow.id) })
+        }
     }
 }
 
 @Composable
-private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> Unit, selected: Boolean, selectionMode: Boolean, onToggleSelected: () -> Unit, onEnterSelection: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !workflow.isBuiltIn),
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
+    ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+            if (selectionMode && !workflow.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             Column(Modifier.weight(1f)) {
                 Text(workflow.name, style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -296,7 +366,7 @@ private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> 
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
-            TextButton(onClick = onEdit) { Text("Edit") }
+            if (!selectionMode) TextButton(onClick = onEdit) { Text("Edit") }
         }
     }
 }
@@ -323,14 +393,14 @@ private fun SavedTab(
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
         items(filtered, key = { it.id }) { output ->
             val isSelected = output.id in selected
             Card(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     .selectableItem(
                         selectionMode = selectionMode,
-                        onClick = {},
+                        onClick = { clipboard.setText(output.content, scope) },
                         onToggleSelected = { onToggleSelected(output.id) },
                         onEnterSelection = { onEnterSelection(output.id) }
                     ),

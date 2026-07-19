@@ -16,10 +16,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.flow.update
 import com.vervan.chat.data.settings.ThemeMode
@@ -30,11 +32,15 @@ import com.vervan.chat.ui.theme.VervanTheme
 
 class MainActivity : FragmentActivity() {
     private var intentVersion by mutableIntStateOf(0)
+    private var incomingShare by mutableStateOf<IncomingShare?>(null)
+    private var shareIntentConsumed = false
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        shareIntentConsumed = savedInstanceState?.getBoolean(STATE_SHARE_CONSUMED) == true
+        incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
         val app = application as VervanApp
         setContent {
             val themeMode by app.container.settingsRepository.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
@@ -71,6 +77,12 @@ class MainActivity : FragmentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
+            LaunchedEffect(darkTheme) {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
             val baseDensity = LocalDensity.current
             val windowSizeClass = calculateWindowSizeClass(this)
             VervanTheme(
@@ -93,8 +105,8 @@ class MainActivity : FragmentActivity() {
                     Box(Modifier.fillMaxSize()) {
                         VervanNavGraph(
                             app = app,
-                            sharedText = extractSharedText(intent),
-                            sharedImageUri = extractSharedImageUri(intent),
+                            incomingShare = incomingShare.takeUnless { appLockEnabled && isLocked },
+                            onShareConsumed = ::consumeShare,
                             shortcut = extractShortcut(intent),
                             intentVersion = intentVersion,
                             windowSizeClass = windowSizeClass
@@ -115,24 +127,35 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        shareIntentConsumed = false
+        incomingShare = intent.toIncomingShare(contentResolver)
         intentVersion++
     }
 
-    private fun extractSharedText(intent: Intent?): String? {
-        if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("text/") != true) return null
-        return intent.getStringExtra(Intent.EXTRA_TEXT)
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_SHARE_CONSUMED, shareIntentConsumed)
+        super.onSaveInstanceState(outState)
     }
 
-    private fun extractSharedImageUri(intent: Intent?): android.net.Uri? {
-        if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("image/") != true) return null
-        return if (android.os.Build.VERSION.SDK_INT >= 33) {
-            intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
-        }
+    private fun consumeShare() {
+        shareIntentConsumed = true
+        incomingShare = null
+        setIntent(Intent(intent).apply {
+            action = null
+            type = null
+            clipData = null
+            removeExtra(Intent.EXTRA_STREAM)
+            removeExtra(Intent.EXTRA_TEXT)
+            removeExtra(Intent.EXTRA_HTML_TEXT)
+            removeExtra(Intent.EXTRA_SUBJECT)
+        })
     }
 
     /** Resolves a launcher-shortcut extra (spec §37.3) into a deep navigation target. */
     private fun extractShortcut(intent: Intent?): String? =
         intent?.getStringExtra("vervan_shortcut")
+
+    private companion object {
+        const val STATE_SHARE_CONSUMED = "share_intent_consumed"
+    }
 }

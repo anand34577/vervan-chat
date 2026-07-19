@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +43,7 @@ import androidx.compose.ui.unit.dp
  * Reference pronunciation via TTS, attempt via the device's offline recognizer — a real phonetic
  * comparison needs a dedicated model this app doesn't bundle, so feedback here is a word-level
  * diff (which target words the recognizer didn't hear back) plus its raw confidence score.
- * ponytail: heuristic, not true phonetic scoring — good enough to flag likely trouble spots.
+ * heuristic, not true phonetic scoring — good enough to flag likely trouble spots.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,20 +91,26 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
+            ToolIntro(
+                icon = Icons.Filled.Mic,
+                title = "Listen, repeat, improve",
+                body = "Hear a phrase, repeat it, and compare the offline transcript."
+            )
             OutlinedTextField(
                 value = target, onValueChange = { target = it; heardText = null },
-                modifier = Modifier.fillMaxWidth(), placeholder = { Text("Word or phrase to practice") }
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp), placeholder = { Text("Word or phrase to practice") }
             )
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { if (ttsReady) tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce") },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.height(18.dp)); Text(" Hear it") }
+                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text(" Hear it") }
                 OutlinedButton(
                     onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Mic, null, Modifier.height(18.dp)); Text(" Repeat it") }
+                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text(" Repeat it") }
             }
             heardText?.let { heard ->
                 Card(
@@ -125,6 +132,7 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

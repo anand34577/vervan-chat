@@ -39,7 +39,10 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     private var sentenceChannel: Channel<String> = Channel(Channel.UNLIMITED)
     private var playbackJob: Job? = null
     @Volatile private var paused = false
-    private var currentLang = "en"
+    // "auto" (not "hi"/"en") so PiperTtsEngine's per-sentence Devanagari-script heuristic runs
+    // by default — nothing calls setLanguageHint today, so a hardcoded "en" here previously
+    // forced every sentence through the English voice regardless of its actual script.
+    private var currentLang = "auto"
     /** Set per-turn via [startTurn] — lets the caller mirror played PCM (for a turn's waveform
      * + replay) without this class needing to know anything about UI or persistence. */
     private var sampleSink: ((ShortArray, Int) -> Unit)? = null

@@ -83,10 +83,12 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.voice.RealtimeVoiceController
@@ -99,7 +101,7 @@ import java.util.Locale
 /** In-place, on-device voice conversation. The transcript stays visible in every state. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack) {
+fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack, onOpenModelManager: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
@@ -113,8 +115,10 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack) {
     val hasEchoCancellation by controller.hasEchoCancellation.collectAsState()
     val liveWaveform by controller.liveWaveform.collectAsState()
     val liveElapsedMs by controller.liveElapsedMs.collectAsState()
+    val liveTranscript by controller.liveTranscript.collectAsState()
     val loadingModelName by controller.loadingModelName.collectAsState()
     val modelLoadError by controller.modelLoadError.collectAsState()
+    val sttUnavailable by controller.sttUnavailable.collectAsState()
     val playbackPaused by controller.playbackPaused.collectAsState()
 
     var playingTurnId by remember { mutableStateOf<String?>(null) }
@@ -238,6 +242,16 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack) {
                 )
             }
 
+            if (sttUnavailable && modelLoadError == null) {
+                ErrorCard(
+                    title = "No speech input available",
+                    body = "This device has no built-in speech recognizer, and the active model can't hear audio. Download the offline voice model to talk to the assistant.",
+                    actionLabel = "Get voice model",
+                    onAction = onOpenModelManager,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)
+                )
+            }
+
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
                     state = listState,
@@ -273,6 +287,7 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack) {
                     state = state,
                     liveWaveform = liveWaveform,
                     liveElapsedMs = liveElapsedMs,
+                    liveTranscript = liveTranscript,
                     playbackPaused = playbackPaused,
                     loadingModelName = loadingModelName,
                     onStart = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
@@ -319,7 +334,7 @@ private fun VoiceEmptyState() {
             }
             Text("A private voice conversation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.md))
             Text(
-                "Speak naturally. The readable transcript stays here while Vervan listens, thinks, and responds on your device.",
+            "Speak naturally. Vervan listens and replies on your device.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -395,14 +410,18 @@ private fun AssistantTurnBubble(
             shape = RoundedCornerShape(topStart = 6.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
-            Text(
-                buildAnnotatedString {
-                    append(turn.text)
-                    if (turn.isStreaming) withStyle(SpanStyle(color = primary.copy(alpha = pulse))) { append("  •") }
-                },
-                Modifier.padding(Space.md),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Bottom) {
+                // The model streams markdown (same as the regular chat screen) — render it
+                // properly here too instead of dumping raw "**"/"#" syntax as plain text.
+                MarkdownLiteText(turn.text.ifBlank { " " }, modifier = Modifier.weight(1f, fill = false))
+                if (turn.isStreaming) {
+                    Text(
+                        " •",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = primary.copy(alpha = pulse)
+                    )
+                }
+            }
         }
         if (turn.audioSamples != null || turn.audioPending) {
             AssistantPlaybackBar(
@@ -483,6 +502,7 @@ private fun VoiceControlCluster(
     state: VoiceControllerState,
     liveWaveform: List<Float>,
     liveElapsedMs: Int,
+    liveTranscript: String,
     playbackPaused: Boolean,
     loadingModelName: String?,
     onStart: () -> Unit,
@@ -507,10 +527,13 @@ private fun VoiceControlCluster(
         ) { activeState ->
             when (activeState) {
                 VoiceControllerState.IDLE -> IdleControls(onStart, onKeyboard)
-                VoiceControllerState.LISTENING -> ListeningControls(liveWaveform, liveElapsedMs, onCancel, onFinishListening, onKeyboard)
+                VoiceControllerState.LISTENING -> ListeningControls(
+                    liveWaveform, liveElapsedMs, liveTranscript, onCancel, onFinishListening, onKeyboard
+                )
                 VoiceControllerState.SPEAKING -> SpeakingControls(playbackPaused, onBargeIn, onPause, onStop)
-                VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL -> ProcessingControls(
+                VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL, VoiceControllerState.TRANSCRIBING -> ProcessingControls(
                     label = voiceStatusLabel(activeState, playbackPaused, loadingModelName),
+                    liveTranscript = liveTranscript.takeIf { activeState == VoiceControllerState.TRANSCRIBING }.orEmpty(),
                     onCancel = onCancel,
                     onKeyboard = onKeyboard
                 )
@@ -545,6 +568,7 @@ private fun IdleControls(onStart: () -> Unit, onKeyboard: () -> Unit) {
 private fun ListeningControls(
     waveform: List<Float>,
     elapsedMs: Int,
+    liveTranscript: String,
     onCancel: () -> Unit,
     onStop: () -> Unit,
     onKeyboard: () -> Unit
@@ -564,6 +588,7 @@ private fun ListeningControls(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.sm)
         )
+        LiveTranscriptCaption(liveTranscript)
         Row(
             Modifier.fillMaxWidth().padding(top = Space.md),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -625,7 +650,7 @@ private fun SpeakingControls(paused: Boolean, onBargeIn: () -> Unit, onPause: ()
 }
 
 @Composable
-private fun ProcessingControls(label: String, onCancel: () -> Unit, onKeyboard: () -> Unit) {
+private fun ProcessingControls(label: String, liveTranscript: String, onCancel: () -> Unit, onKeyboard: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.md),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -642,6 +667,7 @@ private fun ProcessingControls(label: String, onCancel: () -> Unit, onKeyboard: 
         }
         ThinkingEllipsis(Modifier.padding(top = Space.sm))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LiveTranscriptCaption(liveTranscript)
         Row(
             Modifier.fillMaxWidth().padding(top = Space.sm),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -653,6 +679,39 @@ private fun ProcessingControls(label: String, onCancel: () -> Unit, onKeyboard: 
             IconButton(onClick = onKeyboard, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Filled.Keyboard, contentDescription = "Switch to keyboard")
             }
+        }
+    }
+}
+
+@Composable
+private fun LiveTranscriptCaption(text: String) {
+    if (text.isBlank()) return
+    Surface(
+        modifier = Modifier
+            .padding(top = Space.sm)
+            .fillMaxWidth()
+            .widthIn(max = 520.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Column(
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "LIVE TRANSCRIPT",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = text,
+                modifier = Modifier.padding(top = Space.xs).fillMaxWidth(),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -758,6 +817,7 @@ internal fun voiceStatusLabel(state: VoiceControllerState, paused: Boolean, load
     VoiceControllerState.IDLE -> "Ready"
     VoiceControllerState.LOADING_MODEL -> "Preparing ${loadingModelName ?: "local model"}…"
     VoiceControllerState.LISTENING -> "Listening…"
+    VoiceControllerState.TRANSCRIBING -> "Transcribing…"
     VoiceControllerState.THINKING -> "Thinking…"
     VoiceControllerState.SPEAKING -> if (paused) "Paused" else "Speaking…"
 }
