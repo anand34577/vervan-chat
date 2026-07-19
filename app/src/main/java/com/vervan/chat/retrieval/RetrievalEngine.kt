@@ -21,7 +21,7 @@ data class SourcePassage(
 )
 
 /**
- * ponytail: brute-force over every chunk in scope for both keyword (term overlap) and
+ * brute-force over every chunk in scope for both keyword (term overlap) and
  * semantic (cosine) scoring — no FTS index, no ANN index. Fine for a personal knowledge
  * base (hundreds to low thousands of chunks); revisit if imports grow past that.
  */
@@ -43,7 +43,7 @@ class RetrievalEngine(
         var chunks = chunkDao.getForKnowledgeBases(kbIds, MAX_CHUNKS_PER_QUERY + 1)
         if (chunks.isEmpty()) return emptyList()
         if (chunks.size > MAX_CHUNKS_PER_QUERY) {
-            // ponytail: brute-force scan has no size guard (B9) — cap rather than let a large
+            // brute-force scan has no size guard (B9) — cap rather than let a large
             // KB silently balloon memory/latency. Upgrade to an FTS/ANN index if imports
             // routinely exceed this in practice.
             android.util.Log.w("RetrievalEngine", "KB scope has more than $MAX_CHUNKS_PER_QUERY chunks, capping scan to $MAX_CHUNKS_PER_QUERY")

@@ -241,10 +241,11 @@ fun VervanSectionHeader(
     modifier: Modifier = Modifier,
     count: Int? = null,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    topPadding: Dp = Space.lg,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm),
+        modifier = modifier.fillMaxWidth().padding(top = topPadding, bottom = Space.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

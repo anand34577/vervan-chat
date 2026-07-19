@@ -224,7 +224,16 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tools") },
+                title = {
+                    Column {
+                        Text("Tools")
+                        Text(
+                            "From quick fixes to big ideas",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
@@ -239,7 +248,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 260.dp),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = Space.md),
+                contentPadding = PaddingValues(top = Space.lg, bottom = Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
                 verticalArrangement = Arrangement.spacedBy(Space.md),
             ) {
@@ -274,7 +283,11 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
 
                 if (showPinned) {
                     item(key = "pinned-header", span = { GridItemSpan(maxLineSpan) }) {
-                        VervanSectionHeader(title = "Pinned", count = pinnedEntries.size)
+                        VervanSectionHeader(
+                            title = "Pinned",
+                            count = pinnedEntries.size,
+                            topPadding = 0.dp,
+                        )
                     }
                     items(pinnedEntries, key = { "pinned-${it.route}" }) { entry ->
                         ToolCard(
@@ -298,7 +311,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                         )
                     }
                 } else {
-                    visibleCategories.forEach { category ->
+                    visibleCategories.forEachIndexed { index, category ->
                         val browsingCatalog = query.isBlank() && selectedCategory == null
                         val expanded = !browsingCatalog || category.title in expandedCategories
                         val categoryEntries = if (showPinned) {
@@ -319,6 +332,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                         }
                                         }
                                     } else null,
+                                    topPadding = if (!showPinned && index == 0) 0.dp else Space.lg,
                                 )
                                 Text(
                                     category.description,

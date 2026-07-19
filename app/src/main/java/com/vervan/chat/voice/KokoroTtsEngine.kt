@@ -8,7 +8,7 @@ import com.vervan.chat.data.db.dao.TtsVoiceModelDao
  * selected by [TtsEngineSelector]'s `AUTO` ordering since it can run 2-3 minutes of compute
  * per minute of audio on budget/mid-range devices — that would break the realtime feel.
  *
- * ponytail: same API-surface caveat as [PiperTtsEngine] — confirm
+ * same API-surface caveat as [PiperTtsEngine] — confirm
  * `OfflineTtsKokoroModelConfig`'s exact required fields against the real AAR at first sync.
  */
 class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {

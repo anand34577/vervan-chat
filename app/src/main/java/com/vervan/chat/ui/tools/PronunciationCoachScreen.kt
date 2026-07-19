@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
  * Reference pronunciation via TTS, attempt via the device's offline recognizer — a real phonetic
  * comparison needs a dedicated model this app doesn't bundle, so feedback here is a word-level
  * diff (which target words the recognizer didn't hear back) plus its raw confidence score.
- * ponytail: heuristic, not true phonetic scoring — good enough to flag likely trouble spots.
+ * heuristic, not true phonetic scoring — good enough to flag likely trouble spots.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

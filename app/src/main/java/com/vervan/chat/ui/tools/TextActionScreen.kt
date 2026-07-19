@@ -83,7 +83,7 @@ data class TextAction(val label: String, val promptFor: (String) -> String)
 /**
  * Generic "paste/speak/scan text in, pick a transform, LLM output out" screen — backs Writing
  * Assistant, Smart Notes, Clipboard Assistant, Explain Like I'm, and the text half of Screenshot
- * Intelligence. One implementation instead of five near-identical screens (ponytail: reuse).
+ * Intelligence. One implementation instead of five near-identical screens (reuse).
  *
  * Output streams token-by-token with a stop control, so the user sees progress immediately and
  * can keep a partial result — same interaction model as the main chat, not a blocking spinner.
@@ -128,7 +128,7 @@ fun TextActionScreen(
                 if (flow == null) {
                     errorText = "No generation model is active. Choose and load one from Models, then try again."
                 } else {
-                    // ponytail: throttle the state write (not the collection) to ~16 fps so
+                    // throttle the state write (not the collection) to ~16 fps so
                     // MarkdownLiteText isn't re-parsed on every single token during a fast stream.
                     val sb = StringBuilder()
                     var lastEmit = 0L

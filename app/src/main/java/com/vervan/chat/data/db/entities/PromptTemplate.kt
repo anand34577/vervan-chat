@@ -10,7 +10,7 @@ data class PromptTemplate(
     // Slash-command name, no leading "/", e.g. "summarize" for "/summarize"
     val name: String,
     val description: String = "",
-    // ponytail: one placeholder, "{{input}}", filled with whatever the user typed after
+    // one placeholder, "{{input}}", filled with whatever the user typed after
     // the command name. No typed-variable system (dates, selects, files, ...) — add one
     // if templates ever need more than "wrap my text in this instruction".
     val body: String,

@@ -73,7 +73,7 @@ import java.io.File
 /**
  * Multi-page camera capture -> corner-adjust crop with perspective correction -> export as
  * PDF/images (share sheet, all local) or import as a Knowledge document via OCR.
- * ponytail: manual draggable corners, no auto edge-detection — that needs a CV library (OpenCV/
+ * manual draggable corners, no auto edge-detection — that needs a CV library (OpenCV/
  * MLKit) this offline app doesn't bundle. The perspective warp itself is Matrix.setPolyToPoly,
  * pure platform API. Add auto boundary detection if manual corners prove too slow in practice.
  */

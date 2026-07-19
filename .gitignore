@@ -9,6 +9,10 @@ build/
 .cxx/
 local.properties
 .kotlin/
+.agents/
+.claude/
+*.disabled
+/scripts/[0-9]*_*.ps1
 
 *.hprf
 

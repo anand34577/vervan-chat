@@ -26,7 +26,7 @@ private data class LangSpec(
     val hashComment: Boolean = false
 )
 
-// ponytail: no prism4j/markwon-syntax-highlight artifact is available in the offline Gradle
+// no prism4j/markwon-syntax-highlight artifact is available in the offline Gradle
 // cache (this build has no network access), so this is a hand-rolled regex tokenizer instead
 // of a real grammar-based highlighter. Covers keywords/types/strings/numbers/comments for the
 // languages models commonly emit — good enough for readability, not a full lexer. Add real

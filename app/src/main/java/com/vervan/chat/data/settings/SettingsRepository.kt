@@ -21,7 +21,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class AccentTheme { AMBER, BLUE, GREEN, VIOLET, ROSE }
 
 /**
- * Real user-facing settings (spec §41), DataStore-backed. ponytail: one flat preferences
+ * Real user-facing settings (spec §41), DataStore-backed. one flat preferences
  * file covering the settings screens actually built today, not placeholder keys for the
  * spec's unbuilt groups (retrieval-mode picker per source type, per-tool timeouts, etc).
  */

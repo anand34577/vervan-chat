@@ -77,7 +77,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         viewModelScope.launch { _workflow.value = db.workflowDao().get(workflowId) }
     }
 
-    /** Reads a picked file straight into text — ponytail: no persistence, this is a one-shot input, not a knowledge-base import.
+    /** Reads a picked file straight into text — no persistence, this is a one-shot input, not a knowledge-base import.
      * Returns null (with [_error] set) instead of throwing on storage-full, a revoked/expired
      * SAF grant, or an OCR/extraction failure — this used to be able to throw uncaught out of
      * a bare `scope.launch` in WorkflowRunScreen with no exception handler, crashing the app

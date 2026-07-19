@@ -29,7 +29,7 @@ data class SearchResults(
 }
 
 /** Cross-content search (spec §29) — fans a single query out to every content DAO's own
- * LIKE-based search query. ponytail: debounce + sequential DAO hits, no FTS/ranking index —
+ * LIKE-based search query. debounce + sequential DAO hits, no FTS/ranking index —
  * fine at personal-library scale, revisit if any one table grows past a few thousand rows. */
 class SearchViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
