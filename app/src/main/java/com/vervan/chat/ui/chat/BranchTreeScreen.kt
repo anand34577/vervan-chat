@@ -88,15 +88,27 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp), state = listState) {
-            items(rows, key = { it.first.id }) { (message, depth) ->
-                TreeRow(
-                    message = message,
-                    depth = depth,
-                    isActive = message.id in activePath,
-                    isCurrentLeaf = message.id == chat?.activeLeafId,
-                    onClick = { vm.jumpTo(message.id); onBack() }
-                )
+        if (rows.isEmpty()) {
+            com.vervan.chat.ui.common.EmptyState(
+                icon = Icons.Filled.MyLocation,
+                title = "No branches yet",
+                body = "Edit or regenerate a message to fork the conversation — every branch shows up here."
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(vertical = com.vervan.chat.ui.theme.Space.sm),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(com.vervan.chat.ui.theme.Space.xs)
+            ) {
+                items(rows, key = { it.first.id }) { (message, depth) ->
+                    TreeRow(
+                        message = message,
+                        depth = depth,
+                        isActive = message.id in activePath,
+                        isCurrentLeaf = message.id == chat?.activeLeafId,
+                        onClick = { vm.jumpTo(message.id); onBack() }
+                    )
+                }
             }
         }
         }
@@ -106,13 +118,14 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
 @Composable
 private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLeaf: Boolean, onClick: () -> Unit) {
     val label = when (message.role) {
-        MessageRole.USER -> "User"
-        MessageRole.ASSISTANT -> "Assistant"
+        MessageRole.USER -> "You"
+        MessageRole.ASSISTANT -> "Vervan"
         MessageRole.SYSTEM -> "Tool result"
     }
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 2.dp, bottom = 2.dp)) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         if (depth > 0) {
-            // ponytail: per-row tick marks, not a real tree-graph layout
+            // Guide lines for ancestry — the active path is drawn in primary so the eye can
+            // follow the current conversation's spine through the forks.
             val lineColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
             Canvas(Modifier.width((depth * 16).dp).fillMaxHeight()) {
                 for (level in 0 until depth) {
@@ -124,16 +137,28 @@ private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLe
         Card(
             modifier = Modifier.fillMaxWidth(),
             onClick = onClick,
-            colors = CardDefaults.cardColors(
-                containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-            )
+            shape = MaterialTheme.shapes.medium,
+            colors = if (isActive) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+            else com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+            border = if (isCurrentLeaf) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+            else com.vervan.chat.ui.theme.SurfaceRole.Card.border()
         ) {
-            Column(Modifier.padding(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(label, style = MaterialTheme.typography.labelSmall)
+            Column(Modifier.padding(com.vervan.chat.ui.theme.Space.md)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(com.vervan.chat.ui.theme.Space.sm)) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (message.role == MessageRole.ASSISTANT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     if (isCurrentLeaf) SemanticChip("Current", ChipTone.Success)
                 }
-                Text(message.content.take(120).ifBlank { "…" }, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                Text(
+                    message.content.take(120).ifBlank { "…" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
     }

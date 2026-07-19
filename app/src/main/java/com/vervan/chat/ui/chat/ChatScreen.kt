@@ -1,8 +1,7 @@
-﻿package com.vervan.chat.ui.chat
+package com.vervan.chat.ui.chat
 
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.media.AudioAttributes
@@ -40,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -58,7 +59,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -98,11 +98,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -112,6 +114,16 @@ import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.ManageSearch
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -139,11 +151,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
@@ -162,6 +174,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.audio.WavRecorder
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.BoundedTextField
@@ -169,11 +182,8 @@ import com.vervan.chat.ui.common.DatePill
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.ErrorCard
-import com.vervan.chat.ui.common.DeleteMenuItem
 import com.vervan.chat.ui.common.MessageAction
 import com.vervan.chat.ui.common.MessageActionsSheet
-import com.vervan.chat.ui.common.ModelEngineKind
-import com.vervan.chat.ui.common.ModelPill
 import com.vervan.chat.ui.common.QuickReply
 import com.vervan.chat.ui.common.QuickReplyChips
 import com.vervan.chat.ui.common.ReactionBadges
@@ -187,7 +197,10 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanAccent
 import com.vervan.chat.ui.theme.VervanMotion
+import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
@@ -239,6 +252,10 @@ internal fun sameDay(a: Long, b: Long): Boolean {
 fun ChatScreen(
     chatId: String,
     initialAction: String? = null,
+    pendingAttachUri: android.net.Uri? = null,
+    pendingAttachAsImage: Boolean = false,
+    pendingAttachShowPreview: Boolean = false,
+    onAttachConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onOpenChatInfo: () -> Unit = {},
     onOpenDocument: (String) -> Unit = {},
@@ -258,6 +275,7 @@ fun ChatScreen(
     val allMessages by vm.allMessages.collectAsState()
     val isGenerating by vm.isGenerating.collectAsState()
     val isRetrieving by vm.isRetrieving.collectAsState()
+    val isRecallingMemory by vm.isRecallingMemory.collectAsState()
     val error by vm.error.collectAsState()
     val chat by vm.chat.collectAsState()
     val workspace by vm.workspace.collectAsState()
@@ -410,9 +428,13 @@ fun ChatScreen(
     var showPersonaPicker by remember { mutableStateOf(false) }
     var pendingQuote by remember { mutableStateOf<String?>(null) }
     var contextBreakdown by remember { mutableStateOf<ContextBreakdown?>(null) }
-    var pendingImagePath by remember { mutableStateOf<String?>(null) }
+    // Attachment state lives in the ViewModel (see ComposerAttachments) so forward navigation
+    // — which disposes this composition but not the ViewModel — can't drop an unsent attachment.
+    val pendingAttachments by vm.attachments.collectAsState()
+    val pendingImagePath = pendingAttachments.imagePath
+    val pendingAudioPath = pendingAttachments.audioPath
     var showPendingImagePreview by remember { mutableStateOf(false) }
-    var pendingAudioPath by remember { mutableStateOf<String?>(null) }
+    var showPendingAudioPreview by remember { mutableStateOf(false) }
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var attachmentError by remember { mutableStateOf<String?>(null) }
     var isImportingAudio by remember { mutableStateOf(false) }
@@ -426,20 +448,22 @@ fun ChatScreen(
     var showSavedResponses by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var isRunningOcr by remember { mutableStateOf(false) }
+    var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
-            pendingImagePath?.let { java.io.File(it).delete() }
-            pendingImagePath = vm.copyImage(uri)
-            showPendingImagePreview = pendingImagePath != null
+            val copied = vm.copyImage(uri)
+            vm.setPendingImage(copied)
+            showPendingImagePreview = copied != null
+            if (copied == null) attachmentError = "Couldn’t prepare that image. Choose another photo and try again."
         }
     }
     var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             pendingCameraFile?.let { com.vervan.chat.model.ImageUtils.fixOrientation(it) }
-            pendingImagePath = pendingCameraFile?.absolutePath
-            showPendingImagePreview = pendingImagePath != null
+            pendingCameraFile?.absolutePath?.let { vm.setPendingImage(it) }
+            showPendingImagePreview = pendingCameraFile != null
         } else {
             pendingCameraFile?.delete()
         }
@@ -465,8 +489,8 @@ fun ChatScreen(
             isImportingAudio = true
             vm.importAudio(uri)
                 .onSuccess { path ->
-                    pendingAudioPath?.let { java.io.File(it).delete() }
-                    pendingAudioPath = path
+                    vm.setPendingAudio(path)
+                    showPendingAudioPreview = true
                 }
                 .onFailure {
                     attachmentError = it.toUserMessage()
@@ -479,15 +503,13 @@ fun ChatScreen(
     // never sees the image: on-device ML Kit recognizes the text, the user can review/edit it
     // in a preview sheet, and only that text is folded into the outgoing message. Works with
     // any loaded model, vision-capable or not.
-    var pendingOcrImagePath by remember { mutableStateOf<String?>(null) }
-    var pendingOcrText by remember { mutableStateOf<String?>(null) }
+    val pendingOcrImagePath = pendingAttachments.ocrImagePath
+    val pendingOcrText = pendingAttachments.ocrText
     var showOcrPreview by remember { mutableStateOf(false) }
     fun applyOcrResult(result: Result<ChatViewModel.OcrResult>) {
         isRunningOcr = false
         result.onSuccess { r ->
-            pendingOcrImagePath?.let { java.io.File(it).delete() }
-            pendingOcrImagePath = r.imagePath
-            pendingOcrText = r.text
+            vm.setPendingOcr(r.imagePath, r.text)
             showOcrPreview = true
             if (r.text.isBlank()) {
                 android.widget.Toast.makeText(context, "No text found in that image", android.widget.Toast.LENGTH_LONG).show()
@@ -580,17 +602,33 @@ fun ChatScreen(
             }
         }
     }
-    val latestRecorder by rememberUpdatedState(activeRecorder)
-    val latestPendingImagePath by rememberUpdatedState(pendingImagePath)
-    val latestPendingAudioPath by rememberUpdatedState(pendingAudioPath)
-    DisposableEffect(chatId) {
-        onDispose {
-            vm.cancelGeneration()
-            if (context.findActivity()?.isChangingConfigurations != true) vm.cleanupOnLeave()
-            latestRecorder?.cancel()
-            latestPendingImagePath?.let { java.io.File(it).delete() }
-            latestPendingAudioPath?.let { java.io.File(it).delete() }
+    // External shares and "Chat with a file" enter through the same copy/preview/import path as
+    // the composer's own pickers, then the nav graph clears the one-shot URI.
+    LaunchedEffect(chatId, pendingAttachUri, pendingAttachAsImage, pendingAttachShowPreview) {
+        val uri = pendingAttachUri ?: return@LaunchedEffect
+        try {
+            if (pendingAttachAsImage) {
+                val copied = vm.copyImage(uri)
+                vm.setPendingImage(copied)
+                showPendingImagePreview = copied != null
+                if (copied == null) attachmentError = "Couldn’t prepare that shared image. Try attaching it from the gallery."
+            } else if (pendingAttachShowPreview) {
+                selectedDocument = inspectDocument(context, uri)
+            } else {
+                vm.attachDocument(uri)
+            }
+        } finally {
+            onAttachConsumed()
         }
+    }
+    val latestRecorder by rememberUpdatedState(activeRecorder)
+    // Only the in-progress recorder is screen-scoped. Generation cancellation, empty/incognito
+    // chat purge, and attachment-file cleanup all live in ChatViewModel.onCleared(), which fires
+    // when the chat's back-stack entry is actually popped — composition dispose also happens on
+    // *forward* navigation (Chat Info, branch tree, a document), where cancelling the stream or
+    // deleting unsent attachments was wrong.
+    DisposableEffect(chatId) {
+        onDispose { latestRecorder?.cancel() }
     }
     val ttsRateSetting by app.container.settingsRepository.ttsRate.collectAsState(initial = 1.0f)
     val autoReadAloud by app.container.settingsRepository.autoReadAloud.collectAsState(initial = false)
@@ -652,11 +690,60 @@ fun ChatScreen(
         }
     }
 
+    fun sendPendingMessage(): Boolean {
+        val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
+        val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) &&
+            modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
+        if (!canSend) return false
+
+        val quotePrefix = pendingQuote?.let { quoted ->
+            quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
+        }.orEmpty()
+        val attached = vm.consumeAttachments()
+        val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+        val bodyBase = draft.ifBlank {
+            when {
+                documentReady -> "Describe this document."
+                attached.imagePath != null -> "Describe this image."
+                else -> draft
+            }
+        }
+        val body = if (ocrText != null) {
+            "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
+        } else bodyBase
+        val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
+
+        draft = ""
+        pendingQuote = null
+        vm.clearPendingDocument()
+        stickToBottom = true
+        vm.send(quotePrefix + body, attached.imagePath, attached.audioPath, documentId)
+        return true
+    }
+
+    // A document needs to be copied and indexed before it has a stable local ID. Pressing Send
+    // in its preview starts that work and this effect completes the same send as soon as Ready is
+    // reached. Failure stays visible in the composer instead of silently losing the caption.
+    LaunchedEffect(pendingDocument, sendDocumentWhenReady, modelLoadState, isWorkspaceArchived) {
+        when (pendingDocument) {
+            is ChatViewModel.DocumentAttachState.Ready -> {
+                if (sendDocumentWhenReady && sendPendingMessage()) sendDocumentWhenReady = false
+            }
+            is ChatViewModel.DocumentAttachState.Failed -> sendDocumentWhenReady = false
+            else -> Unit
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column(Modifier.clickable(onClick = onOpenChatInfo)) {
+                    Column(
+                        Modifier.heightIn(min = 48.dp).clickable(onClick = onOpenChatInfo).semantics {
+                            contentDescription = "Chat details"
+                        },
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Text(
                             chat?.title ?: "New conversation",
                             style = MaterialTheme.typography.titleMedium,
@@ -666,6 +753,7 @@ fun ChatScreen(
                         Text(
                             when {
                                 isRetrieving -> "Searching knowledge base…"
+                                isRecallingMemory -> "Recalling memories…"
                                 chat?.isTemporary == true -> "Incognito · deletes when you leave"
                                 modelLoadState is ChatViewModel.ModelLoadState.Ready -> {
                                     val ready = modelLoadState as ChatViewModel.ModelLoadState.Ready
@@ -674,7 +762,7 @@ fun ChatScreen(
                                 else -> "Private · on device"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isGenerating || isRetrieving) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isGenerating || isRetrieving || isRecallingMemory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )
                     }
@@ -687,22 +775,9 @@ fun ChatScreen(
                 actions = {
                     val activeModel = chat?.modelId?.let { id -> generationModels.firstOrNull { it.id == id } }
                         ?: generationModels.firstOrNull { it.isActive }
-                    // ModelPill in the top bar — one tap opens the model picker directly,
-                    // replacing the previous "overflow → Mode & model → Chat model row → list"
-                    // three-tap flow. Shows nothing when no model is available (the
-                    // ModelReadinessPanel below the top bar handles that case with its own CTA).
-                    activeModel?.let { model ->
-                        ModelPill(
-                            label = model.displayName,
-                            engineKind = when (model.engine) {
-                                com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM -> ModelEngineKind.LiteRTLM
-                                com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP -> ModelEngineKind.LlamaCpp
-                            },
-                            isLoaded = modelLoadState is ChatViewModel.ModelLoadState.Ready,
-                            onClick = { showModelPicker = true }
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
+                    // The model name/switcher lives in the context strip below the bar (and in
+                    // "Mode & model"), not here — the top bar was too cramped with the pill taking
+                    // roughly a third of its width on a phone.
                     // Keep the frequently changed chat controls directly accessible.
                     val grounded = chat?.sourceGrounded == true
                     IconButton(onClick = { showSourcePicker = true }) {
@@ -711,20 +786,6 @@ fun ChatScreen(
                             tint = if (grounded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    val toolsOn = chat?.toolsEnabled == true
-                    val toolsAvailable = activeModel?.supportsTools != false
-                    IconButton(onClick = { vm.setToolsEnabled(!toolsOn) }, enabled = toolsAvailable) {
-                        Icon(
-                            Icons.Filled.Build,
-                            contentDescription = if (toolsOn) "Turn tools off" else "Turn tools on",
-                            tint = when {
-                                !toolsAvailable -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                toolsOn -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                    val incognito = chat?.isTemporary == true
                     if (titleGenerating) {
                         Box(
                             Modifier.size(48.dp).semantics {
@@ -737,70 +798,45 @@ fun ChatScreen(
                         }
                     }
                     var showOverflow by remember { mutableStateOf(false) }
-                    var showOrganizeMenu by remember { mutableStateOf(false) }
-                    var showChatActionsMenu by remember { mutableStateOf(false) }
+                    var showMoreSheet by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { showOverflow = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More options")
                         }
+                        // WhatsApp-style: the dropdown holds only the handful of everyday actions,
+                        // so it never runs off the screen. Everything else lives in an organized,
+                        // sectioned "More options" bottom sheet one tap away.
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                            // Rename and title generation used to sit two levels deep inside
-                            // "Chat actions" — promoted to the top level since they're the most
-                            // frequently reached-for items in this menu.
-                            DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showRenameDialog = true })
-                            DropdownMenuItem(
-                                text = { Text(if (allMessages.any { it.role == MessageRole.ASSISTANT }) "Regenerate title" else "Generate title with AI") },
-                                enabled = generationModels.isNotEmpty() && !titleGenerating,
-                                onClick = { showOverflow = false; vm.generateTitle() }
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(if (incognito) "Turn incognito off" else "Turn incognito on") },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Filled.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = if (incognito) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                onClick = { showOverflow = false; vm.toggleTemporary() }
-                            )
+                            DropdownMenuItem(text = { Text("Chat details") }, leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showChatStats = true })
                             DropdownMenuItem(text = { Text("Find in conversation") }, leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showSearch = true })
-                            DropdownMenuItem(
-                                text = { Text("Saved responses (${chatSavedOutputs.size})") },
-                                leadingIcon = {
-                                    Icon(
-                                        if (chatSavedOutputs.isEmpty()) Icons.Outlined.BookmarkBorder else Icons.Filled.Bookmark,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                },
-                                onClick = { showOverflow = false; showSavedResponses = true }
-                            )
-                            DropdownMenuItem(text = { Text("Mode & model") }, onClick = { showOverflow = false; showModeSettings = true })
-                            DropdownMenuItem(text = { Text("Chat tools") }, leadingIcon = { Icon(Icons.Filled.Build, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showChatTools = true })
-                            DropdownMenuItem(text = { Text("Organize") }, onClick = { showOverflow = false; showOrganizeMenu = true })
-                            DropdownMenuItem(text = { Text("Context inspector") }, leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = {
-                                showOverflow = false
-                                scope.launch { contextBreakdown = vm.inspectContext(draft) }
-                            })
-                            DropdownMenuItem(text = { Text("Branch tree") }, leadingIcon = { Icon(Icons.Filled.AccountTree, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; onOpenBranchTree() })
-                            DropdownMenuItem(text = { Text("Chat actions") }, onClick = { showOverflow = false; showChatActionsMenu = true })
+                            DropdownMenuItem(text = { Text("Mode & model") }, leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showModeSettings = true })
+                            DropdownMenuItem(text = { Text(if (chat?.pinned == true) "Unpin" else "Pin") }, leadingIcon = { Icon(if (chat?.pinned == true) Icons.Filled.PushPin else Icons.Outlined.PushPin, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { vm.togglePin(); showOverflow = false })
+                            DropdownMenuItem(text = { Text(if (chat?.archived == true) "Unarchive" else "Archive") }, leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { vm.toggleArchive(); showOverflow = false })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("More options") }, leadingIcon = { Icon(Icons.Filled.MoreHoriz, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showMoreSheet = true })
                         }
-                        DropdownMenu(expanded = showOrganizeMenu, onDismissRequest = { showOrganizeMenu = false }) {
-                            DropdownMenuItem(text = { Text(if (chat?.pinned == true) "Unpin" else "Pin") }, onClick = { vm.togglePin(); showOrganizeMenu = false })
-                            DropdownMenuItem(text = { Text(if (chat?.archived == true) "Unarchive" else "Archive") }, onClick = { vm.toggleArchive(); showOrganizeMenu = false })
-                            DropdownMenuItem(text = { Text("Add to knowledge base") }, onClick = { showOrganizeMenu = false; showKbPicker = true })
-                            DropdownMenuItem(text = { Text("Manage folders") }, leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOrganizeMenu = false; onOpenFolders() })
-                        }
-                        DropdownMenu(expanded = showChatActionsMenu, onDismissRequest = { showChatActionsMenu = false }) {
-                            if (chat?.previousTitle != null) {
-                                DropdownMenuItem(text = { Text("Restore previous title") }, onClick = { showChatActionsMenu = false; vm.restorePreviousTitle() })
-                            }
-                            DropdownMenuItem(text = { Text("Chat details") }, onClick = { showChatActionsMenu = false; showChatStats = true })
-                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { vm.duplicate(onDone = onBack); showChatActionsMenu = false })
-                            DropdownMenuItem(text = { Text("Export") }, onClick = {
-                                showChatActionsMenu = false
+                    }
+                    if (showMoreSheet) {
+                        ChatMoreOptionsSheet(
+                            hasAssistantReply = allMessages.any { it.role == MessageRole.ASSISTANT },
+                            canGenerateTitle = generationModels.isNotEmpty() && !titleGenerating,
+                            hasPreviousTitle = chat?.previousTitle != null,
+                            savedResponsesCount = chatSavedOutputs.size,
+                            isIncognito = chat?.isTemporary == true,
+                            onDismiss = { showMoreSheet = false },
+                            onRename = { showMoreSheet = false; showRenameDialog = true },
+                            onGenerateTitle = { showMoreSheet = false; vm.generateTitle() },
+                            onRestoreTitle = { showMoreSheet = false; vm.restorePreviousTitle() },
+                            onSavedResponses = { showMoreSheet = false; showSavedResponses = true },
+                            onBranchTree = { showMoreSheet = false; onOpenBranchTree() },
+                            onContextInspector = { showMoreSheet = false; scope.launch { contextBreakdown = vm.inspectContext(draft) } },
+                            onChatTools = { showMoreSheet = false; showChatTools = true },
+                            onToggleIncognito = { showMoreSheet = false; vm.toggleTemporary() },
+                            onAddToKnowledgeBase = { showMoreSheet = false; showKbPicker = true },
+                            onManageFolders = { showMoreSheet = false; onOpenFolders() },
+                            onDuplicate = { showMoreSheet = false; vm.duplicate(onDone = onBack) },
+                            onExportShare = {
+                                showMoreSheet = false
                                 scope.launch {
                                     val text = vm.exportText()
                                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -810,11 +846,44 @@ fun ChatScreen(
                                     }
                                     context.startActivity(Intent.createChooser(send, "Export chat"))
                                 }
-                            })
-                            HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Reset chat settings") }, onClick = { showChatActionsMenu = false; showResetConfirm = true })
-                            DeleteMenuItem(onClick = { vm.moveToTrash(onDone = onBack); showChatActionsMenu = false })
-                        }
+                            },
+                            onExportMarkdown = {
+                                showMoreSheet = false
+                                scope.launch {
+                                    // A content URI + stream share (not EXTRA_TEXT) so long
+                                    // transcripts aren't truncated by receiving apps' text limits.
+                                    val file = vm.exportMarkdownFile()
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context, "${context.packageName}.fileprovider", file
+                                    )
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/markdown"
+                                        putExtra(Intent.EXTRA_SUBJECT, chat?.title ?: "Chat")
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, "Export chat as Markdown"))
+                                }
+                            },
+                            onExportPdf = {
+                                showMoreSheet = false
+                                scope.launch {
+                                    val file = vm.exportPdfFile()
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context, "${context.packageName}.fileprovider", file
+                                    )
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_SUBJECT, chat?.title ?: "Chat")
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, "Export chat as PDF"))
+                                }
+                            },
+                            onResetSettings = { showMoreSheet = false; showResetConfirm = true },
+                            onDelete = { showMoreSheet = false; vm.moveToTrash(onDone = onBack) },
+                        )
                     }
                     if (showModeSettings) {
                         val defaultTemperature by app.container.settingsRepository.temperature.collectAsState(initial = 0.8f)
@@ -850,9 +919,15 @@ fun ChatScreen(
             // wraps to a second row. Context % is a cheap chars/4 estimate (same tradeoff as
             // the context inspector), not an exact token count.
             run {
-                val contextLimit by app.container.settingsRepository.contextTokenLimit.collectAsState(initial = 4096)
-                val estimatedTokens = messages.sumOf { it.content.length } / 4
-                val contextPercent = if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(0, 999) else 0
+                val defaultContextLimit by app.container.settingsRepository.contextTokenLimit.collectAsState(initial = 4096)
+                // Prefer the resolved model's actual context window over the app-wide default —
+                // the old version measured the whole branch against the global setting, so a chat
+                // that would fit fine after history trimming could still read a scary "400%".
+                val chatModel = chat?.modelId?.let { id -> generationModels.firstOrNull { it.id == id } }
+                    ?: generationModels.firstOrNull { it.isActive }
+                val contextLimit = chatModel?.contextTokens ?: defaultContextLimit
+                val estimatedTokens = messages.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
+                val contextPercent = if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(0, 100) else 0
                 ChatContextStrip(
                     workspaceName = workspace?.name,
                     folderName = folder?.name,
@@ -883,6 +958,11 @@ fun ChatScreen(
                 val thermalLevel by app.container.thermalMonitor.level.collectAsState()
                 if (thermalLevel != com.vervan.chat.system.ThermalLevel.NORMAL) {
                     ThermalNotice(severe = thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE)
+                }
+                val showGenStats by app.container.settingsRepository.showGenerationStats.collectAsState(initial = false)
+                if (showGenStats) {
+                    val liveStats by vm.liveGenStats.collectAsState()
+                    liveStats?.let { LiveGenStatsChip(it) }
                 }
             }
             if (isWorkspaceArchived) {
@@ -918,17 +998,21 @@ fun ChatScreen(
                         )
                     }
                 }
-                items(messages, key = { it.id }) { message ->
+                // Hoisted out of the per-item lambdas: each of these was an O(n) list scan per
+                // visible item per recomposition — and streaming recomposes this list every
+                // ~80ms, so long chats janked exactly when the app was busiest.
+                val lastCompleteAssistantId = messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.state == MessageState.COMPLETE }?.id
+                val lastMessageId = messages.lastOrNull()?.id
+                itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
                     // Date separator — rendered *before* the first message of each new day so
                     // long conversations get the same "Today / Yesterday / Mar 14" anchors every
-                    // modern chat app provides. Computed by comparing this message's start-of-day
-                    // against the previous visible message's; the same wording as DatePill itself.
-                    val prevIndex = messages.indexOfFirst { it.id == message.id } - 1
-                    val prev = messages.getOrNull(prevIndex)
+                    // modern chat app provides. Only emitted for messages that render a bubble,
+                    // so a hidden SYSTEM row can't leave an orphaned date pill.
+                    if (message.role != MessageRole.SYSTEM) {
+                    val prev = messages.getOrNull(index - 1)
                     if (prev == null || !sameDay(prev.createdAt, message.createdAt)) {
                         DatePill(timestamp = message.createdAt)
                     }
-                    if (message.role != MessageRole.SYSTEM) {
                     MessageBubble(
                             // Placement animation smooths branch switches and regenerations,
                             // which otherwise snap the whole list into its new shape.
@@ -943,6 +1027,7 @@ fun ChatScreen(
                                     snackbarHostState.showSnackbar(if (saved) "Response bookmarked" else "Bookmark removed")
                                 }
                             },
+                            onRemember = { text -> vm.rememberMessage(message.id, text) },
                             onReadAloud = ::speakWithFocus,
                             isGenerating = isGenerating,
                             siblingPosition = com.vervan.chat.data.branch.BranchUtil.siblingPosition(allMessages, message.id),
@@ -959,8 +1044,8 @@ fun ChatScreen(
                             onFork = { scope.launch { onForkChat(vm.forkChat(message.id)) } },
                             onOpenPassage = { chunkId -> onOpenPassage(chunkId) },
                             onOpenDocument = onOpenDocument,
-                            isLastAssistant = message.id == messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.state == MessageState.COMPLETE }?.id,
-                            clarificationEnabled = message.id == messages.lastOrNull()?.id && !isGenerating,
+                            isLastAssistant = message.id == lastCompleteAssistantId,
+                            clarificationEnabled = message.id == lastMessageId && !isGenerating,
                             onClarificationReply = { vm.send(it) },
                             onQuickReply = { reply ->
                                 if (reply.prompt == "__regenerate__") {
@@ -1152,13 +1237,13 @@ fun ChatScreen(
                                 )
                             }
                             IconButton(
-                                onClick = { java.io.File(path).delete(); pendingOcrImagePath = null; pendingOcrText = null },
+                                onClick = { vm.setPendingOcr(null, null) },
                                 modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
                             ) { Icon(Icons.Filled.Close, contentDescription = "Remove OCR attachment", tint = MaterialTheme.colorScheme.inverseOnSurface) }
                         }
                     }
                     pendingImagePath?.let { path ->
-                        Box(Modifier.fillMaxWidth().padding(8.dp).clickable { showPendingImagePreview = true }) {
+                        Box(Modifier.fillMaxWidth().heightIn(min = 92.dp).padding(8.dp).clickable { showPendingImagePreview = true }) {
                             val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
                             val bitmap = remember(path, thumbnailPx) {
                                 com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
@@ -1167,18 +1252,23 @@ fun ChatScreen(
                                 Image(
                                     it,
                                     contentDescription = "Attached image preview",
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 220.dp).clip(MaterialTheme.shapes.large),
+                                    modifier = Modifier.size(84.dp).align(Alignment.CenterStart).clip(MaterialTheme.shapes.medium),
                                     contentScale = ContentScale.Crop
                                 )
                             }
                             Surface(
-                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                                modifier = Modifier.align(Alignment.CenterStart).padding(start = 96.dp, end = 44.dp),
                                 shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
-                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                            ) { Text("Tap to preview", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) }
+                                color = androidx.compose.ui.graphics.Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ) {
+                                Column {
+                                    Text("Photo", style = MaterialTheme.typography.labelLarge)
+                                    Text("Ready to send · Tap to preview", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                             IconButton(
-                                onClick = { java.io.File(path).delete(); pendingImagePath = null },
+                                onClick = { vm.setPendingImage(null) },
                                 modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
                             ) { Icon(Icons.Filled.Close, contentDescription = "Remove image", tint = MaterialTheme.colorScheme.inverseOnSurface) }
                         }
@@ -1186,7 +1276,7 @@ fun ChatScreen(
                     pendingAudioPath?.let { path ->
                         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f)) { VoiceMessageRow(path) }
-                            TextButton(onClick = { java.io.File(path).delete(); pendingAudioPath = null }) { Text("Remove") }
+                            TextButton(onClick = { vm.setPendingAudio(null) }) { Text("Remove") }
                         }
                     }
                 }
@@ -1235,35 +1325,20 @@ fun ChatScreen(
                                 isRecording = false
                                 scope.launch {
                                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { recorder?.stop() }
-                                    pendingAudioPath = recorder?.outputFile?.absolutePath
+                                    recorder?.outputFile?.absolutePath?.let {
+                                        vm.setPendingAudio(it)
+                                        showPendingAudioPreview = true
+                                    }
                                 }
                             }) { Text("Use") }
                         }
                     } else {
-                        OutlinedTextField(
-                            value = draft,
-                            onValueChange = {
-                                draft = it
-                                if (draftLoaded) vm.saveDraft(it)
-                            },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 156.dp),
-                            placeholder = {
-                                Text(if (composerEnabled) "Message, attach, or type /" else "Waiting for a local model")
-                            },
-                            minLines = 1,
-                            maxLines = 6,
-                            enabled = composerEnabled,
-                            isError = draft.length > 12_000,
-                            shape = MaterialTheme.shapes.large,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                                errorBorderColor = MaterialTheme.colorScheme.error,
-                                focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                errorContainerColor = androidx.compose.ui.graphics.Color.Transparent
-                            )
-                        )
+                        // Modern single-row composer: [attach] [field] [/ commands] [mic] [send],
+                        // icons anchored to the bottom as the field grows — the WhatsApp/Telegram
+                        // layout, replacing the previous two-row field-above-toolbar design that
+                        // made the composer read as a form. The commands shortcut yields its slot
+                        // once typing starts (typing "/" directly still opens suggestions), so a
+                        // long draft gets the width back.
                         if (draft.length >= 9_600) {
                             Text(
                                 if (draft.length > 12_000) "Message is over the 12,000 character limit" else "${draft.length} / 12,000 characters",
@@ -1272,49 +1347,99 @@ fun ChatScreen(
                                 modifier = Modifier.align(Alignment.End).padding(horizontal = 12.dp, vertical = 2.dp)
                             )
                         }
-
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { showAttachmentSheet = true }, enabled = composerEnabled) {
+                        if (isImportingAudio) {
+                            Row(
+                                Modifier.padding(start = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
+                                Text(
+                                    "Converting audio…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
+                        }
+                        // Every control in this row shares one 48dp slot height and sits on the
+                        // same bottom baseline. The field is a BasicTextField with an exact 48dp
+                        // single-line height (Material's OutlinedTextField enforces its own 56dp
+                        // minimum, which left the 48dp icons and 46dp send circle visibly sunken
+                        // beside it no matter how they were nudged). Single-line: everything is
+                        // flush-centered. Multi-line: the field grows upward, icons stay anchored.
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            IconButton(
+                                onClick = { showAttachmentSheet = true },
+                                enabled = composerEnabled
+                            ) {
                                 Icon(Icons.Filled.Add, contentDescription = "Open attachment options")
                             }
-                            IconButton(onClick = {
-                                if (!draft.startsWith("/")) {
-                                    draft = "/$draft"
-                                    if (draftLoaded) vm.saveDraft(draft)
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = draft,
+                                onValueChange = {
+                                    draft = it
+                                    if (draftLoaded) vm.saveDraft(it)
+                                },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 148.dp).semantics {
+                                    contentDescription = "Message"
+                                },
+                                enabled = composerEnabled,
+                                maxLines = 5,
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = if (draft.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                decorationBox = { inner ->
+                                    Box(
+                                        Modifier.padding(horizontal = Space.xs, vertical = Space.md),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (draft.isEmpty()) {
+                                            Text(
+                                                if (composerEnabled) "Message Vervan…" else "Waiting for a local model",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        inner()
+                                    }
                                 }
-                            }, enabled = composerEnabled) {
-                                Icon(Icons.Filled.Bolt, contentDescription = "Open commands")
+                            )
+                            if (draft.isBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        if (!draft.startsWith("/")) {
+                                            draft = "/$draft"
+                                            if (draftLoaded) vm.saveDraft(draft)
+                                        }
+                                    },
+                                    enabled = composerEnabled
+                                ) {
+                                    Icon(Icons.Filled.Bolt, contentDescription = "Open commands")
+                                }
                             }
-                            IconButton(onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }, enabled = composerEnabled) {
+                            IconButton(
+                                onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                                enabled = composerEnabled
+                            ) {
                                 Icon(
                                     if (audioAvailable == true) Icons.Filled.GraphicEq else Icons.Filled.KeyboardVoice,
                                     contentDescription = if (audioAvailable == true) "Record audio for model" else "Dictate with Android speech recognition"
                                 )
                             }
-                            // This label takes the weight (not a bare Spacer) so it — not the
-                            // fixed-size send button — is what yields space and truncates when
-                            // the row runs narrow. Previously the un-weighted label kept its full
-                            // intrinsic width and squeezed the send button on small screens.
-                            Text(
-                                when {
-                                    isImportingAudio -> "Converting audio…"
-                                    audioAvailable == true -> "Model audio"
-                                    else -> "Device dictation"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                            )
                             val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
                             val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) &&
                                 composerEnabled && draft.length <= 12_000
+                            val sendActive = canSend || isGenerating
                             Box(
-                                Modifier.padding(start = 8.dp).size(48.dp)
+                                Modifier.padding(start = Space.xs).size(48.dp)
                                     .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(if (canSend || isGenerating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+                                    .background(
+                                        if (sendActive) com.vervan.chat.ui.theme.vervanBrandGradient()
+                                        else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isGenerating) {
@@ -1327,30 +1452,7 @@ fun ChatScreen(
                                 } else {
                                     IconButton(enabled = canSend, onClick = {
                                         if (hapticsEnabled) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                                        val quotePrefix = pendingQuote?.let { quoted ->
-                                            quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
-                                        }.orEmpty()
-                                        val ocrText = pendingOcrText?.takeIf { it.isNotBlank() }
-                                        val bodyBase = draft.ifBlank { if (documentReady) "Describe this document." else draft }
-                                        val body = if (ocrText != null) {
-                                            "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-                                        } else bodyBase
-                                        val image = pendingImagePath
-                                        val audio = pendingAudioPath
-                                        val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
-                                        draft = ""
-                                        pendingImagePath = null
-                                        pendingOcrImagePath?.let { java.io.File(it).delete() }
-                                        pendingOcrImagePath = null
-                                        pendingOcrText = null
-                                        pendingAudioPath = null
-                                        pendingQuote = null
-                                        vm.clearPendingDocument()
-                                        // Explicit submission moves focus to the new turn even if the
-                                        // user was reading older history — normal follow/read-mode
-                                        // rules resume once generation actually starts streaming.
-                                        stickToBottom = true
-                                        vm.send(quotePrefix + body, image, audio, documentId)
+                                        sendPendingMessage()
                                     }) {
                                         Icon(
                                             Icons.AutoMirrored.Filled.Send,
@@ -1368,7 +1470,7 @@ fun ChatScreen(
     }
 
     if (showAttachmentSheet) {
-        ChatAttachmentSheet(
+        ModernChatAttachmentSheet(
             visionAvailable = visionAvailable,
             audioAvailable = audioAvailable,
             isImportingAudio = isImportingAudio,
@@ -1414,11 +1516,20 @@ fun ChatScreen(
     }
 
     selectedDocument?.let { selection ->
-        DocumentAttachmentPreviewSheet(
+        DocumentComposerPreviewDialog(
             selection = selection,
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
             onDismiss = { selectedDocument = null },
-            onAttach = {
+            onSend = {
                 selectedDocument = null
+                // Clear any older ready attachment before arming auto-send; otherwise replacing
+                // a document could briefly satisfy the Ready effect with the previous file.
+                vm.clearPendingDocument()
+                sendDocumentWhenReady = true
                 vm.attachDocument(selection.uri)
             }
         )
@@ -1427,14 +1538,42 @@ fun ChatScreen(
     pendingImagePath?.takeIf { showPendingImagePreview }?.let { path ->
         FullScreenImagePreview(
             path = path,
-            title = "Image preview",
-            onDismiss = {
-                java.io.File(path).delete()
-                pendingImagePath = null
+            title = "Photo preview",
+            onDismiss = { showPendingImagePreview = false },
+            onRemove = {
+                vm.setPendingImage(null)
                 showPendingImagePreview = false
             },
-            confirmLabel = "Attach",
-            onConfirm = { showPendingImagePreview = false }
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
+            confirmLabel = "Send",
+            confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
+            onConfirm = {
+                if (sendPendingMessage()) showPendingImagePreview = false
+            }
+        )
+    }
+
+    pendingAudioPath?.takeIf { showPendingAudioPreview }?.let { path ->
+        AudioComposerPreviewDialog(
+            path = path,
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
+            confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
+            onDismiss = { showPendingAudioPreview = false },
+            onRemove = {
+                vm.setPendingAudio(null)
+                showPendingAudioPreview = false
+            },
+            onSend = {
+                if (sendPendingMessage()) showPendingAudioPreview = false
+            }
         )
     }
 
@@ -1442,14 +1581,21 @@ fun ChatScreen(
         OcrPreviewDialog(
             imagePath = path,
             text = pendingOcrText.orEmpty(),
-            onTextChange = { pendingOcrText = it },
+            onTextChange = { vm.updateOcrText(it) },
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
+            confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
             onRemove = {
-                java.io.File(path).delete()
-                pendingOcrImagePath = null
-                pendingOcrText = null
+                vm.setPendingOcr(null, null)
                 showOcrPreview = false
             },
-            onDismiss = { showOcrPreview = false }
+            onDismiss = { showOcrPreview = false },
+            onSend = {
+                if (sendPendingMessage()) showOcrPreview = false
+            }
         )
     }
 
@@ -1776,75 +1922,68 @@ private fun readableFileSize(bytes: Long?): String = when {
     else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DocumentAttachmentPreviewSheet(
+private fun DocumentComposerPreviewDialog(
     selection: PendingDocumentSelection,
+    caption: String,
+    onCaptionChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onAttach: () -> Unit,
+    onSend: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = 20.dp).padding(bottom = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Review document", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth())
-            Text(
-                "Check the file before adding it to this chat.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 20.dp)
-            )
-            Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(
-                    Icons.Filled.Description,
-                    contentDescription = null,
-                    modifier = Modifier.padding(24.dp).size(56.dp)
-                )
-            }
-            Text(
-                selection.name,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-            )
-            Text(
-                "${selection.mimeType.substringAfterLast('/').uppercase()} · ${readableFileSize(selection.sizeBytes)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            )
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerLow
-            ) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Column(Modifier.padding(start = 12.dp)) {
-                        Text("Private document context", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Stays on this device and is searchable only in this chat.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+    val type = selection.name.substringAfterLast('.', "FILE").uppercase().take(8)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White)
+                    }
+                    Text("Document preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+                Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                                Column(Modifier.padding(horizontal = 30.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(52.dp))
+                                    Text(type, style = MaterialTheme.typography.labelLarge, fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = Space.xs))
+                                }
+                            }
+                            Text(
+                                selection.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
+                            )
+                            Text(
+                                "${selection.mimeType.substringAfterLast('/').uppercase()} · ${readableFileSize(selection.sizeBytes)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Space.xs)
+                            )
+                            Row(Modifier.padding(top = Space.lg), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
+                                Text("Indexed privately after sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.xs))
+                            }
+                        }
                     }
                 }
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                androidx.compose.material3.OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(onClick = onAttach, modifier = Modifier.weight(1f)) { Text("Attach document") }
+                AttachmentCaptionBar(
+                    caption = caption,
+                    onCaptionChange = onCaptionChange,
+                    confirmEnabled = caption.length <= 12_000,
+                    onSend = onSend
+                )
             }
         }
     }
@@ -1852,7 +1991,7 @@ private fun DocumentAttachmentPreviewSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChatAttachmentSheet(
+private fun ModernChatAttachmentSheet(
     visionAvailable: Boolean?,
     audioAvailable: Boolean?,
     isImportingAudio: Boolean,
@@ -1869,156 +2008,57 @@ private fun ChatAttachmentSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = 20.dp).padding(bottom = 28.dp)
+                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
-            Text("Add to conversation", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Choose what to add to your message.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
-            )
-
-            AttachmentSectionLabel("See")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AttachmentTile(
-                    icon = Icons.Filled.Image,
-                    title = "Photo",
-                    description = if (visionAvailable == false) "Not supported by this model" else "Choose from your device",
-                    enabled = visionAvailable != false,
-                    onClick = onPhoto,
-                    modifier = Modifier.weight(1f)
-                )
-                AttachmentTile(
-                    icon = Icons.Filled.PhotoCamera,
-                    title = "Camera",
-                    description = if (visionAvailable == false) "Not supported by this model" else "Capture something now",
-                    enabled = visionAvailable != false,
-                    onClick = onCamera,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            AttachmentSectionLabel("Extract text (OCR)")
-            Text(
-                "Reads text from a photo locally. No vision model needed.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AttachmentTile(
-                    icon = Icons.Filled.DocumentScanner,
-                    title = "OCR Photo",
-                    description = if (isRunningOcr) "Reading text…" else "Pick a photo to scan",
-                    enabled = !isRunningOcr,
-                    onClick = onOcrPhoto,
-                    modifier = Modifier.weight(1f)
-                )
-                AttachmentTile(
-                    icon = Icons.Filled.CameraAlt,
-                    title = "OCR Camera",
-                    description = if (isRunningOcr) "Reading text…" else "Capture and scan now",
-                    enabled = !isRunningOcr,
-                    onClick = onOcrCamera,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            AttachmentSectionLabel("Listen")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val audioDescription = when (audioAvailable) {
-                    true -> "Send speech or other sound"
-                    false -> "Enable model audio in Model Manager"
-                    null -> "Available after the model loads"
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Share", style = MaterialTheme.typography.headlineSmall)
+                    Text("Prepared privately on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AttachmentTile(
-                    icon = Icons.Filled.Mic,
-                    title = "Record audio",
-                    description = audioDescription,
-                    enabled = audioAvailable == true && !isImportingAudio,
-                    onClick = onRecordAudio,
-                    modifier = Modifier.weight(1f)
-                )
-                AttachmentTile(
-                    icon = Icons.Filled.AudioFile,
-                    title = if (isImportingAudio) "Converting…" else "Audio file",
-                    description = if (audioAvailable == true) "Converted to model-ready WAV" else audioDescription,
-                    enabled = audioAvailable == true && !isImportingAudio,
-                    onClick = onAudioFile,
-                    modifier = Modifier.weight(1f)
-                )
+                Icon(Icons.Filled.Lock, contentDescription = "Private and offline", tint = MaterialTheme.colorScheme.primary)
             }
-
-            AttachmentSectionLabel("Read")
-            AttachmentTile(
-                icon = Icons.Filled.Description,
-                title = "Document",
-                description = "PDF, Office file, ebook, or text",
-                enabled = true,
-                onClick = onDocument,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CompactAttachmentAction(Icons.Filled.Image, "Gallery", if (visionAvailable == false) "Unavailable" else "Photos", visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.PhotoCamera, "Camera", if (visionAvailable == false) "Unavailable" else "Take photo", visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Description, "Document", "PDF or file", true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CompactAttachmentAction(Icons.Filled.DocumentScanner, "Scan text", if (isRunningOcr) "Reading…" else "From photo", !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Mic, "Record", if (audioAvailable == true) "Voice note" else "Unavailable", audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) "Preparing…" else "Audio", if (audioAvailable == true) "Choose file" else "Unavailable", audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
+            }
+            TextButton(
+                onClick = onOcrCamera,
+                enabled = !isRunningOcr,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.sm)
+            ) {
+                Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = Space.xs))
+                Text("Scan text with camera")
+            }
         }
     }
 }
 
 @Composable
-private fun AttachmentSectionLabel(label: String) {
-    Text(
-        label,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 12.dp, bottom = 8.dp)
-    )
-}
-
-@Composable
-private fun AttachmentTile(
+private fun CompactAttachmentAction(
     icon: ImageVector,
     title: String,
-    description: String,
+    helper: String,
     enabled: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    accent: VervanAccent,
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier
-            .heightIn(min = 112.dp)
-            .alpha(if (enabled) 1f else 0.48f)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 8.dp),
+        modifier.alpha(if (enabled) 1f else 0.45f).clickable(enabled = enabled, onClick = onClick).padding(vertical = Space.sm),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            shape = androidx.compose.foundation.shape.CircleShape,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.padding(15.dp).size(24.dp))
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = accent.container, contentColor = accent.onContainer) {
+            Icon(icon, contentDescription = null, modifier = Modifier.padding(14.dp).size(24.dp))
         }
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        )
-        Text(
-            description,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
-        )
+        Text(title, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = Space.sm), maxLines = 1)
+        Text(helper, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
-}
-
-private fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
 
 private fun formatMs(ms: Int): String {
@@ -2107,11 +2147,117 @@ internal fun VoiceMessageRow(path: String) {
 }
 
 @Composable
+private fun AttachmentCaptionBar(
+    caption: String,
+    onCaptionChange: (String) -> Unit,
+    confirmEnabled: Boolean,
+    onSend: () -> Unit,
+    placeholder: String = "Add a message"
+) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
+            if (caption.length >= 9_600) {
+                Text(
+                    if (caption.length > 12_000) "Message is over the 12,000 character limit" else "${caption.length} / 12,000",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (caption.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.End).padding(horizontal = Space.lg, vertical = Space.xs)
+                )
+            }
+            Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.Bottom) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = com.vervan.chat.ui.theme.VervanExtraShapes.composer,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest
+                ) {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = caption,
+                        onValueChange = onCaptionChange,
+                        maxLines = 5,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 148.dp),
+                        decorationBox = { inner ->
+                            Box(Modifier.padding(horizontal = Space.lg, vertical = Space.md), contentAlignment = Alignment.CenterStart) {
+                                if (caption.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                inner()
+                            }
+                        }
+                    )
+                }
+                Box(
+                    Modifier.padding(start = Space.sm).size(52.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(
+                            if (confirmEnabled) com.vervan.chat.ui.theme.vervanBrandGradient()
+                            else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(onClick = onSend, enabled = confirmEnabled) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send attachment",
+                            tint = if (confirmEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioComposerPreviewDialog(
+    path: String,
+    caption: String,
+    onCaptionChange: (String) -> Unit,
+    confirmEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onRemove: () -> Unit,
+    onSend: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
+                    Text("Audio preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove audio", tint = androidx.compose.ui.graphics.Color.White) }
+                }
+                Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                                Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.padding(Space.lg).size(44.dp))
+                            }
+                            Text("Voice message", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg))
+                            Text("Preview before sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(Modifier.fillMaxWidth().padding(top = Space.md)) { VoiceMessageRow(path) }
+                        }
+                    }
+                }
+                AttachmentCaptionBar(caption, onCaptionChange, confirmEnabled, onSend)
+            }
+        }
+    }
+}
+
+@Composable
 internal fun FullScreenImagePreview(
     path: String,
     title: String,
     onDismiss: () -> Unit,
+    onRemove: (() -> Unit)? = null,
+    caption: String? = null,
+    onCaptionChange: ((String) -> Unit)? = null,
     confirmLabel: String? = null,
+    confirmEnabled: Boolean = true,
     onConfirm: (() -> Unit)? = null
 ) {
     Dialog(
@@ -2122,15 +2268,18 @@ internal fun FullScreenImagePreview(
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val context = LocalContext.current
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close preview", tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
                     Text(title, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
+                    onRemove?.let {
+                        IconButton(onClick = it) { Icon(Icons.Filled.Close, "Remove attachment", tint = androidx.compose.ui.graphics.Color.White) }
+                    }
                     IconButton(onClick = {
                         com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(path), "image/*")
                     }) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open with…", tint = androidx.compose.ui.graphics.Color.White)
                     }
-                    if (confirmLabel != null && onConfirm != null) {
+                    if (caption == null && confirmLabel != null && onConfirm != null) {
                         TextButton(onClick = onConfirm) { Text(confirmLabel) }
                     }
                 }
@@ -2171,6 +2320,14 @@ internal fun FullScreenImagePreview(
                         )
                     }
                 }
+                if (caption != null && onCaptionChange != null && confirmLabel != null && onConfirm != null) {
+                    AttachmentCaptionBar(
+                        caption = caption,
+                        onCaptionChange = onCaptionChange,
+                        confirmEnabled = confirmEnabled,
+                        onSend = onConfirm
+                    )
+                }
             }
         }
     }
@@ -2186,8 +2343,104 @@ private fun OcrPreviewDialog(
     imagePath: String,
     text: String,
     onTextChange: (String) -> Unit,
+    caption: String,
+    onCaptionChange: (String) -> Unit,
+    confirmEnabled: Boolean,
     onRemove: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSend: () -> Unit
+) {
+    var showExtractedText by remember(imagePath) { mutableStateOf(false) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
+                    Column {
+                        Text("OCR preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                        Text("Image stays on this device", color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove OCR image", tint = androidx.compose.ui.graphics.Color.White) }
+                }
+
+                val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
+                val bitmap = remember(imagePath, thumbnailPx) {
+                    com.vervan.chat.model.ImageUtils.decodeThumbnail(imagePath, thumbnailPx)?.asImageBitmap()
+                }
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    bitmap?.let {
+                        Image(
+                            it,
+                            contentDescription = "Scanned photo",
+                            modifier = Modifier.fillMaxSize().padding(horizontal = Space.sm),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    Surface(
+                        onClick = { showExtractedText = !showExtractedText },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(Space.md),
+                        shape = com.vervan.chat.ui.theme.VervanExtraShapes.pill,
+                        color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.92f),
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    ) {
+                        Row(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(
+                                if (showExtractedText) "Hide extracted text" else if (text.isBlank()) "No text found · add manually" else "View extracted text",
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(start = Space.sm)
+                            )
+                        }
+                    }
+                }
+
+                if (showExtractedText) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(start = Space.lg, end = Space.lg, top = Space.md)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Extracted text", style = MaterialTheme.typography.titleSmall)
+                                    Text("Review or correct it before sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { showExtractedText = false }) { Icon(Icons.Filled.Close, "Hide extracted text") }
+                            }
+                            OutlinedTextField(
+                                value = text,
+                                onValueChange = onTextChange,
+                                modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = Space.sm),
+                                placeholder = { Text("Type the text visible in the image") }
+                            )
+                        }
+                    }
+                }
+
+                AttachmentCaptionBar(
+                    caption = caption,
+                    onCaptionChange = onCaptionChange,
+                    confirmEnabled = confirmEnabled,
+                    onSend = onSend,
+                    placeholder = "Add a message about this text"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyOcrPreviewDialog(
+    imagePath: String,
+    text: String,
+    onTextChange: (String) -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+    caption: String = "",
+    onCaptionChange: ((String) -> Unit)? = null,
+    confirmEnabled: Boolean = true,
+    onSend: (() -> Unit)? = null
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -2229,8 +2482,20 @@ private fun OcrPreviewDialog(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
                     placeholder = { Text("Recognized text will appear here") }
                 )
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
-                    androidx.compose.material3.Button(onClick = onDismiss) { Text("Use this text") }
+                if (onSend != null && onCaptionChange != null) {
+                    // Send directly from the preview, WhatsApp-style — caption rides along as
+                    // the message text; "Use this text" (dismiss) remains the keep-editing path.
+                    AttachmentCaptionBar(
+                        caption = caption,
+                        onCaptionChange = onCaptionChange,
+                        confirmEnabled = confirmEnabled,
+                        onSend = onSend,
+                        placeholder = "Add a message for the extracted text"
+                    )
+                } else {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
+                        androidx.compose.material3.Button(onClick = onDismiss) { Text("Use this text") }
+                    }
                 }
             }
         }
@@ -2374,6 +2639,171 @@ private fun ThermalNotice(severe: Boolean) {
     }
 }
 
+/** Live tokens/sec + RAM readout while a response is streaming — the "Show generation stats"
+ * setting's real-time counterpart to the per-message numbers ChatInfoScreen shows after the
+ * fact. Local-LLM users watch this while it's happening, not just in the post-mortem. */
+@Composable
+private fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Card(
+            Modifier.widthIn(max = 840.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                Text(
+                    "${String.format("%.1f", stats.tokensPerSecond)} tok/s · ${stats.tokens} tokens · ${stats.availMemMb}/${stats.totalMemMb} MB free",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The chat's "More options" bottom sheet. The top bar's overflow dropdown keeps only the everyday
+ * actions (details, search, mode, pin, archive); every power-user action lives here, grouped under
+ * labeled sections and scrollable — so the menu never runs off the screen the way a 19-item
+ * dropdown did.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatMoreOptionsSheet(
+    hasAssistantReply: Boolean,
+    canGenerateTitle: Boolean,
+    hasPreviousTitle: Boolean,
+    savedResponsesCount: Int,
+    isIncognito: Boolean,
+    onDismiss: () -> Unit,
+    onRename: () -> Unit,
+    onGenerateTitle: () -> Unit,
+    onRestoreTitle: () -> Unit,
+    onSavedResponses: () -> Unit,
+    onBranchTree: () -> Unit,
+    onContextInspector: () -> Unit,
+    onChatTools: () -> Unit,
+    onToggleIncognito: () -> Unit,
+    onAddToKnowledgeBase: () -> Unit,
+    onManageFolders: () -> Unit,
+    onDuplicate: () -> Unit,
+    onExportShare: () -> Unit,
+    onExportMarkdown: () -> Unit,
+    onExportPdf: () -> Unit,
+    onResetSettings: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
+        ) {
+            Text("Chat options", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Manage this conversation",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            MoreSheetSection("Title")
+            MoreOptionRow(Icons.Filled.Edit, "Rename", onClick = onRename)
+            MoreOptionRow(
+                Icons.Filled.AutoAwesome,
+                if (hasAssistantReply) "Regenerate title" else "Generate title with AI",
+                enabled = canGenerateTitle,
+                onClick = onGenerateTitle
+            )
+            if (hasPreviousTitle) MoreOptionRow(Icons.Filled.Restore, "Restore previous title", onClick = onRestoreTitle)
+
+            MoreSheetSection("Explore")
+            MoreOptionRow(
+                Icons.Filled.Bookmark, "Saved responses",
+                subtitle = if (savedResponsesCount > 0) "$savedResponsesCount saved" else "None yet",
+                onClick = onSavedResponses
+            )
+            MoreOptionRow(Icons.Filled.AccountTree, "Branch tree", onClick = onBranchTree)
+            MoreOptionRow(Icons.AutoMirrored.Filled.ManageSearch, "Context inspector", onClick = onContextInspector)
+            MoreOptionRow(Icons.Filled.Build, "Chat tools", onClick = onChatTools)
+
+            MoreSheetSection("Session")
+            MoreOptionRow(
+                Icons.Filled.VisibilityOff,
+                if (isIncognito) "Turn incognito off" else "Turn incognito on",
+                subtitle = if (isIncognito) "Deletes when you leave" else null,
+                highlight = isIncognito,
+                onClick = onToggleIncognito
+            )
+
+            MoreSheetSection("Organize")
+            MoreOptionRow(Icons.Filled.Add, "Add to knowledge base", onClick = onAddToKnowledgeBase)
+            MoreOptionRow(Icons.Filled.Folder, "Manage folders", onClick = onManageFolders)
+            MoreOptionRow(Icons.Filled.ContentCopy, "Duplicate", onClick = onDuplicate)
+
+            MoreSheetSection("Export")
+            MoreOptionRow(Icons.Filled.Share, "Share as text", onClick = onExportShare)
+            MoreOptionRow(Icons.Filled.Description, "Export as Markdown (.md)", onClick = onExportMarkdown)
+            MoreOptionRow(Icons.Filled.PictureAsPdf, "Export as PDF (.pdf)", onClick = onExportPdf)
+
+            HorizontalDivider(Modifier.padding(vertical = Space.sm))
+            MoreOptionRow(Icons.Filled.RestartAlt, "Reset chat settings", onClick = onResetSettings)
+            MoreOptionRow(Icons.Filled.Delete, "Delete chat", danger = true, onClick = onDelete)
+        }
+    }
+}
+
+/** Uppercase group label inside the chat "More options" sheet. */
+@Composable
+private fun MoreSheetSection(label: String) {
+    Text(
+        label.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.xs)
+    )
+}
+
+/** One tappable action row in the chat "More options" sheet: leading icon, title, optional
+ *  subtitle. `danger` tints it as destructive; `highlight` tints it as the active state. */
+@Composable
+private fun MoreOptionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+    highlight: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val tint = when {
+        danger -> MaterialTheme.colorScheme.error
+        highlight -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.45f)
+            .padding(vertical = Space.md, horizontal = Space.xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(Space.lg))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 @Composable
 private fun ChatEmptyState(
     personaName: String?,
@@ -2398,7 +2828,7 @@ private fun ChatEmptyState(
         }
         Text(
             if (personaName != null) "How can $personaName help?" else "What can we work on?",
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.headlineMedium,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier.padding(top = Space.xl)
         )
@@ -2688,7 +3118,7 @@ private fun ModeSettingsDialog(
                 Text("Thinking", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.padding(top = 6.dp, bottom = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("OFF", "FAST", "BALANCED", "DEEP").forEach { mode ->
-                        FilterChip(
+                        VervanFilterChip(
                             selected = thinkingMode == mode,
                             enabled = thinkingAvailable || mode == "OFF",
                             onClick = { onThinkingChange(mode) },
@@ -2699,7 +3129,7 @@ private fun ModeSettingsDialog(
                 Text("Profile", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.padding(top = 6.dp, bottom = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
-                        FilterChip(
+                        VervanFilterChip(
                             selected = currentProfile == p.id,
                             onClick = { onProfileChange(p.id) },
                             label = { Text(p.label) }
@@ -2834,18 +3264,18 @@ private fun ChatToolsDialog(
                     Column(Modifier.padding(vertical = 6.dp)) {
                         Text(tool.name, style = MaterialTheme.typography.bodyMedium)
                         Row(Modifier.padding(top = 4.dp)) {
-                            FilterChip(
+                            VervanFilterChip(
                                 selected = override == null,
                                 onClick = { onSetOverride(tool.name, null) },
                                 label = { Text(if (tool.name in globallyDisabled) "Inherit (off)" else "Inherit (on)") }
                             )
-                            FilterChip(
+                            VervanFilterChip(
                                 selected = override == true,
                                 onClick = { onSetOverride(tool.name, true) },
                                 label = { Text("On") },
                                 modifier = Modifier.padding(start = 6.dp)
                             )
-                            FilterChip(
+                            VervanFilterChip(
                                 selected = override == false,
                                 onClick = { onSetOverride(tool.name, false) },
                                 label = { Text("Off") },
@@ -2873,6 +3303,7 @@ private fun MessageBubble(
     attachedDocument: Document? = null,
     savedOutput: SavedOutput?,
     onBookmarkChanged: (Boolean) -> Unit,
+    onRemember: (String) -> Unit,
     onReadAloud: (text: String, utteranceId: String) -> Unit,
     isGenerating: Boolean,
     siblingPosition: Pair<Int, Int>,
@@ -2910,6 +3341,17 @@ private fun MessageBubble(
     val timeLabel = remember(message.createdAt) {
         java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(message.createdAt))
     }
+    // Text used when this message is quoted in a reply. Must be the *visible* answer — not the raw
+    // content — otherwise quoting a reasoning model's reply drags its <think>…</think> block (and
+    // any tool-call markup) into the quote, which then renders as literal tags in the composer.
+    val quotableText = remember(message.content, isUser) {
+        if (isUser) message.content
+        else {
+            val stripped = com.vervan.chat.tools.ToolCallParser.stripForDisplay(message.content)
+            val answer = com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
+            com.vervan.chat.llm.ClarificationParser.parse(answer).answer.ifBlank { answer }.trim()
+        }
+    }
     // Actions (edit/speak/save/remember/regenerate/more) used to render permanently on every
     // bubble — busy and "congested" with a full conversation on screen. Tap the bubble to
     // reveal them instead, matching the tap-to-reveal pattern most chat apps use.
@@ -2945,7 +3387,11 @@ private fun MessageBubble(
         Column(
             modifier = Modifier
                 .align(if (isUser) Alignment.CenterEnd else Alignment.CenterStart)
-                .fillMaxWidth(if (isUser) 0.82f else 0.96f)
+                .fillMaxWidth(if (isUser) 0.82f else 0.96f),
+            // Right-align the (wrap-width) user bubble within its right-anchored column, left-align
+            // the assistant bubble. Without this a short user message renders start-aligned inside
+            // the 82% column and appears floating near the middle of the screen.
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
         Card(
             modifier = Modifier
@@ -2953,6 +3399,12 @@ private fun MessageBubble(
                 // Subtle entrance settle on first render — M3 Expressive "fast" spring keeps
                 // bubbles from snapping in during streaming and branch switches.
                 .graphicsLayer { alpha = 1f }
+                .then(
+                    if (isUser) Modifier.background(
+                        com.vervan.chat.ui.theme.vervanBrandGradient(),
+                        com.vervan.chat.ui.theme.VervanExtraShapes.userBubble
+                    ) else Modifier
+                )
                 // A separate pointerInput(drag) + .clickable(tap) on the same node are two
                 // independent gesture detectors racing over the same touch stream — on real
                 // hardware a tap's inevitable sub-millimeter jitter would occasionally get
@@ -2969,7 +3421,7 @@ private fun MessageBubble(
                     }
                     customActions = listOf(
                         androidx.compose.ui.semantics.CustomAccessibilityAction("Reply with quote") {
-                            onQuote(message.content)
+                            onQuote(quotableText)
                             true
                         },
                         androidx.compose.ui.semantics.CustomAccessibilityAction("Show message options") {
@@ -3003,7 +3455,7 @@ private fun MessageBubble(
                                 if (dragging) {
                                     val shouldQuote = dragOffset.value > quoteThresholdPx
                                     scope.launch {
-                                        if (shouldQuote) onQuote(message.content)
+                                        if (shouldQuote) onQuote(quotableText)
                                         dragOffset.animateTo(0f)
                                     }
                                 } else if (!abandoned && !longPressFired) {
@@ -3043,65 +3495,79 @@ private fun MessageBubble(
                     }
                 },
             shape = if (isUser) com.vervan.chat.ui.theme.VervanExtraShapes.userBubble else com.vervan.chat.ui.theme.VervanExtraShapes.assistantBubble,
-            // M3 Expressive: tonal elevation gives bubbles a soft visual depth without
-            // dropping into the previous flat-surface look. User uses primaryContainer's own
-            // tonal elevation; assistant gets a subtle 1dp tonal lift on top of its border.
+            // Asymmetric modern chat canvas: the user's messages are brand-gradient bubbles
+            // (instantly scannable as "mine"), while the assistant answers directly on the
+            // conversation background — no box, no border — the open-canvas reading layout
+            // ChatGPT/Gemini use. Rich inner content (sources, tool cards, attachments) brings
+            // its own surfaces, so it still reads grouped without an enclosing card.
+            // The gradient is painted behind a transparent Card via Modifier.background so the
+            // Card still owns shape clipping and content color.
             colors = CardDefaults.cardColors(
-                containerColor = if (isUser) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
                 else MaterialTheme.colorScheme.onSurface
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp, hoveredElevation = 0.dp),
-            border = if (isUser) null else vervanBorder(com.vervan.chat.ui.theme.VervanBorderProminence.Subtle)
+            border = null
         ) {
-            Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = Space.xs),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (!isUser) {
-                        Surface(
-                            modifier = Modifier.size(30.dp),
-                            shape = androidx.compose.foundation.shape.CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            Column(
+                Modifier.padding(
+                    horizontal = if (isUser) Space.lg else Space.xs,
+                    vertical = if (isUser) Space.md else Space.sm
+                )
+            ) {
+                // Assistant messages carry a compact identity header (gradient avatar + name +
+                // live state). User messages drop the header entirely — no redundant "You" label
+                // or avatar — and show a quiet timestamp under their text instead, so the
+                // conversation reads asymmetrically the way modern chat apps do.
+                if (!isUser) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = Space.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Brand-gradient avatar — the same mark the Home hero uses, one visual
+                        // identity for "Vervan" across screens.
+                        Box(
+                            Modifier
+                                .size(30.dp)
+                                .background(com.vervan.chat.ui.theme.vervanBrandGradient(), androidx.compose.foundation.shape.CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Icon(
+                                Icons.Filled.Psychology,
+                                contentDescription = null,
+                                modifier = Modifier.size(17.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                        Text(
+                            "Vervan",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = Space.sm)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            when (message.state) {
+                                MessageState.STREAMING -> "Responding"
+                                MessageState.INTERRUPTED -> "Interrupted"
+                                MessageState.FAILED -> "Failed"
+                                MessageState.CANCELLED -> "Stopped"
+                                MessageState.AWAITING_CONFIRMATION -> "Needs approval"
+                                MessageState.COMPLETE -> timeLabel
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (message.state) {
+                                MessageState.FAILED, MessageState.INTERRUPTED -> MaterialTheme.colorScheme.error
+                                MessageState.STREAMING -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
-                        }
+                        )
                     }
-                    Text(
-                        if (isUser) "You" else "Vervan",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(start = if (isUser) 0.dp else 8.dp)
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        when (message.state) {
-                            MessageState.STREAMING -> "Responding"
-                            MessageState.INTERRUPTED -> "Interrupted"
-                            MessageState.FAILED -> "Failed"
-                            MessageState.CANCELLED -> "Stopped"
-                            MessageState.AWAITING_CONFIRMATION -> "Needs approval"
-                            MessageState.COMPLETE -> timeLabel
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when (message.state) {
-                            MessageState.FAILED, MessageState.INTERRUPTED -> MaterialTheme.colorScheme.error
-                            MessageState.STREAMING -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
                 }
                 message.imagePath?.let { path ->
-                    // A small square thumbnail (WhatsApp-style) instead of a full-width inline
-                    // image — tap still opens the real preview via FullScreenImagePreview, this
-                    // is just the in-bubble affordance, not the actual viewing size.
-                    val thumbSizeDp = 140.dp
-                    val previewPx = with(LocalDensity.current) { thumbSizeDp.roundToPx() }
+                    // Media-first bubble preview; tap opens the zoomable full-screen viewer.
+                    val previewPx = with(LocalDensity.current) { 560.dp.roundToPx() }
                     val bitmap = remember(path, previewPx) {
                         com.vervan.chat.model.ImageUtils.decodeThumbnail(path, previewPx)?.asImageBitmap()
                     }
@@ -3109,9 +3575,10 @@ private fun MessageBubble(
                         Image(
                             it, contentDescription = "Attached image — tap to view",
                             modifier = Modifier
-                                .size(thumbSizeDp)
+                                .fillMaxWidth()
+                                .heightIn(min = 160.dp, max = 280.dp)
                                 .padding(bottom = 8.dp)
-                                .clip(MaterialTheme.shapes.small)
+                                .clip(MaterialTheme.shapes.medium)
                                 .clickable { showImagePreview = true },
                             contentScale = ContentScale.Crop
                         )
@@ -3157,15 +3624,42 @@ private fun MessageBubble(
                         }
                     }
                 }
-                message.audioPath?.let { audioPath -> VoiceMessageRow(audioPath) }
+                message.audioPath?.let { audioPath ->
+                    if (isUser) {
+                        // The slider's primary-colored track would be invisible against the
+                        // solid-primary bubble — host the player on a normal surface island.
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = Space.xs)
+                        ) { VoiceMessageRow(audioPath) }
+                    } else {
+                        VoiceMessageRow(audioPath)
+                    }
+                }
                 if (editing) {
-                    OutlinedTextField(value = editText, onValueChange = { editText = it }, modifier = Modifier.fillMaxWidth())
+                    // Editing happens inside the solid-primary user bubble — the field gets a
+                    // normal surface island and the buttons explicit onPrimary so neither
+                    // disappears against the accent fill.
+                    OutlinedTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
+                    val editButtonColors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                     Row(Modifier.padding(top = 4.dp)) {
-                        TextButton(onClick = {
+                        TextButton(colors = editButtonColors, onClick = {
                             editing = false
                             if (editText.isNotBlank() && editText != message.content) onEditAndResend(editText)
                         }) { Text("Send") }
-                        TextButton(onClick = { editing = false; editText = message.content }) { Text("Cancel") }
+                        TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text("Cancel") }
                     }
                 } else {
                     // Strip <tool_call> markup before Thinking/Clarification parsing, same as
@@ -3204,6 +3698,16 @@ private fun MessageBubble(
                         }
                     }
                 }
+                // Header-less user bubbles carry their timestamp here, tucked under the text at a
+                // low opacity so it's available but never competes with the message.
+                if (isUser && message.state == MessageState.COMPLETE) {
+                    Text(
+                        timeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
+                        modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
+                    )
+                }
                 if (message.state == MessageState.STREAMING) {
                     // "Thinking" indicator while the model is alive but hasn't emitted its first
                     // token yet — replaces the silent gap that previously made the app feel broken
@@ -3233,6 +3737,7 @@ private fun MessageBubble(
                     Text("Partial response kept", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 message.toolResultJson?.let { ToolResultCard(it, message.toolCallJson) }
+                message.memoryActivityJson?.let { MemoryActivityCard(it) }
                 if (message.state == MessageState.AWAITING_CONFIRMATION) {
                     ToolConfirmationCard(message.toolCallJson, onConfirmTool)
                 }
@@ -3416,7 +3921,7 @@ private fun MessageBubble(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { app.container.db.memoryDao().upsert(com.vervan.chat.data.db.entities.Memory(text = text)) }
+                    onRemember(text)
                     showRememberDialog = false
                 }) { Text("Save") }
             },
@@ -3703,10 +4208,78 @@ private fun SourceCards(sourcesJson: String, onOpenPassage: (String) -> Unit = {
 }
 
 @Composable
+private fun MemoryActivityCard(memoryActivityJson: String) {
+    val obj = remember(memoryActivityJson) { runCatching { org.json.JSONObject(memoryActivityJson) }.getOrNull() } ?: return
+    val recalled = remember(memoryActivityJson) {
+        obj.optJSONArray("recalled")?.let { array ->
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index) }
+        }.orEmpty()
+    }
+    val saved = remember(memoryActivityJson) {
+        obj.optJSONArray("saved")?.let { array ->
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index) }
+        }.orEmpty()
+    }
+    if (recalled.isEmpty() && saved.isEmpty()) return
+    val title = when {
+        saved.isNotEmpty() && recalled.isNotEmpty() -> "Memory · ${saved.size} saved, ${recalled.size} recalled"
+        saved.isNotEmpty() -> if (saved.size == 1) "Saved to memory" else "Saved ${saved.size} memories"
+        recalled.size == 1 -> "Recalled 1 memory"
+        else -> "Recalled ${recalled.size} memories"
+    }
+    com.vervan.chat.ui.common.AssistantSubCard(
+        kind = com.vervan.chat.ui.common.SubCardKind.Memory,
+        title = title,
+        modifier = Modifier.padding(top = Space.sm),
+        initiallyExpanded = saved.isNotEmpty()
+    ) {
+        if (saved.isNotEmpty()) {
+            Text("SAVED", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            saved.forEach { item ->
+                val indexLabel = if (item.optBoolean("indexed")) " · semantic ready" else ""
+                Text(
+                    "• ${item.optString("text")}$indexLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+            }
+        }
+        if (recalled.isNotEmpty()) {
+            val mode = if (obj.optString("mode") == "semantic") "SEMANTIC RECALL" else "TEXT MATCH FALLBACK"
+            Text(
+                mode,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = if (saved.isEmpty()) 0.dp else Space.sm)
+            )
+            recalled.forEach { item ->
+                Text(
+                    "• ${item.optString("text")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
     val obj = remember(toolResultJson) { runCatching { org.json.JSONObject(toolResultJson) }.getOrNull() } ?: return
     val callObj = remember(toolCallJson) { toolCallJson?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } }
     val success = obj.optBoolean("success", true)
+    val toolName = obj.optString("tool")
+    if (success && toolName in setOf("remember", "search_memories")) {
+        com.vervan.chat.ui.common.AssistantSubCard(
+            kind = com.vervan.chat.ui.common.SubCardKind.Memory,
+            title = if (toolName == "remember") "Saved to memory" else "Searched memory",
+            modifier = Modifier.padding(top = Space.sm),
+            initiallyExpanded = true
+        ) {
+            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall)
+        }
+        return
+    }
     var expanded by remember { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().padding(top = 8.dp).clickable { expanded = !expanded },

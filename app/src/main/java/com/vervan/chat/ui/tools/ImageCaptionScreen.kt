@@ -26,7 +26,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
@@ -193,7 +193,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = 12.dp), contentScale = ContentScale.Fit) }
                 FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     CAPTION_MODES.forEach { mode ->
-                        FilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
+                        VervanFilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
                     }
                 }
             }

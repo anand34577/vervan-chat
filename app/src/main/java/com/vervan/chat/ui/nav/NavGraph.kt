@@ -1,12 +1,20 @@
 package com.vervan.chat.ui.nav
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -28,14 +36,9 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -50,9 +53,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -63,6 +72,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.vervan.chat.IncomingShare
+import com.vervan.chat.IncomingShareKind
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Note
@@ -82,9 +93,14 @@ import com.vervan.chat.ui.knowledge.SourcePassageScreen
 import com.vervan.chat.ui.library.LibraryScreen
 import com.vervan.chat.ui.memory.MemorySuggestionsScreen
 import com.vervan.chat.ui.models.ModelManagerScreen
+import com.vervan.chat.ui.models.ModelCalculatorScreen
 import com.vervan.chat.ui.notes.NoteEditorScreen
 import com.vervan.chat.ui.notes.NotesListScreen
 import com.vervan.chat.ui.onboarding.OnboardingScreen
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanExtraShapes
+import com.vervan.chat.ui.theme.vervanBrandGradient
 import com.vervan.chat.ui.personas.PersonaEditorScreen
 import com.vervan.chat.ui.personas.PersonaTestBenchScreen
 import com.vervan.chat.ui.profile.UserProfileScreen
@@ -122,6 +138,13 @@ private data class Tab(
     val selectedIcon: ImageVector
 )
 
+private data class PendingChatAttachment(
+    val chatId: String,
+    val uri: android.net.Uri,
+    val asImage: Boolean,
+    val showPreview: Boolean,
+)
+
 private val tabs = listOf(
     Tab("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
     Tab("chats", "Chats", Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
@@ -135,37 +158,32 @@ private val trailingTabs = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
-fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: android.net.Uri? = null, shortcut: String? = null, intentVersion: Int = 0, windowSizeClass: WindowSizeClass? = null) {
+fun VervanNavGraph(
+    app: VervanApp,
+    incomingShare: IncomingShare? = null,
+    onShareConsumed: () -> Unit = {},
+    shortcut: String? = null,
+    intentVersion: Int = 0,
+    windowSizeClass: WindowSizeClass? = null,
+) {
     val navController = rememberNavController()
     val prefs = LocalContext.current.getSharedPreferences("vervan", 0)
     val startDestination = if (prefs.getBoolean("onboarded", false)) "home" else "onboarding"
-    var pendingShare by remember { mutableStateOf<String?>(null) }
-    var pendingSharedImagePath by remember { mutableStateOf<String?>(null) }
     var pendingStudyMaterialText by remember { mutableStateOf<String?>(null) }
+    // Targeted by chat ID so a share received while another chat is open cannot attach to the
+    // old composer during the navigation frame.
+    var pendingChatAttachment by remember { mutableStateOf<PendingChatAttachment?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Launcher shortcuts (spec §37.3) — navigate to the relevant destination on launch.
-    androidx.compose.runtime.LaunchedEffect(sharedText, intentVersion) {
-        if (sharedText != null) pendingShare = sharedText
-    }
-    // Shared image (e.g. a screenshot shared from another app) — copied into app storage so it
-    // survives the source content:// Uri disappearing, same pattern ChatViewModel.copyImage uses.
-    androidx.compose.runtime.LaunchedEffect(sharedImageUri, intentVersion) {
-        val uri = sharedImageUri ?: return@LaunchedEffect
-        val dest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
-                val file = java.io.File(dir, "shared-${System.currentTimeMillis()}.jpg")
-                app.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-                com.vervan.chat.model.ImageUtils.fixOrientation(file)
-                file.absolutePath
-            }.getOrNull()
-        }
-        if (dest != null) pendingSharedImagePath = dest
-    }
     androidx.compose.runtime.LaunchedEffect(shortcut, intentVersion) {
         if (shortcut == null || !prefs.getBoolean("onboarded", false)) return@LaunchedEffect
+        // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
+        if (shortcut.startsWith("open_chat:")) {
+            navController.navigate("chat/${shortcut.removePrefix("open_chat:")}")
+            return@LaunchedEffect
+        }
         when (shortcut) {
             "new_chat", "voice" -> {
                 val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
@@ -183,6 +201,27 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination
+    androidx.compose.runtime.LaunchedEffect(incomingShare, intentVersion, currentRoute?.route) {
+        val share = incomingShare ?: return@LaunchedEffect
+        if (!prefs.getBoolean("onboarded", false)) return@LaunchedEffect
+        val chat = app.container.workspaceManager.applyDefaults(
+            Chat(
+                draft = share.text.orEmpty(),
+                workspaceId = app.container.settingsRepository.activeWorkspaceId.first(),
+            )
+        )
+        app.container.db.chatDao().upsert(chat)
+        share.uri?.let { uri ->
+            pendingChatAttachment = PendingChatAttachment(
+                chatId = chat.id,
+                uri = uri,
+                asImage = share.kind == IncomingShareKind.IMAGE,
+                showPreview = true,
+            )
+        }
+        onShareConsumed()
+        navController.navigate("chat/${chat.id}") { launchSingleTop = true }
+    }
     val allTabs = tabs + trailingTabs
     val showBottomBar = allTabs.any { currentRoute?.hierarchy?.any { d -> d.route == it.route } == true }
     // Tablet/foldable: a side rail instead of a bottom bar once the window is wider than a
@@ -193,13 +232,17 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                FloatingActionButton(
-                    onClick = { showCreateSheet = true },
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                Box(
+                    Modifier
+                        .padding(vertical = 12.dp)
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(vervanBrandGradient())
+                        .clickable { showCreateSheet = true }
+                        .semantics { contentDescription = "Create" },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Create")
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
                 }
                 tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
                 Spacer(Modifier.weight(1f))
@@ -214,23 +257,15 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            floatingActionButton = {
-                if (!useRail && showBottomBar) {
-                    ExtendedFloatingActionButton(
-                        onClick = { showCreateSheet = true },
-                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                        text = { Text("Create") },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            },
             bottomBar = {
                 if (!useRail && showBottomBar) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                        tabs.forEach { tab -> BottomTabItem(tab, currentRoute, navController) }
-                        trailingTabs.forEach { tab -> BottomTabItem(tab, currentRoute, navController) }
-                    }
+                    VervanNavDock(
+                        leading = tabs,
+                        trailing = trailingTabs,
+                        currentRoute = currentRoute,
+                        navController = navController,
+                        onCreate = { showCreateSheet = true }
+                    )
                 }
             }
         ) { padding ->
@@ -291,7 +326,8 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
                             app.container.db.chatDao().upsert(chat)
                             navController.navigate("chat/${chat.id}")
                         }
-                    }
+                    },
+                    onOpenModelManager = { navController.navigate("models") }
                 )
             }
             composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
@@ -305,9 +341,6 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             ) { entry ->
                 val imagePath = entry.arguments?.getString("imagePath")?.let { android.net.Uri.decode(it) } ?: return@composable
                 com.vervan.chat.ui.tools.ScreenshotIntelligenceScreen(onBack = { navController.popBackStack() }, imagePath = imagePath)
-            }
-            composable("tools/business-card-scanner") {
-                com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.BUSINESS_CARD, onBack = { navController.popBackStack() })
             }
             composable("tools/receipt-scanner") {
                 com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.RECEIPT, onBack = { navController.popBackStack() })
@@ -325,8 +358,6 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             composable("tools/socratic-tutor") { com.vervan.chat.ui.tools.SocraticTutorScreen(onBack = { navController.popBackStack() }) }
             composable("tools/exam-prep") { com.vervan.chat.ui.tools.ExamPreparationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/homework-checker") { com.vervan.chat.ui.tools.HomeworkCheckerScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/concept-mapper") { com.vervan.chat.ui.tools.ConceptMapperScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/memory-trainer") { com.vervan.chat.ui.tools.MemoryTrainerScreen(onBack = { navController.popBackStack() }) }
             composable("tools/language-practice") { com.vervan.chat.ui.tools.LanguagePracticeScreen(onBack = { navController.popBackStack() }) }
             composable("tools/pronunciation-coach") { com.vervan.chat.ui.tools.PronunciationCoachScreen(onBack = { navController.popBackStack() }) }
             composable("tools/live-translator") { com.vervan.chat.ui.tools.LiveConversationTranslatorScreen(onBack = { navController.popBackStack() }) }
@@ -335,17 +366,43 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             composable("tools/daily-planner") { com.vervan.chat.ui.tools.DailyPlannerScreen(onBack = { navController.popBackStack() }) }
             composable("tools/goal-breakdown") { com.vervan.chat.ui.tools.GoalBreakdownScreen(onBack = { navController.popBackStack() }) }
             composable("tools/decision-assistant") { com.vervan.chat.ui.tools.DecisionAssistantScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/habit-reflection") { com.vervan.chat.ui.tools.HabitReflectionScreen(onBack = { navController.popBackStack() }) }
             composable("tools/smart-checklist") { com.vervan.chat.ui.tools.SmartChecklistScreen(onBack = { navController.popBackStack() }) }
             composable("tools/code-explainer") { com.vervan.chat.ui.tools.CodeExplainerScreen(onBack = { navController.popBackStack() }) }
             composable("tools/regex-sql-helper") { com.vervan.chat.ui.tools.RegexSqlHelperScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/commit-message") { com.vervan.chat.ui.tools.CommitMessageScreen(onBack = { navController.popBackStack() }) }
             composable("tools/json-log-analyzer") { com.vervan.chat.ui.tools.JsonLogAnalyzerScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/story-studio") { com.vervan.chat.ui.tools.StoryIdeaStudioScreen(onBack = { navController.popBackStack() }) }
             composable("tools/image-caption") { com.vervan.chat.ui.tools.ImageCaptionScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/social-post") { com.vervan.chat.ui.tools.CaptionSocialPostScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/recipe-assistant") { com.vervan.chat.ui.tools.RecipeAssistantScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/gift-message") { com.vervan.chat.ui.tools.GiftMessageAssistantScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/flashcards-photo") {
+                com.vervan.chat.ui.tools.FlashcardsFromPhotoScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSet = { setName ->
+                        navController.navigate("study/${android.net.Uri.encode(setName)}") {
+                            popUpTo("tools/flashcards-photo") { inclusive = true }
+                        }
+                    }
+                )
+            }
+            composable("tools/chat-with-file") {
+                com.vervan.chat.ui.tools.ChatWithFileScreen(
+                    onBack = { navController.popBackStack() },
+                    onFileChosen = { uri ->
+                        scope.launch {
+                            val chat = app.container.workspaceManager.applyDefaults(
+                                com.vervan.chat.data.db.entities.Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                            )
+                            app.container.db.chatDao().upsert(chat)
+                            pendingChatAttachment = PendingChatAttachment(
+                                chatId = chat.id,
+                                uri = uri,
+                                asImage = false,
+                                showPreview = false,
+                            )
+                            navController.navigate("chat/${chat.id}") {
+                                popUpTo("tools/chat-with-file") { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
             composable("tools/smart-form-filler") {
                 com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.CUSTOM, onBack = { navController.popBackStack() })
             }
@@ -486,8 +543,15 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             }
             composable("chat/{chatId}") { backStackEntry2 ->
                 val chatId = backStackEntry2.arguments?.getString("chatId") ?: return@composable
+                val attachment = pendingChatAttachment?.takeIf { it.chatId == chatId }
                 ChatScreen(
                     chatId = chatId,
+                    pendingAttachUri = attachment?.uri,
+                    pendingAttachAsImage = attachment?.asImage == true,
+                    pendingAttachShowPreview = attachment?.showPreview == true,
+                    onAttachConsumed = {
+                        if (pendingChatAttachment?.chatId == chatId) pendingChatAttachment = null
+                    },
                     onBack = { navController.popBackStack() },
                     onOpenChatInfo = { navController.navigate("chat/$chatId/info") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
@@ -545,7 +609,13 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
                 val kbId = entry.arguments?.getString("kbId") ?: return@composable
                 KnowledgeBaseDetailScreen(kbId = kbId, onBack = { navController.popBackStack() }, onOpenDocument = { docId -> navController.navigate("document/$docId") })
             }
-            composable("models") { ModelManagerScreen(onBack = { navController.popBackStack() }) }
+            composable("models") {
+                ModelManagerScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenCalculator = { navController.navigate("models/calculator") }
+                )
+            }
+            composable("models/calculator") { ModelCalculatorScreen(onBack = { navController.popBackStack() }) }
             composable("settings") {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
@@ -565,7 +635,13 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
             }
             composable("settings/tools") { com.vervan.chat.ui.settings.ToolsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/appearance") { AppearanceSettingsScreen(onBack = { navController.popBackStack() }) }
-            composable("settings/experience") { ExperienceControlsSettingsScreen(onBack = { navController.popBackStack() }) }
+            composable("settings/experience") {
+                ExperienceControlsSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenGeneration = { navController.navigate("settings/generation") },
+                    onOpenModels = { navController.navigate("models") }
+                )
+            }
             composable("settings/accessibility") { AccessibilitySettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/generation") { GenerationRetrievalSettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/voice") {
@@ -587,7 +663,8 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
                     onOpenRecycleBin = { navController.navigate("recycle-bin") },
                     onOpenDiagnostics = { navController.navigate("diagnostics") },
                     onOpenJobs = { navController.navigate("jobs") },
-                    onOpenIndexMaintenance = { navController.navigate("index-maintenance") }
+                    onOpenIndexMaintenance = { navController.navigate("index-maintenance") },
+                    onOpenModelCalculator = { navController.navigate("models/calculator") }
                 )
             }
             composable("backup") { BackupScreen(onBack = { navController.popBackStack() }) }
@@ -650,29 +727,6 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
         }
     }
 
-    pendingShare?.let { text ->
-        ShareTargetDialog(
-            app = app,
-            text = text,
-            onDismiss = { pendingShare = null },
-            onOpenChat = { chatId -> pendingShare = null; navController.navigate("chat/$chatId") },
-            onOpenNote = { noteId -> pendingShare = null; navController.navigate("note/$noteId") },
-            onOpenClipboardTool = { pendingShare = null; navController.navigate("tools/clipboard-assistant") }
-        )
-    }
-
-    pendingSharedImagePath?.let { path ->
-        SharedImageDialog(
-            onDismiss = { pendingSharedImagePath = null },
-            onScreenshotIntel = {
-                pendingSharedImagePath = null
-                navController.navigate("tools/screenshot-intel?imagePath=${android.net.Uri.encode(path)}")
-            },
-            onDocumentScan = { pendingSharedImagePath = null; navController.navigate("tools/document-scanner") },
-            onTranslate = { pendingSharedImagePath = null; navController.navigate("tools/translate") }
-        )
-    }
-
     if (showCreateSheet) {
         val sheetState = rememberModalBottomSheetState()
         fun go(route: String) { showCreateSheet = false; navController.navigate(route) }
@@ -715,18 +769,101 @@ fun VervanNavGraph(app: VervanApp, sharedText: String? = null, sharedImageUri: a
     }
 }
 
+/**
+ * The Aurora navigation dock: a floating pill that replaces the full-width Material
+ * NavigationBar + separate Create FAB. Two destinations sit either side of an integrated
+ * brand-gradient Create button, content scrolls underneath the dock's inset margins, and
+ * selection is an animated tonal pill rather than the stock indicator.
+ */
 @Composable
-private fun RowScope.BottomTabItem(tab: Tab, currentRoute: NavDestination?, navController: NavHostController) {
-    val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    NavigationBarItem(
-        selected = selected,
-        onClick = {
-            navController.navigatePrimaryRoot(tab.route)
-        },
-        icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
-        label = { Text(tab.label) },
-        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.secondaryContainer)
+private fun VervanNavDock(
+    leading: List<Tab>,
+    trailing: List<Tab>,
+    currentRoute: NavDestination?,
+    navController: NavHostController,
+    onCreate: () -> Unit
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            // The shell already reserves this bottom bar's full height for the NavHost.
+            // Keeping another top inset here created a visible empty strip between every
+            // primary screen and the dock. Only the safe-area breathing room belongs below it.
+            .padding(start = Space.lg, end = Space.lg, bottom = Space.sm)
+    ) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = VervanExtraShapes.pill,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = SurfaceRole.Floating.border(),
+            shadowElevation = SurfaceRole.Floating.shadowElevation
+        ) {
+            Row(
+                Modifier.padding(horizontal = Space.sm, vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                leading.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
+                Box(
+                    Modifier
+                        .padding(horizontal = Space.sm)
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(vervanBrandGradient())
+                        .clickable(onClick = onCreate)
+                        .semantics { contentDescription = "Create" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                trailing.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockItem(
+    tab: Tab,
+    currentRoute: NavDestination?,
+    navController: NavHostController,
+    modifier: Modifier = Modifier
+) {
+    val isSelected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
+    val tint by animateColorAsState(
+        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "dockTint"
     )
+    val pill by animateColorAsState(
+        if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        label = "dockPill"
+    )
+    Column(
+        modifier
+            .clip(VervanExtraShapes.pill)
+            .clickable { navController.navigatePrimaryRoot(tab.route) }
+            .padding(vertical = Space.xs)
+            .semantics { selected = isSelected },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .background(pill, VervanExtraShapes.pill)
+                .padding(horizontal = Space.lg, vertical = Space.xs),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint)
+        }
+        Text(
+            tab.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint
+        )
+    }
 }
 
 @Composable
@@ -750,75 +887,4 @@ private fun NavHostController.navigatePrimaryRoot(route: String) {
         launchSingleTop = true
         restoreState = true
     }
-}
-
-@Composable
-private fun ShareTargetDialog(
-    app: VervanApp,
-    text: String,
-    onDismiss: () -> Unit,
-    onOpenChat: (String) -> Unit,
-    onOpenNote: (String) -> Unit,
-    onOpenClipboardTool: () -> Unit
-) {
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Shared text") },
-        text = {
-            Column {
-                Text(text.take(200), maxLines = 4)
-                androidx.compose.material3.TextButton(
-                    onClick = onOpenClipboardTool,
-                    modifier = Modifier.padding(top = 8.dp)
-                ) { Text("Summarize · Translate · Rewrite · Explain…") }
-            }
-        },
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = {
-                scope.launch {
-                    val chat = com.vervan.chat.data.db.entities.Chat(
-                        draft = text,
-                        workspaceId = app.container.settingsRepository.activeWorkspaceId.first()
-                    )
-                    app.container.db.chatDao().upsert(chat)
-                    onOpenChat(chat.id)
-                }
-            }) { Text("Ask AI") }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = {
-                scope.launch {
-                    val note = com.vervan.chat.data.db.entities.Note(title = text.take(60), content = text)
-                    app.container.db.noteDao().upsert(note)
-                    onOpenNote(note.id)
-                }
-            }) { Text("Save as note") }
-        }
-    )
-}
-
-/** Shared-image counterpart to [ShareTargetDialog] (spec-adjacent "Universal Share-to-AI" —
- * a shared image gets image-specific actions instead of the generic text ones). The clipboard
- * tool's initial text always comes from [ClipboardAssistantScreen] reading the clipboard live,
- * not passed here — [pendingShare]'s text case is the only one routed through a param. */
-@Composable
-private fun SharedImageDialog(
-    onDismiss: () -> Unit,
-    onScreenshotIntel: () -> Unit,
-    onDocumentScan: () -> Unit,
-    onTranslate: () -> Unit
-) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Shared image") },
-        text = {
-            Column {
-                androidx.compose.material3.TextButton(onClick = onScreenshotIntel) { Text("OCR · Explain · Summarize · Extract error") }
-                androidx.compose.material3.TextButton(onClick = onDocumentScan) { Text("Scan document / export PDF") }
-                androidx.compose.material3.TextButton(onClick = onTranslate) { Text("Translate") }
-            }
-        },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
 }

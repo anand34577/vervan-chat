@@ -76,7 +76,17 @@ data class Chat(
     // even if globally enabled. Absent from the map means "inherit the global setting". Same
     // hand-rolled delimited-string shape as knowledgeBaseIds above, for the same reason: this
     // only ever needs "what's this chat's override for tool X", never a queryable join.
-    val toolOverrides: String = ""
+    val toolOverrides: String = "",
+    // Long-chat context management — a running summary of turns older than
+    // [summaryCoversUpToMessageId], generated in the background once history approaches the
+    // model's context budget (see ChatViewModel.maybeSummarizeOlderHistory). Substituted for
+    // the raw dropped turns in buildPromptSections instead of just omitting them outright, so a
+    // long conversation on a small-context model degrades to "knows the gist of what came
+    // before" rather than "forgot everything before the last few turns". Null means no summary
+    // has been generated yet (short chat, or the feature is off) — the old drop-oldest-silently
+    // behavior applies unchanged.
+    val contextSummary: String? = null,
+    val summaryCoversUpToMessageId: String? = null
 ) {
     fun kbIdList(): List<String> = knowledgeBaseIds.split(',').filter { it.isNotBlank() }
 

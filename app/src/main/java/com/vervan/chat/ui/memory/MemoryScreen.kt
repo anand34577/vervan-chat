@@ -93,7 +93,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 FeatureHero(
                     eyebrow = "Private and approved",
                     title = "What the assistant remembers",
-                    body = "Review, disable, or delete details saved for future chats.",
+                    body = "Review, disable, or delete details saved for future chats. Relevant memories are recalled semantically when an embedding model is available.",
                     icon = Icons.Filled.Lightbulb,
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
                 )
@@ -127,7 +127,8 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                             Text(memory.text, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "")
+                            val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "") +
+                                if (memory.embedding != null) " · Semantic ready" else ""
                             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         Switch(checked = memory.enabled, onCheckedChange = { checked ->
@@ -179,7 +180,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                             } else {
                                 Memory(text = text, key = trimmedKey)
                             }
-                            app.container.db.memoryDao().upsert(memory)
+                            app.container.memoryRepository.upsert(memory)
                         }
                     }
                     showAdd = false

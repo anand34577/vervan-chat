@@ -61,8 +61,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Read-aloud speed", style = MaterialTheme.typography.bodyMedium)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
@@ -81,8 +81,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Choose the voice engine. Auto tries Piper, then the device voice.",
@@ -122,8 +122,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Uses the active model first, then the fallback selected below.",
@@ -146,8 +146,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Voice models", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Manage downloaded Hindi and English voices in Model Manager. Device speech is the fallback.",
@@ -160,8 +160,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Download the optional Kokoro voice here.",

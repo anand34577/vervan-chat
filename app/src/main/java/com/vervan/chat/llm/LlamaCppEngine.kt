@@ -8,6 +8,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
@@ -93,7 +94,10 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         close()
         val flashAttnMode = when (options.flashAttention) { null -> -1; true -> 1; false -> 0 } // matches LLAMA_FLASH_ATTN_TYPE_* values
         val newHandle = LlamaCppJni.nativeLoadModel(
-            modelPath, mmprojPath, nCtx, nGpuLayers, nThreads, /* useMmap = */ true,
+            // mmap OFF on Android: ggml's CPU repack pass (interleaving Q4_0 weights into a
+            // NEON-friendly layout at load time) needs to rewrite tensor memory in place, which a
+            // live mmap can't do — PocketPal/llama.rn make this same call for the same reason.
+            modelPath, mmprojPath, nCtx, nGpuLayers, nThreads, /* useMmap = */ false,
             options.nBatch, options.nUbatch, options.useMlock, flashAttnMode,
             options.kvCacheType, options.vulkanDeviceIndex, options.ropeFreqBase, options.ropeFreqScale,
             options.loraPath, options.loraScale
@@ -242,7 +246,9 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
             }
         }
         awaitClose { LlamaCppJni.nativeCancelGeneration(activeHandle) }
-    }
+        // Same reasoning as LlmEngine.generate(): callbackFlow's default 64-slot buffer lets
+        // trySend silently drop tokens when the native producer outruns the collector.
+    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
 
     // handle is a plain Long read/written on whichever thread calls load()/close(); the native
     // flag it signals is a std::atomic<bool> safe to set from any thread (see

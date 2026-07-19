@@ -80,6 +80,7 @@ class AppContainer(app: Application) {
             override suspend fun contextTokenLimit() = settingsRepository.contextTokenLimit.first()
             override suspend fun maxNumImages() = settingsRepository.maxNumImages.first()
             override suspend fun preferredBackend() = settingsRepository.preferredBackend.first()
+            override suspend fun allowLowMemoryModelLoads() = settingsRepository.allowLowMemoryModelLoads.first()
             override suspend fun cpuThreads() = settingsRepository.cpuThreads.first()
             override suspend fun nBatch() = settingsRepository.nBatch.first()
             override suspend fun nUbatch() = settingsRepository.nUbatch.first()
@@ -105,6 +106,9 @@ class AppContainer(app: Application) {
                 return (info.availMem - info.threshold).coerceAtLeast(0L)
             }
         }
+    )
+    val memoryRepository = com.vervan.chat.data.repo.MemoryRepository(
+        db.memoryDao(), db.modelDao(), modelLoadCoordinator, embeddingEngine, embeddingMutex
     )
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
@@ -205,9 +209,16 @@ class AppContainer(app: Application) {
 class VervanApp : Application() {
     lateinit var container: AppContainer
         private set
+    lateinit var crashLogManager: com.vervan.chat.system.CrashLogManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
+        // First thing, before any other init: container construction itself (Room migrations,
+        // native lib loading) is a realistic crash site, and an offline app has no remote
+        // reporter — an uninstalled handler here means an invisible field failure.
+        crashLogManager = com.vervan.chat.system.CrashLogManager(this)
+        crashLogManager.install()
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
         // App-wide backgrounded/foregrounded detection for auto-lock (Phase A) — observes the
@@ -216,30 +227,33 @@ class VervanApp : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
-                // The quick-action bubble only makes sense while the user is doing something
-                // else — showing it over the app's own UI is pointless, and (re-)starting it on
-                // every single background transition, rather than only once when the setting was
-                // first turned on, is what makes it self-healing: if the OS silently killed the
-                // service earlier (a background-restarted START_STICKY service can't always
-                // re-call startForeground()), the very next time the app backgrounds it comes
-                // back on its own instead of needing an off/on toggle in Settings.
+                // Quick stays available while the app process is running, in foreground or background.
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first()) {
-                            com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                            !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
+                        ) {
+                            withContext(Dispatchers.Main.immediate) {
+                                if (!com.vervan.chat.overlay.BubbleService.setVisible(true)) {
+                                    com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                                }
+                            }
                         }
                     }.onFailure { Log.e(TAG, "onAppBackgrounded housekeeping failed", it) }
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
-                // The transparent capture-consent/region activity belongs to the bubble flow;
-                // stopping the service here would remove its required mediaProjection FGS just
-                // before getMediaProjection(). Normal app foregrounding still hides the bubble.
-                if (!com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()) {
-                    com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
-                }
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching {
+                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                            !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
+                        ) {
+                            withContext(Dispatchers.Main.immediate) {
+                                if (!com.vervan.chat.overlay.BubbleService.setVisible(true)) {
+                                    com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
+                                }
+                            }
+                        }
                         if (container.settingsRepository.appLockEnabled.first()) {
                             container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
                         }
@@ -253,6 +267,9 @@ class VervanApp : Application() {
         // unsupervised coroutine before this fix, which crashes the whole process even though
         // it's background housekeeping — every launch, until the underlying issue cleared.
         CoroutineScope(Dispatchers.IO).launch { runCatching {
+            // Native crashes, ANRs, and low-memory kills never reach the in-process handler —
+            // ApplicationExitInfo on the next launch is the only way to learn about them.
+            crashLogManager.recordSystemExits()
             container.db.messageDao().getUnfinished().forEach {
                 container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
             }

@@ -159,6 +159,10 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
             var cancelled = false
             try {
                 for (id in chatIds) {
+                    if (db.jobDao().get(jobRecord.id)?.state == JobState.CANCELLED) {
+                        cancelled = true
+                        break
+                    }
                     while (batchPaused) delay(300)
                     val chatRow = db.chatDao().getChat(id)
                     if (chatRow == null || (onlyUntitled && chatRow.title != "New chat")) {

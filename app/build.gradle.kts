@@ -32,6 +32,18 @@ val llamaCppAvailable = llamaCppDir?.let { dir ->
     llamaCppRequiredFiles.all { File(dir, it).isFile }
 } == true
 val llamaCppVisionAvailable = llamaCppAvailable && File(llamaCppDir!!, "build-android/bin/libmtmd.so").isFile
+// Optional 32-bit llama.cpp build — `llamacpp.dir32` in local.properties points at a second
+// llama.cpp checkout/build made with -DANDROID_ABI=armeabi-v7a. When present, the APK also ships
+// armeabi-v7a so 32-bit devices can install and run GGUF models. LiteRT-LM (MediaPipe) is
+// 64-bit-only upstream, so 32-bit devices get llama.cpp only (guarded at runtime in LlmEngine).
+val llamaCpp32Dir: String? = localProperties.getProperty("llamacpp.dir32")
+val llamaCpp32LibsDir = llamaCpp32Dir?.let { "$it/build-android/bin" }
+val llamaCpp32Available = llamaCpp32Dir?.let { dir ->
+    llamaCppRequiredFiles.filter { it.endsWith(".so") }.all { File(dir, it).isFile }
+} == true
+if (llamaCpp32Dir != null && !llamaCpp32Available) {
+    logger.warn("llamacpp.dir32 is set, but its .so files are missing; 32-bit GGUF support is disabled.")
+}
 if (llamaCppDir != null && !llamaCppAvailable) {
     logger.warn("llamacpp.dir is set, but required headers/libraries are missing; GGUF support is disabled for debug builds.")
 }
@@ -51,18 +63,23 @@ android {
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
 
+        // armeabi-v7a is always packaged so 32-bit devices can install; on them LiteRT-LM is
+        // unavailable (MediaPipe ships no 32-bit libs) and GGUF works only if a 32-bit llama.cpp
+        // build was supplied via llamacpp.dir32.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         if (llamaCppAvailable) {
-            // Only arm64-v8a prebuilt libs exist (matches your build-android output) — without
-            // this, AGP also tries armeabi-v7a/x86/x86_64 and fails linking against them.
-            ndk { abiFilters += "arm64-v8a" }
             externalNativeBuild {
                 cmake {
                     arguments += listOf(
                         "-DLLAMA_CPP_DIR=$llamaCppDir",
                         "-DLLAMA_CPP_LIBS_DIR=$llamaCppLibsDir",
+                        "-DLLAMA_CPP_LIBS32_DIR=${llamaCpp32LibsDir ?: ""}",
                         "-DANDROID_STL=c++_shared"
                     )
+                    // The JNI bridge links against the prebuilt libllama for its ABI — only build
+                    // it for ABIs we actually have llama.cpp libs for.
                     abiFilters += "arm64-v8a"
+                    if (llamaCpp32Available) abiFilters += "armeabi-v7a"
                 }
             }
         }
@@ -79,7 +96,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Shrinking only — obfuscation is disabled in proguard-rules.pro because crash
+            // reporting is on-device plain text (CrashLogManager) with no retrace step.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -278,6 +299,14 @@ tasks.register<Copy>("syncLlamaCppLibs") {
     into("src/main/jniLibs/arm64-v8a")
 }
 
+tasks.register<Copy>("syncLlamaCppLibs32") {
+    onlyIf { llamaCpp32Available }
+    from(llamaCpp32LibsDir ?: ".") {
+        include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+    }
+    into("src/main/jniLibs/armeabi-v7a")
+}
+
 tasks.named("preBuild") {
-    dependsOn("syncLlamaCppLibs")
+    dependsOn("syncLlamaCppLibs", "syncLlamaCppLibs32")
 }

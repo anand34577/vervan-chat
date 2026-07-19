@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ErrorCard
@@ -83,7 +83,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 DevAction.entries.forEach { action ->
-                    FilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
+                    VervanFilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
                 }
             }
             if (running) {

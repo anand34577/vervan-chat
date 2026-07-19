@@ -32,7 +32,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.vervan.chat.ui.common.VervanFilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +53,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
@@ -116,7 +117,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ModelManagerScreen(onBack: () -> Unit = {}) {
+fun ModelManagerScreen(onBack: () -> Unit = {}, onOpenCalculator: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ModelManagerViewModel = viewModel(factory = viewModelFactory {
         initializer { ModelManagerViewModel(app) }
@@ -197,6 +198,9 @@ fun ModelManagerScreen(onBack: () -> Unit = {}) {
                     title = { Text("Model manager") },
                     navigationIcon = {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    },
+                    actions = {
+                        IconButton(onClick = onOpenCalculator) { Icon(Icons.Filled.Calculate, contentDescription = "Model calculator") }
                     }
                 )
             }
@@ -741,7 +745,7 @@ private fun ModelCard(
     var confirmDelete by remember { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().padding(bottom = 10.dp).animateContentSize()
-            .combinedClickable(onClick = { if (selectionMode) onToggleSelect() }, onLongClick = onLongPress),
+            .combinedClickable(onClick = { if (selectionMode) onToggleSelect() else onEdit() }, onLongClick = onLongPress),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 selected -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
@@ -969,6 +973,20 @@ private fun ModelEditDialog(
 
     val loraApp = LocalContext.current.applicationContext as VervanApp
     val loraScope = rememberCoroutineScope()
+    // Unlike LoRA/mmproj, a template is plain text stored in the DB — read the content, no import.
+    val pickTemplateFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            loraScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val text = runCatching {
+                    loraApp.contentResolver.openInputStream(it)?.use { s -> String(s.readBytes(), Charsets.UTF_8) }
+                }.getOrNull()
+                if (!text.isNullOrBlank() && text.length <= 128_000) {
+                    chatTemplateOverride = text.trim()
+                    chatTemplateOverrideOn = true
+                }
+            }
+        }
+    }
     // Copies the picked file into internal storage (same reasoning as the mmproj import flow —
     // a content:// Uri isn't a real filesystem path the native loader can fopen) rather than
     // storing the raw picked Uri.
@@ -1070,7 +1088,7 @@ private fun ModelEditDialog(
                                         BackendChoice.CPU to "CPU", BackendChoice.NPU to "NPU"
                                     )
                                 }).forEach { (choice, label) ->
-                                    FilterChip(selected = backend == choice, onClick = { backend = choice }, label = { Text(label) })
+                                    VervanFilterChip(selected = backend == choice, onClick = { backend = choice }, label = { Text(label) })
                                 }
                             }
                             Text(
@@ -1133,7 +1151,7 @@ private fun ModelEditDialog(
                                     ToolApprovalMode.AUTO_APPROVE_REVERSIBLE to "Auto (safe writes)",
                                     ToolApprovalMode.AUTO_APPROVE_ALL to "Auto (all)"
                                 ).forEach { (mode, label) ->
-                                    FilterChip(selected = approvalMode == mode, onClick = { approvalMode = mode }, label = { Text(label) })
+                                    VervanFilterChip(selected = approvalMode == mode, onClick = { approvalMode = mode }, label = { Text(label) })
                                 }
                             }
                         }
@@ -1159,8 +1177,9 @@ private fun ModelEditDialog(
 
                         SectionDivider()
                         SectionLabel("Generation defaults")
+                        if (expertMode) {
                         Text(
-                            "Turn on to override the app default for this model.",
+                            "Raw per-model overrides. Disabled values use the app default.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp)
@@ -1180,11 +1199,73 @@ private fun ModelEditDialog(
                             "Stop sequences", stopSequencesOn, { stopSequencesOn = it }, stopSequences, { stopSequences = it },
                             "None", singleLine = false
                         )
-                        if (expertMode) {
-                            OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
-                            if (seedOn) {
-                                TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                        OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
+                        if (seedOn) {
+                            TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                        }
+                        } else {
+                            Text(
+                                "Simple controls for this model. Choose Default to follow the app settings.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Text("Response style", style = MaterialTheme.typography.titleSmall)
+                            val styleChoice = when {
+                                !temperatureOn -> "DEFAULT"
+                                temperature <= 0.45f -> "FOCUSED"
+                                temperature >= 1.05f -> "CREATIVE"
+                                else -> "BALANCED"
                             }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("DEFAULT" to "Default", "FOCUSED" to "Focused", "BALANCED" to "Balanced", "CREATIVE" to "Creative").forEach { (id, label) ->
+                                    VervanFilterChip(selected = styleChoice == id, onClick = {
+                                        if (id == "DEFAULT") {
+                                            temperatureOn = false; topPOn = false; topKOn = false; minPOn = false; repetitionPenaltyOn = false
+                                        } else {
+                                            temperatureOn = true; topPOn = true; topKOn = true; minPOn = true; repetitionPenaltyOn = true
+                                            when (id) {
+                                                "FOCUSED" -> { temperature = 0.3f; topP = 0.85f; topK = 24f; minP = 0.08f; repetitionPenalty = 1.12f }
+                                                "CREATIVE" -> { temperature = 1.15f; topP = 0.98f; topK = 56f; minP = 0.03f; repetitionPenalty = 1.05f }
+                                                else -> { temperature = 0.8f; topP = 0.95f; topK = 40f; minP = 0.05f; repetitionPenalty = 1.1f }
+                                            }
+                                        }
+                                    }, label = { Text(label) })
+                                }
+                            }
+
+                            Text("Response size", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            val sizeChoice = when {
+                                !maxOutputTokensOn -> "DEFAULT"
+                                maxOutputTokens <= 320f -> "SHORT"
+                                maxOutputTokens >= 900f -> "LONG"
+                                else -> "STANDARD"
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("DEFAULT" to "Default", "SHORT" to "Short", "STANDARD" to "Standard", "LONG" to "Long").forEach { (id, label) ->
+                                    VervanFilterChip(selected = sizeChoice == id, onClick = {
+                                        maxOutputTokensOn = id != "DEFAULT"
+                                        maxOutputTokens = when (id) { "SHORT" -> 256f; "LONG" -> 1024f; else -> 512f }
+                                    }, label = { Text(label) })
+                                }
+                            }
+
+                            Text("Conversation memory", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            val memoryChoice = if (!contextOn) 0 else context.toInt()
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(0 to "Default", 4096 to "Standard", 8192 to "More", 16384 to "Maximum").forEach { (tokens, label) ->
+                                    VervanFilterChip(selected = memoryChoice == tokens, onClick = {
+                                        contextOn = tokens != 0
+                                        if (tokens != 0) context = tokens.toFloat().coerceAtMost(model.nativeMaxContext?.toFloat() ?: 32768f)
+                                    }, label = { Text(label) })
+                                }
+                            }
+                            Text(
+                                "More memory keeps a longer conversation but uses more RAM.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
                         }
 
                         if (isLlamaCpp && expertMode) {
@@ -1232,13 +1313,27 @@ private fun ModelEditDialog(
                                 { chatTemplateOverride = it }, "From model (embedded)", singleLine = false
                             )
                             if (chatTemplateOverrideOn) {
-                                Text(
-                                    "Built-in preset names: ${com.vervan.chat.llm.LlamaCppEngine.builtinChatTemplates.joinToString(", ")}. " +
-                                        "Type one of these, or paste custom Jinja template text.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "Tap a preset, paste Jinja text above, or load a template file.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f).padding(top = 2.dp)
+                                    )
+                                    TextButton(onClick = { pickTemplateFile.launch(arrayOf("*/*")) }) { Text("From file") }
+                                }
+                                Row(
+                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    com.vervan.chat.llm.LlamaCppEngine.builtinChatTemplates.forEach { name ->
+                                        VervanFilterChip(
+                                            selected = chatTemplateOverride == name,
+                                            onClick = { chatTemplateOverride = name },
+                                            label = { Text(name) }
+                                        )
+                                    }
+                                }
                             }
 
                             SectionDivider()

@@ -96,7 +96,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(end = Space.xs)
         )
-        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+        IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Filled.Close,
                 contentDescription = "Remove ${attachment.label}",

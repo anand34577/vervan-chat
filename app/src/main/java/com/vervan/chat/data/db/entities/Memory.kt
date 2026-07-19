@@ -28,6 +28,10 @@ data class Memory(
     // duplicate (spec 27.4's "canonical key" conflict rule). Freeform memories with no
     // natural key just leave this null and stack normally.
     val key: String? = null,
+    // Derived local search data. The model id prevents a same-dimension embedding from an old
+    // model being mistaken for a current one; both fields are safely rebuilt on demand.
+    val embedding: ByteArray? = null,
+    val embeddingModelId: String? = null,
     // Recycle bin coverage (Phase 6, spec §34).
     val deletedAt: Long? = null
 )

@@ -298,7 +298,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         persisted, "Reply with OK.", null, null,
                         params.temperature, params.topP, params.topK, params.seed,
                         params.minP, params.repetitionPenalty, params.maxOutputTokens.coerceAtMost(16), params.stopSequences
-                    ).collect { output.append(it) }
+                    ).collect {
+                        if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                            throw kotlinx.coroutines.CancellationException("Stopped by user")
+                        }
+                        output.append(it)
+                    }
                     require(output.isNotBlank()) { "Model initialized but produced no output" }
                     if (persisted.engine == ModelEngine.LLAMA_CPP) {
                         val metadata = app.container.withLlamaCpp { engine ->
@@ -324,6 +329,10 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             }
+            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                _status.value = "Model validation stopped"
+                return
+            }
             db.modelDao().upsert(verified)
             Log.i(TAG, "validateAndActivate() SUCCESS: ${verified.displayName} verified on ${verified.lastWorkingBackend}")
             _status.value = "Verified ${verified.displayName}"
@@ -341,6 +350,10 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 setActive(verified)
             }
         } catch (t: Throwable) {
+            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                _status.value = "Model validation stopped"
+                return
+            }
             Log.e(TAG, "validateAndActivate() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
             db.modelDao().upsert(model.copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
@@ -399,7 +412,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                             persisted, "Explain local-first AI in two sentences.", null, null,
                             params.temperature, params.topP, params.topK, params.seed,
                             params.minP, params.repetitionPenalty, params.maxOutputTokens.coerceAtMost(128), params.stopSequences
-                        ).collect { chars += it.length }
+                        ).collect {
+                            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                                throw kotlinx.coroutines.CancellationException("Stopped by user")
+                            }
+                            chars += it.length
+                        }
                         val seconds = (System.nanoTime() - started) / 1_000_000_000.0
                         "${String.format("%.1f", chars / seconds)} characters/sec on ${persisted.lastWorkingBackend}" +
                             (if (persisted.engine == ModelEngine.LITERT_LM && app.container.llmEngine.speculativeDecodingActive) " (MTP active)" else "")
@@ -412,10 +430,18 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         }
                     }
                 }
+                if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                    _status.value = "Benchmark stopped"
+                    return@launch
+                }
                 Log.i(TAG, "benchmark() SUCCESS for ${model.displayName}: $result")
                 _status.value = "Benchmark: $result"
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis(), detail = result))
             } catch (t: Throwable) {
+                if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                    _status.value = "Benchmark stopped"
+                    return@launch
+                }
                 Log.e(TAG, "benchmark() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
                 _status.value = "Benchmark failed. ${t.toUserMessage()}"

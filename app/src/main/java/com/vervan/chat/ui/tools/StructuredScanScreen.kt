@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -62,10 +61,6 @@ import org.json.JSONObject
 import java.io.File
 
 enum class ScanKind(val title: String, val fields: List<Pair<String, String>>) {
-    BUSINESS_CARD(
-        "Business card scanner",
-        listOf("name" to "Name", "company" to "Company", "jobTitle" to "Job title", "phone" to "Phone", "email" to "Email", "website" to "Website", "address" to "Address")
-    ),
     RECEIPT(
         "Receipt scanner",
         listOf("merchant" to "Merchant", "date" to "Date", "total" to "Total", "tax" to "Tax", "currency" to "Currency", "paymentMethod" to "Payment method")
@@ -75,8 +70,8 @@ enum class ScanKind(val title: String, val fields: List<Pair<String, String>>) {
 }
 
 /**
- * Camera/file image -> OCR -> LLM extracts structured fields (JSON for business
- * card/receipt, a Markdown table for the table kind) -> editable fields + export.
+ * Camera/file image -> OCR -> LLM extracts structured fields (JSON for receipts/forms,
+ * a Markdown table for the table kind) -> editable fields + export.
  * One screen parameterized by [ScanKind] instead of three near-identical ones.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,7 +120,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 } else {
                     val keys = activeFields.joinToString(", ") { it.first }
                     val prompt = "From the following OCR text" +
-                        (if (kind == ScanKind.BUSINESS_CARD) " (from a business card)" else if (kind == ScanKind.RECEIPT) " (from a receipt)" else " (from a document/ID/invoice/business card)") +
+                        (if (kind == ScanKind.RECEIPT) " (from a receipt)" else " (from a document or image)") +
                         ", extract a JSON object with exactly these keys: $keys" +
                         (if (kind == ScanKind.RECEIPT) ", lineItems (an array of short strings like \"Item name - price\")" else "") +
                         ". Use an empty string (or empty array) for anything not found. Respond with ONLY the JSON object, no markdown fences, no explanation.\n\nOCR text:\n$ocrText"
@@ -292,28 +287,6 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         )
                     }
                     when (kind) {
-                        ScanKind.BUSINESS_CARD -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val insertContact = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-                            OutlinedButton(
-                                onClick = {
-                                    insertContact.launch(
-                                        android.content.Intent(android.provider.ContactsContract.Intents.Insert.ACTION).apply {
-                                            type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.NAME, fields["name"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.COMPANY, fields["company"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.JOB_TITLE, fields["jobTitle"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, fields["phone"])
-                                            putExtra(android.provider.ContactsContract.Intents.Insert.EMAIL, fields["email"])
-                                        }
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.ContactPage, null, Modifier.size(18.dp)); Text(" Save contact") }
-                            Button(
-                                onClick = { exportFile("contact-${System.currentTimeMillis()}.vcf", buildVCard(fields), "text/x-vcard") },
-                                modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Export .vcf") }
-                        }
                         ScanKind.RECEIPT -> Column {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
@@ -368,19 +341,6 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
        }
       }
     }
-}
-
-private fun buildVCard(fields: Map<String, String>): String = buildString {
-    appendLine("BEGIN:VCARD")
-    appendLine("VERSION:3.0")
-    appendLine("FN:${fields["name"].orEmpty()}")
-    appendLine("ORG:${fields["company"].orEmpty()}")
-    appendLine("TITLE:${fields["jobTitle"].orEmpty()}")
-    appendLine("TEL:${fields["phone"].orEmpty()}")
-    appendLine("EMAIL:${fields["email"].orEmpty()}")
-    appendLine("URL:${fields["website"].orEmpty()}")
-    appendLine("ADR:;;${fields["address"].orEmpty()};;;;")
-    appendLine("END:VCARD")
 }
 
 private fun parseMarkdownRows(markdown: String): List<List<String>> =

@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +53,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -119,7 +120,7 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     items(SearchScope.entries) { s ->
-                        FilterChip(selected = scope == s, onClick = { scope = s }, label = { Text(s.label) })
+                        com.vervan.chat.ui.common.VervanFilterChip(selected = scope == s, onClick = { scope = s }, label = { Text(s.label) })
                     }
                 }
             }
@@ -142,27 +143,27 @@ fun SearchScreen(
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         if (results.chats.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Chats)) {
                             item { GroupLabel("Chats") }
-                            items(results.chats, key = { "c_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.title) { onOpenChat(it.id) } }
+                            items(results.chats, key = { "c_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.title, "Conversation") { onOpenChat(it.id) } }
                         }
                         if (results.notes.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Notes)) {
                             item { GroupLabel("Notes") }
-                            items(results.notes, key = { "n_" + it.id }) { ResultRow(Icons.Filled.Edit, it.title) { onOpenNote(it.id) } }
+                            items(results.notes, key = { "n_" + it.id }) { ResultRow(Icons.Filled.Edit, it.title, it.content.take(100)) { onOpenNote(it.id) } }
                         }
                         if (results.documents.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Documents)) {
                             item { GroupLabel("Documents") }
-                            items(results.documents, key = { "d_" + it.id }) { ResultRow(Icons.Filled.Description, it.displayName) { onOpenDocument(it.id) } }
+                            items(results.documents, key = { "d_" + it.id }) { ResultRow(Icons.Filled.Description, it.displayName, "Local document") { onOpenDocument(it.id) } }
                         }
                         if (results.personas.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Personas)) {
                             item { GroupLabel("Personas") }
-                            items(results.personas, key = { "p_" + it.id }) { ResultRow(Icons.Outlined.Person, it.name) { onOpenPersona(it.id) } }
+                            items(results.personas, key = { "p_" + it.id }) { ResultRow(Icons.Outlined.Person, it.name, it.description) { onOpenPersona(it.id) } }
                         }
                         if (results.messages.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Messages)) {
                             item { GroupLabel("Messages") }
-                            items(results.messages, key = { "m_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.content.take(80)) { onOpenChat(it.chatId) } }
+                            items(results.messages, key = { "m_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.content.take(100), "Message in a conversation") { onOpenChat(it.chatId) } }
                         }
                         if (results.memories.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Memory)) {
                             item { GroupLabel("Memory") }
-                            items(results.memories, key = { "mem_" + it.id }) { ResultRow(Icons.Filled.Psychology, it.text.take(80)) { onOpenMemory(it.id) } }
+                            items(results.memories, key = { "mem_" + it.id }) { ResultRow(Icons.Filled.Psychology, it.text.take(100), "Saved memory") { onOpenMemory(it.id) } }
                         }
                         if (scope != SearchScope.All &&
                             when (scope) {
@@ -194,25 +195,32 @@ fun SearchScreen(
 
 @Composable
 private fun GroupLabel(title: String) {
-    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.xs))
+    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.xs).semantics { heading() })
 }
 
 @Composable
-private fun ResultRow(icon: ImageVector, title: String, onClick: () -> Unit) {
+private fun ResultRow(icon: ImageVector, title: String, subtitle: String = "", onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             IconAffordance(icon = icon, size = IconAffordanceSize.Compact)
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = Space.md)
-            )
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,

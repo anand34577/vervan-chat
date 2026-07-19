@@ -146,11 +146,6 @@ private val regexSqlActions = listOf(
     TextAction("NL to filter", instruct("Convert the following natural-language filter description into a structured filter expression (field, operator, value)."))
 )
 
-private val commitActions = listOf(
-    TextAction("Commit message", instruct("Write a conventional-commits style commit message (type(scope): summary, then a short body if useful) for the following diff or change description.")),
-    TextAction("PR summary", instruct("Write a short pull-request summary (what changed and why) for the following diff or change description."))
-)
-
 private val jsonLogActions = listOf(
     TextAction("Format JSON", instruct("Reformat the following malformed or minified JSON into clean, indented, valid JSON. Fix obvious syntax errors. Respond with ONLY the JSON.")),
     TextAction("Extract errors", instruct("Extract every error or exception line from the following log text, one per line.")),
@@ -164,55 +159,8 @@ private val jsonLogActions = listOf(
 @Composable fun RegexSqlHelperScreen(onBack: () -> Unit) =
     TextActionScreen("Regex & SQL helper", regexSqlActions, onBack, hint = "Describe what you want, or paste a regex/SQL query to explain")
 
-@Composable fun CommitMessageScreen(onBack: () -> Unit) =
-    TextActionScreen("Commit message generator", commitActions, onBack, hint = "Paste a diff or describe the change")
-
 @Composable fun JsonLogAnalyzerScreen(onBack: () -> Unit) =
     TextActionScreen("JSON & log analyzer", jsonLogActions, onBack, hint = "Paste JSON or log output")
-
-// --- Creative tools ---
-
-private val storyActions = listOf(
-    TextAction("Short story", instruct("Write a short story (2-3 short paragraphs) based on the following idea.")),
-    TextAction("Character idea", instruct("Create a character (name, trait, motivation, one quirk) based on the following idea.")),
-    TextAction("Plot idea", instruct("Suggest a short plot outline (3-5 beats) based on the following idea.")),
-    TextAction("Dialogue", instruct("Write a short dialogue exchange (4-6 lines) based on the following idea.")),
-    TextAction("Names", instruct("Suggest 8 names that fit the following description, one per line.")),
-    TextAction("Creative prompt", instruct("Turn the following idea into a single, specific creative writing prompt."))
-)
-
-private val socialActions = listOf(
-    TextAction("Instagram caption", instruct("Write a short, engaging Instagram caption (with 3-5 relevant hashtags) for the following.")),
-    TextAction("X/Twitter post", instruct("Write a short X/Twitter post (under 280 characters) for the following.")),
-    TextAction("LinkedIn post", instruct("Write a short, professional LinkedIn post for the following.")),
-    TextAction("Product description", instruct("Write a short product description for the following."))
-)
-
-private val recipeActions = listOf(
-    TextAction("Recipe ideas", instruct("Suggest 3 recipe ideas (name + one-line description) using the following ingredients.")),
-    TextAction("Full recipe", instruct("Write a full recipe (ingredients with quantities, numbered steps) using the following ingredients.")),
-    TextAction("Quick meal (<20 min)", instruct("Suggest a meal using the following ingredients that takes under 20 minutes to make, with numbered steps."))
-)
-
-private val giftMessageActions = listOf(
-    TextAction("Birthday", instruct("Write a short, warm birthday greeting for the following context (who it's for, relationship, any details).")),
-    TextAction("Thank-you", instruct("Write a short, sincere thank-you message for the following context.")),
-    TextAction("Congratulations", instruct("Write a short congratulations message for the following context.")),
-    TextAction("Condolence", instruct("Write a short, respectful condolence message for the following context.")),
-    TextAction("Invitation", instruct("Write a short, friendly event invitation message for the following context."))
-)
-
-@Composable fun StoryIdeaStudioScreen(onBack: () -> Unit) =
-    TextActionScreen("Story & idea studio", storyActions, onBack, hint = "Describe an idea, theme, or setting", allowVoice = true, allowSaveAsNote = true)
-
-@Composable fun CaptionSocialPostScreen(onBack: () -> Unit) =
-    TextActionScreen("Caption & social post assistant", socialActions, onBack, hint = "Describe the photo or rough note", allowImageOcr = true)
-
-@Composable fun RecipeAssistantScreen(onBack: () -> Unit) =
-    TextActionScreen("Recipe assistant", recipeActions, onBack, hint = "List ingredients you have (typed, dictated, or scanned)", allowVoice = true, allowImageOcr = true)
-
-@Composable fun GiftMessageAssistantScreen(onBack: () -> Unit) =
-    TextActionScreen("Gift & message assistant", giftMessageActions, onBack, hint = "Who is this for, and any details to include?")
 
 // --- Personal organization tools ---
 
@@ -238,10 +186,6 @@ private val decisionActions = listOf(
     TextAction("Analyze", instruct("Analyze the options in the following text using a structured decision framework: pros and cons, cost, risk, time, and reversibility for each option, then recommend one based on any stated priorities."))
 )
 
-private val habitActions = listOf(
-    TextAction("Reflect", instruct("The following is a short daily journal entry. Identify patterns, wins, and blockers, then suggest ONE specific, concrete improvement for tomorrow."))
-)
-
 @Composable fun SmartChecklistScreen(onBack: () -> Unit) =
     TextActionScreen("Smart checklist generator", checklistActions, onBack, hint = "Optional: add details (destination, dates, etc.)", requireInput = false)
 
@@ -254,23 +198,10 @@ private val habitActions = listOf(
 @Composable fun DecisionAssistantScreen(onBack: () -> Unit) =
     TextActionScreen("Decision assistant", decisionActions, onBack, hint = "List your options and what matters to you")
 
-@Composable fun HabitReflectionScreen(onBack: () -> Unit) =
-    TextActionScreen("Habit reflection", habitActions, onBack, hint = "Write today's journal entry", allowVoice = true, allowSaveAsNote = true)
-
 // --- Study tools (beyond the existing Quiz Generator / Explain Like I'm…) ---
 
 private val homeworkCheckerActions = listOf(
     TextAction("Check my work", instruct("The user provided a homework question and their own answer/attempt below. Check their approach and identify missing or incorrect steps. Give hints toward fixing it WITHOUT stating the final answer outright, unless their approach is already fully correct."))
-)
-
-private val memoryTrainerActions = listOf(
-    TextAction("Mnemonic", instruct("Create a short, memorable mnemonic for the following concept.")),
-    TextAction("Analogy", instruct("Create a simple analogy that explains the following concept.")),
-    TextAction("Story", instruct("Create a short memorable story or association to help remember the following concept."))
-)
-
-private val conceptMapperActions = listOf(
-    TextAction("Map it", instruct("Turn the following material into a structured concept hierarchy: a main topic, then sub-concepts as indented bullets, each with a one-line definition or example. Use indentation to show the hierarchy, plain text only."))
 )
 
 private val examPrepActions = listOf(
@@ -287,12 +218,6 @@ private val presentationActions = listOf(
 
 @Composable fun HomeworkCheckerScreen(onBack: () -> Unit) =
     TextActionScreen("Homework checker", homeworkCheckerActions, onBack, hint = "Paste the question and your answer/attempt", allowImageOcr = true)
-
-@Composable fun MemoryTrainerScreen(onBack: () -> Unit) =
-    TextActionScreen("Memory trainer", memoryTrainerActions, onBack, hint = "What's the concept you're trying to remember?")
-
-@Composable fun ConceptMapperScreen(onBack: () -> Unit) =
-    TextActionScreen("Concept mapper", conceptMapperActions, onBack, hint = "Paste or scan a chapter, document, or notes", allowImageOcr = true, allowSaveAsNote = true)
 
 @Composable fun ExamPreparationScreen(onBack: () -> Unit) =
     TextActionScreen("Exam preparation", examPrepActions, onBack, hint = "Paste or scan a syllabus or chapter", allowImageOcr = true, allowSaveAsNote = true)

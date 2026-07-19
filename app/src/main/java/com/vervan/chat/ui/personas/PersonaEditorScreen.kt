@@ -18,10 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -41,6 +42,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
@@ -74,8 +78,14 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val creativity by vm.creativity.collectAsState()
     val responseLength by vm.responseLength.collectAsState()
     val language by vm.language.collectAsState()
+    val avatarPath by vm.avatarPath.collectAsState()
+    val importError by vm.importError.collectAsState()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val importCardLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { vm.importCharacterCard(context, it) } }
 
     Scaffold(
         topBar = {
@@ -98,10 +108,24 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
+                val avatarBitmap = remember(avatarPath) {
+                    avatarPath?.let { path -> runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() }
+                }
                 Box(
                     Modifier.size(64.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                     contentAlignment = Alignment.Center
-                ) { Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                ) {
+                    if (avatarBitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = avatarBitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.size(64.dp).clip(CircleShape)
+                        )
+                    } else {
+                        Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             if (isBuiltIn) {
                 Text(
@@ -109,6 +133,29 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+            if (!isBuiltIn) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
+                    TextButton(onClick = { importCardLauncher.launch("image/png") }, modifier = Modifier.padding(top = 8.dp)) {
+                        Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Import character card (.png)", modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+                Text(
+                    "Fills in Name, Description, and Instructions from a SillyTavern-format character card. Review before saving.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                )
+            }
+            if (importError != null) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = vm::dismissImportError,
+                    title = { Text("Couldn't import card") },
+                    text = { Text(importError.orEmpty()) },
+                    confirmButton = { TextButton(onClick = vm::dismissImportError) { Text("OK") } }
                 )
             }
             SectionHeader("Identity")
@@ -193,7 +240,7 @@ private fun DialRow(options: List<String>, selected: String, onSelect: (String) 
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
     ) {
         options.forEach { option ->
-            FilterChip(
+            VervanFilterChip(
                 selected = selected == option,
                 onClick = { onSelect(option) },
                 label = { Text(option.lowercase().replaceFirstChar { it.uppercase() }) }

@@ -17,6 +17,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -62,7 +63,7 @@ class RealtimeVoiceController(private val app: VervanApp) {
 
     private val audioCapture = ContinuousAudioCapture()
     private val vad = VoiceActivityDetector(app)
-    private val whisperStt = WhisperSttEngine(app.container.db.ttsVoiceModelDao())
+    private val inbuiltStt: SttEngine = WhisperSttEngine(app.container.db.ttsVoiceModelDao())
     private val engineSelector = TtsEngineSelector(
         app.container.settingsRepository,
         PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
@@ -100,6 +101,11 @@ class RealtimeVoiceController(private val app: VervanApp) {
     private val _liveElapsedMs = MutableStateFlow(0)
     val liveElapsedMs: StateFlow<Int> = _liveElapsedMs
 
+    /** Partial words produced by the active STT path. Gemma exposes these while decoding the
+     * captured utterance; Android SpeechRecognizer can expose them while the user is speaking. */
+    private val _liveTranscript = MutableStateFlow("")
+    val liveTranscript: StateFlow<String> = _liveTranscript
+
     /** Name of the model being loaded, while [state] is [VoiceControllerState.LOADING_MODEL]. */
     private val _loadingModelName = MutableStateFlow<String?>(null)
     val loadingModelName: StateFlow<String?> = _loadingModelName
@@ -108,12 +114,22 @@ class RealtimeVoiceController(private val app: VervanApp) {
      * UI as a dismissible/retryable error instead of silently leaving the mic dead. */
     private val _modelLoadError = MutableStateFlow<String?>(null)
     val modelLoadError: StateFlow<String?> = _modelLoadError
+
+    /** True when the session fell through to the device speech recognizer but no usable
+     * recognizer exists — i.e. no STT tier is available at all (the active model can't hear
+     * audio, the inbuilt Whisper model isn't downloaded/enabled, and this device has no system
+     * SpeechRecognizer). Surfaced by the UI so a silent, do-nothing mic becomes an actionable
+     * "download the offline voice model" prompt instead. Cleared as soon as any STT path works. */
+    private val _sttUnavailable = MutableStateFlow(false)
+    val sttUnavailable: StateFlow<Boolean> = _sttUnavailable
+
     private val _playbackPaused = MutableStateFlow(false)
     val playbackPaused: StateFlow<Boolean> = _playbackPaused
 
     fun start(scope: CoroutineScope) {
         if (sessionJob?.isActive == true) return
         _modelLoadError.value = null
+        _sttUnavailable.value = false
         controllerScope = scope
         playbackQueue = TtsPlaybackQueue(app, engineSelector, scope)
         sessionJob = scope.launch(Dispatchers.Default) { runSession() }
@@ -130,12 +146,14 @@ class RealtimeVoiceController(private val app: VervanApp) {
         runCatching { activeSpeechRecognizer?.destroy() }
         activeSpeechRecognizer = null
         vad.release()
-        whisperStt.release()
+        inbuiltStt.release()
         _state.value = VoiceControllerState.IDLE
         _liveWaveform.value = emptyList()
         _liveElapsedMs.value = 0
+        _liveTranscript.value = ""
         _loadingModelName.value = null
         _playbackPaused.value = false
+        _sttUnavailable.value = false
         finishListeningRequested = false
         _turns.update { turns -> turns.map { it.copy(isStreaming = false, audioPending = false) } }
     }
@@ -165,7 +183,7 @@ class RealtimeVoiceController(private val app: VervanApp) {
         vad.load()
         audioCapture.start(CAPTURE_FRAME_MS)
         val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
-        val modelSupportsAudio = model?.supportsAudio == true
+        var modelSupportsAudio = model?.supportsAudio == true
 
         // Preload the generation model up front, with a visible spinner, instead of loading it
         // lazily on the first reply (where "Thinking…" would silently include a multi-second
@@ -186,9 +204,23 @@ class RealtimeVoiceController(private val app: VervanApp) {
                 if (::playbackQueue.isInitialized) playbackQueue.release()
                 return
             }
+            // Re-read after the load: for a never-before-loaded model, supportsAudio was still
+            // null above — the load itself just proved (and persisted, via reconcileCapabilities)
+            // whether audio input actually works, so trust that over the stale pre-load row.
+            modelSupportsAudio = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)?.supportsAudio == true
+        }
+
+        // Warm the inbuilt STT model up in the background while the session settles, so the first
+        // turn that needs it doesn't pay the multi-second native model load synchronously inside
+        // the LISTENING state (where the user is already talking with no feedback). isReady() is
+        // idempotent and mutex-guarded, so this racing with the first real isReady() below is safe
+        // — whichever runs first does the load, the other is a no-op.
+        if (app.container.settingsRepository.inbuiltSttEnabled.first()) {
+            controllerScope?.launch(Dispatchers.Default) { runCatching { inbuiltStt.isReady() } }
         }
 
         while (true) {
+            _liveTranscript.value = ""
             _state.value = VoiceControllerState.LISTENING
             val userText: String
 
@@ -200,7 +232,7 @@ class RealtimeVoiceController(private val app: VervanApp) {
             //     Whisper model — only if it's actually downloaded AND the user has it enabled.
             //  3. Otherwise fall back to Android's system SpeechRecognizer (live capture, no VAD
             //     buffer needed since it does its own endpointing).
-            val inbuiltSttReady = app.container.settingsRepository.inbuiltSttEnabled.first() && whisperStt.isReady()
+            val inbuiltSttReady = app.container.settingsRepository.inbuiltSttEnabled.first() && inbuiltStt.isReady()
             if (modelSupportsAudio || inbuiltSttReady) {
                 val captured = captureUntilSilence()
                 if (captured.pcm.isEmpty()) continue
@@ -220,10 +252,12 @@ class RealtimeVoiceController(private val app: VervanApp) {
                     transcript = transcribeAudio(wavFile.absolutePath)
                 }
                 if (transcript.isNullOrBlank() && inbuiltSttReady) {
-                    _sttLabel.value = "Whisper (offline)"
-                    transcript = whisperStt.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
+                    _sttLabel.value = inbuiltStt.label
+                    _liveTranscript.value = ""
+                    transcript = inbuiltStt.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
                 }
                 if (transcript.isNullOrBlank()) {
+                    _liveTranscript.value = ""
                     _turns.update { turns -> turns.filterNot { it.id == turnId } }
                     continue
                 }
@@ -231,9 +265,25 @@ class RealtimeVoiceController(private val app: VervanApp) {
                 userText = transcript
             } else {
                 _sttLabel.value = "Device (offline)"
+                // No model audio input and no inbuilt Whisper: the device recognizer is the only
+                // path left. If it isn't even present, tell the user (they can download the offline
+                // voice model) rather than leaving a live-looking mic that can never hear anything.
+                if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                    _sttUnavailable.value = true
+                    delay(DEVICE_STT_RETRY_DELAY_MS)
+                    continue
+                }
                 val sttStart = System.currentTimeMillis()
-                val text = listenViaDeviceStt() ?: continue
-                if (text.isBlank()) continue
+                val text = listenViaDeviceStt()
+                if (text.isNullOrBlank()) {
+                    // No usable result: the recognizer may be unavailable on this device, or it
+                    // just returned a rapid ERROR_NO_MATCH / ERROR_RECOGNIZER_BUSY. Back off before
+                    // re-listening so this loop can't spin into a CPU-pegging busy retry (a device
+                    // with no working SpeechRecognizer would otherwise restart it thousands of
+                    // times a second).
+                    delay(DEVICE_STT_RETRY_DELAY_MS)
+                    continue
+                }
                 userText = text
                 _turns.value = _turns.value + VoiceTurn(
                     fromUser = true, text = text,
@@ -243,6 +293,8 @@ class RealtimeVoiceController(private val app: VervanApp) {
                 )
             }
 
+            _liveTranscript.value = ""
+            _sttUnavailable.value = false
             _state.value = VoiceControllerState.THINKING
             respondAndSpeak(userText)
         }
@@ -266,7 +318,10 @@ class RealtimeVoiceController(private val app: VervanApp) {
             model, TRANSCRIBE_PROMPT, null, audioPath,
             params.temperature, params.topP, params.topK, params.seed,
             params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
-        ).collect { token -> builder.append(token) }
+        ).collect { token ->
+            builder.append(token)
+            _liveTranscript.value = builder.toString().trimStart()
+        }
         builder.toString().trim().takeIf { it.isNotEmpty() }
     }.getOrNull()
 
@@ -374,6 +429,10 @@ class RealtimeVoiceController(private val app: VervanApp) {
         val scope = controllerScope ?: return null
         return scope.launch(Dispatchers.Default) {
             if (!app.container.settingsRepository.bargeInEnabled.first()) return@launch
+            // Start this barge-in watch from clean VAD state: the detector accumulates internal
+            // speech-segment state across acceptWaveform calls, so carrying the just-finished
+            // user utterance's tail into barge-in detection would bias the very first frames here.
+            vad.reset()
             var speechFrames = 0
             audioCapture.frames.takeWhile { frame ->
                 _hasEchoCancellation.value = audioCapture.hasEchoCancellation
@@ -394,6 +453,11 @@ class RealtimeVoiceController(private val app: VervanApp) {
 
     private suspend fun captureUntilSilence(): CapturedUtterance {
         finishListeningRequested = false
+        // Clear any VAD state left over from the previous turn (or the barge-in watcher) before
+        // endpointing a fresh utterance. This also bounds the detector's internal speech-segment
+        // buffer, which this pipeline polls via isSpeechDetected() but never drains, so it would
+        // otherwise grow for the whole session.
+        vad.reset()
         val collected = ArrayList<Short>()
         var sawSpeech = false
         var silenceMs = 0
@@ -477,9 +541,12 @@ class RealtimeVoiceController(private val app: VervanApp) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             }
+            var latestPartial = ""
             fun finish(text: String?) {
-                if (cont.isActive) cont.resume(text)
+                val result = text?.takeIf { it.isNotBlank() } ?: latestPartial.takeIf { it.isNotBlank() }
+                if (cont.isActive) cont.resume(result)
                 if (activeSpeechRecognizer === recognizer) activeSpeechRecognizer = null
                 completedDeviceWaveform = _liveWaveform.value
                 _liveWaveform.value = emptyList()
@@ -499,7 +566,14 @@ class RealtimeVoiceController(private val app: VervanApp) {
                 }
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    latestPartial = partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+                    if (latestPartial.isNotEmpty()) _liveTranscript.value = latestPartial
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
             })
             cont.invokeOnCancellation {
@@ -518,6 +592,7 @@ class RealtimeVoiceController(private val app: VervanApp) {
         private const val TRAILING_SILENCE_MS = 600
         private const val MAX_UTTERANCE_MS = 30_000
         private const val BARGE_IN_TRIGGER_MS = 300
+        private const val DEVICE_STT_RETRY_DELAY_MS = 400L
         private const val LIVE_WAVEFORM_BARS = 40
         private const val TRANSCRIBE_PROMPT =
             "Transcribe exactly what was said in this audio. Output only the raw transcript, nothing else — no commentary, no translation."

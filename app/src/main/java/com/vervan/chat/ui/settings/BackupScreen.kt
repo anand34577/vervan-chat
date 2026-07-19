@@ -39,6 +39,10 @@ import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.SystemStatusStrip
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -118,8 +122,8 @@ fun BackupScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Export backup", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Includes app data, but not model files or imported documents.",
@@ -130,8 +134,8 @@ fun BackupScreen(onBack: () -> Unit) {
                     Button(onClick = { exportLauncher.launch(fileName) }, enabled = !busy) { Text("Export to file") }
                 }
             }
-            Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Column(Modifier.padding(16.dp)) {
+            Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Restore from backup", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Adds backup data and replaces matching items.",
@@ -158,9 +162,12 @@ fun BackupScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(top = 16.dp)
                     )
                 } else {
-                    Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                        Text(it, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
-                    }
+                    SystemStatusStrip(
+                        title = "Done",
+                        body = it,
+                        tone = StatusTone.Ready,
+                        modifier = Modifier.padding(top = Space.lg)
+                    )
                 }
             }
         }

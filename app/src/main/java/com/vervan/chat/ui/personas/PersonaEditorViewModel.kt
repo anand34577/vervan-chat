@@ -38,6 +38,10 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     val responseLength: StateFlow<String> = _responseLength
     private val _language = MutableStateFlow("")
     val language: StateFlow<String> = _language
+    private val _avatarPath = MutableStateFlow<String?>(null)
+    val avatarPath: StateFlow<String?> = _avatarPath
+    private val _importError = MutableStateFlow<String?>(null)
+    val importError: StateFlow<String?> = _importError
 
     init {
         if (personaId != null) {
@@ -53,6 +57,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
                     _creativity.value = persona.creativity
                     _responseLength.value = persona.responseLength
                     _language.value = persona.language
+                    _avatarPath.value = persona.avatarPath
                 }
             }
         }
@@ -68,6 +73,27 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     fun setResponseLength(value: String) { _responseLength.value = value }
     fun setLanguage(value: String) { _language.value = value }
 
+    /** Character card import (SillyTavern PNG cards) — fills the editor fields from the card,
+     * same as if the user had typed them in, so Save behaves identically either way. Runs
+     * synchronously on the calling coroutine (file read + JSON parse, no network/DB), same
+     * pattern as [com.vervan.chat.model.DocumentImportManager]'s picker call sites. */
+    fun importCharacterCard(context: android.content.Context, uri: android.net.Uri) {
+        _importError.value = null
+        try {
+            val card = com.vervan.chat.model.CharacterCardImporter.import(context, uri)
+            _name.value = card.name
+            _description.value = card.description
+            _systemInstruction.value = card.systemInstruction
+            _avatarPath.value = card.avatarFile?.absolutePath
+        } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
+            _importError.value = e.message
+        } catch (t: Throwable) {
+            _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
+        }
+    }
+
+    fun dismissImportError() { _importError.value = null }
+
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false
         val persona = Persona(
@@ -81,7 +107,8 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             conciseness = _conciseness.value,
             creativity = _creativity.value,
             responseLength = _responseLength.value,
-            language = _language.value.trim()
+            language = _language.value.trim(),
+            avatarPath = _avatarPath.value
         )
         db.personaDao().upsert(persona)
         return true
@@ -112,7 +139,8 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             conciseness = _conciseness.value,
             creativity = _creativity.value,
             responseLength = _responseLength.value,
-            language = _language.value.trim()
+            language = _language.value.trim(),
+            avatarPath = _avatarPath.value
         )
         db.personaDao().upsert(copy)
         return copy.id

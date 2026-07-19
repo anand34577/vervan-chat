@@ -141,6 +141,20 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
         }
     }
 
+    fun reindexDocuments(ids: Set<String>) {
+        viewModelScope.launch {
+            _error.value = null
+            documents.value.filter { it.id in ids }.forEach { document ->
+                try {
+                    db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING, failureReason = null))
+                    docImport.reindexLocal(document.id)
+                } catch (e: Exception) {
+                    _error.value = "Could not re-index ${document.displayName}. ${e.toUserMessage()}"
+                }
+            }
+        }
+    }
+
     fun deleteKnowledgeBase(onDone: () -> Unit) {
         viewModelScope.launch {
             db.knowledgeBaseDao().get(kbId)?.let { kb ->

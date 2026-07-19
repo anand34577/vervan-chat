@@ -26,6 +26,14 @@ class WorkflowListViewModel(app: VervanApp) : ViewModel() {
 
     val workflows: StateFlow<List<Workflow>> = db.workflowDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun deleteAll(ids: Set<String>) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            workflows.value.filter { it.id in ids && !it.isBuiltIn }
+                .forEach { db.workflowDao().upsert(it.copy(deletedAt = now)) }
+        }
+    }
 }
 
 /** One step's instruction (truncated for display) and the text it produced. */

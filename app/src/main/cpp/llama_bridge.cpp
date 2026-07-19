@@ -17,12 +17,14 @@
 #include <unistd.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "llama.h"
+#include "ggml-cpu.h"
 
 #ifdef VERVAN_HAS_MTMD
 #include "mtmd.h"
@@ -115,11 +117,61 @@ struct LlamaSession {
     std::atomic<bool> cancelled{false};
     uint32_t n_ctx = 0;
     uint32_t n_batch = 0;
+    // Non-null only when pick_fastest_cores() found readable cpufreq info (see
+    // create_pinned_threadpool) — pins compute threads to this session's fastest cores instead of
+    // leaving the scheduler free to spread them onto slow little/efficiency cores.
+    ggml_threadpool_t threadpool = nullptr;
     // One generation at a time per session — mirrors LlmEngine's single-active-Conversation
     // design; also lets nativeCloseModel() safely wait out an in-flight nativeGenerate() by
     // taking this same lock before freeing anything.
     std::mutex generate_mutex;
 };
+
+// Mirrors llama.rn's set_best_cores(): reads each core's max scaling frequency from sysfs, sorts
+// descending, and returns the fastest `nThreads` core indices — so compute threads can be pinned
+// to a big.LITTLE/tri-cluster chip's prime cores instead of drifting onto its slow efficiency
+// cores (which is invisible in n_threads alone but can dominate wall-clock throughput). Returns
+// an empty vector if cpufreq info isn't readable (some devices/kernels restrict it), signaling
+// "don't pin, use the OS default affinity" rather than pinning to an arbitrary/wrong core set.
+std::vector<int> pick_fastest_cores(int nThreadsWanted) {
+    const long nprocConf = sysconf(_SC_NPROCESSORS_CONF);
+    if (nprocConf <= 0 || nThreadsWanted <= 0) return {};
+    std::vector<std::pair<long, int>> freqByCore; // (max_freq_khz, core_id)
+    for (int core = 0; core < nprocConf; ++core) {
+        const std::string path =
+            "/sys/devices/system/cpu/cpu" + std::to_string(core) + "/cpufreq/cpuinfo_max_freq";
+        long freq = 0;
+        if (FILE *f = fopen(path.c_str(), "r")) {
+            if (fscanf(f, "%ld", &freq) != 1) freq = 0;
+            fclose(f);
+        }
+        freqByCore.emplace_back(freq, core);
+    }
+    const bool anyFreqReadable = std::any_of(
+        freqByCore.begin(), freqByCore.end(), [](const auto &p) { return p.first > 0; });
+    if (!anyFreqReadable) return {};
+    std::sort(freqByCore.begin(), freqByCore.end(),
+              [](const auto &a, const auto &b) { return a.first > b.first; });
+    const int want = std::min<int>(nThreadsWanted, static_cast<int>(freqByCore.size()));
+    std::vector<int> cores;
+    cores.reserve(want);
+    for (int i = 0; i < want; ++i) cores.push_back(freqByCore[i].second);
+    return cores;
+}
+
+// Builds and returns a threadpool whose worker threads are hard-pinned (strict_cpu) to the
+// fastest `nThreads` cores found by pick_fastest_cores(), or nullptr if pinning info wasn't
+// available (ggml then falls back to its own default un-pinned threadpool via n_threads alone).
+ggml_threadpool_t create_pinned_threadpool(int nThreads) {
+    const std::vector<int> cores = pick_fastest_cores(nThreads);
+    if (cores.empty()) return nullptr;
+    ggml_threadpool_params tpp = ggml_threadpool_params_default(nThreads);
+    for (const int core : cores) {
+        if (core >= 0 && core < GGML_MAX_N_THREADS) tpp.cpumask[core] = true;
+    }
+    tpp.strict_cpu = true;
+    return ggml_threadpool_new(&tpp);
+}
 
 std::string jstring_to_std(JNIEnv *env, jstring s) {
     if (s == nullptr) return {};
@@ -195,7 +247,11 @@ void destroy_session(LlamaSession *session) {
     if (session->mtmd_ctx != nullptr) mtmd_free(session->mtmd_ctx);
 #endif
     if (session->lora_adapter != nullptr) llama_adapter_lora_free(session->lora_adapter);
+    if (session->threadpool != nullptr && session->ctx != nullptr) {
+        llama_detach_threadpool(session->ctx);
+    }
     if (session->ctx != nullptr) llama_free(session->ctx);
+    if (session->threadpool != nullptr) ggml_threadpool_free(session->threadpool);
     if (session->model != nullptr) llama_model_free(session->model);
     delete session;
 }
@@ -296,6 +352,15 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeLoadModel(
     session->n_ctx = ctxParams.n_ctx;
     session->n_batch = ctxParams.n_batch;
 
+    // Pin compute threads to this device's fastest cores (see create_pinned_threadpool) instead
+    // of leaving them free to drift onto slow little/efficiency cores — same threadpool is used
+    // for both prompt-batch and per-token decode, matching ctxParams.n_threads_batch == n_threads
+    // above.
+    session->threadpool = create_pinned_threadpool(static_cast<int>(ctxParams.n_threads));
+    if (session->threadpool != nullptr) {
+        llama_attach_threadpool(ctx, session->threadpool, session->threadpool);
+    }
+
     if (!loraPath.empty()) {
         session->lora_adapter = llama_adapter_lora_init(model, loraPath.c_str());
         if (session->lora_adapter == nullptr) {
@@ -389,10 +454,32 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         if (!systemPrompt.empty()) messages.push_back({"system", systemPrompt.c_str()});
         messages.push_back({"user", prompt.c_str()});
         std::vector<char> buf((prompt.size() + systemPrompt.size()) * 2 + 256);
-        int32_t needed = llama_chat_apply_template(tmpl, messages.data(), messages.size(), /* add_ass */ true, buf.data(), static_cast<int32_t>(buf.size()));
-        if (needed > static_cast<int32_t>(buf.size())) {
-            buf.resize(needed);
-            needed = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, buf.data(), static_cast<int32_t>(buf.size()));
+        auto apply = [&](const char *t) -> int32_t {
+            int32_t needed = llama_chat_apply_template(t, messages.data(), messages.size(), /* add_ass */ true, buf.data(), static_cast<int32_t>(buf.size()));
+            if (needed > static_cast<int32_t>(buf.size())) {
+                buf.resize(needed);
+                needed = llama_chat_apply_template(t, messages.data(), messages.size(), true, buf.data(), static_cast<int32_t>(buf.size()));
+            }
+            return needed;
+        };
+        int32_t needed = apply(tmpl);
+        std::string mergedSystemUser; // outlives the c_str pointer pushed below
+        if (needed < 0) {
+            // llama_chat_apply_template() is a pattern-matcher over known templates, not a Jinja
+            // engine — an embedded template newer than this llama.cpp build returns -1. Silently
+            // using the raw untemplated prompt (the old behavior) makes the model generate
+            // garbage: it never sees the turn-boundary tokens it was trained on. Some system-role
+            // rejections also land here (e.g. Gemma-family), so first retry without the system
+            // turn folded in as user text, then fall back to ChatML — the de-facto default that
+            // llama.cpp's own common code falls back to, and correct for the Qwen/MiniCPM family.
+            LOGE("chat template unrecognized by llama_chat_apply_template(); retrying with chatml fallback");
+            if (!systemPrompt.empty()) {
+                messages.clear();
+                mergedSystemUser = systemPrompt + "\n\n" + jstring_to_std(env, jPrompt);
+                messages.push_back({"user", mergedSystemUser.c_str()});
+                needed = apply(tmpl);
+            }
+            if (needed < 0) needed = apply("chatml");
         }
         if (needed > 0) prompt.assign(buf.data(), needed);
     }
@@ -497,6 +584,14 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         }
         if (n_tokens <= 0) return fail("Could not tokenize the prompt");
         tokens.resize(static_cast<size_t>(n_tokens));
+        // add_special=true prepends BOS, but a chat template usually spells BOS out as text
+        // (parsed to the real token via parse_special) — a doubled BOS measurably derails
+        // several model families (Gemma warns about it in its own docs). Keep exactly one.
+        const llama_token bos = llama_vocab_bos(session->vocab);
+        if (tokens.size() >= 2 && bos != LLAMA_TOKEN_NULL && tokens[0] == bos && tokens[1] == bos) {
+            tokens.erase(tokens.begin());
+            n_tokens--;
+        }
         if (static_cast<uint32_t>(n_tokens) >= session->n_ctx) {
             return fail("Prompt needs " + std::to_string(n_tokens) + " tokens but the model context is only " +
                         std::to_string(session->n_ctx) + ". Shorten the chat or increase context size.");
@@ -530,8 +625,10 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     std::string pendingUtf8;
     int generated = 0;
     while (!session->cancelled.load() && generated < generationLimit) {
+        // llama_sampler_sample() already calls llama_sampler_accept() internally — accepting
+        // again here double-counted every token in the repetition-penalty window, effectively
+        // squaring the penalty and visibly degrading long responses.
         llama_token newToken = llama_sampler_sample(sampler, session->ctx, -1);
-        llama_sampler_accept(sampler, newToken);
 
         if (llama_vocab_is_eog(session->vocab, newToken)) break;
 

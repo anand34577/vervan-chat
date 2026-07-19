@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
@@ -68,8 +69,10 @@ class TtsModelDownloadManager(
         try {
             val digest = MessageDigest.getInstance("SHA-256")
             val totalBytes = downloadFile(archiveUrl, archiveFile, digest) { fraction ->
+                if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
                 jobDao.upsert(job.copy(progress = (fraction * 90).toInt(), detail = "Downloading…", updatedAt = System.currentTimeMillis()))
             }
+            if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
             jobDao.upsert(job.copy(progress = 90, detail = "Extracting…", updatedAt = System.currentTimeMillis()))
             extractTarBz2(archiveFile, voiceDir)
             if (!File(voiceDir, "model.onnx").isFile) {
@@ -84,6 +87,10 @@ class TtsModelDownloadManager(
             voiceModelDao.upsert(model)
             jobDao.upsert(job.copy(state = JobState.COMPLETED, progress = 100, updatedAt = System.currentTimeMillis()))
             TtsDownloadResult.Success(model)
+        } catch (cancelled: CancellationException) {
+            voiceDir.deleteRecursively()
+            jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped by user", updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Failed("Download stopped")
         } catch (t: Throwable) {
             voiceDir.deleteRecursively()
             jobDao.upsert(job.copy(state = JobState.FAILED, detail = t.message ?: "Download failed", updatedAt = System.currentTimeMillis()))

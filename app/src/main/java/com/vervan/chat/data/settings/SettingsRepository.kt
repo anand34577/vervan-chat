@@ -46,6 +46,7 @@ class SettingsRepository(context: Context) {
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
         val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
         val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
+        val AUTO_CONTEXT_SUMMARIZATION = booleanPreferencesKey("auto_context_summarization")
         val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val CONTEXT_TOKEN_LIMIT = intPreferencesKey("context_token_limit")
@@ -55,6 +56,7 @@ class SettingsRepository(context: Context) {
         val TOP_P = floatPreferencesKey("top_p")
         val TOP_K = intPreferencesKey("top_k")
         val PREFERRED_BACKEND = stringPreferencesKey("preferred_backend")
+        val ALLOW_LOW_MEMORY_MODEL_LOADS = booleanPreferencesKey("allow_low_memory_model_loads")
         val MAX_NUM_IMAGES = intPreferencesKey("max_num_images")
         val RANDOM_SEED = intPreferencesKey("random_seed")
         // Full LLM config exposure — global fallbacks for fields with a real app-wide default
@@ -98,13 +100,10 @@ class SettingsRepository(context: Context) {
         // Phase G — on-device data sources. Each is a separate app-level opt-in, independent
         // of (and in addition to) the OS runtime permission — granting the Android permission
         // doesn't mean the model should always be allowed to query it.
-        val CONTACTS_TOOL_ENABLED = booleanPreferencesKey("contacts_tool_enabled")
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
-        val SMS_TOOL_ENABLED = booleanPreferencesKey("sms_tool_enabled")
         val DEVICE_STATUS_TOOL_ENABLED = booleanPreferencesKey("device_status_tool_enabled")
         val FILES_TOOL_ENABLED = booleanPreferencesKey("files_tool_enabled")
         val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
-        val CALL_LOG_TOOL_ENABLED = booleanPreferencesKey("call_log_tool_enabled")
         val SCREEN_TIME_TOOL_ENABLED = booleanPreferencesKey("screen_time_tool_enabled")
         // Phase I — floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
@@ -217,6 +216,14 @@ class SettingsRepository(context: Context) {
     val autoResumeModelDownloads: Flow<Boolean> = store.data.map { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] ?: true }
     suspend fun setAutoResumeModelDownloads(v: Boolean) { store.edit { it[Keys.AUTO_RESUME_MODEL_DOWNLOADS] = v } }
 
+    /** Long-chat context management (ChatViewModel.summarizeOlderHistoryIfNeeded) — folds turns
+     * that are about to be dropped by context eviction into a running per-chat summary instead
+     * of just discarding them, at the cost of one extra background generation call on the
+     * already-loaded model. On by default since the alternative (silent truncation) is worse
+     * for small-context models; off is for users who'd rather not pay the extra generation. */
+    val autoContextSummarization: Flow<Boolean> = store.data.map { it[Keys.AUTO_CONTEXT_SUMMARIZATION] ?: true }
+    suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
+
     /** UI text scale multiplier, 0.85x-1.3x — spec §38's font-scale accessibility setting. */
     val fontScale: Flow<Float> = store.data.map { it[Keys.FONT_SCALE] ?: 1.0f }
     suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale } }
@@ -250,6 +257,11 @@ class SettingsRepository(context: Context) {
      * an NPU delegate to pick. */
     val preferredBackend: Flow<String> = store.data.map { it[Keys.PREFERRED_BACKEND] ?: "AUTO" }
     suspend fun setPreferredBackend(value: String) { store.edit { it[Keys.PREFERRED_BACKEND] = value } }
+
+    /** Opt-in escape hatch for devices that can successfully lean on Android's compressed RAM
+     * or swap despite the conservative pre-load estimate. Off keeps the current strict guard. */
+    val allowLowMemoryModelLoads: Flow<Boolean> = store.data.map { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] ?: false }
+    suspend fun setAllowLowMemoryModelLoads(value: Boolean) { store.edit { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] = value } }
 
     /** Vision token budget: how many images a single prompt can attach, for models loaded
      * with vision support. */
@@ -375,20 +387,14 @@ class SettingsRepository(context: Context) {
     suspend fun setAutoDeleteAfterDays(value: Int) { store.edit { it[Keys.AUTO_DELETE_AFTER_DAYS] = value.coerceAtLeast(0) } }
 
     // ---- On-device data sources (Phase G) — all off by default ----
-    val contactsToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CONTACTS_TOOL_ENABLED] ?: false }
-    suspend fun setContactsToolEnabled(v: Boolean) { store.edit { it[Keys.CONTACTS_TOOL_ENABLED] = v } }
     val calendarToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALENDAR_TOOL_ENABLED] ?: false }
     suspend fun setCalendarToolEnabled(v: Boolean) { store.edit { it[Keys.CALENDAR_TOOL_ENABLED] = v } }
-    val smsToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SMS_TOOL_ENABLED] ?: false }
-    suspend fun setSmsToolEnabled(v: Boolean) { store.edit { it[Keys.SMS_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
     suspend fun setDeviceStatusToolEnabled(v: Boolean) { store.edit { it[Keys.DEVICE_STATUS_TOOL_ENABLED] = v } }
     val filesToolEnabled: Flow<Boolean> = store.data.map { it[Keys.FILES_TOOL_ENABLED] ?: false }
     suspend fun setFilesToolEnabled(v: Boolean) { store.edit { it[Keys.FILES_TOOL_ENABLED] = v } }
     val locationToolEnabled: Flow<Boolean> = store.data.map { it[Keys.LOCATION_TOOL_ENABLED] ?: false }
     suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
-    val callLogToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALL_LOG_TOOL_ENABLED] ?: false }
-    suspend fun setCallLogToolEnabled(v: Boolean) { store.edit { it[Keys.CALL_LOG_TOOL_ENABLED] = v } }
     val screenTimeToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREEN_TIME_TOOL_ENABLED] ?: false }
     suspend fun setScreenTimeToolEnabled(v: Boolean) { store.edit { it[Keys.SCREEN_TIME_TOOL_ENABLED] = v } }
 
@@ -421,8 +427,6 @@ class SettingsRepository(context: Context) {
         if (expertise.isNotBlank()) parts += "The user's expertise level is $expertise."
         val langs = userLanguages.first()
         if (langs.isNotEmpty()) parts += "The user speaks ${langs.joinToString(", ")}."
-        val coding = userCodingLanguages.first()
-        if (coding.isNotEmpty()) parts += "For code, the user prefers ${coding.joinToString(", ")}."
         val units = userUnits.first()
         if (units == "imperial") parts += "The user prefers imperial units."
         val avoid = userTopicsAvoid.first()

@@ -139,16 +139,18 @@ interface EmbeddingLoadable {
     fun close()
 }
 
-/** The 3 app-wide Settings fallbacks [ModelLoadCoordinator] needs when a model's own
+/** The app-wide Settings fallbacks [ModelLoadCoordinator] needs when a model's own
  * contextTokens/maxNumImages/preferredBackend fields are unset — extracted from
  * [com.vervan.chat.data.settings.SettingsRepository] (which requires a real Android `Context`
  * and can't be constructed in a plain JVM unit test) purely so tests can supply fixed values
  * instead. [preferredBackend] returns one of "GPU"/"CPU"/"NPU"/"AUTO", matching
- * SettingsRepository.preferredBackend's raw stored string. */
+ * SettingsRepository.preferredBackend's raw stored string; [allowLowMemoryModelLoads]
+ * controls the conservative system-memory preflight. */
 interface GenerationDefaults {
     suspend fun contextTokenLimit(): Int
     suspend fun maxNumImages(): Int
     suspend fun preferredBackend(): String
+    suspend fun allowLowMemoryModelLoads(): Boolean = false
     // llama.cpp-only load-time fallbacks — irrelevant for a LiteRT-LM model, only read when
     // routing a load through LlamaCppEngine (see ModelLoadCoordinator.doLoadGeneration).
     suspend fun cpuThreads(): Int

@@ -55,6 +55,7 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 
 /** Response segments that need different native renderers. Everything remains on-device. */
 sealed class MdSegment {
@@ -297,8 +298,13 @@ private class OfflineMermaidView(context: Context, private val onHeightChanged: 
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .build()
         webViewClient = object : WebViewClientCompat() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                assetLoader.shouldInterceptRequest(request.url)
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                assetLoader.shouldInterceptRequest(request.url)?.let { return it }
+                // Mermaid is fully vendored in APK assets. Reject every other request instead
+                // of relying only on blockNetworkLoads, so diagrams can never fetch fonts,
+                // images, scripts, or styles from the internet.
+                return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+            }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 request.url.host != "appassets.androidplatform.net"

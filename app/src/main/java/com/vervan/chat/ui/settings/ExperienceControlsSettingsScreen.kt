@@ -40,7 +40,11 @@ import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
+fun ExperienceControlsSettingsScreen(
+    onBack: () -> Unit,
+    onOpenGeneration: () -> Unit = {},
+    onOpenModels: () -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
     val expertMode by vm.expertMode.collectAsState()
@@ -94,6 +98,20 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
             SettingsRow(Icons.Filled.Speed, "Response length", responseLength.lowercase().replaceFirstChar { it.uppercase() }) {}
             SettingsRow(Icons.Filled.Tune, "Performance", preferredBackend.lowercase().replaceFirstChar { it.uppercase() }) {}
 
+            SectionLabel(if (expertMode) "Raw controls unlocked" else "Configuration")
+            SettingsRow(
+                Icons.Filled.Tune,
+                "Generation settings",
+                if (expertMode) "Temperature, sampling, context, and llama.cpp parameters" else "Simple response style and length controls",
+                onOpenGeneration
+            )
+            SettingsRow(
+                Icons.Filled.Memory,
+                "Per-model settings",
+                if (expertMode) "Raw overrides for each installed model" else "Easy model-specific presets",
+                onOpenModels
+            )
+
             Text(
                 "Custom values stay unchanged until you choose a new preset.",
                 style = MaterialTheme.typography.bodySmall,
@@ -106,7 +124,7 @@ fun ExperienceControlsSettingsScreen(onBack: () -> Unit) {
     if (confirmExpert) {
         ConfirmDialog(
             title = "Enable Expert mode?",
-            body = "Your settings are preserved when you switch modes.",
+            body = "This reveals raw model and generation parameters. Existing values are preserved when you switch modes.",
             confirmLabel = "Enable",
             onConfirm = { vm.setExpertMode(true); confirmExpert = false },
             onDismiss = { confirmExpert = false }

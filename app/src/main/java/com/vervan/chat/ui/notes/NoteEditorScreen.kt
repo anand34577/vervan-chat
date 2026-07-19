@@ -57,6 +57,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     val note by vm.note.collectAsState()
     val running by vm.running.collectAsState()
     val error by vm.error.collectAsState()
+    val saving by vm.saving.collectAsState()
 
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
@@ -81,7 +82,18 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Note") },
+                title = {
+                    Column {
+                        Text("Note")
+                        if (loaded) {
+                            Text(
+                                if (saving) "Saving…" else "Saved on this device",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { vm.save(title, content, tags); onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -118,7 +130,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
         Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp)) {
             BoundedTextField(
                 value = title,
-                onValueChange = { title = it; vm.save(it, content) },
+                onValueChange = { title = it; vm.scheduleSave(it, content, tags) },
                 maxLength = ValidationLimits.NOTE_TITLE,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -143,7 +155,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 onItemsChange = { newTags ->
                     val joined = newTags.joinToString(",")
                     tags = joined
-                    vm.save(title, content, joined)
+                    vm.scheduleSave(title, content, joined)
                 },
                 label = "Tags",
                 maxItemLength = ValidationLimits.NOTE_TAG,
@@ -158,7 +170,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
             } else {
                 BoundedTextField(
                     value = content,
-                    onValueChange = { content = it; vm.save(title, it, tags) },
+                    onValueChange = { content = it; vm.scheduleSave(title, it, tags) },
                     maxLength = ValidationLimits.NOTE_CONTENT,
                     maxLines = Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f),

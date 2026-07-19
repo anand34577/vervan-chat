@@ -26,7 +26,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
@@ -238,7 +238,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     Text("Card style", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("balanced" to "Balanced", "active-recall" to "Active recall", "concept-focused" to "Concepts").forEach { (value, label) ->
-                            FilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
+                            VervanFilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
                         }
                     }
                     Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
