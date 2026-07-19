@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ScreenSearchDesktop
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -90,6 +91,7 @@ fun OverlayResultPanel(
     onCopy: () -> Unit,
     onOpen: (() -> Unit)?,
     onAsk: ((String) -> Unit)?,
+    onShowNextScreen: (() -> Unit)?,
     onClose: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -147,7 +149,7 @@ fun OverlayResultPanel(
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close Screen Assist")
+                    Icon(Icons.Filled.ExpandMore, contentDescription = "Minimize Screen Assist")
                 }
             }
             Surface(
@@ -218,8 +220,18 @@ fun OverlayResultPanel(
                     }
                 }
             }
+            if (onShowNextScreen != null) {
+                FilledTonalButton(
+                    onClick = onShowNextScreen,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                ) {
+                    Icon(Icons.Filled.ScreenSearchDesktop, null, Modifier.size(18.dp))
+                    Text("  Show current screen")
+                }
+            }
             Row(
-                Modifier.fillMaxWidth().padding(top = Space.sm),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -242,6 +254,7 @@ fun OverlayResultPanel(
 @Composable
 fun QuickBubbleMenu(
     captureAppAvailable: Boolean,
+    onResume: (() -> Unit)?,
     onExplainScreen: () -> Unit,
     onCaptureArea: () -> Unit,
     onCaptureApp: () -> Unit,
@@ -272,6 +285,15 @@ fun QuickBubbleMenu(
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = Space.sm))
+            if (onResume != null) {
+                QuickMenuAction(
+                    icon = Icons.Filled.ScreenSearchDesktop,
+                    title = "Continue Screen Assist",
+                    supporting = "Return to the current conversation",
+                    onClick = onResume,
+                )
+                HorizontalDivider(Modifier.padding(vertical = Space.sm))
+            }
             QuickMenuAction(
                 icon = Icons.Filled.ScreenSearchDesktop,
                 title = "Explain screen",

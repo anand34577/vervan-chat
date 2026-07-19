@@ -6,7 +6,7 @@ package com.vervan.chat.voice
  * makes the realtime voice pipeline feel conversational instead of request/response.
  *
  * Splits on `.`, `!`, `?`, and the Hindi danda `।` (Hindi + English + Hinglish all use these).
- * ponytail: a plain first-delimiter scan, not decimal-number-aware ("3.14" splits into two
+ * a plain first-delimiter scan, not decimal-number-aware ("3.14" splits into two
  * "sentences") — an extra short TTS utterance is harmless, so this isn't worth a smarter
  * tokenizer. Pure Kotlin, no Android dependency, so it's unit-testable without a device.
  */

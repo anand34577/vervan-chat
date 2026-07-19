@@ -31,7 +31,7 @@ import org.json.JSONObject
  * JSON export/import for everything a user actually authored (spec §33). Model files,
  * knowledge bases, and imported documents are deliberately NOT included — those are large
  * binary assets tied to on-device paths, re-importing them belongs to Models/Knowledge, not
- * a settings backup. ponytail: hand-rolled org.json mapping per entity (matches how the rest
+ * a settings backup. hand-rolled org.json mapping per entity (matches how the rest
  * of the app already encodes JSON — Workflow steps, tool-call payloads) rather than pulling
  * in a serialization library for one screen.
  */

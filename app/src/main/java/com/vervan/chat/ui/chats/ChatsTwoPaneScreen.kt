@@ -37,7 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
  * as a separate composable from [ChatListScreen] rather than threading pane-mode through it,
  * so the phone path (the vast majority of real usage) is untouched.
  *
- * ponytail: selection is local state, not nav-controller state — deep links into a specific
+ * selection is local state, not nav-controller state — deep links into a specific
  * chat (from Home, Search, share sheet) still push a full-screen [ChatScreen] on top rather
  * than landing inside this pane; only navigating via the Chats tab itself uses the split view.
  *

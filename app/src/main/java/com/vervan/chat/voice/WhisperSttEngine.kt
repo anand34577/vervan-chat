@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
  * let a genuinely bad model fail the first real [transcribe], which returns null and falls through
  * to the next STT tier rather than crashing.
  *
- * ponytail: exact sherpa-onnx Kotlin field names below were confirmed against the actual
+ * exact sherpa-onnx Kotlin field names below were confirmed against the actual
  * `sherpa-onnx-1.13.4-api.jar` resolved in this project's `app/libs/` (javap on
  * `OfflineWhisperModelConfig`/`OfflineModelConfig`/`OfflineRecognizerConfig`/`OfflineRecognizer`/
  * `OfflineStream`).

@@ -50,7 +50,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 
 /**
- * Every branch of the chat as an indented list (depth-first, ponytail: no actual graph
+ * Every branch of the chat as an indented list (depth-first, no actual graph
  * rendering — a tree only gets a handful of forks deep in practice, indentation reads
  * fine at that scale). Tapping a node jumps the active leaf straight there.
  */

@@ -36,7 +36,7 @@ data class Chat(
     val thinkingMode: String = "OFF",
     // Tip of the currently active branch. Null means empty chat (no messages yet).
     val activeLeafId: String? = null,
-    // ponytail: comma-separated KB ids instead of a join table — a chat only ever
+    // comma-separated KB ids instead of a join table — a chat only ever
     // needs "which KBs am I asking against", not a queryable many-to-many. Add a
     // join table if cross-KB reporting ever needs it.
     val knowledgeBaseIds: String = "",

@@ -21,7 +21,7 @@ sealed class ImportResult {
 
 /**
  * Copies a user-picked model file (via SAF) into app-managed storage and registers it.
- * ponytail: validation here is "does it look like a model file" (extension + non-empty +
+ * validation here is "does it look like a model file" (extension + non-empty +
  * enough free space) — real architecture/tokenizer/shard validation happens when
  * LlmEngine.load() actually tries to initialize it. Add a real pre-flight parser when
  * bad imports become a real support burden.

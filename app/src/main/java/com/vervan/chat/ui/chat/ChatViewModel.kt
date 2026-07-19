@@ -1325,7 +1325,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * the model can use the result. A reversible-write tool call stops the loop and waits
      * for [confirmToolCall]. Every message created here immediately becomes the new active
      * leaf, so the hop chain — and any later branch off of it — stays a proper tree.
-     * ponytail: sequential, single-tool-per-turn, hard cap of [MAX_TOOL_HOPS] — no
+     * sequential, single-tool-per-turn, hard cap of [MAX_TOOL_HOPS] — no
      * parallel calls, no multi-tool-per-response parsing (spec 16.7's fuller loop
      * protection — per-tool rate limits, result-size caps — isn't built).
      */
@@ -1857,7 +1857,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /**
      * Context eviction (Phase 2, spec §10) — drops the oldest turns first once the
      * conversation would blow past the model's usable context, instead of growing the
-     * prompt unbounded (B9-adjacent). ponytail: char-budget proxy (same chars/4 estimate
+     * prompt unbounded (B9-adjacent). char-budget proxy (same chars/4 estimate
      * used elsewhere), drop-oldest-first only — no pinning, no summarization-of-dropped-
      * turns, no 16-tier priority system. Always keeps at least the most recent turn.
      */
@@ -2058,7 +2058,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     /**
      * What would go into the prompt if [draftText] were sent right now — the context
-     * inspector's data source. ponytail: token estimate is chars/4 (no tokenizer exposed
+     * inspector's data source. token estimate is chars/4 (no tokenizer exposed
      * for a cheap pre-count, same tradeoff as [com.vervan.chat.model.Chunker]) — close
      * enough to show relative weight, not exact enough to promise a hard limit.
      */

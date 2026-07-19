@@ -60,7 +60,7 @@ class SentenceChunkerTest {
 
     @Test
     fun `each delimiter in a run is its own emitted fragment`() {
-        // ponytail: the chunker splits on the first delimiter it sees, so "..." after "Wait"
+        // the chunker splits on the first delimiter it sees, so "..." after "Wait"
         // yields three short emissions rather than one "Wait..." sentence — an extra couple of
         // near-silent TTS calls, not a correctness bug worth a lookahead parser for.
         val emitted = mutableListOf<String>()

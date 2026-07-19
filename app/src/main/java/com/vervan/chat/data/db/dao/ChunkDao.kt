@@ -12,7 +12,7 @@ interface ChunkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(chunks: List<Chunk>)
 
-    // ponytail: scoring (keyword + cosine) happens in Kotlin over this result set, not in
+    // scoring (keyword + cosine) happens in Kotlin over this result set, not in
     // SQL — fine up to a few thousand chunks (a realistic personal KB). Past that, move to
     // FTS5 for keyword and an ANN index for vectors.
     // [limit] bounds the fetch itself (RetrievalEngine passes MAX_CHUNKS_PER_QUERY + 1) so an

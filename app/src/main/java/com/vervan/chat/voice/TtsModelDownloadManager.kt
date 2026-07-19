@@ -164,7 +164,7 @@ class TtsModelDownloadManager(
 }
 
 /** The one voice still offered outside the real model-download system — see the class doc above
- * for why Kokoro stays here. ponytail: filename is best-effort against sherpa-onnx's release
+ * for why Kokoro stays here. filename is best-effort against sherpa-onnx's release
  * naming convention, not independently confirmed the way the MMS-backed ModelCatalog entries
  * are — downloadArchiveVoice fails cleanly (JobState.FAILED, no partial voice written) if it's
  * ever moved/renamed upstream. */

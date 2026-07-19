@@ -76,6 +76,7 @@ class BubbleService : Service() {
     private val resultBusyState = mutableStateOf(false)
     private val resultChatIdState = mutableStateOf<String?>(null)
     private var resultImagePath: String? = null
+    private var continueConversationAfterCapture = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -211,6 +212,9 @@ class BubbleService : Service() {
                 com.vervan.chat.ui.theme.VervanTheme(darkTheme = night) {
                     QuickBubbleMenu(
                         captureAppAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                        onResume = if (resultChatIdState.value != null && resultView == null) ({
+                            act { showResult(resultTextState.value, resultBusyState.value) }
+                        }) else null,
                         onExplainScreen = { act { launchCapture(selectArea = false) } },
                         onCaptureArea = { act { launchCapture(selectArea = true) } },
                         onCaptureApp = { act { launchCapture(selectArea = false, captureApp = true) } },
@@ -256,9 +260,14 @@ class BubbleService : Service() {
         bubbleView?.contentDescription = "Open Vervan Quick actions"
     }
 
-    private fun launchCapture(selectArea: Boolean, captureApp: Boolean = false) {
+    private fun launchCapture(
+        selectArea: Boolean,
+        captureApp: Boolean = false,
+        continueConversation: Boolean = false,
+    ) {
         captureUiActive = true
-        hideResult()
+        continueConversationAfterCapture = continueConversation && resultChatIdState.value != null
+        hideResult(clearConversation = !continueConversationAfterCapture)
         bubbleView?.visibility = View.INVISIBLE
         runCatching {
             startActivity(
@@ -269,6 +278,7 @@ class BubbleService : Service() {
             )
         }.onFailure {
             captureUiActive = false
+            continueConversationAfterCapture = false
             bubbleView?.visibility = View.VISIBLE
             showResult("Screen capture could not be opened.")
         }
@@ -277,20 +287,30 @@ class BubbleService : Service() {
     /** Owns generation after the permission/selection activity closes, so the answer can keep
      * streaming over the user's current app and the entire exchange is durable in Room. */
     private fun explainCapturedScreen(file: File) {
+        val continueExistingConversation = continueConversationAfterCapture
+        continueConversationAfterCapture = false
         serviceScope.launch {
             val app = applicationContext as VervanApp
             val db = app.container.db
             try {
                 showResult("", busy = true)
-                val prompt = "Explain what's shown in this screenshot, plainly and concisely."
-                val chat = Chat(
+                val existingChat = resultChatIdState.value
+                    ?.takeIf { continueExistingConversation }
+                    ?.let { db.chatDao().getChat(it) }
+                val chat = existingChat ?: Chat(
                     title = "Screen explanation · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date()),
-                    workspaceId = app.container.settingsRepository.activeWorkspaceId.first()
-                )
-                db.chatDao().upsert(chat)
+                    workspaceId = app.container.settingsRepository.activeWorkspaceId.first(),
+                ).also { db.chatDao().upsert(it) }
+                val prompt = screenCapturePrompt(existingChat != null)
                 resultImagePath = file.path
                 resultChatIdState.value = chat.id
-                val user = Message(chatId = chat.id, role = MessageRole.USER, content = prompt, imagePath = file.path)
+                val user = Message(
+                    chatId = chat.id,
+                    parentId = chat.activeLeafId,
+                    role = MessageRole.USER,
+                    content = prompt,
+                    imagePath = file.path,
+                )
                 db.messageDao().upsert(user)
                 generateScreenReply(app, chat, user, file.path)
             } catch (cancelled: CancellationException) {
@@ -403,7 +423,10 @@ class BubbleService : Service() {
                             onCopy = { copyResultToClipboard() },
                             onOpen = if (chatId != null) ({ openChatInApp(chatId) }) else null,
                             onAsk = if (chatId != null && resultImagePath != null) ({ askFollowUp(it) }) else null,
-                            onClose = { hideResult() }
+                            onShowNextScreen = if (chatId != null) ({
+                                launchCapture(selectArea = false, continueConversation = true)
+                            }) else null,
+                            onClose = { hideResult(clearConversation = false) },
                         )
                     }
                 }
@@ -426,13 +449,15 @@ class BubbleService : Service() {
         }
     }
 
-    private fun hideResult() {
+    private fun hideResult(clearConversation: Boolean = true) {
         resultView?.let { runCatching { windowManager?.removeView(it) } }
         resultView = null
         resultOwner?.onDestroy()
         resultOwner = null
-        resultChatIdState.value = null
-        resultImagePath = null
+        if (clearConversation) {
+            resultChatIdState.value = null
+            resultImagePath = null
+        }
     }
 
     private fun copyResultToClipboard() {
@@ -463,6 +488,7 @@ class BubbleService : Service() {
 
     private fun showCaptureFailure(message: String) {
         captureUiActive = false
+        continueConversationAfterCapture = false
         setBubbleVisible(true)
         showResult(message)
     }
@@ -592,12 +618,18 @@ class BubbleService : Service() {
     }
 }
 
+internal fun screenCapturePrompt(continuing: Boolean): String = if (continuing) {
+    "I've followed the previous step. This is the screen I see now. Tell me what to tap next."
+} else {
+    "Explain what's shown in this screenshot, plainly and concisely."
+}
+
 /** Rebuilds the small Screen Assist conversation because each native generation starts fresh. */
 internal fun buildScreenConversationPrompt(messages: List<Message>): String = buildString {
     appendLine("You are Screen Assist. Answer the latest user question about the attached screenshot.")
     appendLine("Use both the screenshot and the conversation below. Be direct and concise.")
     appendLine()
-    // ponytail: Screen Assist sends its short full history; add token-budget trimming only if
+    // Screen Assist sends its short full history; add token-budget trimming only if
     // real-world overlay conversations become long enough to approach model context limits.
     messages.forEach { message ->
         if (message.role == MessageRole.ASSISTANT && message.state in setOf(

@@ -209,7 +209,7 @@ object TextExtractor {
 
     /** Walks the DOM instead of a flat [Jsoup] `.text()` call so headings and list items keep
      * the markers [Chunker] already looks for (`# Heading`, `- item`) — a flat text() call
-     * would collapse a page's whole structure into one undifferentiated blob. ponytail: selects
+     * would collapse a page's whole structure into one undifferentiated blob. selects
      * a fixed tag set (h1-h6/p/li/pre/blockquote) rather than a full block-model walk, so a
      * `<p>` nested inside a matched `<li>` (or similar unusual nesting) can double-count — rare
      * enough in real-world HTML exports not to be worth a proper DOM-block-model rewrite yet. */

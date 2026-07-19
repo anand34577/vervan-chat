@@ -54,7 +54,7 @@ private val DIFFICULTIES = listOf("Easy", "Medium", "Hard")
 
 /** Paste/scanned text -> LLM-generated quiz (JSON array), answered interactively, scored
  * client-side. Grading for free-text answers is a simple case-insensitive containment check —
- * ponytail: no semantic grading, good enough for self-check practice, not exam scoring. */
+ * no semantic grading, good enough for self-check practice, not exam scoring. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuizGeneratorScreen(onBack: () -> Unit) {

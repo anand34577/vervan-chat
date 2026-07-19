@@ -16,7 +16,7 @@ import com.vervan.chat.R
  * coroutine still runs in ChatViewModel's viewModelScope; this service's only job is to hold
  * a foreground-priority process state (+ visible notification) for as long as generation is
  * in flight, so the OS doesn't kill the process just because the app was backgrounded mid-
- * response. ponytail: doesn't itself resume generation after a real process death (that would
+ * response. doesn't itself resume generation after a real process death (that would
  * need the prompt/state persisted and replayed via WorkManager) — it prevents the common case
  * (user backgrounds the app) from ever reaching process death in the first place.
  */

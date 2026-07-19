@@ -11,7 +11,7 @@ import java.security.SecureRandom
  * [File.delete] that only removes the directory entry and leaves the underlying blocks readable
  * until the filesystem reuses them.
  *
- * ponytail: genuinely best-effort, not a guarantee — documented rather than oversold. Flash
+ * genuinely best-effort, not a guarantee — documented rather than oversold. Flash
  * storage wear-leveling means the physical blocks a rewrite lands on aren't necessarily the
  * same ones that held the original data, so true secure erase isn't achievable at the app layer
  * on modern flash without TRIM/full-disk support this app doesn't have. This raises the bar

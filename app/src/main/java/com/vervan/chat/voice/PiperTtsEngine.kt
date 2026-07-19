@@ -11,7 +11,7 @@ import java.io.File
  * else -> English voice. Code-mixed sentences route by whichever script dominates — a v1
  * heuristic, not per-word switching (revisit only if real usage shows it's a problem).
  *
- * ponytail: sherpa-onnx's real `OfflineTts`/`OfflineTtsVitsModelConfig` Kotlin API is isolated
+ * sherpa-onnx's real `OfflineTts`/`OfflineTtsVitsModelConfig` Kotlin API is isolated
  * to this file — confirm exact field names/required files (Piper VITS voices typically need
  * `model.onnx` + `tokens.txt` + an `espeak-ng-data` directory for phonemization) against the
  * actual AAR at first Gradle sync. [TtsVoiceModel.filePath] is treated as a per-voice

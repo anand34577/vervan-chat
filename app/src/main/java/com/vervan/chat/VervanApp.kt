@@ -49,7 +49,7 @@ class AppContainer(app: Application) {
     val llmEngine = LlmEngine(app)
     val llamaCppEngine = LlamaCppEngine(app)
     val embeddingEngine = EmbeddingEngine(app)
-    // ponytail: one global native-engine lock; split per model instance if parallel native
+    // one global native-engine lock; split per model instance if parallel native
     // sessions become a measured need.
     val llmMutex = Mutex()
     val llamaCppMutex = Mutex()

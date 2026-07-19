@@ -2998,7 +2998,7 @@ private fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
 
 /**
  * Chat Screen spec §27 — find-in-conversation, scoped to the currently rendered branch path
- * (not the app-wide SearchScreen, which spans every chat). ponytail: no inline highlighting of
+ * (not the app-wide SearchScreen, which spans every chat). no inline highlighting of
  * the matched substring, just prev/next navigation and a match count — jumping to the message
  * is the useful part, highlighting inside MarkdownLiteText would need its own span-aware path.
  */
@@ -3036,7 +3036,7 @@ private fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit, 
     }
 }
 
-/** Juxtaposes every sibling's full text side by side — ponytail: no token-level diff
+/** Juxtaposes every sibling's full text side by side — no token-level diff
  * highlighting, just the raw outputs next to each other, "compare" not "diff". */
 @Composable
 private fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse: (String) -> Unit) {
@@ -3785,7 +3785,7 @@ private fun MessageBubble(
         // metadata/toolbar, not part of the response itself, and keeping it out of the Card
         // means the bubble's background/border doesn't stretch to fit five icon buttons.
         if (showActions && !editing) {
-            // ponytail: horizontalScroll here previously fought Arrangement.End — a scrollable
+            // horizontalScroll here previously fought Arrangement.End — a scrollable
             // Row measures children with unbounded width, so "End" has no finite edge to align
             // against and buttons silently render left-aligned/off past the bubble instead of
             // at the visible right edge (looked like the last one, the 3-dot menu, vanished).
@@ -4113,7 +4113,7 @@ private fun SourceCards(sourcesJson: String, onOpenPassage: (String) -> Unit = {
     val array = remember(sourcesJson) { runCatching { JSONArray(sourcesJson) }.getOrNull() } ?: return
     var selected by remember(sourcesJson) { mutableStateOf<org.json.JSONObject?>(null) }
     // Mark-irrelevant is a client-side hide, not persisted or fed back into retrieval —
-    // ponytail: a real "don't retrieve this chunk again" would need a per-chat exclusion set
+    // a real "don't retrieve this chunk again" would need a per-chat exclusion set
     // threaded through RetrievalEngine; this covers the common "get this off my screen" need.
     val hiddenIndices = remember(sourcesJson) { mutableStateListOf<Int>() }
     val clipboard = androidx.compose.ui.platform.LocalClipboard.current

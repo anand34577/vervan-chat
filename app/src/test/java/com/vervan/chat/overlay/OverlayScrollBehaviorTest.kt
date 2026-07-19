@@ -3,11 +3,20 @@ package com.vervan.chat.overlay
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OverlayScrollBehaviorTest {
+    @Test
+    fun continuedCaptureAsksForTheNextStep() {
+        assertEquals(
+            "I've followed the previous step. This is the screen I see now. Tell me what to tap next.",
+            screenCapturePrompt(continuing = true),
+        )
+    }
+
     @Test
     fun nearBottomRequiresTheEndToBeWithinTolerance() {
         assertTrue(isNearOverlayBottom(0, -1, 0, 1_000, 72))
