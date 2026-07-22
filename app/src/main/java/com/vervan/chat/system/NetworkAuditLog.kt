@@ -2,6 +2,7 @@ package com.vervan.chat.system
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 data class NetworkAuditEntry(val timestamp: Long, val reason: String)
 
@@ -21,7 +22,10 @@ class NetworkAuditLog {
     val entries: StateFlow<List<NetworkAuditEntry>> = _entries
 
     fun record(reason: String) {
-        _entries.value = (_entries.value + NetworkAuditEntry(System.currentTimeMillis(), reason)).takeLast(MAX_ENTRIES)
+        // Atomic CAS loop instead of read-then-write — both the model downloader and the store
+        // pipeline call into this from independent dispatchers, and the previous
+        // `_entries.value = (_entries.value + …)` lost one update per concurrent pair.
+        _entries.update { (it + NetworkAuditEntry(System.currentTimeMillis(), reason)).takeLast(MAX_ENTRIES) }
     }
 
     companion object {

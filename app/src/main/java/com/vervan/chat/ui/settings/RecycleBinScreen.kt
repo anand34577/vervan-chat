@@ -75,6 +75,7 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
+import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
@@ -200,7 +201,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                 )
             }
             binItems.groupBy { it.section }.forEach { (section, sectionItems) ->
-                item(key = "section_$section") { SectionLabel(section, sectionItems.size) }
+                item(key = "section_$section") { SectionLabel(section, count = sectionItems.size) }
                 items(sectionItems, key = { it.key }) { item ->
                     BinRow(
                         item = item,
@@ -303,14 +304,6 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
                 Text("Empty bin", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = Space.sm))
             }
         }
-    }
-}
-
-@Composable
-private fun SectionLabel(title: String, count: Int) {
-    Row(Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
-        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-        Text("$count", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
 }
 

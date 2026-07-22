@@ -538,6 +538,26 @@ class ModelLoadCoordinator(
             modelDao.upsert(updatedModel.copy(lastLoadedAt = System.currentTimeMillis()))
             publishReady(role, updatedModel.id)
             EnsureLoadResult(role, success = true, loadedModelId = updatedModel.id, loadRequired = true, delegateFallback = delegateFallback)
+        } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+            // The watchdog's TimeoutCancellationException is a CancellationException subtype — it
+            // has to be handled BEFORE the generic CancellationException rethrow below, because
+            // we want it to surface as a TIMED_OUT result, not as parent-job cancellation.
+            Log.e(TAG, "doLoad() TIMED OUT for ${model.displayName} (role=$role, trigger=$trigger) — ${diagnosticContext(model, trigger)}", t)
+            val category = ModelLoadErrorCategory.TIMED_OUT
+            val result = EnsureLoadResult(
+                role, success = false, loadedModelId = model.id, loadRequired = true,
+                errorCategory = category,
+                errorMessage = t.message ?: "Load timed out",
+                retryable = true
+            )
+            publishFailure(role, result)
+            result
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            // Structured-concurrency contract: CancellationException must propagate so parent-job
+            // cancellation works. The previous `catch (t: Throwable)` swallowed it, mapping every
+            // genuine cancellation into a synthetic failure result and leaving the awaiting caller
+            // running in a half-cancelled state.
+            throw t
         } catch (t: Throwable) {
             Log.e(TAG, "doLoad() FAILED for ${model.displayName} (role=$role, trigger=$trigger) — ${diagnosticContext(model, trigger)}", t)
             val category = classifyError(t)
@@ -568,6 +588,8 @@ class ModelLoadCoordinator(
         // call, safe because this whole block already runs under that engine's own mutex.
         if (engine is LlamaCppEngine) {
             engine.pendingMmprojPath = model.mmprojPath
+            // null = no per-model override → the engine offloads the whole model when the
+            // resolved backend preference asks for GPU (see LlamaCppEngine.loadModel).
             engine.pendingGpuLayerCount = model.gpuLayerCount
             engine.pendingLayerCount = model.layerCount
             engine.pendingOptions = com.vervan.chat.llm.LlamaLoadOptions(
@@ -594,23 +616,24 @@ class ModelLoadCoordinator(
         // model never overrode.
         val requestedContext = resolveContextTokens(model, contextTokensOverride)
         val maxNumImages = model.maxNumImages ?: defaults.maxNumImages()
-        val backendPreference = when (model.preferredBackend) {
+        val resolvedPreference = when (model.preferredBackend) {
             BackendChoice.GPU -> LlmEngine.BackendPreference.GPU_ONLY
             BackendChoice.CPU -> LlmEngine.BackendPreference.CPU_ONLY
-            // llama.cpp has no NPU backend — NPU_ONLY is only ever set on a LiteRT-LM model
-            // (the UI hides that chip for llama.cpp models, see ModelManagerScreen).
-            BackendChoice.NPU -> if (model.engine == ModelEngine.LLAMA_CPP) {
-                LlmEngine.BackendPreference.AUTO
-            } else LlmEngine.BackendPreference.NPU_ONLY
+            // LiteRT-LM is the only engine with an NPU backend.
+            BackendChoice.NPU -> LlmEngine.BackendPreference.NPU_ONLY
             BackendChoice.AUTO -> when (defaults.preferredBackend()) {
                 "GPU" -> LlmEngine.BackendPreference.GPU_ONLY
                 "CPU" -> LlmEngine.BackendPreference.CPU_ONLY
-                "NPU" -> if (model.engine == ModelEngine.LLAMA_CPP) {
-                    LlmEngine.BackendPreference.AUTO
-                } else LlmEngine.BackendPreference.NPU_ONLY
+                "NPU" -> LlmEngine.BackendPreference.NPU_ONLY
                 else -> LlmEngine.BackendPreference.AUTO
             }
         }
+        // llama.cpp has no NPU backend, and NPU_ONLY makes its loadModel() throw — an NPU value
+        // can still reach here for GGUF via the *global* preferredBackend default or a stale DB
+        // row, so soften it to AUTO (Vulkan → CPU) rather than failing the load outright.
+        val backendPreference = if (model.engine == ModelEngine.LLAMA_CPP &&
+            resolvedPreference == LlmEngine.BackendPreference.NPU_ONLY
+        ) LlmEngine.BackendPreference.AUTO else resolvedPreference
         val backendHint = when (model.lastWorkingBackend) {
             ModelBackend.GPU -> LlmEngine.ModelBackend.GPU
             ModelBackend.CPU -> LlmEngine.ModelBackend.CPU

@@ -34,6 +34,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val inbuiltSttEnabled: StateFlow<Boolean> = settings.inbuiltSttEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val sttEnginePreference: StateFlow<String> = settings.sttEnginePreference
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
 
     // ---- Realtime voice — Piper/Kokoro voice model downloads ----
     val downloadedVoiceModels: StateFlow<List<com.vervan.chat.data.db.entities.TtsVoiceModel>> =
@@ -168,6 +170,20 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
     fun setScreenTimeToolEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenTimeToolEnabled(v) } }
 
+    // ---- Web search (model-initiated outbound-network tool) ----
+    val webSearchToolEnabled: StateFlow<Boolean> = settings.webSearchToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    fun setWebSearchToolEnabled(v: Boolean) { viewModelScope.launch { settings.setWebSearchToolEnabled(v) } }
+    /** True only when both the toggle is on AND an API key has been configured, since either
+     * being false leaves the tool unable to actually run — surfaces honestly in the Settings
+     * UI instead of showing "on" for a switch the model call will still reject. */
+    val webSearchConfigured: Boolean get() = webSearchToolEnabled.value && app.container.knowledgeGraphStore.get()?.isNotBlank() == true
+    fun webSearchApiKey(): String = app.container.knowledgeGraphStore.get().orEmpty()
+    fun setWebSearchApiKey(value: String) {
+        // Blank clears the key entirely (KnowledgeGraphStore.set treats null/blank as "remove"),
+        // so the user can wipe what's stored without having to dig through app data.
+        app.container.knowledgeGraphStore.set(value.ifBlank { null })
+    }
+
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: StateFlow<Set<String>> = settings.disabledToolIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val alwaysIncludeDateTime: StateFlow<Boolean> = settings.alwaysIncludeDateTime.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
@@ -222,6 +238,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setKokoroQualityEnabled(v: Boolean) { viewModelScope.launch { settings.setKokoroQualityEnabled(v) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
     fun setInbuiltSttEnabled(v: Boolean) { viewModelScope.launch { settings.setInbuiltSttEnabled(v) } }
+    fun setSttEnginePreference(v: String) { viewModelScope.launch { settings.setSttEnginePreference(v) } }
     fun setFontScale(scale: Float) { viewModelScope.launch { settings.setFontScale(scale) } }
     fun setOledTrueBlack(enabled: Boolean) { viewModelScope.launch { settings.setOledTrueBlack(enabled) } }
     fun setAccentTheme(theme: AccentTheme) { viewModelScope.launch { settings.setAccentTheme(theme) } }

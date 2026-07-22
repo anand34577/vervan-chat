@@ -55,14 +55,17 @@ class SmartCollectionsViewModel(app: VervanApp) : ViewModel() {
                     notes = notes.filter { it.updatedAt >= weekAgo }
                 )
                 SmartCollection.INTERRUPTED -> {
-                    val interruptedChatIds = mutableSetOf<String>()
-                    chats.forEach { c -> db.messageDao().getMessages(c.id).filter { it.state == MessageState.INTERRUPTED || it.state == MessageState.FAILED }.forEach { interruptedChatIds += c.id } }
-                    CollectionContents(chats = chats.filter { it.id in interruptedChatIds })
+                    // Was chats.forEach { getMessages(c.id) } — an O(chats × messages) N+1 that
+                    // loaded every message into memory on each recompute. Now one indexed query
+                    // returning only the chatIds that actually contain an interrupted/failed reply.
+                    val ids = db.messageDao().getChatIdsWithState(
+                        listOf(MessageState.INTERRUPTED.name, MessageState.FAILED.name)
+                    ).toHashSet()
+                    CollectionContents(chats = chats.filter { it.id in ids })
                 }
                 SmartCollection.WITH_ATTACHMENTS -> {
-                    val attachmentChatIds = mutableSetOf<String>()
-                    chats.forEach { c -> db.messageDao().getMessages(c.id).filter { it.imagePath != null || it.audioPath != null }.forEach { attachmentChatIds += c.id } }
-                    CollectionContents(chats = chats.filter { it.id in attachmentChatIds })
+                    val ids = db.messageDao().getChatIdsWithAttachments().toHashSet()
+                    CollectionContents(chats = chats.filter { it.id in ids })
                 }
                 SmartCollection.PINNED -> CollectionContents(
                     chats = chats.filter { it.pinned },

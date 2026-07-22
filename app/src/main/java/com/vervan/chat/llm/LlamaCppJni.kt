@@ -60,7 +60,11 @@ internal object LlamaCppJni {
      * making the model continue from an already-closed reasoning block, since a plain text
      * instruction in the prompt is only ever a request the model can ignore. [systemPrompt], when
      * non-null/non-blank, becomes its own `"system"`-role chat-template turn ahead of [prompt]'s
-     * `"user"` turn, instead of [prompt] alone being wrapped as the only message. */
+     * `"user"` turn, instead of [prompt] alone being wrapped as the only message.
+     * [reasoningBudget] is the hard cap on reasoning tokens: once the model has generated this many
+     * tokens still inside an open `<think>` block (one left open by [assistantPrefill]), the native
+     * loop force-injects `</think>` so the model must start answering. -1 disables the cap. It has
+     * no effect unless [assistantPrefill] actually opened a `<think>` block. */
     external fun nativeGenerate(
         handle: Long,
         prompt: String,
@@ -76,6 +80,7 @@ internal object LlamaCppJni {
         chatTemplateOverride: String?,
         assistantPrefill: String?,
         systemPrompt: String?,
+        reasoningBudget: Int,
         callback: TokenCallback
     ): String?
 

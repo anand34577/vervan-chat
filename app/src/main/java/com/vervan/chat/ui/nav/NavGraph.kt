@@ -611,11 +611,15 @@ fun VervanNavGraph(
             }
             composable("models") {
                 ModelManagerScreen(
+                    onOpenStore = { navController.navigate("models/store") },
                     onBack = { navController.popBackStack() },
                     onOpenCalculator = { navController.navigate("models/calculator") }
                 )
             }
             composable("models/calculator") { ModelCalculatorScreen(onBack = { navController.popBackStack() }) }
+            composable("models/store") {
+                com.vervan.chat.ui.store.ModelStoreScreen(onBack = { navController.popBackStack() })
+            }
             composable("settings") {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },

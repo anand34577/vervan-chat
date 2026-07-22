@@ -575,7 +575,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     // broken not_loaded state is visible in Model Manager and the user can retry
                     // instead of the app silently forgetting a model whose file is still on disk.
                     Log.w(TAG, "delete() FAILED to remove all files for ${model.displayName}; keeping its row so the state is visible")
-            _status.value = "${model.displayName} was unloaded, but some files remain. Try deleting again."
+                    _status.value = "${model.displayName} was unloaded, but some files remain. Try deleting again."
                     return@launch
                 }
                 db.modelDao().delete(model)
