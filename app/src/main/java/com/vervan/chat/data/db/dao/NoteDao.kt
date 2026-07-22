@@ -25,6 +25,12 @@ interface NoteDao : BaseDao<Note> {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND (title LIKE '%' || :q || '%' OR content LIKE '%' || :q || '%') ORDER BY updatedAt DESC LIMIT 20")
     suspend fun search(q: String): List<Note>
 
+    // Task tools store to-dos as notes tagged "task"/"task-done" — scope the scan to those rows
+    // rather than loading every note's full content into memory. Callers still refine with an
+    // exact `"task" in tags.split(",")` check, since LIKE '%task%' also matches "task-done".
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND tags LIKE '%task%' ORDER BY updatedAt DESC")
+    suspend fun getTaskNotes(): List<Note>
+
     @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 
