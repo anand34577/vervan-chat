@@ -9,6 +9,7 @@ import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.data.db.entities.Persona
+import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.llm.TitleGenerator
 import kotlinx.coroutines.Job
@@ -41,6 +42,9 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val folders: StateFlow<List<Folder>> = db.folderDao().observeForWorkspace(workspaceId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val projects: StateFlow<List<Project>> = db.projectDao().observeForWorkspace(workspaceId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // §7 status summary — active/archived chat counts and document count, kept lean (total

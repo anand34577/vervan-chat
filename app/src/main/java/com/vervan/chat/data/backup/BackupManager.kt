@@ -266,11 +266,15 @@ object BackupManager {
 
     private fun projectToJson(p: Project) = JSONObject().apply {
         put("id", p.id); put("name", p.name); put("instructions", p.instructions); put("personaId", p.personaId ?: JSONObject.NULL)
+        put("workspaceId", p.workspaceId)
         put("createdAt", p.createdAt)
     }
     private fun projectFromJson(o: JSONObject) = Project(
         id = o.getString("id"), name = o.getString("name"), instructions = o.optString("instructions"),
-        personaId = o.optStringOrNull("personaId"), createdAt = o.getLong("createdAt")
+        personaId = o.optStringOrNull("personaId"),
+        // Older backups predate project workspaces — land those in the Default Workspace.
+        workspaceId = o.optString("workspaceId", Workspace.DEFAULT_WORKSPACE_ID),
+        createdAt = o.getLong("createdAt")
     )
 
     private fun folderToJson(f: Folder) = JSONObject().apply {

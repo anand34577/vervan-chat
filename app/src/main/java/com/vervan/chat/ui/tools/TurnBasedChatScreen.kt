@@ -104,7 +104,11 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     appendLine()
                     append("Respond with ONLY your next message, staying in character and addressing one point at a time. Keep it to 2-4 sentences.")
                 }
-                val flow = OneShotLlm.stream(app, prompt)
+                val route = searchableTools.firstOrNull { it.label.equals(title, ignoreCase = true) }?.route ?: "tools"
+                val flow = OneShotLlm.stream(
+                    app, prompt,
+                    runContext = com.vervan.chat.llm.ToolRunContext(route, title, transcriptText()),
+                )
                 if (flow == null) {
                     turns = turns + ChatTurn(false, "⚠️ No generation model is active. Load one from Models, then continue.")
                 } else {

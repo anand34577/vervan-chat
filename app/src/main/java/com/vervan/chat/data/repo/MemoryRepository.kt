@@ -37,16 +37,15 @@ class MemoryRepository(
         return MemorySaveResult(saved, vector != null)
     }
 
-    suspend fun recallApplicable(
-        personaId: String?,
-        projectId: String?,
-        query: String,
-        topK: Int = DEFAULT_TOP_K
-    ): MemoryRecall = recall(memoryDao.getApplicable(personaId, projectId), query, topK)
+    /** Universal recall: memory is shared across every persona, project, and model — anyone can
+     *  save a memory and anyone can recall it. Ranks against *all* enabled memories, never scoped
+     *  by the chat's persona/project. */
+    suspend fun recall(query: String, topK: Int = DEFAULT_TOP_K): MemoryRecall =
+        rank(memoryDao.getEnabled(), query, topK)
 
-    suspend fun search(query: String, topK: Int = 10): MemoryRecall = recall(memoryDao.getEnabled(), query, topK)
+    suspend fun search(query: String, topK: Int = 10): MemoryRecall = rank(memoryDao.getEnabled(), query, topK)
 
-    private suspend fun recall(candidates: List<Memory>, query: String, topK: Int): MemoryRecall {
+    private suspend fun rank(candidates: List<Memory>, query: String, topK: Int): MemoryRecall {
         if (candidates.isEmpty() || topK <= 0) return MemoryRecall(emptyList(), MemoryRecallMode.TEXT)
         if (query.isBlank()) return textFallback(candidates, query, topK)
         val model = modelDao.getActiveModel(ModelRole.EMBEDDING) ?: return textFallback(candidates, query, topK)

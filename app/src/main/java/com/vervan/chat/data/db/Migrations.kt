@@ -474,5 +474,50 @@ val MIGRATIONS = arrayOf(
                     "ON store_install_artifacts(variantId)"
             )
         }
+    },
+    object : Migration(41, 42) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Projects join the workspace hierarchy (previously the one container that floated
+            // outside it). Existing projects land in the Default Workspace. Additive — no chats,
+            // notes, or KB links are touched.
+            db.execSQL("ALTER TABLE projects ADD COLUMN workspaceId TEXT NOT NULL DEFAULT 'default'")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_projects_workspaceId ON projects(workspaceId)")
+        }
+    },
+    object : Migration(42, 43) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN modelId TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN modelName TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN backend TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN profile TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN thinkingMode TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN reaction TEXT")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS tool_runs (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    toolRoute TEXT NOT NULL,
+                    toolName TEXT NOT NULL,
+                    input TEXT NOT NULL,
+                    output TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    errorMessage TEXT,
+                    modelId TEXT,
+                    modelName TEXT,
+                    backend TEXT,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    deletedAt INTEGER
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tool_runs_toolRoute ON tool_runs(toolRoute)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tool_runs_updatedAt ON tool_runs(updatedAt)")
+        }
+    },
+    object : Migration(43, 44) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN feedbackReason TEXT")
+        }
     }
 )

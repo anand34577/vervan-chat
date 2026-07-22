@@ -98,7 +98,10 @@ fun TranslationScreen(onBack: () -> Unit) {
             try {
                 val langHint = if (sourceLang == "Auto-detect") "" else "The source text is in $sourceLang. "
                 val prompt = "Translate the following text to $targetLang. ${langHint}Respond with ONLY the translation, no notes or explanation.\n\nText:\n$sourceText"
-                val flow = OneShotLlm.stream(app, prompt)
+                val flow = OneShotLlm.stream(
+                    app, prompt,
+                    runContext = com.vervan.chat.llm.ToolRunContext("tools/translate", "Translate · $targetLang", sourceText),
+                )
                 if (flow == null) {
                     errorText = "No generation model is active. Load one from Models, then translate again."
                 } else {
