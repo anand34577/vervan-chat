@@ -52,6 +52,12 @@ class LocalApiServer(
         // underlying wait() via Thread.interrupt() and the coroutine tears down cleanly instead
         // of leaking for the life of the server.
         private const val SSE_WRITE_TIMEOUT_MS = 30_000L
+        // NanoHTTPD buffers the whole request body in memory before serve() runs, and this app
+        // has no reverse proxy in front to cap it — a LAN client sending a huge Content-Length
+        // could OOM the process. serve()'s catch(Throwable) already survives an OOM, but rejecting
+        // an oversized body up front with a clean 413 is cheaper than letting it allocate first.
+        // 8 MB is far above any legitimate chat-completions payload (messages are text).
+        private const val MAX_BODY_BYTES = 8L * 1024 * 1024
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -90,6 +96,11 @@ class LocalApiServer(
     }
 
     private fun handleChatCompletions(session: IHTTPSession): Response {
+        // Reject an oversized body before parseBody() buffers it all into memory (see MAX_BODY_BYTES).
+        val declaredLength = (session.headers["content-length"] ?: session.headers["Content-Length"])?.toLongOrNull()
+        if (declaredLength != null && declaredLength > MAX_BODY_BYTES) {
+            return errorResponse(Response.Status.PAYLOAD_TOO_LARGE, "Request body too large (max ${MAX_BODY_BYTES / (1024 * 1024)} MB)")
+        }
         val body = HashMap<String, String>()
         session.parseBody(body)
         val json = JSONObject(body["postData"] ?: "{}")
