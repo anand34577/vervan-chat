@@ -80,8 +80,8 @@ fun WorkspaceDetailScreen(
     val activeWorkspaceId by vm.activeWorkspaceId.collectAsState()
     val chats by vm.chats.collectAsState()
     val folders by vm.folders.collectAsState()
+    val projects by vm.projects.collectAsState()
     val activeChatCount by vm.activeChatCount.collectAsState()
-    val archivedChatCount by vm.archivedChatCount.collectAsState()
     val folderCount by vm.folderCount.collectAsState()
     val documentCount by vm.documentCount.collectAsState()
     val scope = rememberCoroutineScope()
@@ -192,6 +192,12 @@ fun WorkspaceDetailScreen(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Text(
+                "Workspace → projects and folders → chats, notes, and knowledge",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
 
             // §7 status summary — horizontally scrollable stat cards (phone space rule §18:
             // "show four or fewer primary statistics at once").
@@ -200,7 +206,7 @@ fun WorkspaceDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatCard("Chats", activeChatCount.toString())
-                StatCard("Archived", archivedChatCount.toString())
+                StatCard("Projects", projects.size.toString())
                 StatCard("Folders", folderCount.toString())
                 StatCard("Documents", documentCount.toString())
             }

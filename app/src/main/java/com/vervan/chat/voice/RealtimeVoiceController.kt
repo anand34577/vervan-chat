@@ -11,6 +11,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.ContinuousAudioCapture
 import com.vervan.chat.audio.VoiceActivityDetector
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.ToolRun
+import com.vervan.chat.data.db.entities.ToolRunState
 import com.vervan.chat.modelload.LoadTrigger
 import java.io.File
 import java.util.UUID
@@ -23,6 +25,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -81,6 +85,8 @@ class RealtimeVoiceController(private val app: VervanApp) {
     private var controllerScope: CoroutineScope? = null
     private var sessionJob: Job? = null
     private var generationJob: Job? = null
+    private var persistenceJob: Job? = null
+    private val historyRun = ToolRun(toolRoute = "tools/voice-chat", toolName = "Voice chat", input = "")
     @Volatile private var finishListeningRequested = false
     private var activeSpeechRecognizer: SpeechRecognizer? = null
     private var completedDeviceWaveform: List<Float> = emptyList()
@@ -139,10 +145,27 @@ class RealtimeVoiceController(private val app: VervanApp) {
         _sttUnavailable.value = false
         controllerScope = scope
         playbackQueue = TtsPlaybackQueue(app, engineSelector, scope)
+        if (persistenceJob?.isActive != true) {
+            persistenceJob = scope.launch(Dispatchers.IO) {
+                combine(_turns, _state) { turns, state -> turns to state }.collectLatest { (turns, state) ->
+                    if (turns.isEmpty()) return@collectLatest
+                    // Coalesce streaming token updates; the quiet point after each turn writes the
+                    // complete session snapshot without hammering Room for every token.
+                    delay(350)
+                    persistHistory(turns, if (state == VoiceControllerState.IDLE) ToolRunState.COMPLETED else ToolRunState.RUNNING)
+                }
+            }
+        }
         sessionJob = scope.launch(Dispatchers.Default) { runSession() }
     }
 
     fun stop() {
+        val beforeStop = _turns.value
+        val interrupted = beforeStop.any { it.isStreaming } || _state.value in setOf(
+            VoiceControllerState.THINKING,
+            VoiceControllerState.TRANSCRIBING,
+            VoiceControllerState.LOADING_MODEL,
+        )
         sessionJob?.cancel()
         sessionJob = null
         generationJob?.cancel()
@@ -164,6 +187,30 @@ class RealtimeVoiceController(private val app: VervanApp) {
         _sttUnavailable.value = false
         finishListeningRequested = false
         _turns.update { turns -> turns.map { it.copy(isStreaming = false, audioPending = false) } }
+        if (beforeStop.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                persistHistory(_turns.value, if (interrupted) ToolRunState.INTERRUPTED else ToolRunState.COMPLETED)
+            }
+        }
+    }
+
+    private suspend fun persistHistory(turns: List<VoiceTurn>, state: ToolRunState) {
+        val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
+        val userInput = turns.filter { it.fromUser }.joinToString("\n") { it.text }
+        val transcript = turns.joinToString("\n\n") { turn ->
+            (if (turn.fromUser) "You" else "Vervan") + ": " + turn.text
+        }
+        app.container.db.toolRunDao().upsert(
+            historyRun.copy(
+                input = userInput,
+                output = transcript,
+                state = state,
+                modelId = model?.id,
+                modelName = model?.displayName,
+                backend = model?.lastWorkingBackend?.name,
+                updatedAt = System.currentTimeMillis(),
+            )
+        )
     }
 
     /** Finishes only the current user turn; [stop] ends the whole voice session. */

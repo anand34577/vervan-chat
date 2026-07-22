@@ -7,6 +7,7 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.Project
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,10 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
         .map { it.filterNot { c -> c.isTemporary } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val latestMessagesByChat: StateFlow<Map<String, Message>> = db.messageDao().observeLatestPerChat()
+        .map { messages -> messages.associateBy { it.chatId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val projects: StateFlow<List<Project>> = db.projectDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -42,13 +47,22 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
         .map { it?.name }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    /** [draft], when non-blank, lands pre-filled in the new chat's composer — the Home hero's
-     * quick-ask field routes through this so typing starts on Home and finishes in the chat. */
-    suspend fun createChat(draft: String = ""): String {
+    suspend fun createChat(): String {
         val chat = app.container.workspaceManager.applyDefaults(
-            Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first(), draft = draft.trim())
+            Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
         )
         db.chatDao().upsert(chat)
         return chat.id
+    }
+
+    /** Home's "Ask anything" quick-ask: creates the chat and stashes [text] via
+     * [com.vervan.chat.model.PendingChatSend] so the chat screen sends it the instant it opens,
+     * instead of leaving it sitting as an unsent draft the user has to tap Send on again — that
+     * second tap read as the first one having failed. See [PendingChatSend]'s doc for why this
+     * isn't just `Chat.draft`. */
+    suspend fun createChatAndSend(text: String): String {
+        val chatId = createChat()
+        com.vervan.chat.model.PendingChatSend.stash(chatId, text.trim())
+        return chatId
     }
 }

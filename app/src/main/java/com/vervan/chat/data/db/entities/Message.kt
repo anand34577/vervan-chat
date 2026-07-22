@@ -51,5 +51,17 @@ data class Message(
     // vision/audio "not supported" stand-ins above). tokenCount is the same chars/4 estimate
     // ChatContextStrip already uses for context %, not an exact tokenizer count.
     val generationMs: Long? = null,
-    val tokenCount: Int? = null
+    val tokenCount: Int? = null,
+    // Snapshot provenance belongs to the response: chats can switch configuration later.
+    val modelId: String? = null,
+    val modelName: String? = null,
+    val backend: String? = null,
+    val profile: String? = null,
+    val thinkingMode: String? = null,
+    // One persisted personal reaction is enough for this single-user offline app.
+    val reaction: String? = null,
+    // Set when the user picks a reason after reacting 👎 (see ChatViewModel.setFeedbackReason) —
+    // kept alongside the modelId/profile/backend snapshot above so a later diagnostics view can
+    // answer "which model/preset keeps getting this reason" without joining anything else.
+    val feedbackReason: String? = null
 )

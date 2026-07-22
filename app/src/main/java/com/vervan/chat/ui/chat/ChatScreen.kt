@@ -171,6 +171,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -257,6 +258,8 @@ fun ChatScreen(
     pendingAttachAsImage: Boolean = false,
     pendingAttachShowPreview: Boolean = false,
     onAttachConsumed: () -> Unit = {},
+    initialMessageId: String? = null,
+    onInitialMessageConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onOpenChatInfo: () -> Unit = {},
     onOpenDocument: (String) -> Unit = {},
@@ -357,6 +360,16 @@ fun ChatScreen(
     // chat; falls back to "latest message" when there's no anchor or it's no longer in the
     // rendered branch (spec §17.1's "previous position unavailable" case).
     var scrollRestored by remember(chatId) { mutableStateOf(false) }
+    LaunchedEffect(initialMessageId, messages) {
+        val messageId = initialMessageId ?: return@LaunchedEffect
+        val index = messages.indexOfFirst { it.id == messageId }
+        if (index >= 0) {
+            listState.scrollToItem(index)
+            stickToBottom = false
+            scrollRestored = true
+            onInitialMessageConsumed()
+        }
+    }
     LaunchedEffect(chatId, messages, chat) {
         if (scrollRestored || messages.isEmpty() || chat == null) return@LaunchedEffect
         val anchorIndex = chat?.scrollAnchorMessageId?.let { id -> messages.indexOfFirst { it.id == id } } ?: -1
@@ -442,6 +455,10 @@ fun ChatScreen(
     var isRecording by remember { mutableStateOf(false) }
     var activeRecorder by remember { mutableStateOf<WavRecorder?>(null) }
     var compareMessageId by remember { mutableStateOf<String?>(null) }
+    // A fresh 👎 reaction prompts for why, so a weak model/preset leaves a trail (see
+    // ChatViewModel.setFeedbackReason) — holds the message just reacted to, not a running dialog
+    // stack, so at most one prompt is ever pending.
+    var feedbackReasonPromptFor by remember { mutableStateOf<Message?>(null) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showWorkspaceOptions by remember { mutableStateOf(false) }
     var showChatStats by remember { mutableStateOf(false) }
@@ -941,7 +958,10 @@ fun ChatScreen(
                     onWorkspaceClick = { showWorkspaceOptions = true },
                     onFolderClick = onOpenFolders,
                     onPersonaClick = { showPersonaPicker = true },
-                    onModelClick = { showModeSettings = true },
+                    // Model chip switches the model directly (the everyday action) instead of
+                    // routing through the Mode & model dialog first — that dialog is still one tap
+                    // away in the overflow menu for thinking-mode/profile/sampler changes.
+                    onModelClick = { showModelPicker = true },
                     onSourcesClick = { showSourcePicker = true },
                     onContextClick = { scope.launch { contextBreakdown = vm.inspectContext(draft) } }
                 )
@@ -1012,6 +1032,13 @@ fun ChatScreen(
                     if (prev == null || !sameDay(prev.createdAt, message.createdAt)) {
                         DatePill(timestamp = message.createdAt)
                     }
+                    // Small-model recovery (P1): only worth a DB lookup right after the user has
+                    // actually flagged this answer — avoids querying installed models for every
+                    // message rendered in a long chat.
+                    var betterModelName by remember(message.id) { mutableStateOf<String?>(null) }
+                    LaunchedEffect(message.id, message.reaction) {
+                        betterModelName = if (message.reaction == "👎") vm.suggestBetterModel(message)?.displayName else null
+                    }
                     MessageBubble(
                             // Placement animation smooths branch switches and regenerations,
                             // which otherwise snap the whole list into its new shape.
@@ -1027,6 +1054,16 @@ fun ChatScreen(
                                 }
                             },
                             onRemember = { text -> vm.rememberMessage(message.id, text) },
+                            onReaction = { emoji ->
+                                vm.setReaction(message.id, emoji)
+                                if (emoji == "👎") {
+                                    feedbackReasonPromptFor = message
+                                } else if (message.reaction == "👎") {
+                                    // Reaction removed or changed away from 👎 — the earlier
+                                    // reason no longer describes the current state.
+                                    vm.setFeedbackReason(message.id, null)
+                                }
+                            },
                             onReadAloud = ::speakWithFocus,
                             isGenerating = isGenerating,
                             siblingPosition = com.vervan.chat.data.branch.BranchUtil.siblingPosition(allMessages, message.id),
@@ -1057,7 +1094,9 @@ fun ChatScreen(
                             // the draft text, which grew the input box with every reply. A compact
                             // preview bar above the composer (WhatsApp-style) keeps the box the same
                             // size — the quote is only merged into the actual sent text on Send.
-                            onQuote = { quoted -> pendingQuote = quoted }
+                            onQuote = { quoted -> pendingQuote = quoted },
+                            onRetryWithQuality = { vm.retryWithQuality(message.id) },
+                            betterModelName = betterModelName
                         )
                     }
                 }
@@ -1876,6 +1915,13 @@ fun ChatScreen(
             siblings = siblings,
             onDismiss = { compareMessageId = null },
             onUse = { id -> vm.switchBranch(id); compareMessageId = null }
+        )
+    }
+
+    feedbackReasonPromptFor?.let { target ->
+        FeedbackReasonDialog(
+            onDismiss = { feedbackReasonPromptFor = null },
+            onSelect = { reason -> vm.setFeedbackReason(target.id, reason); feedbackReasonPromptFor = null }
         )
     }
 }
@@ -2844,6 +2890,13 @@ private fun ChatEmptyState(
                 }
             }
         )
+        Text(
+            "Tip: tap a message for quick actions, hold it for reactions and more, or swipe right to quote.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 520.dp).padding(top = Space.md),
+        )
     }
 }
 
@@ -2855,10 +2908,14 @@ private data class ChatStarter(
 )
 
 /**
- * Chat Screen spec §13 — context strip: compact, horizontally-scrollable status chips below
- * the top bar. Hidden entirely when there's nothing useful to show (a brand new chat with no
- * persona/sources/thinking mode set). Never wraps — Row + horizontalScroll, same pattern as
- * the slash-command suggestion chips elsewhere in this file.
+ * Chat Screen spec §13 — context strip. Previously up to six separate chips (workspace, folder,
+ * persona, model+thinking, sources, context%) in a horizontally-scrolling row with no wrap, which
+ * meant the model chip — arguably the most important one — could scroll off-screen entirely with
+ * no indication anything was hidden. Now a single compact summary chip ("Default · Gemma · 2
+ * sources") that opens the full breakdown in [ChatContextDetailsSheet] on tap; only genuinely
+ * exceptional state (no model selected, context nearly full) stays inline next to it, since that's
+ * the state a user needs to notice without tapping anything. Hidden entirely when there's nothing
+ * useful to show (a brand new chat with no persona/sources/thinking mode set).
  */
 @Composable
 private fun ChatContextStrip(
@@ -2877,69 +2934,108 @@ private fun ChatContextStrip(
     onContextClick: () -> Unit
 ) {
     if (workspaceName == null && folderName == null && personaName == null && modelName == null && sourceCount == null) return
+    var showDetails by remember { mutableStateOf(false) }
     Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = Space.lg, vertical = Space.xs),
+        Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        workspaceName?.let {
-            AssistChip(
-                onClick = onWorkspaceClick,
-                label = { Text(it, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.AccountTree, contentDescription = null, modifier = Modifier.size(18.dp)) }
-            )
-        }
-        folderName?.let {
-            AssistChip(
-                onClick = onFolderClick,
-                label = { Text(it, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null, modifier = Modifier.size(18.dp)) }
-            )
-        }
-        personaName?.let {
-            AssistChip(
-                onClick = onPersonaClick,
-                label = { Text(it, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(18.dp)) }
-            )
-        }
-        modelName?.let {
-            val label = if (thinkingMode != null) "$it · ${thinkingMode.lowercase().replaceFirstChar { c -> c.uppercase() }}" else it
+        val summary = listOfNotNull(
+            folderName ?: workspaceName,
+            modelName,
+            sourceCount?.let { "$it source${if (it == 1) "" else "s"}" }
+        ).joinToString(" · ").ifBlank { "Chat settings" }
+        AssistChip(
+            onClick = { showDetails = true },
+            label = { Text(summary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        // Exceptional state only — the normal case (a model is loaded, context has room) adds
+        // nothing here; the summary chip above already covers it.
+        if (modelName == null) {
             AssistChip(
                 onClick = onModelClick,
-                label = { Text(label, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                label = { Text("No model", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
             )
         }
-        sourceCount?.let {
-            AssistChip(
-                onClick = onSourcesClick,
-                label = { Text("$it source${if (it == 1) "" else "s"}") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp)) }
-            )
-        }
-        if (contextPercent > 0) {
-            // Color reinforces the "high" state — text alone shouldn't carry the warning.
-            val high = contextPercent > 80
+        if (contextPercent > 80) {
             val warn = MaterialTheme.colorScheme.vervanWarning
             AssistChip(
                 onClick = onContextClick,
-                label = {
-                    Text(
-                        if (high) "Context high · ~$contextPercent%" else "Context · ~$contextPercent%",
-                        color = if (high) warn else androidx.compose.ui.graphics.Color.Unspecified
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp),
-                        tint = if (high) warn else LocalContentColor.current
-                    )
-                },
-                border = if (high) BorderStroke(1.dp, warn.copy(alpha = 0.5f)) else androidx.compose.material3.AssistChipDefaults.assistChipBorder(enabled = true)
+                label = { Text("Context high · ~$contextPercent%", color = warn) },
+                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = warn, modifier = Modifier.size(18.dp)) },
+                border = BorderStroke(1.dp, warn.copy(alpha = 0.5f))
+            )
+        }
+    }
+    if (showDetails) {
+        ChatContextDetailsSheet(
+            workspaceName = workspaceName, folderName = folderName, personaName = personaName,
+            modelName = modelName, thinkingMode = thinkingMode, sourceCount = sourceCount, contextPercent = contextPercent,
+            onDismiss = { showDetails = false },
+            onWorkspaceClick = { showDetails = false; onWorkspaceClick() },
+            onFolderClick = { showDetails = false; onFolderClick() },
+            onPersonaClick = { showDetails = false; onPersonaClick() },
+            onModelClick = { showDetails = false; onModelClick() },
+            onSourcesClick = { showDetails = false; onSourcesClick() },
+            onContextClick = { showDetails = false; onContextClick() }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatContextDetailsSheet(
+    workspaceName: String?,
+    folderName: String?,
+    personaName: String?,
+    modelName: String?,
+    thinkingMode: String?,
+    sourceCount: Int?,
+    contextPercent: Int,
+    onDismiss: () -> Unit,
+    onWorkspaceClick: () -> Unit,
+    onFolderClick: () -> Unit,
+    onPersonaClick: () -> Unit,
+    onModelClick: () -> Unit,
+    onSourcesClick: () -> Unit,
+    onContextClick: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
+        ) {
+            Text("Chat context", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "What this chat is currently using",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = Space.sm)
+            )
+            workspaceName?.let { MoreOptionRow(Icons.Filled.AccountTree, "Workspace", subtitle = it, onClick = onWorkspaceClick) }
+            folderName?.let { MoreOptionRow(Icons.Filled.Folder, "Folder", subtitle = it, onClick = onFolderClick) }
+            personaName?.let { MoreOptionRow(Icons.Filled.Psychology, "Persona", subtitle = it, onClick = onPersonaClick) }
+            MoreOptionRow(
+                Icons.Filled.Bolt, "Model",
+                subtitle = modelName?.let {
+                    if (thinkingMode != null) "$it · Thinking: ${thinkingMode.lowercase().replaceFirstChar { c -> c.uppercase() }}" else it
+                } ?: "None selected — tap to choose one",
+                danger = modelName == null,
+                onClick = onModelClick
+            )
+            MoreOptionRow(
+                Icons.AutoMirrored.Filled.MenuBook, "Sources",
+                subtitle = sourceCount?.let { "$it source${if (it == 1) "" else "s"} grounding answers" } ?: "Not grounding answers to documents",
+                onClick = onSourcesClick
+            )
+            MoreOptionRow(
+                Icons.Filled.Info, "Context usage",
+                subtitle = "~$contextPercent% of this model's context window used",
+                danger = contextPercent > 80,
+                onClick = onContextClick
             )
         }
     }
@@ -3277,6 +3373,7 @@ private fun MessageBubble(
     savedOutput: SavedOutput?,
     onBookmarkChanged: (Boolean) -> Unit,
     onRemember: (String) -> Unit,
+    onReaction: (String?) -> Unit,
     onReadAloud: (text: String, utteranceId: String) -> Unit,
     isGenerating: Boolean,
     siblingPosition: Pair<Int, Int>,
@@ -3293,6 +3390,8 @@ private fun MessageBubble(
     isLastAssistant: Boolean = false,
     onQuickReply: (QuickReply) -> Unit = {},
     onQuote: (String) -> Unit = {},
+    onRetryWithQuality: () -> Unit = {},
+    betterModelName: String? = null,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
@@ -3336,7 +3435,9 @@ private fun MessageBubble(
     // In-memory reaction for this bubble. Persisting reactions across sessions is out of scope
     // for this UI pass — the chat schema doesn't have a reactions table yet — but the visual
     // affordance is here so the UX is right and the data layer can be wired in later.
-    var reactions by remember(message.id) { mutableStateOf<List<MessageReaction>>(emptyList()) }
+    val reactions = remember(message.reaction) {
+        message.reaction?.let { listOf(MessageReaction(emoji = it, count = 1, mine = true)) }.orEmpty()
+    }
     // Swipe right to reply instead of a "Quote in reply" menu item, same gesture on either
     // role's messages.
     val dragOffset = remember(message.id) { androidx.compose.animation.core.Animatable(0f) }
@@ -3584,7 +3685,7 @@ private fun MessageBubble(
                                 Text(
                                     attachedDocument?.displayName ?: "Attached document",
                                     style = MaterialTheme.typography.labelLarge,
-                                    maxLines = 2,
+                                    maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                                 Text(
@@ -3714,7 +3815,14 @@ private fun MessageBubble(
                 if (message.state == MessageState.AWAITING_CONFIRMATION) {
                     ToolConfirmationCard(message.toolCallJson, onConfirmTool)
                 }
-                message.sourcesJson?.let { SourceCards(it, onOpenPassage = { chunkId -> onOpenPassage(chunkId) }) }
+                message.sourcesJson?.let {
+                    SourceCards(
+                        it,
+                        onOpenPassage = { chunkId -> onOpenPassage(chunkId) },
+                        onRetryWithQuality = onRetryWithQuality,
+                        betterModelName = betterModelName
+                    )
+                }
                 // Inline reaction badges — only render when this message has any reactions, so
                 // bubbles stay visually quiet by default. Long-press → MessageActionsSheet is
                 // where users add reactions.
@@ -3722,10 +3830,7 @@ private fun MessageBubble(
                     ReactionBadges(
                         reactions = reactions,
                         onReact = { emoji ->
-                            reactions = reactions.map {
-                                if (it.emoji == emoji) it.copy(count = it.count - 1, mine = false).let { r -> if (r.count <= 0) null else r } ?: it
-                                else it
-                            }.filter { it.count > 0 }
+                            onReaction(if (message.reaction == emoji) null else emoji)
                         }
                     )
                 }
@@ -3752,6 +3857,23 @@ private fun MessageBubble(
                 suggestions = defaultQuickReplies(),
                 onClick = onQuickReply,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.xs)
+            )
+        }
+        if (!isUser && message.modelName != null && !editing) {
+            val provenance = buildList {
+                add(message.modelName)
+                message.profile?.lowercase()?.replaceFirstChar { it.titlecase() }?.let(::add)
+                message.thinkingMode?.takeIf { it != "OFF" }?.lowercase()
+                    ?.replaceFirstChar { it.titlecase() }?.let { add("$it thinking") }
+                if (showGenerationStats) message.backend?.let(::add)
+            }.joinToString(" · ")
+            Text(
+                provenance,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = Space.xs, top = 2.dp),
             )
         }
         // Stats + actions live below the bubble, outside its card — this is the response's
@@ -3952,14 +4074,7 @@ private fun MessageBubble(
             onDismiss = { showActionsSheet = false },
             selectedReaction = reactions.firstOrNull { it.mine }?.emoji,
             onReact = { emoji ->
-                val existing = reactions.firstOrNull { it.emoji == emoji }
-                reactions = if (existing == null) {
-                    (reactions + MessageReaction(emoji = emoji, count = 1, mine = true)).sortedByDescending { it.count }
-                } else if (existing.mine) {
-                    reactions.filter { it.emoji != emoji }
-                } else {
-                    reactions.map { if (it.emoji == emoji) it.copy(count = it.count + 1, mine = true) else it }
-                }
+                onReaction(if (message.reaction == emoji) null else emoji)
             },
             actions = applicablePrimary + secondaryActions
         )
@@ -3999,360 +4114,6 @@ private fun MessageBubble(
     if (showImagePreview) {
         message.imagePath?.let { path ->
             FullScreenImagePreview(path = path, title = "Shared image", onDismiss = { showImagePreview = false })
-        }
-    }
-}
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun ClarificationCard(
-    request: com.vervan.chat.llm.ClarificationParser.Request,
-    enabled: Boolean,
-    onReply: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
-    ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("One detail before I continue", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
-            }
-            Text(request.question, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-            if (request.options.isNotEmpty()) {
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    request.options.forEach { option ->
-                        AssistChip(onClick = { onReply(option) }, enabled = enabled, label = { Text(option) })
-                    }
-                }
-            }
-            Text(
-                if (enabled) "Choose an answer or type your own below." else "Answered in the conversation.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-        }
-    }
-}
-
-private fun assistantSpokenText(content: String): String {
-    val answer = com.vervan.chat.llm.ThinkingParser.parse(content).answer
-    val parsed = com.vervan.chat.llm.ClarificationParser.parse(answer)
-    return listOfNotNull(
-        parsed.answer.takeIf { it.isNotBlank() },
-        parsed.request?.question,
-        parsed.request?.options?.takeIf { it.isNotEmpty() }?.joinToString(prefix = "Options: ")
-    ).joinToString("\n")
-}
-
-@Composable
-private fun rememberBatchedStreamingText(text: String, isStreaming: Boolean): String {
-    val latestText by rememberUpdatedState(text)
-    var displayedText by remember { mutableStateOf(text) }
-
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) {
-            displayedText = latestText
-            return@LaunchedEffect
-        }
-        while (true) {
-            kotlinx.coroutines.delay(50)
-            if (displayedText != latestText) displayedText = latestText
-        }
-    }
-
-    return if (isStreaming) displayedText else text
-}
-
-/** §7.3.4 — Standard mode translates the raw retrieval score into a plain-language match
- * strength instead of a bare number; Expert mode shows the exact score (see call site). */
-private fun matchStrength(score: Double): String = when {
-    score >= 0.75 -> "Strong"
-    score >= 0.5 -> "Moderate"
-    else -> "Weak"
-}
-
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun SourceCards(sourcesJson: String, onOpenPassage: (String) -> Unit = {}) {
-    val array = remember(sourcesJson) { runCatching { JSONArray(sourcesJson) }.getOrNull() } ?: return
-    var selected by remember(sourcesJson) { mutableStateOf<org.json.JSONObject?>(null) }
-    // Mark-irrelevant is a client-side hide, not persisted or fed back into retrieval —
-    // a real "don't retrieve this chunk again" would need a per-chat exclusion set
-    // threaded through RetrievalEngine; this covers the common "get this off my screen" need.
-    val hiddenIndices = remember(sourcesJson) { mutableStateListOf<Int>() }
-    val clipboard = androidx.compose.ui.platform.LocalClipboard.current
-    val scope = rememberCoroutineScope()
-    val app = LocalContext.current.applicationContext as VervanApp
-    val expertMode by app.container.settingsRepository.expertMode.collectAsState(initial = false)
-    if (array.length() == 0) {
-        Text(
-            "No matching sources found in the selected knowledge bases", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)
-        )
-        return
-    }
-    com.vervan.chat.ui.common.AssistantSubCard(
-        kind = com.vervan.chat.ui.common.SubCardKind.Sources,
-        title = "Sources (${array.length()})",
-        collapsible = false,
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth()
-    ) {
-        androidx.compose.foundation.layout.FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            for (i in 0 until array.length()) {
-                if (i in hiddenIndices) continue
-                val obj = array.getJSONObject(i)
-                AssistChip(
-                    onClick = { selected = obj },
-                    label = {
-                        Text(
-                            "[${i + 1}] ${obj.optString("documentName")}${obj.optString("sectionPath").let { if (it.isNotBlank()) " — $it" else "" }}",
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    }
-                )
-            }
-        }
-    }
-    selected?.let { source ->
-        val index = (0 until array.length()).first { array.getJSONObject(it) === source }
-        AlertDialog(
-            onDismissRequest = { selected = null },
-            title = { Text(source.optString("documentName")) },
-            text = {
-                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                    source.optString("sectionPath").takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                    Text(source.optString("excerpt"), modifier = Modifier.padding(top = 8.dp))
-                    Text(
-                        if (expertMode) {
-                            "Retrieval score ${String.format("%.2f", source.optDouble("score"))} · rank ${index + 1} · ranking signal, not confidence"
-                        } else {
-                            "${matchStrength(source.optDouble("score"))} match"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { clipboard.setText(source.optString("excerpt"), scope) }) {
-                            Text("Copy excerpt", style = MaterialTheme.typography.labelSmall)
-                        }
-                        TextButton(onClick = {
-                            val citation = "[${index + 1}] ${source.optString("documentName")}" +
-                                source.optString("sectionPath").let { if (it.isNotBlank()) " — $it" else "" }
-                            clipboard.setText(citation, scope)
-                        }) { Text("Copy citation", style = MaterialTheme.typography.labelSmall) }
-                        TextButton(onClick = { hiddenIndices.add(index); selected = null }) {
-                            Text("Mark irrelevant", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                val chunkId = source.optString("chunkId")
-                if (chunkId.isNotBlank()) {
-                    TextButton(onClick = { selected = null; onOpenPassage(chunkId) }) { Text("Open in context") }
-                } else {
-                    TextButton(onClick = { selected = null }) { Text("Close") }
-                }
-            },
-            dismissButton = {
-                if (source.optString("chunkId").isNotBlank()) {
-                    TextButton(onClick = { selected = null }) { Text("Close") }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun MemoryActivityCard(memoryActivityJson: String) {
-    val obj = remember(memoryActivityJson) { runCatching { org.json.JSONObject(memoryActivityJson) }.getOrNull() } ?: return
-    val recalled = remember(memoryActivityJson) {
-        obj.optJSONArray("recalled")?.let { array ->
-            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index) }
-        }.orEmpty()
-    }
-    val saved = remember(memoryActivityJson) {
-        obj.optJSONArray("saved")?.let { array ->
-            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index) }
-        }.orEmpty()
-    }
-    if (recalled.isEmpty() && saved.isEmpty()) return
-    val title = when {
-        saved.isNotEmpty() && recalled.isNotEmpty() -> "Memory · ${saved.size} saved, ${recalled.size} recalled"
-        saved.isNotEmpty() -> if (saved.size == 1) "Saved to memory" else "Saved ${saved.size} memories"
-        recalled.size == 1 -> "Recalled 1 memory"
-        else -> "Recalled ${recalled.size} memories"
-    }
-    com.vervan.chat.ui.common.AssistantSubCard(
-        kind = com.vervan.chat.ui.common.SubCardKind.Memory,
-        title = title,
-        modifier = Modifier.padding(top = Space.sm),
-        initiallyExpanded = saved.isNotEmpty()
-    ) {
-        if (saved.isNotEmpty()) {
-            Text("SAVED", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            saved.forEach { item ->
-                val indexLabel = if (item.optBoolean("indexed")) " · semantic ready" else ""
-                Text(
-                    "• ${item.optString("text")}$indexLabel",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = Space.xs)
-                )
-            }
-        }
-        if (recalled.isNotEmpty()) {
-            val mode = if (obj.optString("mode") == "semantic") "SEMANTIC RECALL" else "TEXT MATCH FALLBACK"
-            Text(
-                mode,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = if (saved.isEmpty()) 0.dp else Space.sm)
-            )
-            recalled.forEach { item ->
-                Text(
-                    "• ${item.optString("text")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = Space.xs)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
-    val obj = remember(toolResultJson) { runCatching { org.json.JSONObject(toolResultJson) }.getOrNull() } ?: return
-    val callObj = remember(toolCallJson) { toolCallJson?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } }
-    val success = obj.optBoolean("success", true)
-    val toolName = obj.optString("tool")
-    if (success && toolName in setOf("remember", "search_memories")) {
-        com.vervan.chat.ui.common.AssistantSubCard(
-            kind = com.vervan.chat.ui.common.SubCardKind.Memory,
-            title = if (toolName == "remember") "Saved to memory" else "Searched memory",
-            modifier = Modifier.padding(top = Space.sm),
-            initiallyExpanded = true
-        ) {
-            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall)
-        }
-        return
-    }
-    var expanded by remember { mutableStateOf(false) }
-    Card(
-        Modifier.fillMaxWidth().padding(top = 8.dp).clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(Modifier.padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (success) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (success) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.error
-                )
-                Text(
-                    "${obj.optString("tool")}${if (!success) " failed" else " done"}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = com.vervan.chat.ui.theme.VervanMono,
-                    color = if (success) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 6.dp)
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Hide details" else "Show request and response",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
-            // Full request (tool + params) and raw response JSON — collapsed by default so the
-            // normal chat flow stays uncluttered, but always available per tool call, including
-            // when scrolling back through history later (this is the persisted message, not a
-            // transient in-session view).
-            if (expanded) {
-                HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                Text("Request", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    callObj?.optJSONObject("params")?.toString(2) ?: "(no parameters)",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = com.vervan.chat.ui.theme.VervanMono,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
-                )
-                Text("Response", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    obj.toString(2),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = com.vervan.chat.ui.theme.VervanMono,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) -> Unit) {
-    val obj = remember(toolCallJson) { toolCallJson?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } } ?: return
-    val params = obj.optJSONObject("params")
-    // EXTERNAL_ACTION (leaves the app / can't be undone from in-app history, e.g. sending a
-    // message) gets a required acknowledgment checkbox before Allow is enabled — REVERSIBLE_WRITE
-    // (undoable in-app, e.g. via recycle bin) keeps the single-tap flow (B4).
-    val isExternal = obj.optString("risk") == "EXTERNAL_ACTION"
-    // web_search is the one EXTERNAL_ACTION tool that doesn't launch an Intent — it's a silent
-    // background network call, so "leaves the app" would be a factually wrong warning for it.
-    val leavesApp = obj.optString("tool") != "web_search"
-    var acknowledged by remember(toolCallJson) { mutableStateOf(!isExternal) }
-    Card(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.vervanWarning.copy(alpha = 0.5f))
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.vervanWarning)
-                Text(
-                    (if (isExternal) " Proposed external action · " else " Proposed action · ") + obj.optString("tool"),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.vervanWarning
-                )
-            }
-            if (params != null) {
-                Text(
-                    params.toString(), style = MaterialTheme.typography.bodySmall,
-                    fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = 6.dp)
-                )
-            }
-            if (isExternal) {
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = acknowledged, onCheckedChange = { acknowledged = it })
-                    Text(
-                        if (leavesApp) "This leaves the app and can't be undone from here"
-                        else "This sends your query to Google's servers over the network",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                }
-            }
-            Row(Modifier.padding(top = 8.dp)) {
-                TextButton(onClick = { onConfirm(true) }, enabled = acknowledged) { Text("Allow") }
-                TextButton(onClick = { onConfirm(false) }) { Text("Deny") }
-            }
         }
     }
 }

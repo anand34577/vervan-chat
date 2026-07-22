@@ -36,6 +36,8 @@ class SettingsRepository(context: Context) {
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val SHOW_GENERATION_STATS = booleanPreferencesKey("show_generation_stats")
+        val DEVICE_AWARE_PERFORMANCE = booleanPreferencesKey("device_aware_performance")
+        val AUTO_MODEL_SELECTION = booleanPreferencesKey("auto_model_selection")
         val EXPERT_MODE = booleanPreferencesKey("expert_mode")
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
@@ -170,6 +172,17 @@ class SettingsRepository(context: Context) {
     // expanded — optional since it's noise for anyone who doesn't care about performance.
     val showGenerationStats: Flow<Boolean> = store.data.map { it[Keys.SHOW_GENERATION_STATS] ?: false }
     suspend fun setShowGenerationStats(enabled: Boolean) { store.edit { it[Keys.SHOW_GENERATION_STATS] = enabled } }
+
+    val deviceAwarePerformance: Flow<Boolean> = store.data.map { it[Keys.DEVICE_AWARE_PERFORMANCE] ?: true }
+    suspend fun setDeviceAwarePerformance(enabled: Boolean) { store.edit { it[Keys.DEVICE_AWARE_PERFORMANCE] = enabled } }
+
+    // When on (default) and more than one GENERATION model is installed, a chat/folder that
+    // hasn't explicitly pinned a model picks one automatically per turn instead of always using
+    // whatever's currently loaded — see com.vervan.chat.llm.AutoModelSelector. An explicit pin
+    // (chat or folder default) always wins regardless of this setting; "Advanced" model choice
+    // stays exactly as manual as it is today by turning this off.
+    val autoModelSelectionEnabled: Flow<Boolean> = store.data.map { it[Keys.AUTO_MODEL_SELECTION] ?: true }
+    suspend fun setAutoModelSelectionEnabled(enabled: Boolean) { store.edit { it[Keys.AUTO_MODEL_SELECTION] = enabled } }
 
     val expertMode: Flow<Boolean> = store.data.map { it[Keys.EXPERT_MODE] ?: false }
     suspend fun setExpertMode(enabled: Boolean) { store.edit { it[Keys.EXPERT_MODE] = enabled } }

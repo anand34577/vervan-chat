@@ -89,6 +89,10 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val expertMode: StateFlow<Boolean> = settings.expertMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val autoModelSelectionEnabled: StateFlow<Boolean> = settings.autoModelSelectionEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val deviceAwarePerformance: StateFlow<Boolean> = settings.deviceAwarePerformance
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val largeTouchTargets: StateFlow<Boolean> = settings.largeTouchTargets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val dynamicColor: StateFlow<Boolean> = settings.dynamicColor
@@ -245,6 +249,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setHapticsEnabled(enabled: Boolean) { viewModelScope.launch { settings.setHapticsEnabled(enabled) } }
     fun setShowGenerationStats(enabled: Boolean) { viewModelScope.launch { settings.setShowGenerationStats(enabled) } }
     fun setExpertMode(enabled: Boolean) { viewModelScope.launch { settings.setExpertMode(enabled) } }
+    fun setDeviceAwarePerformance(enabled: Boolean) { viewModelScope.launch { settings.setDeviceAwarePerformance(enabled) } }
+    fun setAutoModelSelectionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setAutoModelSelectionEnabled(enabled) } }
     fun setLargeTouchTargets(enabled: Boolean) { viewModelScope.launch { settings.setLargeTouchTargets(enabled) } }
     fun setDynamicColor(enabled: Boolean) { viewModelScope.launch { settings.setDynamicColor(enabled) } }
     fun setHighContrast(enabled: Boolean) { viewModelScope.launch { settings.setHighContrast(enabled) } }

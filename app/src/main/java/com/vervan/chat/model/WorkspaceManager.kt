@@ -78,6 +78,9 @@ class WorkspaceManager(
             }
             db.chatDao().deleteForWorkspace(workspace.id)
             db.folderDao().deleteForWorkspace(workspace.id)
+            // Projects now belong to a workspace too — soft-delete them (recoverable from the
+            // recycle bin) rather than leaving them orphaned pointing at a deleted workspace.
+            db.projectDao().softDeleteForWorkspace(workspace.id, System.currentTimeMillis())
             db.workspaceDao().delete(workspace)
         }
         if (settingsRepository.activeWorkspaceId.first() == workspace.id) {

@@ -149,6 +149,10 @@ fun ModelManagerScreen(
     val embeddingLoadInfo by vm.embeddingLoadInfo.collectAsStateWithLifecycle()
     val downloadStates by vm.downloadStates.collectAsStateWithLifecycle()
     var editingModel by remember { mutableStateOf<ModelInfo?>(null) }
+    // Model Calculator's "Browse models that fit" hands off its computed budget once (see
+    // PendingModelBrowseFilter) — consumed exactly once per fresh navigation into this screen,
+    // so returning to Model Manager later from anywhere else shows the plain, unfiltered list.
+    val browseBudgetBytes = remember { com.vervan.chat.modeldownload.PendingModelBrowseFilter.consume() }
 
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.importModel(it, ModelRole.GENERATION) }
@@ -272,6 +276,24 @@ fun ModelManagerScreen(
             }
             val catalogStates = downloadStates.filter { it.status == com.vervan.chat.data.db.entities.ModelStatus.NOT_DOWNLOADED }
 
+            if (generationModels.isEmpty()) {
+                val memory = remember {
+                    android.app.ActivityManager.MemoryInfo().also {
+                        (app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(it)
+                    }
+                }
+                val recommendation = remember(memory.totalMem) { com.vervan.chat.ui.onboarding.recommendModel(memory.totalMem) }
+                val recommendedState = recommendation?.let { rec -> catalogStates.firstOrNull { it.modelId == rec.model.modelId } }
+                if (recommendation != null && recommendedState != null) {
+                    RecommendedSetupCard(
+                        model = recommendedState,
+                        reason = recommendation.reason,
+                        onSetup = { vm.setupRecommendedModel(recommendedState.modelId, recommendedState.version) },
+                    )
+                    Box(Modifier.height(Space.md))
+                }
+            }
+
             if (downloadingStates.isNotEmpty()) {
                 SectionHeader("Active downloads", Icons.Filled.CloudDownload)
                 downloadingStates.forEach { state ->
@@ -299,7 +321,11 @@ fun ModelManagerScreen(
             }
 
             if (catalogStates.isNotEmpty()) {
-                AvailableForDownloadSection(catalogStates, onDownload = { vm.downloadModel(it.modelId, it.version) })
+                AvailableForDownloadSection(
+                    catalogStates,
+                    onDownload = { vm.downloadModel(it.modelId, it.version) },
+                    highlightBudgetBytes = browseBudgetBytes
+                )
                 Box(Modifier.height(Space.lg))
             }
 
@@ -485,6 +511,35 @@ fun ModelManagerScreen(
                 TextButton(onClick = { vm.dismissMigration() }) { Text("Keep old one") }
             }
         )
+    }
+}
+
+@Composable
+private fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        border = com.vervan.chat.ui.theme.vervanBorder(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text("Recommended setup", style = MaterialTheme.typography.titleMedium)
+                    Text(model.displayName, style = MaterialTheme.typography.titleSmall)
+                }
+            }
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(top = Space.sm))
+            Text(
+                "Downloads, verifies, imports, activates, loads, and tests the model. You can pause the download at any time.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md)) {
+                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Set up for me", modifier = Modifier.padding(start = Space.sm))
+            }
+        }
     }
 }
 
@@ -1587,14 +1642,25 @@ private fun ModelInfo.runtimeSummary(): String {
     return "$runtime • $hardware"
 }
 
+/** Rough "would this comfortably fit" check for a catalogue entry against a device budget —
+ * same need-estimate reasoning as [com.vervan.chat.ui.onboarding.recommendModel]: prefer the
+ * catalogue's own declared minimum RAM, else fall back to ~1.3x the download size. */
+private fun com.vervan.chat.modeldownload.ModelUiState.fitsBudget(budgetBytes: Long): Boolean {
+    val needBytes = minimumRamBytes ?: ((totalBytes ?: 0L) * 13 / 10)
+    return needBytes <= budgetBytes
+}
+
 /** "Available for Download" — collapsed by default, grouped by category, each category
- * independently expandable (spec §3.2). */
+ * independently expandable (spec §3.2). [highlightBudgetBytes], when set (Model Calculator's
+ * "Browse models that fit"), force-opens this section and the generation category, and sorts
+ * entries within each category so ones that fit the budget surface first with a fit badge. */
 @Composable
 private fun AvailableForDownloadSection(
     states: List<com.vervan.chat.modeldownload.ModelUiState>,
-    onDownload: (com.vervan.chat.modeldownload.ModelUiState) -> Unit
+    onDownload: (com.vervan.chat.modeldownload.ModelUiState) -> Unit,
+    highlightBudgetBytes: Long? = null
 ) {
-    var sectionExpanded by rememberSaveable("available_models") { mutableStateOf(false) }
+    var sectionExpanded by rememberSaveable("available_models") { mutableStateOf(highlightBudgetBytes != null) }
     SectionHeader("Discover models", Icons.Filled.CloudDownload)
     Card(
         onClick = { sectionExpanded = !sectionExpanded },
@@ -1627,8 +1693,13 @@ private fun AvailableForDownloadSection(
     }
 
     if (sectionExpanded) {
-        states.groupBy { it.category }.forEach { (category, entries) ->
-            var expanded by rememberSaveable("catalog_${category.name}") { mutableStateOf(false) }
+        states.groupBy { it.category }.forEach { (category, entriesInCategory) ->
+            val entries = if (highlightBudgetBytes != null) {
+                entriesInCategory.sortedByDescending { it.fitsBudget(highlightBudgetBytes) }
+            } else entriesInCategory
+            var expanded by rememberSaveable("catalog_${category.name}") {
+                mutableStateOf(highlightBudgetBytes != null && category == ModelRole.GENERATION)
+            }
             Card(
                 onClick = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
@@ -1655,7 +1726,13 @@ private fun AvailableForDownloadSection(
                 }
             }
             if (expanded) {
-                entries.forEach { entry -> CatalogEntryCard(entry, onDownload = { onDownload(entry) }) }
+                entries.forEach { entry ->
+                    CatalogEntryCard(
+                        entry,
+                        onDownload = { onDownload(entry) },
+                        fitsBudget = highlightBudgetBytes?.let { entry.fitsBudget(it) }
+                    )
+                }
             }
         }
     }
@@ -1690,7 +1767,13 @@ private fun categoryAccentContainer(category: ModelRole) = when (category) {
 }
 
 @Composable
-private fun CatalogEntryCard(state: com.vervan.chat.modeldownload.ModelUiState, onDownload: () -> Unit) {
+private fun CatalogEntryCard(
+    state: com.vervan.chat.modeldownload.ModelUiState,
+    onDownload: () -> Unit,
+    // null = no budget in play (normal browsing); true/false = Model Calculator's handoff, see
+    // AvailableForDownloadSection's highlightBudgetBytes.
+    fitsBudget: Boolean? = null
+) {
     val accent = categoryAccent(state.category)
     val accentContainer = categoryAccentContainer(state.category)
     Card(
@@ -1732,6 +1815,9 @@ private fun CatalogEntryCard(state: com.vervan.chat.modeldownload.ModelUiState, 
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
+                fitsBudget?.let {
+                    SemanticChip(if (it) "Fits your device" else "May be tight", if (it) ChipTone.Success else ChipTone.Warning)
+                }
                 state.totalBytes?.let { SemanticChip("~${formatModelSize(it)}", ChipTone.Neutral) }
                 state.precision?.let { SemanticChip(it, ChipTone.Neutral) }
                 state.minimumRamBytes?.let { SemanticChip("${formatModelSize(it)} RAM", ChipTone.Neutral) }

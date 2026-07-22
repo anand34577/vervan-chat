@@ -124,7 +124,12 @@ fun TextActionScreen(
         errorText = null
         genJob = scope.launch {
             try {
-                val flow = OneShotLlm.stream(app, action.promptFor(inputText))
+                val route = searchableTools.firstOrNull { it.label.equals(title, ignoreCase = true) }?.route ?: "tools"
+                val flow = OneShotLlm.stream(
+                    app,
+                    action.promptFor(inputText),
+                    runContext = com.vervan.chat.llm.ToolRunContext(route, "$title · ${action.label}", inputText),
+                )
                 if (flow == null) {
                     errorText = "No generation model is active. Choose and load one from Models, then try again."
                 } else {

@@ -19,6 +19,12 @@ interface MessageDao : BaseDao<Message> {
     @Query("UPDATE messages SET state = 'CANCELLED' WHERE chatId = :chatId AND state = 'STREAMING'")
     suspend fun cancelStreamingForChat(chatId: String)
 
+    @Query("UPDATE messages SET reaction = :reaction WHERE id = :messageId")
+    suspend fun setReaction(messageId: String, reaction: String?)
+
+    @Query("UPDATE messages SET feedbackReason = :reason WHERE id = :messageId")
+    suspend fun setFeedbackReason(messageId: String, reason: String?)
+
     @Query("DELETE FROM messages WHERE chatId = :chatId")
     suspend fun deleteForChat(chatId: String)
 

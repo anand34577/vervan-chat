@@ -37,17 +37,20 @@ import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +80,8 @@ import com.vervan.chat.IncomingShareKind
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Note
+import com.vervan.chat.data.db.entities.ModelStatus
+import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.ui.chat.BranchTreeScreen
 import com.vervan.chat.ui.chat.ChatScreen
 import com.vervan.chat.ui.chat.ChatInfoScreen
@@ -173,6 +178,7 @@ fun VervanNavGraph(
     // Targeted by chat ID so a share received while another chat is open cannot attach to the
     // old composer during the navigation frame.
     var pendingChatAttachment by remember { mutableStateOf<PendingChatAttachment?>(null) }
+    var pendingMessageJump by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -228,6 +234,17 @@ fun VervanNavGraph(
     // phone (spec §4's adaptive-layout gap) — same destinations, just repositioned.
     val useRail = windowSizeClass?.widthSizeClass != null && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val useTwoPane = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded
+    val activeJobs by app.container.db.jobDao().observeActive().collectAsState(initial = emptyList())
+    val modelLoadState by app.container.modelLoadCoordinator.state.collectAsState()
+    val loadingModels = modelLoadState.values.count { it.phase == ModelLoadPhase.LOADING }
+    val downloadStates by app.container.modelDownloadRepository.uiStates.collectAsState(initial = emptyList())
+    val activeDownloads = downloadStates.count {
+        it.status in setOf(
+            ModelStatus.QUEUED, ModelStatus.PREPARING, ModelStatus.WAITING_FOR_NETWORK,
+            ModelStatus.WAITING_FOR_WIFI, ModelStatus.WAITING_FOR_STORAGE, ModelStatus.DOWNLOADING,
+            ModelStatus.PAUSING, ModelStatus.VERIFYING, ModelStatus.IMPORTING,
+        )
+    }
 
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
@@ -269,10 +286,11 @@ fun VervanNavGraph(
                 }
             }
         ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.fillMaxSize()
         ) {
             composable("onboarding") {
                 OnboardingScreen(
@@ -355,6 +373,25 @@ fun VervanNavGraph(
             composable("tools/all") {
                 com.vervan.chat.ui.tools.AllToolsScreen(onBack = { navController.popBackStack() }, onNavigate = { route -> navController.navigate(route) })
             }
+            composable(
+                "tools/runs?highlightId={highlightId}",
+                arguments = listOf(navArgument("highlightId") { type = NavType.StringType; nullable = true; defaultValue = null })
+            ) { entry ->
+                com.vervan.chat.ui.tools.ToolRunHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    highlightId = entry.arguments?.getString("highlightId"),
+                    onContinueInChat = { text ->
+                        scope.launch {
+                            val chat = app.container.workspaceManager.applyDefaults(
+                                Chat(draft = "Continue from this result:\n\n$text", workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                            )
+                            app.container.db.chatDao().upsert(chat)
+                            navController.navigate("chat/${chat.id}")
+                        }
+                    },
+                    onRerun = { route -> navController.navigate(route) },
+                )
+            }
             composable("tools/socratic-tutor") { com.vervan.chat.ui.tools.SocraticTutorScreen(onBack = { navController.popBackStack() }) }
             composable("tools/exam-prep") { com.vervan.chat.ui.tools.ExamPreparationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/homework-checker") { com.vervan.chat.ui.tools.HomeworkCheckerScreen(onBack = { navController.popBackStack() }) }
@@ -425,7 +462,19 @@ fun VervanNavGraph(
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") },
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
-                    onOpenMemory = { memoryId -> navController.navigate("memory?highlightId=$memoryId") }
+                    onOpenMemory = { memoryId -> navController.navigate("memory?highlightId=$memoryId") },
+                    onOpenMessage = { chatId, messageId ->
+                        pendingMessageJump = chatId to messageId
+                        navController.navigate("chat/$chatId")
+                    },
+                    onOpenProject = { id -> navController.navigate("project/$id") },
+                    onOpenWorkspace = { id -> navController.navigate("workspace/$id") },
+                    onOpenFolder = { id -> navController.navigate("folder/$id") },
+                    onOpenTemplate = { id -> navController.navigate("template/$id/edit") },
+                    onOpenWorkflow = { id -> navController.navigate("workflow/$id") },
+                    onOpenSavedOutput = { _ -> navController.navigate("library") },
+                    onOpenTool = { route -> navController.navigate(route) },
+                    onOpenToolRun = { id -> navController.navigate("tools/runs?highlightId=$id") },
                 )
             }
             composable("writing") { WritingWorkspaceScreen(onBack = { navController.popBackStack() }) }
@@ -546,6 +595,8 @@ fun VervanNavGraph(
                 val attachment = pendingChatAttachment?.takeIf { it.chatId == chatId }
                 ChatScreen(
                     chatId = chatId,
+                    initialMessageId = pendingMessageJump?.takeIf { it.first == chatId }?.second,
+                    onInitialMessageConsumed = { if (pendingMessageJump?.first == chatId) pendingMessageJump = null },
                     pendingAttachUri = attachment?.uri,
                     pendingAttachAsImage = attachment?.asImage == true,
                     pendingAttachShowPreview = attachment?.showPreview == true,
@@ -616,7 +667,15 @@ fun VervanNavGraph(
                     onOpenCalculator = { navController.navigate("models/calculator") }
                 )
             }
-            composable("models/calculator") { ModelCalculatorScreen(onBack = { navController.popBackStack() }) }
+            composable("models/calculator") {
+                ModelCalculatorScreen(
+                    onBack = { navController.popBackStack() },
+                    // Pops back to the existing Model Manager entry rather than pushing a fresh
+                    // one — that recomposes it, which is what actually consumes the just-stashed
+                    // budget (see PendingModelBrowseFilter/browseBudgetBytes).
+                    onBrowseModels = { navController.popBackStack() }
+                )
+            }
             composable("models/store") {
                 com.vervan.chat.ui.store.ModelStoreScreen(onBack = { navController.popBackStack() })
             }
@@ -728,6 +787,32 @@ fun VervanNavGraph(
                 SourcePassageScreen(chunkId = chunkId, onBack = { navController.popBackStack() })
             }
         }
+        if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
+            val count = activeJobs.size + loadingModels + activeDownloads
+            val label = when {
+                activeJobs.size == 1 && loadingModels == 0 -> activeJobs.first().label
+                loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> "Loading model"
+                activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> "Downloading model"
+                else -> "$count activities running"
+            }
+            Surface(
+                onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md),
+                shape = VervanExtraShapes.pill,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shadowElevation = 6.dp,
+            ) {
+                Row(
+                    Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+                }
+            }
+        }
+        }
         }
     }
 
@@ -745,8 +830,15 @@ fun VervanNavGraph(
         CreateSheet(
             sheetState = sheetState,
             actions = listOf(
-                // §7.10.2 taxonomy — Start/Build/Organize/Import/Capture, matching the spec's
-                // group order exactly instead of the previous ad hoc Create/Knowledge/System/Library names.
+                // Groups match the simplified IA vocabulary (Space/Project/Sources/Library) end
+                // users are shown — not the underlying entity names (Workspace/Folder/
+                // KnowledgeBase/Persona/PromptTemplate/Workflow stay exactly as they are in code
+                // and in the database; this is a presentation-layer regroup only, see
+                // ChatDefaults/AppDatabase for why an actual entity merge isn't in scope here).
+                // Previously Start/Build/Organize/Import/Capture, where "Knowledge base" and
+                // "Import document" were two near-duplicate entries to the same "knowledge" route
+                // (now merged into one), and "New workspace"/"New folder" sat under the generic
+                // "Organize" label instead of the "Space" concept users are actually taught.
                 CreateAction(Icons.AutoMirrored.Filled.Chat, "New chat", "Open an empty composer with keyboard focus", "Start") { newChat() },
                 CreateAction(Icons.Filled.Edit, "New note", "Capture long-form local writing", "Start") {
                     showCreateSheet = false
@@ -757,13 +849,12 @@ fun VervanNavGraph(
                     }
                 },
                 CreateAction(Icons.Filled.Workspaces, "New project", "Group instructions, chats, and notes", "Start") { go("projects") },
-                CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Knowledge base", "Create a reusable local source collection", "Build") { go("knowledge") },
-                CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Build") { go("persona-new") },
-                CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Build") { go("template-new") },
-                CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Build") { go("workflow-new") },
-                CreateAction(Icons.Filled.Dashboard, "New workspace", "Separate personal, work, or research contexts", "Organize") { go("workspaces") },
-                CreateAction(Icons.Filled.Folder, "New folder", "Manual filing with inherited defaults", "Organize") { go("folders") },
-                CreateAction(Icons.Filled.FileDownload, "Import document", "Add files for grounded answers", "Import") { go("knowledge") },
+                CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Add source", "Create a source collection or import a document for grounded answers", "Sources") { go("knowledge") },
+                CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Library") { go("persona-new") },
+                CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Library") { go("template-new") },
+                CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Library") { go("workflow-new") },
+                CreateAction(Icons.Filled.Dashboard, "New space", "Separate personal, work, or research contexts", "Space") { go("workspaces") },
+                CreateAction(Icons.Filled.Folder, "New folder", "Manual filing with inherited defaults", "Space") { go("folders") },
                 CreateAction(Icons.Filled.AutoAwesome, "Import model", "Prepare local AI generation", "Import") { go("models") },
                 CreateAction(Icons.Filled.PhotoCamera, "Scan image", "Start a chat with an image attachment", "Capture") { newChat("image") },
                 CreateAction(Icons.Filled.Mic, "Voice note", "Record audio into a new chat", "Capture") { newChat("voice") }

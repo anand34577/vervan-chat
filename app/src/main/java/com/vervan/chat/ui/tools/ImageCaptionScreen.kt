@@ -102,7 +102,10 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         errorText = null
         genJob = scope.launch {
             try {
-                val flow = OneShotLlm.stream(app, mode.prompt, imagePath = path)
+                val flow = OneShotLlm.stream(
+                    app, mode.prompt, imagePath = path,
+                    runContext = com.vervan.chat.llm.ToolRunContext("tools/image-caption", "Image caption · ${mode.label}", "Image: ${java.io.File(path).name}"),
+                )
                 if (flow == null) {
                     errorText = "No generation model is active. Load a vision-capable model from Models."
                 } else {

@@ -60,6 +60,13 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun downloadModel(modelId: String, version: String) {
         viewModelScope.launch { downloadRepo.startDownload(modelId, version) }
     }
+    private var recommendedSetupCatalogId: String? = null
+
+    fun setupRecommendedModel(modelId: String, version: String) {
+        recommendedSetupCatalogId = modelId
+        _status.value = "Setting up the recommended model…"
+        downloadModel(modelId, version)
+    }
     fun pauseDownload(modelId: String, version: String) {
         viewModelScope.launch { downloadRepo.pauseDownload(modelId, version) }
     }
@@ -121,6 +128,17 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         // deleting a role down to a lone survivor, not just import time.
         viewModelScope.launch {
             models.collect { list ->
+                val setupId = recommendedSetupCatalogId
+                val setupModel = setupId?.let { id -> list.firstOrNull { it.catalogModelId == id } }
+                if (setupModel != null) {
+                    if (setupModel.licenseAcknowledged) {
+                        recommendedSetupCatalogId = null
+                        validateAndActivate(setupModel)
+                    } else {
+                        _pendingAcknowledgment.value = setupModel
+                    }
+                    return@collect
+                }
                 ModelRole.entries.forEach { role ->
                     val ofRole = list.filter { it.role == role }
                     val candidate = ofRole.firstOrNull()
@@ -377,7 +395,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
 
     fun acknowledgeAndActivate(model: ModelInfo) {
         _pendingAcknowledgment.value = null
-        viewModelScope.launch { coordinator.setDefault(model.copy(licenseAcknowledged = true)) }
+        if (model.catalogModelId == recommendedSetupCatalogId) {
+            recommendedSetupCatalogId = null
+            viewModelScope.launch { validateAndActivate(model.copy(licenseAcknowledged = true)) }
+        } else {
+            viewModelScope.launch { coordinator.setDefault(model.copy(licenseAcknowledged = true)) }
+        }
     }
 
     fun dismissAcknowledgment() { _pendingAcknowledgment.value = null }
