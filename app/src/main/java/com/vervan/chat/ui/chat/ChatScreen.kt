@@ -132,6 +132,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -830,6 +831,7 @@ fun ChatScreen(
                             onSavedResponses = { showMoreSheet = false; showSavedResponses = true },
                             onBranchTree = { showMoreSheet = false; onOpenBranchTree() },
                             onContextInspector = { showMoreSheet = false; scope.launch { contextBreakdown = vm.inspectContext(draft) } },
+                            toolsAvailable = activeModel?.supportsTools != false,
                             onChatTools = { showMoreSheet = false; showChatTools = true },
                             onToggleIncognito = { showMoreSheet = false; vm.toggleTemporary() },
                             onAddToKnowledgeBase = { showMoreSheet = false; showKbPicker = true },
@@ -959,11 +961,8 @@ fun ChatScreen(
                 if (thermalLevel != com.vervan.chat.system.ThermalLevel.NORMAL) {
                     ThermalNotice(severe = thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE)
                 }
-                val showGenStats by app.container.settingsRepository.showGenerationStats.collectAsState(initial = false)
-                if (showGenStats) {
-                    val liveStats by vm.liveGenStats.collectAsState()
-                    liveStats?.let { LiveGenStatsChip(it) }
-                }
+                val liveStats by vm.liveGenStats.collectAsState()
+                liveStats?.let { LiveGenStatsChip(it) }
             }
             if (isWorkspaceArchived) {
                 ArchivedWorkspaceBanner(onRestore = { vm.restoreChatWorkspace() })
@@ -2067,15 +2066,20 @@ private fun formatMs(ms: Int): String {
 }
 
 /** WhatsApp-style voice message row: play/pause, a seekable progress bar, and elapsed/total
- * time. One MediaPlayer per bubble, released whenever the bubble leaves composition or the
- * audio path changes. Used for the composer's pending attachment preview, sent messages, and
- * (via the same composable) chat history — there's only one implementation of this. */
+ *  time. One MediaPlayer per bubble, released whenever the bubble leaves composition or the
+ *  audio path changes. Used for the composer's pending attachment preview, sent messages, and
+ *  (via the same composable) chat history — there's only one implementation of this. */
 @Composable
 internal fun VoiceMessageRow(path: String) {
     var isPlaying by remember(path) { mutableStateOf(false) }
     var mediaPlayer by remember(path) { mutableStateOf<android.media.MediaPlayer?>(null) }
     var durationMs by remember(path) { mutableStateOf(0) }
     var positionMs by remember(path) { mutableStateOf(0) }
+    // Surface a real error UI instead of swallowing prepare()/setDataSource() failures —
+    // previously a corrupt or missing voice file silently rendered as an unplayable row with
+    // a 0:00 duration, looking like a stuck player. Now the user sees the failure and can
+    // retry in case it was a transient read error.
+    var loadFailed by remember(path) { mutableStateOf(false) }
     DisposableEffect(path) {
         onDispose { mediaPlayer?.release(); mediaPlayer = null }
     }
@@ -2103,7 +2107,14 @@ internal fun VoiceMessageRow(path: String) {
         }.onSuccess {
             mediaPlayer = it
             durationMs = runCatching { it.duration }.getOrDefault(0)
+            loadFailed = false
             onReady(it)
+        }.onFailure {
+            // Don't keep the half-constructed player around — release and clear so the next
+            // tap retries from scratch.
+            mediaPlayer?.release()
+            mediaPlayer = null
+            loadFailed = true
         }
     }
     Row(Modifier.padding(bottom = 4.dp).widthIn(min = 180.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2111,6 +2122,16 @@ internal fun VoiceMessageRow(path: String) {
             // No explicit size override — the default 48dp keeps this within Material's minimum
             // touch target; the 20dp Icon inside already gives the compact visual footprint.
             onClick = {
+                if (loadFailed) {
+                    // Tap on the warning icon retries — a transient SAF/IO hiccup often succeeds
+                    // on a second attempt without making the user feel stuck.
+                    loadFailed = false
+                    ensurePlayer { mp ->
+                        mp.start()
+                        isPlaying = true
+                    }
+                    return@IconButton
+                }
                 ensurePlayer { mp ->
                     if (isPlaying) {
                         mp.pause()
@@ -2124,25 +2145,43 @@ internal fun VoiceMessageRow(path: String) {
             }
         ) {
             Icon(
-                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isPlaying) "Pause voice message" else "Play voice message",
+                when {
+                    loadFailed -> Icons.Filled.Warning
+                    isPlaying -> Icons.Filled.Pause
+                    else -> Icons.Filled.PlayArrow
+                },
+                contentDescription = when {
+                    loadFailed -> "Voice message failed to load — tap to retry"
+                    isPlaying -> "Pause voice message"
+                    else -> "Play voice message"
+                },
+                tint = if (loadFailed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified,
                 modifier = Modifier.size(20.dp)
             )
         }
-        Slider(
-            value = if (durationMs > 0) positionMs.toFloat().coerceIn(0f, durationMs.toFloat()) else 0f,
-            valueRange = 0f..(durationMs.toFloat().coerceAtLeast(1f)),
-            onValueChange = { value ->
-                positionMs = value.toInt()
-                ensurePlayer { mp -> mp.seekTo(positionMs) }
-            },
-            modifier = Modifier.weight(1f).height(24.dp)
-        )
-        Text(
-            "${formatMs(positionMs)} / ${formatMs(durationMs)}",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(start = 4.dp)
-        )
+        if (loadFailed) {
+            Text(
+                "Couldn't load audio",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Slider(
+                value = if (durationMs > 0) positionMs.toFloat().coerceIn(0f, durationMs.toFloat()) else 0f,
+                valueRange = 0f..(durationMs.toFloat().coerceAtLeast(1f)),
+                onValueChange = { value ->
+                    positionMs = value.toInt()
+                    ensurePlayer { mp -> mp.seekTo(positionMs) }
+                },
+                modifier = Modifier.weight(1f).height(24.dp)
+            )
+            Text(
+                "${formatMs(positionMs)} / ${formatMs(durationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+        }
     }
 }
 
@@ -2431,78 +2470,6 @@ private fun OcrPreviewDialog(
 }
 
 @Composable
-private fun LegacyOcrPreviewDialog(
-    imagePath: String,
-    text: String,
-    onTextChange: (String) -> Unit,
-    onRemove: () -> Unit,
-    onDismiss: () -> Unit,
-    caption: String = "",
-    onCaptionChange: ((String) -> Unit)? = null,
-    confirmEnabled: Boolean = true,
-    onSend: (() -> Unit)? = null
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(16.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close preview") }
-                    Text("Extracted text (OCR)", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onRemove) { Text("Remove") }
-                }
-                val thumbnailPx = with(LocalDensity.current) { 1200.dp.roundToPx() }
-                val bitmap = remember(imagePath, thumbnailPx) {
-                    com.vervan.chat.model.ImageUtils.decodeThumbnail(imagePath, thumbnailPx)?.asImageBitmap()
-                }
-                bitmap?.let {
-                    Image(
-                        it,
-                        contentDescription = "Scanned photo",
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).padding(horizontal = 12.dp).clip(MaterialTheme.shapes.large),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-                Text(
-                    if (text.isBlank()) "No text found. Type it below or remove the photo." else "Review the text before sending. The photo is not sent.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
-                    placeholder = { Text("Recognized text will appear here") }
-                )
-                if (onSend != null && onCaptionChange != null) {
-                    // Send directly from the preview, WhatsApp-style — caption rides along as
-                    // the message text; "Use this text" (dismiss) remains the keep-editing path.
-                    AttachmentCaptionBar(
-                        caption = caption,
-                        onCaptionChange = onCaptionChange,
-                        confirmEnabled = confirmEnabled,
-                        onSend = onSend,
-                        placeholder = "Add a message for the extracted text"
-                    )
-                } else {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
-                        androidx.compose.material3.Button(onClick = onDismiss) { Text("Use this text") }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SavedResponsesDialog(
     outputs: List<SavedOutput>,
     onDismiss: () -> Unit,
@@ -2683,6 +2650,7 @@ private fun ChatMoreOptionsSheet(
     onSavedResponses: () -> Unit,
     onBranchTree: () -> Unit,
     onContextInspector: () -> Unit,
+    toolsAvailable: Boolean,
     onChatTools: () -> Unit,
     onToggleIncognito: () -> Unit,
     onAddToKnowledgeBase: () -> Unit,
@@ -2725,7 +2693,12 @@ private fun ChatMoreOptionsSheet(
             )
             MoreOptionRow(Icons.Filled.AccountTree, "Branch tree", onClick = onBranchTree)
             MoreOptionRow(Icons.AutoMirrored.Filled.ManageSearch, "Context inspector", onClick = onContextInspector)
-            MoreOptionRow(Icons.Filled.Build, "Chat tools", onClick = onChatTools)
+            // Tools are gated on the active model actually supporting them (supportsTools) —
+            // surfacing a "Chat tools" entry for a non-tool-call model would be a dead end,
+            // since runGenerationLoop already no-ops the catalog when supportsTools == false.
+            if (toolsAvailable) {
+                MoreOptionRow(Icons.Filled.Build, "Chat tools", onClick = onChatTools)
+            }
 
             MoreSheetSection("Session")
             MoreOptionRow(
@@ -4341,6 +4314,9 @@ private fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) -> 
     // message) gets a required acknowledgment checkbox before Allow is enabled — REVERSIBLE_WRITE
     // (undoable in-app, e.g. via recycle bin) keeps the single-tap flow (B4).
     val isExternal = obj.optString("risk") == "EXTERNAL_ACTION"
+    // web_search is the one EXTERNAL_ACTION tool that doesn't launch an Intent — it's a silent
+    // background network call, so "leaves the app" would be a factually wrong warning for it.
+    val leavesApp = obj.optString("tool") != "web_search"
     var acknowledged by remember(toolCallJson) { mutableStateOf(!isExternal) }
     Card(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -4366,7 +4342,9 @@ private fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) -> 
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = acknowledged, onCheckedChange = { acknowledged = it })
                     Text(
-                        "This leaves the app and can't be undone from here", style = MaterialTheme.typography.bodySmall,
+                        if (leavesApp) "This leaves the app and can't be undone from here"
+                        else "This sends your query to Google's servers over the network",
+                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 4.dp)
                     )
                 }

@@ -95,6 +95,40 @@ object ToolRegistry {
                 ToolResult(true, passages.joinToString("\n") { "- ${it.documentName}: ${it.excerpt.take(180)}" }.ifBlank { "No local passage matched \"$query\"." })
             }
         ),
+        // The one outbound-network tool in the catalog (the only other intentional network
+        // call paths in the app are model downloads, the local API server, and the model
+        // store — all user-initiated, none model-initiated). Knowledge Graph returns entity
+        // facts (people/places/things) — strong for "who/what is X" the local model's
+        // training data is weak on, useless for "find recent news about Y" or arbitrary web
+        // pages, and the description below tells the model exactly that so it doesn't reach
+        // for this when the user actually wants a web page. EXTERNAL_ACTION because the
+        // request leaves the device, same risk tier as draft_email/open_map. Gated on its
+        // own Settings toggle (Settings → Security → Web search) plus a configured API key;
+        // a model call against an unconfigured/off web search gets a graceful no.
+        ToolDefinition(
+            name = "web_search",
+            description = "Look up entity facts (people, places, organizations, things) from Google's " +
+                "Knowledge Graph over the network. Best for \"who/what is X\" the model is unsure of; " +
+                "not for finding web pages, recent news, prices, or current events.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.EXTERNAL_ACTION,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "web_search needs a non-empty 'query'")
+                if (!app.container.settingsRepository.webSearchToolEnabled.first()) {
+                    return@ToolDefinition ToolResult(false, "Web search is disabled in Settings → Security.")
+                }
+                val client = app.container.knowledgeGraphClient
+                try {
+                    val entities = withContext(Dispatchers.IO) { client.search(query) }
+                    ToolResult(true, client.formatResult(query, entities))
+                } catch (e: IllegalArgumentException) {
+                    ToolResult(false, "Web search isn't configured: ${e.message}")
+                } catch (e: java.io.IOException) {
+                    ToolResult(false, "Web search failed (network or API error): ${e.message ?: e.javaClass.simpleName}")
+                }
+            }
+        ),
         ToolDefinition(
             name = "project_details",
             description = "Read a project's instructions and contents by project name.",

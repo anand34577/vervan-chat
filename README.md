@@ -24,9 +24,15 @@ Vervan brings local language models, document search, voice tools, notes, and fo
   <tr>
     <td width="33%" align="center"><img src="docs/screenshots/model_manager.png" alt="Vervan model manager"><br><strong>Model Manager</strong></td>
     <td width="33%" align="center"><img src="docs/screenshots/model_calculator.png" alt="Vervan model memory calculator"><br><strong>Model Calculator</strong></td>
-    <td width="33%" align="center"><img src="docs/screenshots/settings.png" alt="Vervan settings screen"><br><strong>Settings</strong></td>
+    <td width="33%" align="center"><img src="docs/screenshots/document_chat.png" alt="Vervan settings screen"><br><strong>Document chat</strong></td>
   </tr>
 </table>
+
+## Intro Video
+
+[![Watch the Vervan Chat Intro](docs/screenshots/video-preview.png)](videos/product-info.mp4)
+
+_Click the preview to watch the demo._
 
 ## What you can do with Vervan
 

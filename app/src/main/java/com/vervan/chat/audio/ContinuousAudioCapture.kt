@@ -72,15 +72,27 @@ class ContinuousAudioCapture {
         val frameSamples = (sampleRateHz * frameMs / 1000).coerceAtLeast(1)
         captureThread = Thread {
             val buffer = ShortArray(frameSamples)
-            while (audioRecord != null && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val read = record.read(buffer, 0, buffer.size)
-                when {
-                    read > 0 -> _frames.tryEmit(if (read == buffer.size) buffer.copyOf() else buffer.copyOf(read))
-                    read < 0 -> {
-                        Log.w(TAG, "AudioRecord.read() returned error code $read; stopping continuous capture")
-                        return@Thread
+            try {
+                while (audioRecord != null && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    val read = record.read(buffer, 0, buffer.size)
+                    when {
+                        read > 0 -> _frames.tryEmit(if (read == buffer.size) buffer.copyOf() else buffer.copyOf(read))
+                        read < 0 -> {
+                            Log.w(TAG, "AudioRecord.read() returned error code $read; stopping continuous capture")
+                            return@Thread
+                        }
                     }
                 }
+            } finally {
+                // The capture thread ALWAYS releases its own AudioRecord. Releasing from outside
+                // this thread after only a 500ms join in stop() was the unsafe pattern: if read()
+                // hadn't returned in time (loaded device, wedged audio framework), release() ran
+                // from stop()'s caller thread while read() was still mid-call on the same
+                // AudioRecord — explicitly undefined behavior in the audio HAL and a known source
+                // of native crashes in audio_policy_*. stop() now only signals (audioRecord=null
+                // + record.stop()) and joins; the release happens here once read() has returned.
+                runCatching { record.release() }
+                runCatching { echoCanceler?.release() }
             }
         }.apply { start() }
     }
@@ -89,11 +101,20 @@ class ContinuousAudioCapture {
         val record = audioRecord ?: return
         audioRecord = null
         runCatching { record.stop() }
-        captureThread?.join(500)
+        val thread = captureThread
         captureThread = null
-        echoCanceler?.release()
+        if (thread != null) {
+            // Capture thread owns release of record + echoCanceler in its finally block. Join with
+            // a generous timeout — record.stop() causes the in-flight read() to return promptly,
+            // so 2s is enough for any non-wedged HAL; longer than the previous 500ms so we don't
+            // race the finally block.
+            thread.join(2_000)
+        } else {
+            // Pathological: thread was never started, so its finally never runs. Fallback release.
+            runCatching { echoCanceler?.release() }
+            runCatching { record.release() }
+        }
         echoCanceler = null
-        record.release()
     }
 
     companion object {

@@ -391,7 +391,7 @@ class ModelDownloadRepository(
                 validator.validateTflite(File(modelFile.tempPath))
                 files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
             }
-            ModelFormat.ONNX_TTS, ModelFormat.ONNX_STT -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
+            ModelFormat.ONNX_TTS, ModelFormat.ONNX_STT, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
         }
 
         setStatus(pkgId, ModelStatus.IMPORTING)

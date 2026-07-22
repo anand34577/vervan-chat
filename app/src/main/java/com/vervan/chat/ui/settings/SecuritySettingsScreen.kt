@@ -162,6 +162,8 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
 
             OnDeviceDataSourcesCard(vm)
 
+            WebSearchCard(vm)
+
             QuickActionBubbleCard(vm)
 
             Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
@@ -394,6 +396,68 @@ private fun hasUsageAccess(context: android.content.Context): Boolean {
         appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
     }
     return mode == android.app.AppOpsManager.MODE_ALLOWED
+}
+
+/**
+ * Web search — the only tool whose execution leaves the device. Off by default AND needs
+ * a Google Knowledge Graph API key before the model call actually goes through; the UI
+ * here surfaces both so the user can see at a glance whether the toggle they flipped is
+ * actually wired up, instead of the tool silently 403-ing on the first call.
+ */
+@Composable
+private fun WebSearchCard(vm: SettingsViewModel) {
+    val enabled by vm.webSearchToolEnabled.collectAsState()
+    var apiKeyField by remember { mutableStateOf(vm.webSearchApiKey()) }
+    var showKey by remember { mutableStateOf(false) }
+    val resumeTick = com.vervan.chat.ui.common.rememberOnResumeTick()
+    // The key can be wiped from another surface (panic wipe, app data clear) — refresh on
+    // resume so the field doesn't show stale contents the tool would then fail to use.
+    androidx.compose.runtime.LaunchedEffect(resumeTick) { apiKeyField = vm.webSearchApiKey() }
+
+    Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+        Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Web search (Google Knowledge Graph)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Let the model look up entity facts (people, places, things) over the network. " +
+                            "Off by default. Your API key is stored encrypted on this device.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = { vm.setWebSearchToolEnabled(it) })
+            }
+            if (enabled) {
+                Spacer(Modifier.height(12.dp))
+                Text("Knowledge Graph API key", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value = apiKeyField,
+                    onValueChange = { apiKeyField = it },
+                    singleLine = true,
+                    visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "Hide" else "Show") }
+                    },
+                    supportingText = {
+                        Text(
+                            if (apiKeyField.isBlank()) "Required — get one free at console.cloud.google.com (Knowledge Graph API)."
+                            else "Stored encrypted on this device."
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
+                    OutlinedButton(
+                        onClick = {
+                            vm.setWebSearchApiKey(apiKeyField)
+                        },
+                        enabled = apiKeyField != vm.webSearchApiKey()
+                    ) { Text("Save key") }
+                }
+            }
+        }
+    }
 }
 
 @Composable

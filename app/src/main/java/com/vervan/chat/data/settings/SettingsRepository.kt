@@ -45,6 +45,9 @@ class SettingsRepository(context: Context) {
         val KOKORO_QUALITY_ENABLED = booleanPreferencesKey("kokoro_quality_enabled")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
         val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
+        // Which downloaded offline STT engine the realtime voice pipeline prefers: "AUTO"
+        // (whisper.cpp first, then sherpa-onnx Whisper), "WHISPER_CPP", or "WHISPER_ONNX".
+        val STT_ENGINE_PREFERENCE = stringPreferencesKey("stt_engine_preference")
         val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
         val AUTO_CONTEXT_SUMMARIZATION = booleanPreferencesKey("auto_context_summarization")
         val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
@@ -105,6 +108,10 @@ class SettingsRepository(context: Context) {
         val FILES_TOOL_ENABLED = booleanPreferencesKey("files_tool_enabled")
         val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
         val SCREEN_TIME_TOOL_ENABLED = booleanPreferencesKey("screen_time_tool_enabled")
+        // web_search tool — the only tool whose execute path leaves the device. Off by
+        // default (same opt-in shape as the Phase G on-device sources) and additionally
+        // gated at call time on a configured API key in KnowledgeGraphStore.
+        val WEB_SEARCH_TOOL_ENABLED = booleanPreferencesKey("web_search_tool_enabled")
         // Phase I — floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
         val QUICK_ACTION_BUBBLE_ENABLED = booleanPreferencesKey("quick_action_bubble_enabled")
@@ -208,6 +215,15 @@ class SettingsRepository(context: Context) {
     val inbuiltSttEnabled: Flow<Boolean> = store.data.map { it[Keys.INBUILT_STT_ENABLED] ?: true }
     suspend fun setInbuiltSttEnabled(v: Boolean) { store.edit { it[Keys.INBUILT_STT_ENABLED] = v } }
 
+    /** Which downloaded offline STT engine the realtime voice pipeline reaches for first (see
+     *  [com.vervan.chat.voice.RealtimeVoiceController]): "AUTO" prefers whisper.cpp when the app
+     *  was built with it AND its model is downloaded, falling back to the sherpa-onnx Whisper;
+     *  "WHISPER_CPP" / "WHISPER_ONNX" pin to one. Has no effect until the relevant model is
+     *  actually downloaded, and no effect at all when [inbuiltSttEnabled] is off — the pipeline
+     *  then skips straight to Android's system speech recognizer. */
+    val sttEnginePreference: Flow<String> = store.data.map { it[Keys.STT_ENGINE_PREFERENCE] ?: "AUTO" }
+    suspend fun setSttEnginePreference(v: String) { store.edit { it[Keys.STT_ENGINE_PREFERENCE] = v } }
+
     /** Model downloader (see com.vervan.chat.modeldownload) network settings. Off by default —
      * a large model download simply waits for Wi-Fi instead of silently spending mobile data
      * when on. */
@@ -259,8 +275,10 @@ class SettingsRepository(context: Context) {
     suspend fun setPreferredBackend(value: String) { store.edit { it[Keys.PREFERRED_BACKEND] = value } }
 
     /** Opt-in escape hatch for devices that can successfully lean on Android's compressed RAM
-     * or swap despite the conservative pre-load estimate. Off keeps the current strict guard. */
-    val allowLowMemoryModelLoads: Flow<Boolean> = store.data.map { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] ?: false }
+     * or swap despite the conservative pre-load estimate. On by default so users aren't blocked
+     * from loading models that the conservative estimate rejects; users who want the strict
+     * guard can turn it off. */
+    val allowLowMemoryModelLoads: Flow<Boolean> = store.data.map { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] ?: true }
     suspend fun setAllowLowMemoryModelLoads(value: Boolean) { store.edit { it[Keys.ALLOW_LOW_MEMORY_MODEL_LOADS] = value } }
 
     /** Vision token budget: how many images a single prompt can attach, for models loaded
@@ -397,6 +415,9 @@ class SettingsRepository(context: Context) {
     suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
     val screenTimeToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREEN_TIME_TOOL_ENABLED] ?: false }
     suspend fun setScreenTimeToolEnabled(v: Boolean) { store.edit { it[Keys.SCREEN_TIME_TOOL_ENABLED] = v } }
+    // ---- Web search (the one outbound-network tool) ----
+    val webSearchToolEnabled: Flow<Boolean> = store.data.map { it[Keys.WEB_SEARCH_TOOL_ENABLED] ?: false }
+    suspend fun setWebSearchToolEnabled(v: Boolean) { store.edit { it[Keys.WEB_SEARCH_TOOL_ENABLED] = v } }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: Flow<Set<String>> = store.data.map { it[Keys.DISABLED_TOOL_IDS] ?: emptySet() }
