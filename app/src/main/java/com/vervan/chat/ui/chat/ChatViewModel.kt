@@ -28,6 +28,7 @@ import com.vervan.chat.modelload.LoadTrigger
 import com.vervan.chat.modelload.ModelLoadInfo
 import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.retrieval.RetrievalMode
+import com.vervan.chat.llm.ThinkingPolicy
 import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolCallParser
@@ -772,7 +773,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val budgetTokens = (contextLimitTokens * 0.6).toInt().coerceAtLeast(50)
 
         val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow.activeLeafId)
-        val (uncovered, existingSummary) = historyAfterSummary(fullHistory, chatRow)
+        val (uncovered, existingSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
         if (uncovered.size <= KEEP_RAW_TURNS) return
 
         val uncoveredTokens = uncovered.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
@@ -1388,9 +1389,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val memories = memoryRecall.matches.map { it.memory }
             val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow.activeLeafId)
             val contextLimitTokens = effectiveContextLimitTokens(model, profile)
-            val (postSummaryHistory, earlierSummary) = historyAfterSummary(fullHistory, chatRow)
-            val history = trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
-            val promptPassages = trimPassagesToBudget(passages, contextLimitTokens)
+            val (postSummaryHistory, earlierSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
+            val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
+            val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
             val enabledToolIds = if (toolsEnabled) effectiveToolIds(chatRow) else emptySet()
             val effectiveThinkingMode = if (model?.supportsThinking == false) "OFF" else chatRow.thinkingMode
             val modelEngine = model?.engine ?: com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM
@@ -1408,25 +1409,25 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val (systemPrompt, prompt) = buildPrompt(
                 persona, projectInstructions, memories, history, promptPassages, toolsEnabled,
                 stylePreferenceText(profile.maxOutputHint),
-                reasoningInstruction(effectiveThinkingMode, modelEngine, isReasoningModel),
+                ThinkingPolicy.reasoningInstruction(effectiveThinkingMode, modelEngine, isReasoningModel),
                 app.container.settingsRepository.userProfilePrompt(),
                 noEvidenceFound,
                 historyTrimmed = history.size < postSummaryHistory.size,
                 enabledToolIds = enabledToolIds,
                 earlierSummary = earlierSummary
             )
-            val assistantPrefill = assistantPrefillFor(effectiveThinkingMode, modelEngine, isReasoningModel)
+            val assistantPrefill = ThinkingPolicy.assistantPrefillFor(effectiveThinkingMode, modelEngine, isReasoningModel)
             // llama.cpp only: hard cap on reasoning tokens before </think> is force-injected
             // natively (see nativeGenerate). -1 when not applicable (LiteRT, non-reasoning model,
             // or OFF — where the prefill already closed the block).
-            val reasoningBudget = reasoningBudgetFor(effectiveThinkingMode, modelEngine, isReasoningModel)
+            val reasoningBudget = ThinkingPolicy.reasoningBudgetFor(effectiveThinkingMode, modelEngine, isReasoningModel)
 
             val assistantMessage = Message(
                 chatId = chatId, parentId = chatRow.activeLeafId, role = MessageRole.ASSISTANT, content = "", state = MessageState.STREAMING,
                 // "[]" (not null) when grounding was requested but found nothing, so the UI can
                 // show "no matching sources" instead of no signal at all (B6).
-                sourcesJson = if (hop == 1 && (promptPassages.isNotEmpty() || noEvidenceFound)) sourcesToJson(promptPassages) else null,
-                memoryActivityJson = if (hop == 1) memoryRecallToJson(memoryRecall) else null
+                sourcesJson = if (hop == 1 && (promptPassages.isNotEmpty() || noEvidenceFound)) ChatFormatting.sourcesToJson(promptPassages) else null,
+                memoryActivityJson = if (hop == 1) ChatFormatting.memoryRecallToJson(memoryRecall) else null
             )
             db.messageDao().upsert(assistantMessage)
             setActiveLeaf(assistantMessage.id)
@@ -1589,7 +1590,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     // Kept (not nulled) so the completed card can show what was actually sent,
                     // not just the result — same as the confirm-then-execute path below.
                     toolCallJson = JSONObject().put("tool", tool.name).put("params", toolCall.params).put("risk", tool.risk.name).toString(),
-                    toolResultJson = toolResultToJson(tool.name, result)
+                    toolResultJson = ChatFormatting.toolResultToJson(tool.name, result)
                 )
             )
             if (appendSystemAndContinue(assistantMessage.id, "Tool ${tool.name} result: ${result.summary}", hop)) return
@@ -1640,7 +1641,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 )
                 db.messageDao().upsert(declineMessage)
                 setActiveLeaf(declineMessage.id)
-                GenerationRequest(nearestUserText(all, message), null, null)
+                GenerationRequest(ChatFormatting.nearestUserText(all, message), null, null)
             }
             return
         }
@@ -1667,7 +1668,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.messageDao().update(
                 // toolCallJson kept (not nulled) so the completed card can show the request
                 // (tool + params) alongside the result, not just the result.
-                message.copy(state = MessageState.COMPLETE, toolResultJson = toolResultToJson(toolName, result))
+                message.copy(state = MessageState.COMPLETE, toolResultJson = ChatFormatting.toolResultToJson(toolName, result))
             )
             val toolResultMessage = Message(
                 chatId = chatId,
@@ -1681,25 +1682,13 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // not the tool result summary (e.g. "Created note \"Groceries\"." would otherwise
             // become the RAG query) — beginGeneration() only uses GenerationRequest.triggerText
             // for source retrieval, so this doesn't affect what the model is prompted with.
-            GenerationRequest(nearestUserText(all, message), null, null)
+            GenerationRequest(ChatFormatting.nearestUserText(all, message), null, null)
         }
     }
 
     /** Walks parent links from [from] up to the nearest USER message and returns its content —
      * used where a retrieval query needs "what did the user actually ask" rather than whatever
      * text happens to be at the current leaf (e.g. a tool call or its result summary). */
-    private fun nearestUserText(all: List<Message>, from: Message?): String {
-        var current = from
-        while (current != null) {
-            if (current.role == MessageRole.USER) return current.content
-            current = current.parentId?.let { pid -> all.find { it.id == pid } }
-        }
-        return ""
-    }
-
-    private fun toolResultToJson(toolName: String, result: ToolResult): String =
-        JSONObject().put("tool", toolName).put("success", result.success).put("summary", result.summary).toString()
-
     /** Records an executed tool call to the audit history (spec §16.3 / §2.6). */
     private fun recordToolAudit(toolName: String, params: JSONObject, result: ToolResult, risk: String) {
         viewModelScope.launch {
@@ -1760,41 +1749,6 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    private fun memoryRecallToJson(recall: com.vervan.chat.data.repo.MemoryRecall): String? {
-        if (recall.matches.isEmpty()) return null
-        val recalled = JSONArray()
-        recall.matches.forEach { match ->
-            recalled.put(
-                JSONObject()
-                    .put("id", match.memory.id)
-                    .put("text", match.memory.text)
-                    .put("scope", match.memory.scope.name)
-                    .put("score", match.score.toDouble())
-            )
-        }
-        return JSONObject()
-            .put("mode", recall.mode.name.lowercase())
-            .put("recalled", recalled)
-            .put("saved", JSONArray())
-            .toString()
-    }
-
-    private fun sourcesToJson(passages: List<SourcePassage>): String {
-        val arr = JSONArray()
-        passages.forEach { p ->
-            arr.put(
-                JSONObject()
-                    .put("chunkId", p.chunkId)
-                    .put("documentId", p.documentId)
-                    .put("documentName", p.documentName)
-                    .put("sectionPath", p.sectionPath)
-                    .put("excerpt", p.excerpt.take(500))
-                    .put("score", p.score)
-            )
-        }
-        return arr.toString()
-    }
-
     fun rememberMessage(messageId: String, text: String) {
         if (text.isBlank()) return
         viewModelScope.launch {
@@ -1850,138 +1804,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return parts.filter { it.isNotBlank() }.joinToString(" ")
     }
 
-    /**
-     * Prompt-engineered "thinking mode" (spec §15) — neither `tasks-genai` (LiteRT-LM) nor
-     * llama.cpp's `llama_chat_apply_template` (explicitly non-Jinja, no `enable_thinking`
-     * template variable support) exposes a native reasoning-budget flag, so this asks the model
-     * to wrap its reasoning in `<thinking>` tags before answering; [com.vervan.chat.llm.ThinkingParser]
-     * splits that out for display. Empty for OFF, so a chat that never touches this pays no
-     * prompt cost. For a llama.cpp model, also appends the literal `/think`/`/no_think` tokens
-     * Qwen3-family GGUF models were themselves fine-tuned to respond to (a real behavior switch
-     * on top of, not instead of, the generic `<thinking>`-tag instruction above) plus a soft
-     * token-budget hint mapped from effort level. This text is a *request* the model can ignore;
-     * [assistantPrefillFor] is what actually enforces the outcome for llama.cpp models — the
-     * closest approximation to a native
-     * reasoning budget that llama.cpp's template API can express.
-     */
-    private fun reasoningInstruction(
-        mode: String,
-        engine: com.vervan.chat.data.db.entities.ModelEngine = com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM,
-        // True for models that reason natively (e.g. DeepSeek-R1). For those, OFF must actively
-        // *suppress* reasoning — an empty instruction leaves the model free to keep thinking, which
-        // is exactly why the per-chat OFF override appeared to do nothing. Display-side stripping
-        // (see suppressReasoning in runGenerationLoop) is the hard guarantee on top of this nudge.
-        isReasoningModel: Boolean = false
-    ): String {
-        val base = when (mode) {
-            "FAST" -> "Before answering, briefly think through the problem in 1-2 sentences wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            "BALANCED" -> "Before answering, think through the problem step by step wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            "DEEP" -> "Before answering, think through the problem thoroughly, considering multiple angles and edge cases, wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            else -> if (isReasoningModel) "Answer directly and concisely. Do not produce any internal reasoning, analysis, or <think> sections — reply with only the final answer." else ""
-        }
-        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) return base
-        return when (mode) {
-            "FAST" -> "$base /think (keep your reasoning under roughly 256 tokens)"
-            "BALANCED" -> "$base /think (keep your reasoning under roughly 1024 tokens)"
-            "DEEP" -> "$base /think (keep your reasoning under roughly 4096 tokens)"
-            else -> "${base} /no_think".trim()
-        }
-    }
-
-    /**
-     * Assistant-message prefill (spec §15) — the actual enforcement mechanism behind
-     * [reasoningInstruction]'s text, since a plain "/think"/"/no_think" instruction embedded in
-     * the user turn is only ever a request the model is free to ignore (this is what made
-     * thinking-mode effectively uncontrollable before: no code path forced either outcome).
-     * llama.cpp's own prompt gets this text appended directly after the chat template's
-     * assistant-turn-start tokens (see `nativeGenerate`'s `assistantPrefill`), so generation
-     * literally continues from an already-open or already-closed `<think>` block instead of
-     * hoping the model complies. `null` for OFF/non-thinking models leaves the prompt untouched.
-     */
-    private fun assistantPrefillFor(
-        mode: String,
-        engine: com.vervan.chat.data.db.entities.ModelEngine,
-        // Only force a <think> block on a model that actually reasons. Prefilling "<think>\n" onto
-        // a non-reasoning GGUF (e.g. a plain Gemma) would make it emit stray reasoning tags and,
-        // worse, arm the native reasoning-budget counter against ordinary answer tokens — so the
-        // </think> auto-inject could fire mid-answer. null here leaves such models untouched.
-        isReasoningModel: Boolean
-    ): String? {
-        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP || !isReasoningModel) return null
-        return if (mode == "OFF") "<think>\n\n</think>\n\n" else "<think>\n"
-    }
-
-    /**
-     * The hard reasoning-token budget handed to llama.cpp's native loop ([nativeGenerate]), which
-     * force-injects `</think>` once the model has spent this many tokens still inside an open
-     * `<think>` block — the actual enforcement behind the soft "keep reasoning under N tokens"
-     * hint in [reasoningInstruction], and the answer to "the thinking budget can't be controlled":
-     * before this it was only ever a request in the prompt text. Returns -1 ("no cap / not
-     * applicable") for anything but a reasoning llama.cpp model in a non-OFF mode, since those are
-     * exactly the cases where [assistantPrefillFor] opens a `<think>` block for the budget to
-     * bound. LiteRT-LM's SDK exposes no equivalent native hook, so its budget stays a prompt hint.
-     */
-    private fun reasoningBudgetFor(
-        mode: String,
-        engine: com.vervan.chat.data.db.entities.ModelEngine,
-        isReasoningModel: Boolean
-    ): Int {
-        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP || !isReasoningModel) return -1
-        return when (mode) {
-            "FAST" -> 256
-            "BALANCED" -> 1024
-            "DEEP" -> 4096
-            else -> -1 // OFF: the prefill already closed the block, nothing to cap
-        }
-    }
-
-    /**
-     * Context eviction (Phase 2, spec §10) — drops the oldest turns first once the
-     * conversation would blow past the model's usable context, instead of growing the
-     * prompt unbounded (B9-adjacent). char-budget proxy (same chars/4 estimate
-     * used elsewhere), drop-oldest-first only — no pinning, no summarization-of-dropped-
-     * turns, no 16-tier priority system. Always keeps at least the most recent turn.
-     */
-    /**
-     * Splits [fullHistory] at [Chat.summaryCoversUpToMessageId] — everything at or before that
-     * message is represented by [Chat.contextSummary] instead of being sent raw, everything
-     * after is untouched. Returns (raw tail, summary text or null). Falls back to the whole
-     * history with no summary if the cutoff message can't be found (e.g. branch switch moved
-     * off the path it was computed against) — same as "no summary yet".
-     */
-    private fun historyAfterSummary(fullHistory: List<Message>, chatRow: Chat?): Pair<List<Message>, String?> {
-        val summary = chatRow?.contextSummary?.takeIf { it.isNotBlank() } ?: return fullHistory to null
-        val coveredIndex = chatRow.summaryCoversUpToMessageId?.let { id -> fullHistory.indexOfFirst { it.id == id } } ?: -1
-        return if (coveredIndex >= 0) fullHistory.drop(coveredIndex + 1) to summary else fullHistory to null
-    }
-
-    private fun trimHistoryToBudget(history: List<Message>, contextLimitTokens: Int): List<Message> {
-        if (history.size <= 1) return history
-        // Reserve roughly 60% of the token budget for history — the rest covers persona,
-        // memories, retrieved sources, and the model's own output. Uses the script-aware
-        // estimator (see TokenEstimate.kt) — flat chars/4 overshot ~4x on non-Latin scripts.
-        val budgetTokens = (contextLimitTokens * 0.6).toInt().coerceAtLeast(50)
-        var totalTokens = history.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
-        if (totalTokens <= budgetTokens) return history
-        val trimmed = history.toMutableList()
-        while (trimmed.size > 1 && totalTokens > budgetTokens) {
-            totalTokens -= com.vervan.chat.llm.estimateTokens(trimmed.removeAt(0).content)
-        }
-        return trimmed
-    }
-
     private suspend fun effectiveContextLimitTokens(model: com.vervan.chat.data.db.entities.ModelInfo?, profile: com.vervan.chat.llm.ResolvedProfile): Int {
         val base = model?.contextTokens ?: app.container.settingsRepository.contextTokenLimit.first()
         return (base * profile.contextFraction).toInt().coerceAtLeast(1024)
-    }
-
-    private fun trimPassagesToBudget(passages: List<SourcePassage>, contextLimitTokens: Int): List<SourcePassage> {
-        if (passages.isEmpty()) return passages
-        val budgetTokens = (contextLimitTokens * 0.25f).toInt().coerceAtLeast(200)
-        val perPassageTokens = (budgetTokens / passages.size).coerceAtLeast(50)
-        return passages.map { passage ->
-            passage.copy(excerpt = com.vervan.chat.llm.truncateToTokens(passage.excerpt, perPassageTokens))
-        }
     }
 
     /** Tool ids this chat can actually call right now: the global Settings → Tools disable
@@ -2163,15 +1988,15 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow?.activeLeafId)
         val model = resolveGenerationModelForChat(chatRow)
         val contextLimitTokens = effectiveContextLimitTokens(model, profile)
-        val (postSummaryHistory, earlierSummary) = historyAfterSummary(fullHistory, chatRow)
-        val history = trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
+        val (postSummaryHistory, earlierSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
+        val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
         val passages = if (chatRow?.sourceGrounded == true && chatRow.kbIdList().isNotEmpty() && draftText.isNotBlank() && profile.retrievalTopK > 0) {
             retrieveSources(chatRow.kbIdList(), draftText, profile.retrievalTopK)
         } else emptyList()
-        val promptPassages = trimPassagesToBudget(passages, contextLimitTokens)
+        val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
         val sections = buildPromptSections(
             persona, projectInstructions, memories, history, promptPassages, chatRow?.toolsEnabled == true,
-            stylePreferenceText(profile.maxOutputHint), reasoningInstruction(chatRow?.thinkingMode ?: "OFF"),
+            stylePreferenceText(profile.maxOutputHint), ThinkingPolicy.reasoningInstruction(chatRow?.thinkingMode ?: "OFF"),
             app.container.settingsRepository.userProfilePrompt(),
             historyTrimmed = history.size < postSummaryHistory.size,
             enabledToolIds = chatRow?.let { effectiveToolIds(it) } ?: emptySet(),
