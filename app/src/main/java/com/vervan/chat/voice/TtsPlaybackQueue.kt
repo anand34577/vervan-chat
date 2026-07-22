@@ -70,8 +70,15 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     fun startTurn(onSample: ((ShortArray, Int) -> Unit)? = null) {
         paused = false
         sampleSink = onSample
-        sentenceChannel = Channel(Channel.UNLIMITED)
-        val channel = sentenceChannel
+        // A second startTurn() without stop()/endTurn() between turns previously orphaned the
+        // prior Channel.UNLIMITED and its playback coroutine — neither was closed/cancelled
+        // before reassignment, so the old loop could keep draining the old channel and hold
+        // AudioTrack focus. Drop them cleanly first. (On the first turn both are the no-op
+        // defaults from construction: playbackJob == null and an already-open channel.)
+        playbackJob?.cancel()
+        runCatching { sentenceChannel.close() }
+        val channel = Channel<String>(Channel.UNLIMITED)
+        sentenceChannel = channel
         playbackJob = scope.launch(Dispatchers.Default) { runPlaybackLoop(channel) }
     }
 

@@ -2,6 +2,7 @@ package com.vervan.chat.data.db.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.io.File
 import java.util.UUID
 
 enum class ModelBackend { NPU, GPU, CPU, UNVERIFIED }
@@ -172,4 +173,24 @@ fun ModelInfo.reconcileCapabilities(
         disabled += "Speculative decoding (MTP)"
     }
     return updated to disabled
+}
+
+/** Whether this model *can* support vision at all — the hard physical limit the Vision
+ * capability toggle respects (and that [supportsVision] is meaningless without). A llama.cpp
+ * model needs its companion mmproj projector file present on disk (set at import — see
+ * `ModelImportManager.importLlamaCppModel`); without one the native loader has no vision
+ * encoder to invoke, so letting the user turn Vision on would be a silent no-op that misleads
+ * the rest of the app into offering image attachments. A LiteRT-LM model bundles its vision
+ * encoder in the single .task/.litertlm package, so it always can. */
+fun ModelInfo.canSupportVision(): Boolean = when (engine) {
+    ModelEngine.LLAMA_CPP -> !mmprojPath.isNullOrBlank() && File(mmprojPath).isFile
+    ModelEngine.LITERT_LM -> true
+}
+
+/** Whether this model *can* support native audio input at all — same hard-limit reasoning as
+ * [canSupportVision]. llama.cpp has no audio-input JNI in this app (see `LlamaCppEngine`'s
+ * hardcoded `audioEnabled = false`); a LiteRT-LM model may bundle an audio encoder. */
+fun ModelInfo.canSupportAudio(): Boolean = when (engine) {
+    ModelEngine.LLAMA_CPP -> false
+    ModelEngine.LITERT_LM -> true
 }

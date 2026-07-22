@@ -25,10 +25,11 @@ import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMotion
 
 /**
- * The icon + title + explanatory body (+ optional CTAs) empty state already used by
- * Notes/Folders/Collections/JobQueue/RecycleBin/StudyReview — as a shared component so
- * screens that currently render nothing when empty (Projects, a workspace's chat list,
- * a brand-new chat) get the same reassurance for free instead of a blank screen.
+ * The icon + title + explanatory body (+ optional CTAs) empty state used across the app
+ * (Notes/Folders/Collections/JobQueue/RecycleBin/StudyReview/Projects/...). Some screens
+ * (ChatScreen, WorkspaceDetail's inline chat list) deliberately keep a purpose-built empty
+ * state instead of this full-screen one because the empty content is nested inside a larger
+ * scroll surface — that's fine; this composable is for full-screen-empty cases.
  *
  * An empty state is usually the *first* thing a user sees on a fresh install, so it now settles
  * in with a gentle fade + rise (skipped under reduced motion) rather than snapping in cold, and

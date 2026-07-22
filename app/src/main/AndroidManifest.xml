@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -10,7 +11,9 @@
 
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <!-- Scoped storage (Android 13+) replaced broad file listing with per-media permissions
          this app doesn't need — search_files only targets Downloads, which is still reachable
          via READ_EXTERNAL_STORAGE pre-13; not requested (or requestable) above that. -->
@@ -96,6 +99,13 @@
              Models screen. -->
         <service
             android:name=".modeldownload.ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Model Store installer (see com.vervan.chat.store) — runs only while a store install
+             is active, so a multi-gigabyte download survives leaving the Store screen. -->
+        <service
+            android:name=".store.StoreDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

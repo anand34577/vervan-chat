@@ -43,7 +43,13 @@ class ModelDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        runCatching { startForeground(NOTIFICATION_ID, buildNotification(null)) }.onFailure { stopSelf() }
+        // If startForeground is rejected (Android 12+ 5-s window, missing POST_NOTIFICATIONS on
+        // 13+, quota exhausted on 14+) the service must not fall through to launching watchJob:
+        // recovering downloads and observing uiStates would then run without foreground priority,
+        // and the OS can kill the service mid-recovery — exactly the unpredictable-mid-download-kill
+        // the foreground notification is supposed to prevent. Match StoreDownloadService's pattern.
+        runCatching { startForeground(NOTIFICATION_ID, buildNotification(null)) }
+            .onFailure { stopSelf(); return }
         val repository = (application as VervanApp).container.modelDownloadRepository
         watchJob = scope.launch {
             repository.recoverOnStartup()
