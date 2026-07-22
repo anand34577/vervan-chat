@@ -11,7 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.vervan.chat.R
 
 /**
- * Posts user-relevant notifications for background work completion/failure (spec §37.4).
+ * Posts user-relevant notifications for background work completion/failure.
  * Deliberately *not* used for engagement prompts — only operational status the user would
  * want to know while the app is backgrounded (import done, indexing complete, job failed,
  * thermal/storage warnings). If POST_NOTIFICATIONS is unavailable on Android 13+, posting

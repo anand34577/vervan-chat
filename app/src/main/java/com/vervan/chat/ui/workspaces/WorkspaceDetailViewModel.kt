@@ -47,8 +47,8 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
     val projects: StateFlow<List<Project>> = db.projectDao().observeForWorkspace(workspaceId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // §7 status summary — active/archived chat counts and document count, kept lean (total
-    // chats/folders/docs, not the full token-usage breakdown spec §15 describes, which needs
+    // status summary — active/archived chat counts and document count, kept lean (total
+    // chats/folders/docs, not the full token-usage breakdown describes, which needs
     // per-message token accounting this app doesn't record yet).
     val activeChatCount: StateFlow<Int> = db.chatDao().observeActiveCountForWorkspace(workspaceId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -60,7 +60,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // personaId is left null (not copied from the workspace) so the chat inherits via the
-    // effective-config fallback chain (spec §7) — if the workspace persona changes later,
+    // effective-config fallback chain — if the workspace persona changes later,
     // this chat follows along instead of being pinned to whatever it was at creation time.
     suspend fun createChat(): String {
         val chat = workspaceManager.applyDefaults(Chat(workspaceId = workspaceId))
@@ -82,7 +82,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         viewModelScope.launch { db.workspaceDao().update(current.copy(personaId = personaId, updatedAt = System.currentTimeMillis())) }
     }
 
-    // Chat Screen spec §20 — kept workspace-scoped, not global/per-chat: every chat in this
+    // Chat Screen — kept workspace-scoped, not global/per-chat: every chat in this
     // workspace either gets auto-generated titles or none do. Allowed even for the Default
     // Workspace (only identity/lifecycle fields are locked for it, not feature toggles).
     fun setAutoTitleGeneration(enabled: Boolean) {
@@ -90,7 +90,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         viewModelScope.launch { db.workspaceDao().update(current.copy(autoTitleGeneration = enabled, updatedAt = System.currentTimeMillis())) }
     }
 
-    /** §Phase A — per-workspace lock. Only meaningful once app-lock credentials exist; the
+    /** Per-workspace lock. Only meaningful once app-lock credentials exist; the
      * screen is responsible for not offering this until [com.vervan.chat.security.AppLockManager.hasPin]
      * or biometric hardware is available, same as it gates showing the unlock prompt. */
     fun setLockEnabled(enabled: Boolean) {
@@ -98,7 +98,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         viewModelScope.launch { db.workspaceDao().update(current.copy(lockEnabled = enabled, updatedAt = System.currentTimeMillis())) }
     }
 
-    /** Phase E — per-workspace defaults for new chats created inside it, see
+    /** per-workspace defaults for new chats created inside it, see
      * [com.vervan.chat.model.WorkspaceManager.applyDefaults]. */
     fun setDefaultProfile(profileId: String?) {
         val current = workspace.value ?: return
@@ -131,7 +131,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         workspace.value?.let { workspaceManager.delete(it) }
     }
 
-    // Chat Screen spec §19 — batch AI title generation, launched from the workspace's chat
+    // Chat Screen — batch AI title generation, launched from the workspace's chat
     // list. progress/pause/cancel work within this one run (an in-memory cursor and
     // a cancellable coroutine, checked between chats); a JobRecord row gives it visibility in
     // the Job Queue screen, but there's no true resume-after-process-death — cancelling and

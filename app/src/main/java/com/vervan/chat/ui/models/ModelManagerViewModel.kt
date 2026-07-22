@@ -160,13 +160,13 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     private val _busyLabel = MutableStateFlow<String?>(null)
     val busyLabel: StateFlow<String?> = _busyLabel
 
-    /** Set when a model needs the one-time license acknowledgment (spec §12) before it can
+    /** Set when a model needs the one-time license acknowledgment before it can
      * be activated — the screen shows a dialog and calls [acknowledgeAndActivate] or dismisses. */
     private val _pendingAcknowledgment = MutableStateFlow<ModelInfo?>(null)
     val pendingAcknowledgment: StateFlow<ModelInfo?> = _pendingAcknowledgment
 
     /** Set when a freshly-verified import looks like a new version of an already-installed
-     * model (spec §11.12) — the screen offers to relink defaults instead of silently
+     * model — the screen offers to relink defaults instead of silently
      * replacing the active model. */
     private val _pendingMigration = MutableStateFlow<Pair<ModelInfo, ModelInfo>?>(null)
     val pendingMigration: StateFlow<Pair<ModelInfo, ModelInfo>?> = _pendingMigration
@@ -361,10 +361,10 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 Log.i(TAG, "validateAndActivate() looks like a new version of ${previousVersion.displayName}; asking user")
                 _pendingMigration.value = verified to previousVersion
             } else if (db.modelDao().getActiveModel(verified.role) == null) {
-                // Model Loading Strategy §4.2: only the *first* valid model of a type becomes the
+                // Model Loading Strategy: only the *first* valid model of a type becomes the
                 // default automatically. Importing a second/third model of the same role must not
                 // silently steal default status from whatever the user already has active — it
-                // just joins the list, available to load/activate manually (§3.2).
+                // just joins the list, available to load/activate manually.
                 setActive(verified)
             }
         } catch (t: Throwable) {
@@ -502,7 +502,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             val previousName = previousId?.let { id -> models.value.find { it.id == id }?.displayName }
             val result = coordinator.loadManually(model)
             if (result.success) {
-                // §11.3 — a delegate fallback (e.g. GPU requested but only CPU actually worked)
+                // a delegate fallback (e.g. GPU requested but only CPU actually worked)
                 // is a materially different outcome from what was asked for, even though it's
                 // technically "success" — must be disclosed, not folded silently into a plain
                 // "Loaded" toast.
@@ -555,7 +555,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     /** Relinks every folder default pointing at [previous] to [newModel] and makes [newModel]
-     * active — [previous] itself is left installed and untouched (spec §11.12: "keep both").
+     * active — [previous] itself is left installed and untouched (: "keep both").
      * Historical chats already reference [previous] by id directly and are never rewritten. */
     fun relinkToNewVersion(newModel: ModelInfo, previous: ModelInfo) {
         _pendingMigration.value = null
@@ -581,7 +581,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 db.chatDao().clearModel(model.id)
                 coordinator.forceUnloadIfLoaded(model)
                 if (model.isActive) {
-                    // Model Loading Strategy §4.4: default reassignment (step 4) must happen
+                    // Model Loading Strategy: default reassignment (step 4) must happen
                     // *before* file deletion (step 5) is attempted, not after — so that if file
                     // deletion fails below, the reassignment already stands (step 7) instead of
                     // silently never having run.
@@ -593,7 +593,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         .all { it }
                 }
                 if (!filesDeleted) {
-                    // §4.4 step 7: the model is already unloaded and its default status already
+                    // : the model is already unloaded and its default status already
                     // reassigned — both stand. Keep the DB row (rather than deleting it) so the
                     // broken not_loaded state is visible in Model Manager and the user can retry
                     // instead of the app silently forgetting a model whose file is still on disk.

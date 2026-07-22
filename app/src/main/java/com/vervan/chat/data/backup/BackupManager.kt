@@ -28,7 +28,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * JSON export/import for everything a user actually authored (spec §33). Model files,
+ * JSON export/import for everything a user actually authored. Model files,
  * knowledge bases, and imported documents are deliberately NOT included — those are large
  * binary assets tied to on-device paths, re-importing them belongs to Models/Knowledge, not
  * a settings backup. hand-rolled org.json mapping per entity (matches how the rest
@@ -44,7 +44,7 @@ object BackupManager {
         root.put("exportedAt", System.currentTimeMillis())
 
         root.put("workspaces", JSONArray(db.workspaceDao().observeAll().firstList().map { workspaceToJson(it) }))
-        // Incognito mode (Phase B) — a temporary chat is excluded from export entirely, same
+        // Incognito mode — a temporary chat is excluded from export entirely, same
         // as it's excluded from search and smart collections.
         val exportableChats = db.chatDao().observeAllChats().firstList().filterNot { it.isTemporary }
         root.put("chats", JSONArray(exportableChats.map { chatToJson(it) }))
@@ -66,7 +66,7 @@ object BackupManager {
     }
 
     /**
-     * Phase E — same JSON shape as [export], scoped to one workspace's own chats/messages/
+     * same JSON shape as [export], scoped to one workspace's own chats/messages/
      * folders (its knowledge bases and documents are excluded, same as the full export already
      * excludes them everywhere — see this object's class doc). Every other category (notes,
      * personas, templates, workflows, memories, projects, saved outputs, flashcards) isn't

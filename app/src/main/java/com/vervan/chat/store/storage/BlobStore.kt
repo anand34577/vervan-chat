@@ -44,7 +44,7 @@ class BlobStore(private val root: File) {
 
     /** Absolute path a runtime will be handed, or null when the blob is absent. Callers must treat
      * null as NOT_READY rather than assuming the file is there — an external volume can disappear
-     * between install and load (spec §7). */
+     * between install and load. */
     fun pathFor(sha256: String): String? = blobFile(sha256).takeIf { it.isFile }?.absolutePath
 
     fun sizeOf(sha256: String): Long = blobFile(sha256).takeIf { it.isFile }?.length() ?: 0L
@@ -93,7 +93,7 @@ class BlobStore(private val root: File) {
 
     /**
      * Recomputes a blob's hash and deletes it if it no longer matches. Drives the periodic
-     * integrity spot-check (spec §7) that catches on-disk corruption from unclean shutdowns —
+     * integrity spot-check that catches on-disk corruption from unclean shutdowns —
      * without it, a corrupted weights file surfaces as an unexplained native crash at load time
      * rather than as a re-downloadable model.
      */

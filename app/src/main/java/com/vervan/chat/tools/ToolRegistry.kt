@@ -203,7 +203,7 @@ object ToolRegistry {
                 }, "calendar event")
             }
         ),
-        // On-device data sources (Phase G) — each gated on its own Settings toggle (off by
+        // On-device data sources — each gated on its own Settings toggle (off by
         // default) in addition to the OS runtime permission; a model call against a source the
         // user hasn't opted into gets a graceful no, not a crash or a permission-request popup
         // mid-conversation. See gatedResult() below.

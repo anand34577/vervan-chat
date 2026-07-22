@@ -68,9 +68,9 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(13, 14) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Model profile per chat (spec §11.9)
+            // Model profile per chat
             db.execSQL("ALTER TABLE chats ADD COLUMN profile TEXT NOT NULL DEFAULT 'BALANCED'")
-            // Folder column on chat + note (spec §28.2)
+            // Folder column on chat + note
             db.execSQL("ALTER TABLE chats ADD COLUMN folderId TEXT")
             db.execSQL("ALTER TABLE notes ADD COLUMN folderId TEXT")
             // Folders table
@@ -80,21 +80,21 @@ val MIGRATIONS = arrayOf(
                     "defaultPersonaId TEXT, defaultModelId TEXT, defaultKnowledgeBaseIds TEXT NOT NULL, " +
                     "color TEXT NOT NULL, createdAt INTEGER NOT NULL, deletedAt INTEGER)"
             )
-            // Flashcard set metadata (spec §55) — separate from individual cards so a set has
+            // Flashcard set metadata — separate from individual cards so a set has
             // a description and last-studied stamp independent of its cards.
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS flashcard_sets (" +
                     "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, " +
                     "createdAt INTEGER NOT NULL, lastStudiedAt INTEGER)"
             )
-            // Memory suggestion inbox (spec §27.3) — proposed memories awaiting review.
+            // Memory suggestion inbox — proposed memories awaiting review.
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS memory_suggestions (" +
                     "id TEXT NOT NULL PRIMARY KEY, text TEXT NOT NULL, `key` TEXT, " +
                     "scope TEXT NOT NULL, scopeRefId TEXT, sourceChatId TEXT, " +
                     "createdAt INTEGER NOT NULL, status TEXT NOT NULL)"
             )
-            // Tool execution audit history (spec §16.3 step 13 / §2.6) — every executed tool
+            // Tool execution audit history (/) — every executed tool
             // call gets a row, so users can see what the app actually did on the model's behalf.
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS tool_audit (" +
@@ -102,7 +102,7 @@ val MIGRATIONS = arrayOf(
                     "success INTEGER NOT NULL, summary TEXT NOT NULL, risk TEXT NOT NULL, " +
                     "chatId TEXT, createdAt INTEGER NOT NULL)"
             )
-            // Indexing / background job records (spec §32.1, §76) — durable job queue.
+            // Indexing / background job records — durable job queue.
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS jobs (" +
                     "id TEXT NOT NULL PRIMARY KEY, type TEXT NOT NULL, label TEXT NOT NULL, " +
@@ -113,16 +113,16 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(14, 15) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Marks OCR-derived document text (spec §40.27) so the UI can flag it as such.
+            // Marks OCR-derived document text so the UI can flag it as such.
             db.execSQL("ALTER TABLE documents ADD COLUMN ocrApplied INTEGER NOT NULL DEFAULT 0")
         }
     },
     object : Migration(15, 16) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Document versioning (Phase 3, spec §20) — content hash to detect a changed
+            // Document versioning — content hash to detect a changed
             // same-named re-import.
             db.execSQL("ALTER TABLE documents ADD COLUMN contentHash TEXT")
-            // Knowledge base display/default-context customization (Phase 3, spec §17).
+            // Knowledge base display/default-context customization.
             db.execSQL("ALTER TABLE knowledge_bases ADD COLUMN icon TEXT NOT NULL DEFAULT 'MenuBook'")
             db.execSQL("ALTER TABLE knowledge_bases ADD COLUMN color TEXT")
             db.execSQL("ALTER TABLE knowledge_bases ADD COLUMN defaultPersonaId TEXT")
@@ -132,7 +132,7 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(16, 17) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Persona behavior dials (Phase 4, spec §25).
+            // Persona behavior dials.
             db.execSQL("ALTER TABLE personas ADD COLUMN tone TEXT NOT NULL DEFAULT 'NEUTRAL'")
             db.execSQL("ALTER TABLE personas ADD COLUMN formality TEXT NOT NULL DEFAULT 'NEUTRAL'")
             db.execSQL("ALTER TABLE personas ADD COLUMN conciseness TEXT NOT NULL DEFAULT 'NORMAL'")
@@ -143,14 +143,14 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(17, 18) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Note tags (Phase 4, spec §21).
+            // Note tags.
             db.execSQL("ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         }
     },
     object : Migration(18, 19) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // Recycle bin coverage extended to personas/workflows/templates/projects/
-            // memories/saved-outputs (Phase 6, spec §34) — same soft-delete column pattern
+            // memories/saved-outputs — same soft-delete column pattern
             // already used for chats/notes/documents/folders.
             db.execSQL("ALTER TABLE personas ADD COLUMN deletedAt INTEGER")
             db.execSQL("ALTER TABLE workflows ADD COLUMN deletedAt INTEGER")
@@ -190,7 +190,7 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(22, 23) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Workspace System spec §1-2: a permanent Default Workspace, and every chat/folder/
+            // Workspace System-2: a permanent Default Workspace, and every chat/folder/
             // document now scoped to exactly one workspace. Existing rows all backfill onto the
             // Default Workspace so nothing becomes orphaned by this migration.
             db.execSQL(
@@ -223,14 +223,14 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(24, 25) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Per-chat sampler overrides (spec §6/§7) — nullable, null means "inherit".
+            // Per-chat sampler overrides — nullable, null means "inherit".
             db.execSQL("ALTER TABLE chats ADD COLUMN temperature REAL")
             db.execSQL("ALTER TABLE chats ADD COLUMN topP REAL")
             db.execSQL("ALTER TABLE chats ADD COLUMN topK INTEGER")
-            // Scroll-position restore (spec §17).
+            // Scroll-position restore.
             db.execSQL("ALTER TABLE chats ADD COLUMN scrollAnchorMessageId TEXT")
             db.execSQL("ALTER TABLE chats ADD COLUMN scrollAnchorOffsetPx INTEGER NOT NULL DEFAULT 0")
-            // AI title generation (spec §18-20).
+            // AI title generation.
             db.execSQL("ALTER TABLE chats ADD COLUMN titleIsCustom INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE chats ADD COLUMN previousTitle TEXT")
             db.execSQL("ALTER TABLE workspaces ADD COLUMN autoTitleGeneration INTEGER NOT NULL DEFAULT 0")
@@ -245,8 +245,8 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(26, 27) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Privacy hardening (Phase A) — per-chat screenshot block and incognito/temporary
-            // chats; per-workspace lock and new-chat defaults (Phase A/E).
+            // Privacy hardening — per-chat screenshot block and incognito/temporary
+            // chats; per-workspace lock and new-chat defaults.
             db.execSQL("ALTER TABLE chats ADD COLUMN screenshotBlocked INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE chats ADD COLUMN isTemporary INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE workspaces ADD COLUMN lockEnabled INTEGER NOT NULL DEFAULT 0")

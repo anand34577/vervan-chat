@@ -86,7 +86,7 @@ fun WorkspaceDetailScreen(
     val documentCount by vm.documentCount.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // Phase E — same CreateDocument/export pattern as BackupScreen.kt, scoped to this
+    // same CreateDocument/export pattern as BackupScreen.kt, scoped to this
     // workspace's own chats/messages/folders (see BackupManager.exportWorkspace).
     val exportFileName = remember(workspaceId) {
         "vervan-workspace-${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())}.json"
@@ -126,7 +126,7 @@ fun WorkspaceDetailScreen(
     val ws = workspace
     val isActive = ws?.id == activeWorkspaceId
 
-    // Phase A — a locked workspace requires a fresh unlock before switching into it, regardless
+    // a locked workspace requires a fresh unlock before switching into it, regardless
     // of whether the app-wide lock is currently satisfied (this reuses AppLockManager/LockScreen
     // rather than a parallel auth UI — successfully authenticating here also happens to satisfy
     // the app-wide lock if that was separately active, which is fine: either way the user just
@@ -199,7 +199,7 @@ fun WorkspaceDetailScreen(
                 modifier = Modifier.padding(top = Space.xs),
             )
 
-            // §7 status summary — horizontally scrollable stat cards (phone space rule §18:
+            // status summary — horizontally scrollable stat cards (phone space rule:
             // "show four or fewer primary statistics at once").
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp).horizontalScroll(rememberScrollState()),
@@ -221,7 +221,7 @@ fun WorkspaceDetailScreen(
                 OutlinedButton(onClick = newChat) { Text("New chat") }
             }
 
-            // Chat Screen spec §20 — workspace-scoped auto title generation toggle.
+            // Chat Screen — workspace-scoped auto title generation toggle.
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -237,7 +237,7 @@ fun WorkspaceDetailScreen(
                 androidx.compose.material3.Switch(checked = ws.autoTitleGeneration, onCheckedChange = { vm.setAutoTitleGeneration(it) })
             }
 
-            // Phase A — per-workspace lock (e.g. a "Personal" workspace kept separate from
+            // per-workspace lock (e.g. a "Personal" workspace kept separate from
             // "Work"). Only offered once app-lock credentials actually exist somewhere —
             // otherwise switching it on would require an unlock nothing can ever satisfy.
             val lockCredentialsExist = app.container.appLockManager.hasPin() ||
@@ -263,7 +263,7 @@ fun WorkspaceDetailScreen(
                 )
             }
 
-            // Phase E — per-workspace defaults for chats created inside it (WorkspaceManager.applyDefaults).
+            // per-workspace defaults for chats created inside it (WorkspaceManager.applyDefaults).
             Text("Default for new chats in this workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
             Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
@@ -384,7 +384,7 @@ fun WorkspaceDetailScreen(
         )
     }
 
-    // Chat Screen spec §19 — batch AI title generation options + progress.
+    // Chat Screen — batch AI title generation options + progress.
     if (showBatchTitleOptions) {
         AlertDialog(
             onDismissRequest = { showBatchTitleOptions = false },
@@ -584,7 +584,7 @@ private fun EditWorkspaceDialog(
     )
 }
 
-/** Phase E — simple multi-select KB checklist for a workspace's default-KB set. Deliberately
+/** simple multi-select KB checklist for a workspace's default-KB set. Deliberately
  * separate from ChatScreen's private SourcePickerDialog (that one also bundles a per-chat
  * sourceGrounded on/off switch this doesn't need). */
 @Composable

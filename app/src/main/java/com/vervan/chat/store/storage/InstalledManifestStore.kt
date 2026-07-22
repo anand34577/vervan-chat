@@ -15,7 +15,7 @@ import org.json.JSONObject
  *
  * This file is the authoritative statement that a variant is installed. Its existence is what
  * makes a model loadable, which is why [InstalledManifestStore.commit] writes it *last* and
- * atomically — an all-or-nothing install (spec §6.9) is enforced by the fact that a variant with
+ * atomically — an all-or-nothing install is enforced by the fact that a variant with
  * no manifest simply is not installed, however many of its blobs happen to be on disk.
  *
  * It is also the input to garbage collection: a blob is referenced if and only if some manifest
@@ -33,7 +33,7 @@ data class InstallRecord(
     val roleToHash: Map<ArtifactRole, String>,
     val installedAt: Long,
     /** Which catalogue version this install came from, and which licence text was accepted.
-     * Both are needed to answer a rightsholder complaint precisely (spec §11/§12). */
+     * Both are needed to answer a rightsholder complaint precisely. */
     val catalogVersion: Int,
     val acceptedLicenseHash: String?,
     val totalBytes: Long

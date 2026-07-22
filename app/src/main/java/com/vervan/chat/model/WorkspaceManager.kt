@@ -18,7 +18,7 @@ class WorkspaceManager(
     private val documentImportManager: DocumentImportManager,
     private val settingsRepository: SettingsRepository
 ) {
-    /** §5: selecting a workspace immediately makes it active; §2/§19 an archived workspace can
+    /** : selecting a workspace immediately makes it active; an archived workspace can
      * never be made active — callers must restore it first. */
     suspend fun setActive(workspace: Workspace) {
         check(!workspace.archived) { "Archived workspace cannot be active" }
@@ -26,7 +26,7 @@ class WorkspaceManager(
         settingsRepository.setActiveWorkspaceId(workspace.id)
     }
 
-    /** Phase E — fills a brand-new chat's model profile / knowledge bases from its workspace's
+    /** fills a brand-new chat's model profile / knowledge bases from its workspace's
      * configured defaults. Callers must apply this immediately after constructing the [Chat]
      * (all current call sites do) — it unconditionally prefers the workspace's default over
      * whatever the [Chat] constructor's own defaults left in place, so it isn't safe to call
@@ -46,7 +46,7 @@ class WorkspaceManager(
         return workspace
     }
 
-    /** §12: hides the workspace and everything in it, and falls back to Default if it was
+    /** : hides the workspace and everything in it, and falls back to Default if it was
      * active — an archived workspace can never remain the active one. */
     suspend fun archive(workspace: Workspace) {
         check(!workspace.isDefault) { "Default Workspace cannot be archived" }
@@ -61,9 +61,9 @@ class WorkspaceManager(
     }
 
     /**
-     * Permanently deletes a custom workspace and everything scoped to it (§13): its folders,
+     * Permanently deletes a custom workspace and everything scoped to it: its folders,
      * chats (and their messages/tool-audit records), and documents. Falls back to the Default
-     * Workspace if the deleted one was active (§5/§19 — deleting the active workspace requires
+     * Workspace if the deleted one was active (deleting the active workspace requires
      * switching first, enforced here rather than trusting the caller already did it).
      */
     suspend fun delete(workspace: Workspace) {

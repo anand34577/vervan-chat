@@ -5,7 +5,7 @@ import com.vervan.chat.data.db.dao.DocumentDao
 import com.vervan.chat.data.db.entities.Chunk
 import com.vervan.chat.data.db.entities.toFloatArray
 
-// EXACT_PHRASE added (Phase 2, spec §19) — the other two modes the spec calls out
+// EXACT_PHRASE added — the other two modes the spec calls out
 // (current-document-only, recency-weighting) either need context this engine doesn't have
 // (which document the user is currently viewing) or are folded into HYBRID directly below
 // rather than becoming a whole separate mode.
@@ -55,7 +55,7 @@ class RetrievalEngine(
             semanticScore(query, chunks)
         } else emptyMap()
         val exactPhraseScores = if (mode == RetrievalMode.EXACT_PHRASE) exactPhraseScore(query, chunks) else emptyMap()
-        // Recency-weighting folded directly into HYBRID (spec §19) rather than a standalone
+        // Recency-weighting folded directly into HYBRID rather than a standalone
         // mode — a small tie-breaker toward more recently imported documents, not a filter.
         val recencyScores = if (mode == RetrievalMode.HYBRID) recencyScore(chunks) else emptyMap()
 

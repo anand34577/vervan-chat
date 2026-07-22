@@ -19,7 +19,7 @@ import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanSuccess
 
 /**
- * §6/§7.6.2/§7.8 DiffViewer — AI text transforms (Writing, Developer, Notes actions) must show
+ * DiffViewer — AI text transforms (Writing, Developer, Notes actions) must show
  * a before/after review before replacing content, never overwrite silently. This is a
  * line-level before/after, not a character-level diff algorithm — good enough to review a
  * rewritten paragraph or fixed code block without pulling in a diff-match-patch dependency.

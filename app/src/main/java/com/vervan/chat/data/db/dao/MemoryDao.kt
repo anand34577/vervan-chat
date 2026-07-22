@@ -18,14 +18,14 @@ interface MemoryDao : BaseDao<Memory> {
     @Query("SELECT * FROM memories WHERE key = :key AND scope = :scope AND (scopeRefId IS :scopeRefId) AND deletedAt IS NULL LIMIT 1")
     suspend fun findByKey(key: String, scope: com.vervan.chat.data.db.entities.MemoryScope, scopeRefId: String?): Memory?
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM memories WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<Memory>>
 
     @Query("DELETE FROM memories WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 
-    // Universal search (Phase 6, spec §29) — memories weren't searchable before.
+    // Universal search — memories weren't searchable before.
     @Query("SELECT * FROM memories WHERE deletedAt IS NULL AND text LIKE '%' || :q || '%' ORDER BY createdAt DESC LIMIT 20")
     suspend fun search(q: String): List<Memory>
 }

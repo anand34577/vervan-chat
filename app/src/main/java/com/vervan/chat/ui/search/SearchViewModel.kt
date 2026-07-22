@@ -49,7 +49,7 @@ data class SearchResults(
         workflows.isEmpty() && savedOutputs.isEmpty() && tools.isEmpty() && toolRuns.isEmpty()
 }
 
-/** Cross-content search (spec §29) — fans a single query out to every content DAO's own
+/** Cross-content search — fans a single query out to every content DAO's own
  * LIKE-based search query. debounce + sequential DAO hits, no FTS/ranking index —
  * fine at personal-library scale, revisit if any one table grows past a few thousand rows. */
 class SearchViewModel(private val app: VervanApp) : ViewModel() {
@@ -77,7 +77,7 @@ class SearchViewModel(private val app: VervanApp) : ViewModel() {
         searchJob = viewModelScope.launch {
             _searching.value = true
             delay(250)
-            // Incognito mode (Phase B) — a temporary chat, and its messages, never surface in
+            // Incognito mode — a temporary chat, and its messages, never surface in
             // search. Filtered in-memory after the DAO call rather than a new SQL join, same
             // "fine at personal-library scale" tradeoff this ViewModel already makes elsewhere.
             val chats = db.chatDao().search(text).filterNot { it.isTemporary }

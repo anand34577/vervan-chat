@@ -8,7 +8,7 @@ import com.vervan.chat.store.storage.StoreMaintenance
 
 /**
  * Periodic upkeep for the Model Store: catalogue refresh, blob garbage collection and a rolling
- * integrity spot-check (spec §7).
+ * integrity spot-check.
  *
  * Deliberately **not** a WorkManager job. None of this work has a deadline — a catalogue that
  * refreshes on the next launch instead of overnight is indistinguishable to the user, and blobs

@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
  *  - exposes one knob (`prominence`) that maps to consistent alpha bands so screens stop
  *    reaching for arbitrary `0.38f`/`0.42f`/`0.55f` values, and
  *  - lets a screen opt a specific border up to `outline` (the "important boundary" token,
- *    per M3 §shape/color) when it really is structural (text-field-like) rather than decorative.
+ * per M3 shape/color) when it really is structural (text-field-like) rather than decorative.
  *
  * Usage:
  *   `border = vervanBorder(VervanBorderProminence.Subtle)`

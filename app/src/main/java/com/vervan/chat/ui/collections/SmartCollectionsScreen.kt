@@ -49,7 +49,7 @@ import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 
 /**
- * §7.6.9 — one screen with filter chips, not the list-then-detail navigation this screen used
+ * one screen with filter chips, not the list-then-detail navigation this screen used
  * to have (tapping a collection pushed a second "detail" route). Chips are local UI-only
  * selection state, so switching between them never adds a back-stack entry.
  */

@@ -3,7 +3,7 @@ package com.vervan.chat.llm
 import com.vervan.chat.data.db.entities.ModelEngine
 
 /**
- * The prompt-engineered "thinking mode" policy (spec §15) — extracted out of `ChatViewModel` so
+ * The prompt-engineered "thinking mode" policy — extracted out of `ChatViewModel` so
  * the three coupled decisions (what to tell the model, what to prefill, and the hard native
  * budget) live together, next to [ThinkingParser] which undoes their effect on the display side,
  * and can be unit-tested without a ViewModel. All three are pure functions of their inputs.
@@ -48,7 +48,7 @@ object ThinkingPolicy {
     }
 
     /**
-     * Assistant-message prefill (spec §15) — the actual enforcement mechanism behind
+     * Assistant-message prefill — the actual enforcement mechanism behind
      * [reasoningInstruction]'s text. llama.cpp's prompt gets this appended right after the chat
      * template's assistant-turn-start tokens (see `nativeGenerate`'s `assistantPrefill`), so
      * generation literally continues from an already-open or already-closed `<think>` block.

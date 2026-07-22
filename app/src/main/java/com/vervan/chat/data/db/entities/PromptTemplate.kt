@@ -15,7 +15,7 @@ data class PromptTemplate(
     // if templates ever need more than "wrap my text in this instruction".
     val body: String,
     val isBuiltIn: Boolean = false,
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     val deletedAt: Long? = null
 ) {
     fun expand(input: String): String =

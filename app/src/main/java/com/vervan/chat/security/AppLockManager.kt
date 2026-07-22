@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 enum class AppLockMethod { BIOMETRIC, PIN, BOTH }
 
 /**
- * Privacy hardening (Phase A) — owns the app-lock's locked/unlocked state and PIN storage.
+ * Privacy hardening — owns the app-lock's locked/unlocked state and PIN storage.
  * Mirrors [com.vervan.chat.model.WorkspaceManager]'s role as a small orchestrator over a single
  * concern, not a general repository.
  *

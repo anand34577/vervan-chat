@@ -10,7 +10,7 @@ enum class ThermalLevel { NORMAL, ELEVATED, SEVERE }
 
 /**
  * Wraps [PowerManager]'s thermal status API (API 29+) so the UI can warn the user that
- * generation may run slower — spec §40's thermal-state edge case. No-ops below API 29 or on
+ * generation may run slower — thermal-state edge case. No-ops below API 29 or on
  * a device that never reports non-NORMAL status; [level] just stays NORMAL, never a false
  * alarm. read-only monitoring + a passive banner, no automatic throttling of
  * generation itself — that would need real benchmarking to tune sensibly.

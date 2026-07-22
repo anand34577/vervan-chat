@@ -38,7 +38,7 @@ class ProjectsListViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun delete(project: Project) {
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch {
             db.withTransaction {
                 db.chatDao().clearProject(project.id)
@@ -72,7 +72,7 @@ class ProjectDashboardViewModel(private val app: VervanApp, private val projectI
     }
 
     fun delete() {
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch {
             project.value?.let { p ->
                 db.withTransaction {

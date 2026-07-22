@@ -17,7 +17,7 @@ class StudyReviewViewModel(app: VervanApp, private val setName: String) : ViewMo
     val allCards: StateFlow<List<StudyCard>> = db.studyCardDao().observeSet(setName)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Phase 4, spec §24 — "review missed cards only" mode: a card counts as missed if it's
+    /** "review missed cards only" mode: a card counts as missed if it's
      * ever been answered wrong more times than right, not just "wrong last time" (no
      * per-attempt history is stored, only running correct/reviewed counts). */
     private val _missedOnly = MutableStateFlow(false)
@@ -36,7 +36,7 @@ class StudyReviewViewModel(app: VervanApp, private val setName: String) : ViewMo
         }
     }
 
-    /** Records the study session timestamp on the set metadata (spec §55). */
+    /** Records the study session timestamp on the set metadata. */
     fun recordSession() {
         viewModelScope.launch {
             db.flashcardSetDao().findByName(setName)?.let {

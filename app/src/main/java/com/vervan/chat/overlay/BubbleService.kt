@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Phase I — draws the persistent draggable quick-action bubble via [WindowManager]. Runs as a
+ * draws the persistent draggable quick-action bubble via [WindowManager]. Runs as a
  * "specialUse" foreground service while idle (just showing an overlay) and briefly upgrades to
  * the `mediaProjection` type — via a second [startForeground] call with an explicit type, which
  * Android allows on an already-running service — only around an actual capture. Android 14+

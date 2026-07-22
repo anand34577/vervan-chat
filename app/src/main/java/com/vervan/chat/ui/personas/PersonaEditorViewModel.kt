@@ -134,7 +134,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         return true
     }
 
-    /** Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly. */
+    /** Soft delete — recoverable from the recycle bin instead of gone instantly. */
     fun delete() {
         if (personaId == null || _isBuiltIn.value) return
         viewModelScope.launch {

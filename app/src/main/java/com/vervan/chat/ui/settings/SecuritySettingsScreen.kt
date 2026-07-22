@@ -316,7 +316,7 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 }
 
 /**
- * Phase G — one row per on-device data source, each an app-level toggle independent of the OS
+ * one row per on-device data source, each an app-level toggle independent of the OS
  * permission (defense in depth: granting the Android permission doesn't mean the model should
  * always be allowed to query it). Turning a permission-backed one on requests the runtime
  * permission first via the same [ActivityResultContracts.RequestPermission] pattern
@@ -471,7 +471,7 @@ private fun DataSourceRow(label: String, checked: Boolean, onToggle: (Boolean) -
 }
 
 /**
- * Phase I — the one feature in this app that needs the SYSTEM_ALERT_WINDOW overlay permission,
+ * the one feature in this app that needs the SYSTEM_ALERT_WINDOW overlay permission,
  * granted via a system Settings redirect ([android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION]),
  * not a runtime permission dialog. Turning the toggle on checks [android.provider.Settings.canDrawOverlays]
  * first and only actually enables the setting (and starts [com.vervan.chat.overlay.BubbleService])

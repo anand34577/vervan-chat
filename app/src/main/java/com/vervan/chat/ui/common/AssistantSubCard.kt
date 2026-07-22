@@ -35,7 +35,7 @@ import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
 
-/** §7.2.2 — the color-coded family a chat turn's non-message content belongs to: reasoning
+/** the color-coded family a chat turn's non-message content belongs to: reasoning
  * (neutral), sources (informational/success), a reversible tool call (amber warning), an
  * external/irreversible action (error), and a plain tool result. One enum instead of every
  * screen picking its own ad hoc accent per card type. */
@@ -63,7 +63,7 @@ private fun SubCardKind.icon(): ImageVector = when (this) {
 }
 
 /**
- * §6/§7.2.2 AssistantSubCard — one shared, collapsible, color-coded card shape for everything
+ * AssistantSubCard — one shared, collapsible, color-coded card shape for everything
  * that isn't the message text itself: reasoning traces, source citations, tool calls/results,
  * and context-omission notices. Collapsed by default per spec (reasoning especially).
  */

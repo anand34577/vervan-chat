@@ -355,10 +355,10 @@ fun ChatScreen(
             stickToBottom = isNearBottom()
         }
     }
-    // Chat Screen spec §17 — restore-on-open: jump to the saved message-ID anchor (where the
+    // Chat Screen — restore-on-open: jump to the saved message-ID anchor (where the
     // user was last reading) instead of always landing on the latest message. Runs once per
     // chat; falls back to "latest message" when there's no anchor or it's no longer in the
-    // rendered branch (spec §17.1's "previous position unavailable" case).
+    // rendered branch ("previous position unavailable" case).
     var scrollRestored by remember(chatId) { mutableStateOf(false) }
     LaunchedEffect(initialMessageId, messages) {
         val messageId = initialMessageId ?: return@LaunchedEffect
@@ -423,7 +423,7 @@ fun ChatScreen(
             }
         }
     }
-    // Save the reading position when leaving the chat (spec §17.10 "returning from another
+    // Save the reading position when leaving the chat ("returning from another
     // screen" and normal navigation-away) so the effect above has something to restore.
     val latestMessages by rememberUpdatedState(messages)
     DisposableEffect(chatId, listState) {
@@ -657,7 +657,7 @@ fun ChatScreen(
         tts = instance
         onDispose { instance.shutdown() }
     }
-    // Spec §14.4: pause/stop TTS on audio-focus loss instead of talking over a call or other
+    // : pause/stop TTS on audio-focus loss instead of talking over a call or other
     // app's playback. Recording's own interruption handling (call/headset) is out of scope
     // here — AudioRecord has no focus API; that would need TelephonyManager call-state
     // observation, which needs its own permission story.
@@ -934,7 +934,7 @@ fun ChatScreen(
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            // Chat Screen spec §13 — compact, horizontally-scrollable status chips; never
+            // Chat Screen — compact, horizontally-scrollable status chips; never
             // wraps to a second row. Context % is a cheap chars/4 estimate (same tradeoff as
             // the context inspector), not an exact token count.
             run {
@@ -971,7 +971,7 @@ fun ChatScreen(
                 onLoad = vm::retryModelLoad,
                 onOpenModels = onOpenModels
             )
-            // Model Loading Strategy §7 / §14.1 — a distinct, non-alarming indicator during
+            // Model Loading Strategy — a distinct, non-alarming indicator during
             // active generation when the device is thermally throttling. ThermalMonitor already
             // tracked this correctly; it just had no UI consumer anywhere until now, so a
             // throttled response looked like an unexplained slowdown instead of an informational
@@ -1106,7 +1106,7 @@ fun ChatScreen(
                     Spacer(Modifier.size(width = 1.dp, height = 1.dp))
                 }
             }
-            // Chat Screen spec §11 — "jump to latest" once the user has scrolled away from
+            // Chat Screen — "jump to latest" once the user has scrolled away from
             // the bottom (auto-follow only re-engages once they're back near it, see the
             // stickToBottom LaunchedEffect above). Primary color while a response is
             // streaming so "new content below" is signaled by more than the icon label.
@@ -1652,10 +1652,10 @@ fun ChatScreen(
         )
     }
 
-    // Chat Screen spec §3-5 — workspace indicator options: view/open, set as the app's active
+    // Chat Screen-5 — workspace indicator options: view/open, set as the app's active
     // workspace (distinct from just opening it — the chat's own workspace and the global
     // active workspace are independent), or move this chat to a different one. Moving shows a
-    // preview (§5) before committing.
+    // preview before committing.
     var pendingMoveTarget by remember { mutableStateOf<com.vervan.chat.data.db.entities.Workspace?>(null) }
     if (showWorkspaceOptions && workspace != null) {
         val otherWorkspaces by app.container.db.workspaceDao().observeActive().collectAsState(initial = emptyList())
@@ -1694,7 +1694,7 @@ fun ChatScreen(
         )
     }
 
-    // §5 — preview before the move actually happens.
+    // preview before the move actually happens.
     pendingMoveTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingMoveTarget = null },
@@ -1715,7 +1715,7 @@ fun ChatScreen(
         )
     }
 
-    // Chat Screen spec §10 — reset confirmation: what will be reset, what remains.
+    // Chat Screen — reset confirmation: what will be reset, what remains.
     if (showResetConfirm) {
         AlertDialog(
             onDismissRequest = { showResetConfirm = false },
@@ -1731,7 +1731,7 @@ fun ChatScreen(
         )
     }
 
-    // Chat Screen spec §26 — chat statistics (message/branch/attachment counts, dates); no
+    // Chat Screen — chat statistics (message/branch/attachment counts, dates); no
     // token counts since this app doesn't record per-message usage anywhere yet.
     if (showChatStats) {
         val stats = remember(messages, allMessages) { vm.chatStats() }
@@ -2629,7 +2629,7 @@ private fun ModelReadinessPanel(
     }
 }
 
-/** §14.1 — informational, not an error: the model is working correctly, just constrained by
+/** informational, not an error: the model is working correctly, just constrained by
  * device temperature. Uses tertiary (not error) container so it reads distinctly from
  * [ModelReadinessPanel]'s failed/unavailable states even at a glance. */
 @Composable
@@ -2908,7 +2908,7 @@ private data class ChatStarter(
 )
 
 /**
- * Chat Screen spec §13 — context strip. Previously up to six separate chips (workspace, folder,
+ * Chat Screen — context strip. Previously up to six separate chips (workspace, folder,
  * persona, model+thinking, sources, context%) in a horizontally-scrolling row with no wrap, which
  * meant the model chip — arguably the most important one — could scroll off-screen entirely with
  * no indication anything was hidden. Now a single compact summary chip ("Default · Gemma · 2
@@ -3042,7 +3042,7 @@ private fun ChatContextDetailsSheet(
 }
 
 /**
- * Chat Screen spec §9/§23 — an archived workspace remains viewable (history, branches,
+ * Chat Screen — an archived workspace remains viewable (history, branches,
  * sources all intact) but blocks new messages until the workspace is restored.
  */
 @Composable
@@ -3066,7 +3066,7 @@ private fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
 }
 
 /**
- * Chat Screen spec §27 — find-in-conversation, scoped to the currently rendered branch path
+ * Chat Screen — find-in-conversation, scoped to the currently rendered branch path
  * (not the app-wide SearchScreen, which spans every chat). no inline highlighting of
  * the matched substring, just prev/next navigation and a match count — jumping to the message
  * is the useful part, highlighting inside MarkdownLiteText would need its own span-aware path.
@@ -3215,7 +3215,7 @@ private fun ModeSettingsDialog(
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                // Per-chat sampler overrides (spec §6/§7) — the slider always shows the
+                // Per-chat sampler overrides — the slider always shows the
                 // effective value (override or inherited default); dragging it sets a
                 // chat-specific override, Reset clears back to inherited.
                 Text("Generation (this chat)", style = MaterialTheme.typography.labelLarge)
@@ -3752,7 +3752,7 @@ private fun MessageBubble(
                             MarkdownLiteText(parsed.reasoning)
                         }
                     }
-                    // Markdown/code-block rendering (spec §7.1) — assistant output routinely
+                    // Markdown/code-block rendering — assistant output routinely
                     // contains fenced code and tables; user messages stay plain (they typed
                     // it, no need to reparse their own text as markdown).
                     if (isUser) {
@@ -3954,7 +3954,7 @@ private fun MessageBubble(
                 // Reply stays gesture-only here; copy is the visible gesture alternative.
                 if (message.content.isNotBlank()) {
                     IconButton(
-                        // Clipboard hygiene (Phase H) — auto-clears after 30s if
+                        // Clipboard hygiene — auto-clears after 30s if
                         // nothing else has overwritten it since.
                         onClick = { clipboard.setSensitiveText(message.content, scope) }
                     ) {

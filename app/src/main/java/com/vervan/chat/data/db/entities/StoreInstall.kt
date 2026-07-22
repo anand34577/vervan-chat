@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
  * cost correctness in both pipelines.
  */
 
-/** The store's install state machine (spec §6). Mirrors the shape of [ModelStatus] but is a
+/** The store's install state machine. Mirrors the shape of [ModelStatus] but is a
  * distinct type because the stages differ — the store has an explicit VALIDATING step (runtime
  * adapter role-completeness) that the old pipeline has no equivalent for, and splits failure into
  * retryable and permanent so the UI can offer "Retry" only when retrying could actually work. */
@@ -29,14 +29,14 @@ enum class StoreArtifactState { PENDING, DOWNLOADING, VERIFYING, COMPLETED, FAIL
 /**
  * One install transaction for one variant.
  *
- * Written **before any network call** (spec §6, Android execution details) so that a process death
+ * Written **before any network call** (, Android execution details) so that a process death
  * mid-download is recoverable: on restart the app finds the session, reconciles each artifact's
  * `downloadedBytes` against the real `.part` file on disk, and resumes rather than restarting a
  * multi-gigabyte transfer.
  *
  * [catalogVersion] and [acceptedLicenseHash] are captured here rather than looked up later because
  * the catalogue can be updated mid-download — the install must record the terms the user actually
- * accepted at the moment they accepted them (spec §11/§12).
+ * accepted at the moment they accepted them.
  */
 @Entity(tableName = "store_install_sessions")
 data class StoreInstallSession(
@@ -66,7 +66,7 @@ data class StoreInstallSession(
  * a failover continues against the mirror it had already switched to rather than starting over at
  * the primary. [resolvedUrl] holds the post-redirect CDN URL; Hugging Face `/resolve/` endpoints
  * 302 to an expiring S3/CloudFront URL, so a resume re-validates against the *original* source URL
- * and lets the redirect be followed afresh (spec §6.5).
+ * and lets the redirect be followed afresh.
  */
 @Entity(tableName = "store_install_artifacts", indices = [Index("variantId")])
 data class StoreInstallArtifact(

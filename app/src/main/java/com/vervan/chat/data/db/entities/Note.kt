@@ -12,7 +12,7 @@ data class Note(
     val projectId: String? = null,
     val folderId: String? = null,
     val pinned: Boolean = false,
-    // Phase 4, spec §21 — comma-separated tags; simple string beats a join table at this scale.
+    // comma-separated tags; simple string beats a join table at this scale.
     val tags: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),

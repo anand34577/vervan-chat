@@ -6,7 +6,7 @@ import java.io.RandomAccessFile
 import java.security.SecureRandom
 
 /**
- * Best-effort secure delete (Phase C) — overwrites a file's bytes with random data ("rws" mode,
+ * Best-effort secure delete — overwrites a file's bytes with random data ("rws" mode,
  * which forces each write to sync before returning) before unlinking it, instead of a plain
  * [File.delete] that only removes the directory entry and leaves the underlying blocks readable
  * until the filesystem reuses them.
@@ -22,7 +22,7 @@ object SecureDelete {
 
     /** Returns whether [file] is actually gone afterward (already-absent counts as success) —
      * callers that need to know deletion truly happened (e.g. before dropping the DB row that
-     * references it, per Model Loading Strategy §4.4 step 7) must check this instead of assuming
+     * references it, per Model Loading Strategy) must check this instead of assuming
      * success, since [File.delete] can silently fail (locked file, read-only/ejected removable
      * storage) and previously that failure was discarded with no way for a caller to notice. */
     fun overwriteAndDelete(file: File): Boolean {
