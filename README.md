@@ -28,11 +28,11 @@ Vervan brings local language models, document search, voice tools, notes, and fo
   </tr>
 </table>
 
-## Intro Video
+## Intro 
 
-[![Watch the Vervan Chat Intro](docs/screenshots/video-preview.png)](videos/product-info.mp4)
+![Vervan Chat Intro](/videos/product-info.gif)
 
-_Click the preview to watch the demo._
+_Vervan Chat product demonstration._
 
 ## What you can do with Vervan
 
