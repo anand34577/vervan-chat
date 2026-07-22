@@ -5,9 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.repo.resolveEditId
+import com.vervan.chat.model.ImageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 /** [personaId] null creates a new persona; non-null edits (a built-in opened here saves
  * as a new custom copy, same pattern as [com.vervan.chat.ui.workflows.WorkflowEditorViewModel]). */
@@ -93,6 +98,21 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     }
 
     fun dismissImportError() { _importError.value = null }
+
+    /** Sets the persona's avatar from an arbitrary picked image (gallery/camera), normalized and
+     *  copied to the same personas/avatars/ dir that character-card portraits land in. Off-main
+     *  because decoding a camera photo can be a few hundred KB of work; the StateFlow drives the
+     *  preview once it lands. */
+    fun importAvatar(context: android.content.Context, uri: android.net.Uri) {
+        viewModelScope.launch {
+            val dest = File(File(context.filesDir, "personas/avatars"), "${UUID.randomUUID()}.png")
+            val ok = withContext(Dispatchers.IO) { ImageUtils.copyNormalizedPng(context, uri, dest, 512) }
+            if (ok) _avatarPath.value = dest.absolutePath
+            else _importError.value = "Could not use this image as an avatar. Try a different file."
+        }
+    }
+
+    fun clearAvatar() { _avatarPath.value = null }
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false

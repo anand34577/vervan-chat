@@ -419,5 +419,60 @@ val MIGRATIONS = arrayOf(
             db.execSQL("ALTER TABLE memories ADD COLUMN embeddingModelId TEXT")
             db.execSQL("ALTER TABLE messages ADD COLUMN memoryActivityJson TEXT")
         }
+    },
+    object : Migration(40, 41) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Model Store install pipeline (com.vervan.chat.store) — see StoreInstall.kt for why
+            // these are separate tables rather than an extension of download_packages/files.
+            // Purely additive: no existing table is touched, so a failure here cannot damage
+            // chats, models, or in-flight downloads from the older pipeline.
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS store_install_sessions (
+                    variantId TEXT NOT NULL PRIMARY KEY,
+                    modelId TEXT NOT NULL,
+                    displayName TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    runtime TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    totalBytes INTEGER NOT NULL,
+                    downloadedBytes INTEGER NOT NULL,
+                    currentArtifactId TEXT,
+                    errorMessage TEXT,
+                    catalogVersion INTEGER NOT NULL,
+                    acceptedLicenseHash TEXT,
+                    userRequestedStop INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS store_install_artifacts (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    variantId TEXT NOT NULL,
+                    artifactId TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    sourceIndex INTEGER NOT NULL,
+                    sourceUrl TEXT NOT NULL,
+                    resolvedUrl TEXT,
+                    tempPath TEXT NOT NULL,
+                    expectedBytes INTEGER NOT NULL,
+                    downloadedBytes INTEGER NOT NULL,
+                    expectedSha256 TEXT NOT NULL,
+                    etag TEXT,
+                    lastModified TEXT,
+                    state TEXT NOT NULL,
+                    retryCount INTEGER NOT NULL,
+                    errorMessage TEXT
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_store_install_artifacts_variantId " +
+                    "ON store_install_artifacts(variantId)"
+            )
+        }
     }
 )

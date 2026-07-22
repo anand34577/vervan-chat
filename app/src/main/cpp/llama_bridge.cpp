@@ -275,11 +275,36 @@ void redirect_stderr_to_logcat() {
     }).detach();
 }
 
+// llama.cpp writes its ordinary progress output (metadata dumps, print_info:, load_tensors:) to
+// stderr, so the redirect above would otherwise stamp all of it ANDROID_LOG_ERROR and make a
+// healthy load look like a wall of failures. Register a real log callback instead: it carries the
+// level llama.cpp actually intended, so only genuine warnings and errors show as such.
+//
+// This does not replace redirect_stderr_to_logcat() — ggml_abort()/GGML_ASSERT write straight to
+// stderr without going through the callback, and that text is the most valuable thing in the log
+// when a native abort happens. The two are complementary.
+void llama_log_to_logcat(ggml_log_level level, const char *text, void * /*user_data*/) {
+    if (text == nullptr) return;
+
+    int priority;
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR: priority = ANDROID_LOG_ERROR; break;
+        case GGML_LOG_LEVEL_WARN:  priority = ANDROID_LOG_WARN;  break;
+        case GGML_LOG_LEVEL_INFO:  priority = ANDROID_LOG_INFO;  break;
+        case GGML_LOG_LEVEL_DEBUG: priority = ANDROID_LOG_DEBUG; break;
+        // CONT continues the previous line; there's no partial-line write in the Android log API,
+        // so treat it as info rather than dropping the text.
+        default:                   priority = ANDROID_LOG_INFO;  break;
+    }
+    __android_log_write(priority, "llama.cpp", text);
+}
+
 std::once_flag g_backend_init_flag;
 
 void ensure_backend_initialized() {
     std::call_once(g_backend_init_flag, [] {
         redirect_stderr_to_logcat();
+        llama_log_set(llama_log_to_logcat, nullptr);
         llama_backend_init();
     });
 }
@@ -309,7 +334,36 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeLoadModel(
     modelParams.use_mlock = useMlock;
     modelParams.main_gpu = vulkanDeviceIndex;
 
-    llama_model *model = llama_model_load_from_file(modelPath.c_str(), modelParams);
+    // n_gpu_layers == 0 means the user asked for the CPU backend, but that alone does NOT keep
+    // llama.cpp off the GPU: with the default (null) device list it still enumerates Vulkan,
+    // places non-weight tensors in Vulkan_Host buffers, and schedules ops onto Vulkan0. On an
+    // Adreno 730 that produced 388 graph splits for a CPU-only load — constant CPU<->GPU
+    // ping-ponging — and it means a driver that can't compile a shader still crashes a run the
+    // user explicitly asked to keep on the CPU.
+    //
+    // An empty (immediately null-terminated) device list makes the offload set genuinely empty,
+    // so "CPU" means CPU. Must outlive the call: llama_model_load_from_file reads through it.
+    static ggml_backend_dev_t noOffloadDevices[] = { nullptr };
+    if (nGpuLayers <= 0) {
+        modelParams.devices = noOffloadDevices;
+        LOGI("nativeLoadModel(): n_gpu_layers=0, restricting llama.cpp to the CPU backend");
+    }
+
+    // The Vulkan backend signals a failed device allocation by throwing (vk::OutOfDeviceMemoryError
+    // and friends), and that exception propagates out through llama.cpp. Running out of GPU memory
+    // is routine on a phone — especially with n_gpu_layers set high — so catch it and report a
+    // load failure the UI can show, rather than letting it reach the JNI boundary and terminate
+    // the whole app.
+    llama_model *model = nullptr;
+    try {
+        model = llama_model_load_from_file(modelPath.c_str(), modelParams);
+    } catch (const std::exception &e) {
+        set_last_error("Failed to load model (" + std::string(e.what()) + "): " + modelPath);
+        return 0;
+    } catch (...) {
+        set_last_error("Failed to load model (unknown native error): " + modelPath);
+        return 0;
+    }
     if (model == nullptr) {
         set_last_error("Failed to load model file: " + modelPath);
         return 0;
@@ -408,7 +462,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         jfloat temperature, jfloat topP, jint topK, jfloat minP,
         jfloat repeatPenalty, jint repeatLastN,
         jint seed, jint maxTokens, jstring jChatTemplateOverride,
-        jstring jAssistantPrefill, jstring jSystemPrompt,
+        jstring jAssistantPrefill, jstring jSystemPrompt, jint jReasoningBudget,
         jobject callback) {
     auto *session = reinterpret_cast<LlamaSession *>(handle);
     if (session == nullptr) {
@@ -492,6 +546,21 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     // thinking, the same reliable trick llama.cpp's own server/other GGUF front-ends use to force
     // reasoning on/off. Kotlin decides the exact text (or sends null/empty for no forcing).
     if (!assistantPrefill.empty()) prompt += assistantPrefill;
+
+    // Reasoning budget: did the prefill leave us mid-reasoning (a "<think>" with no later
+    // "</think>")? If so, once the model spends `reasoningBudget` tokens still inside that block
+    // we force-inject the closing tag so it must start answering — the hard cap the raw
+    // (non-Jinja) template path can't otherwise express. reasoningBudget < 0 disables the cap
+    // (unlimited reasoning); a prefill that already closed the block (thinking OFF) starts
+    // insideThink=false, so none of this runs.
+    const int reasoningBudget = static_cast<int>(jReasoningBudget);
+    bool insideThink;
+    {
+        const size_t openAt = assistantPrefill.rfind("<think>");
+        const size_t closeAt = assistantPrefill.rfind("</think>");
+        insideThink = openAt != std::string::npos &&
+                      (closeAt == std::string::npos || closeAt < openAt);
+    }
 
     llama_sampler_chain_params samplerParams = llama_sampler_chain_default_params();
     llama_sampler *sampler = llama_sampler_chain_init(samplerParams);
@@ -609,7 +678,21 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
                 batch.logits[i] = (offset + i == n_tokens - 1);
             }
             batch.n_tokens = chunk;
-            const int decodeResult = llama_decode(session->ctx, batch);
+            // ggml's Vulkan backend reports failures by throwing (a shader that the driver
+            // refuses to compile surfaces here as vk::SystemError from createComputePipeline,
+            // for instance). Nothing between here and the JNI boundary catches it, so without
+            // this the exception reaches std::terminate and takes the process down with
+            // SIGABRT. Convert it to a normal generation failure the UI can report.
+            int decodeResult;
+            try {
+                decodeResult = llama_decode(session->ctx, batch);
+            } catch (const std::exception &e) {
+                llama_batch_free(batch);
+                return fail(std::string("llama_decode threw while evaluating the prompt: ") + e.what());
+            } catch (...) {
+                llama_batch_free(batch);
+                return fail("llama_decode threw an unknown native error while evaluating the prompt");
+            }
             llama_batch_free(batch);
             if (decodeResult != 0) return fail("llama_decode failed while evaluating the prompt");
             offset += chunk;
@@ -623,6 +706,59 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     const int generationLimit = std::min(maxTokens > 0 ? static_cast<int>(maxTokens) : 1024, availableTokens);
 
     std::string pendingUtf8;
+    // Reasoning-budget bookkeeping — only consulted while insideThink (see the reasoningBudget
+    // note above). generatedText accumulates raw bytes so a "</think>" the model emits itself is
+    // detectable even when split across tokens; thinkSearchFrom keeps that scan near O(n).
+    std::string generatedText;
+    size_t thinkSearchFrom = 0;
+    int reasoningTokens = 0;
+    // Streams + decodes `text` into the context exactly like a sampled token so generation
+    // continues after it — used to splice a closing "</think>" in when the reasoning budget is
+    // hit. Sets g_last_error and returns false on a native decode failure.
+    auto injectText = [&](const std::string &text) -> bool {
+        std::vector<llama_token> injTokens(text.size() + 8);
+        int nInj = llama_tokenize(session->vocab, text.c_str(), static_cast<int32_t>(text.size()),
+                                   injTokens.data(), static_cast<int32_t>(injTokens.size()),
+                                   /* add_special */ false, /* parse_special */ true);
+        if (nInj < 0) {
+            injTokens.resize(static_cast<size_t>(-nInj));
+            nInj = llama_tokenize(session->vocab, text.c_str(), static_cast<int32_t>(text.size()),
+                                   injTokens.data(), static_cast<int32_t>(injTokens.size()), false, true);
+        }
+        if (nInj <= 0) return true; // nothing to splice; non-fatal
+        injTokens.resize(static_cast<size_t>(nInj));
+        for (llama_token t : injTokens) {
+            std::vector<char> pc(256);
+            int pn = llama_token_to_piece(session->vocab, t, pc.data(), pc.size(), 0, true);
+            if (pn < 0) {
+                pc.resize(static_cast<size_t>(-pn));
+                pn = llama_token_to_piece(session->vocab, t, pc.data(), pc.size(), 0, true);
+            }
+            if (pn > 0) {
+                pendingUtf8.append(pc.data(), static_cast<size_t>(pn));
+                generatedText.append(pc.data(), static_cast<size_t>(pn));
+                if (!flushUtf8Tokens(env, callback, onTokenMethod, pendingUtf8)) return false;
+            }
+            llama_batch b = llama_batch_init(1, 0, 1);
+            b.token[0] = t; b.pos[0] = n_past; b.n_seq_id[0] = 1; b.seq_id[0][0] = 0;
+            b.logits[0] = true; b.n_tokens = 1;
+            int dr;
+            try {
+                dr = llama_decode(session->ctx, b);
+            } catch (...) {
+                llama_batch_free(b);
+                set_last_error("llama_decode threw while injecting the reasoning-budget stop tag");
+                return false;
+            }
+            llama_batch_free(b);
+            if (dr != 0) {
+                set_last_error("llama_decode failed while injecting the reasoning-budget stop tag");
+                return false;
+            }
+            n_past++;
+        }
+        return true;
+    };
     int generated = 0;
     while (!session->cancelled.load() && generated < generationLimit) {
         // llama_sampler_sample() already calls llama_sampler_accept() internally — accepting
@@ -647,18 +783,47 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         batch.seq_id[0][0] = 0;
         batch.logits[0] = true;
         batch.n_tokens = 1;
-        const int decodeResult = llama_decode(session->ctx, batch);
+        // Same reasoning as the prompt-eval decode above: a throwing Vulkan backend must not
+        // be allowed to escape to the JNI boundary.
+        int decodeResult;
+        try {
+            decodeResult = llama_decode(session->ctx, batch);
+        } catch (const std::exception &e) {
+            llama_batch_free(batch);
+            return fail(std::string("llama_decode threw mid-generation: ") + e.what());
+        } catch (...) {
+            llama_batch_free(batch);
+            return fail("llama_decode threw an unknown native error mid-generation");
+        }
         llama_batch_free(batch);
         if (decodeResult != 0) return fail("llama_decode failed mid-generation");
 
         if (n > 0) {
             pendingUtf8.append(piece.data(), static_cast<size_t>(n));
+            if (insideThink) generatedText.append(piece.data(), static_cast<size_t>(n));
             if (!flushUtf8Tokens(env, callback, onTokenMethod, pendingUtf8)) {
                 return fail(g_last_error.empty() ? "Token callback failed" : g_last_error);
             }
         }
         n_past++;
         generated++;
+
+        // Reasoning-budget enforcement: while still inside the prefilled <think> block, either
+        // stop counting the moment the model closes it on its own, or force the close once the
+        // budget is spent so it must begin the actual answer.
+        if (insideThink) {
+            if (generatedText.find("</think>", thinkSearchFrom) != std::string::npos) {
+                insideThink = false;
+            } else {
+                thinkSearchFrom = generatedText.size() > 8 ? generatedText.size() - 8 : 0;
+                if (reasoningBudget >= 0 && ++reasoningTokens >= reasoningBudget) {
+                    insideThink = false;
+                    if (!injectText("\n</think>\n\n")) {
+                        return fail(g_last_error.empty() ? "Failed to inject the reasoning-budget stop tag" : g_last_error);
+                    }
+                }
+            }
+        }
     }
 
     llama_sampler_free(sampler);

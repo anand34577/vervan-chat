@@ -110,9 +110,113 @@ class AppContainer(app: Application) {
     val memoryRepository = com.vervan.chat.data.repo.MemoryRepository(
         db.memoryDao(), db.modelDao(), modelLoadCoordinator, embeddingEngine, embeddingMutex
     )
+    // --- Model Store (com.vervan.chat.store) ---------------------------------------------------
+    // Curated, signed, remote catalogue. Deliberately parallel to modelDownloadRepository above
+    // rather than replacing it: that one drives the in-APK ModelCatalog and the existing
+    // "Available for Download" list, this one drives the Store screen. They share nothing but
+    // HttpRangeDownloader and NetworkAuditLog, so the store can ship (or be switched off) without
+    // destabilising the pipeline that already works.
+    private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val storeBlobStore = com.vervan.chat.store.storage.BlobStore(java.io.File(app.filesDir, "store/models"))
+    private val storeManifestStore = com.vervan.chat.store.storage.InstalledManifestStore(storeBlobStore)
+    private val storeMaintenance = com.vervan.chat.store.storage.StoreMaintenance(storeBlobStore, storeManifestStore)
+    private val storeLicenseStore = com.vervan.chat.store.license.LicenseAcceptanceStore(app)
+
+    // Only runtimes this build can actually load. llama.cpp and whisper.cpp are gated on their
+    // native libraries being present (BuildConfig flags set by the Gradle script); LiteRT-LM is
+    // always linked. sherpa-onnx is omitted until its AAR is vendored — a variant naming it would
+    // otherwise render as installable and then fail at load.
+    private val storeRuntimeAdapters = com.vervan.chat.store.runtime.RuntimeAdapterRegistry(
+        buildList {
+            add(com.vervan.chat.store.runtime.LiteRtLmAdapter())
+            if (com.vervan.chat.BuildConfig.LLAMA_CPP_AVAILABLE) {
+                add(com.vervan.chat.store.runtime.LlamaCppAdapter())
+            }
+            if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
+                add(com.vervan.chat.store.runtime.WhisperCppAdapter())
+            }
+        }
+    )
+
+    private val storeCatalogParser = com.vervan.chat.store.catalog.CatalogParser(
+        appVersionCode = com.vervan.chat.BuildConfig.VERSION_CODE,
+        availableRuntimes = storeRuntimeAdapters.availableRuntimes
+    )
+
+    private val storeCatalogRepository = com.vervan.chat.store.catalog.CatalogRepository(
+        context = app,
+        parser = storeCatalogParser,
+        verifier = com.vervan.chat.store.catalog.CatalogSignatureVerifier.fromEmbeddedKeys(),
+        networkAuditLog = networkAuditLog
+    )
+
+    private val storeInstaller = com.vervan.chat.store.install.VariantInstaller(
+        blobStore = storeBlobStore,
+        manifestStore = storeManifestStore,
+        fetcher = com.vervan.chat.store.install.HttpArtifactFetcher(
+            downloader = com.vervan.chat.modeldownload.HttpRangeDownloader(),
+            networkAuditLog = networkAuditLog,
+            userHuggingFaceToken = { hfTokenStore.get() }
+        ),
+        adapters = storeRuntimeAdapters,
+        recorder = com.vervan.chat.store.install.RoomInstallSessionRecorder(
+            db.storeInstallSessionDao(), db.storeInstallArtifactDao()
+        ),
+        usableSpaceProvider = { runCatching { app.filesDir.usableSpace }.getOrDefault(-1L) }
+    )
+
+    val storeInstallRecovery = com.vervan.chat.store.install.StoreInstallRecovery(
+        db.storeInstallSessionDao(), db.storeInstallArtifactDao(), storeBlobStore
+    )
+
+    val modelStoreRepository = com.vervan.chat.store.ModelStoreRepository(
+        catalogRepository = storeCatalogRepository,
+        installer = storeInstaller,
+        manifestStore = storeManifestStore,
+        maintenance = storeMaintenance,
+        licenseStore = storeLicenseStore,
+        // Probed per call rather than cached at construction: available RAM shifts constantly, and
+        // an eligibility verdict computed at process start would be stale by the time the user
+        // reaches the store.
+        eligibilityProvider = {
+            com.vervan.chat.store.eligibility.VariantEligibilityChecker(
+                com.vervan.chat.store.eligibility.DeviceProfile.probe(
+                    context = app,
+                    appVersionCode = com.vervan.chat.BuildConfig.VERSION_CODE,
+                    // Vulkan-capable llama.cpp builds are the GPU path on this app; NPU delegation
+                    // is not exposed by any runtime here yet, so claiming it would wrongly mark
+                    // NPU-requiring variants installable.
+                    hasGpuDelegate = com.vervan.chat.BuildConfig.LLAMA_CPP_AVAILABLE,
+                    hasNpuDelegate = false
+                )
+            )
+        },
+        scope = storeScope,
+        onInstallStarting = {
+            com.vervan.chat.store.StoreDownloadService.start(app)
+        }
+    )
+
+    val storeHousekeeping = com.vervan.chat.store.StoreHousekeeping(
+        context = app,
+        catalogRepository = storeCatalogRepository,
+        maintenance = storeMaintenance,
+        manifestStore = storeManifestStore
+    )
+
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
     val appLockManager = AppLockManager(app)
+    // The model-initiated outbound-network tool (web_search). API key lives in the same
+    // Keystore-backed prefs pattern as hfTokenStore/apiServerAuth/appLockManager; the client
+    // is constructed eagerly because the tool's execute lambda reads it per call.
+    val knowledgeGraphStore = com.vervan.chat.search.KnowledgeGraphStore(app)
+    val knowledgeGraphClient = com.vervan.chat.search.KnowledgeGraphClient(
+        apiKeyProvider = { knowledgeGraphStore.get() },
+        // Same audit log the model downloader and store pipeline report to — a model-initiated
+        // outbound call is exactly what this dashboard exists to surface.
+        onNetworkCall = { reason -> networkAuditLog.record(reason) }
+    )
     // Reason-keyed set instead of a single boolean so app-wide lock and a per-chat
     // "screenshotBlocked" toggle (independent sources, see ChatScreen) don't fight over the
     // same window flag — MainActivity just sets FLAG_SECURE whenever this set is non-empty.
@@ -169,7 +273,10 @@ class AppContainer(app: Application) {
         maxOutputTokens: Int = 512,
         stopSequences: List<String> = emptyList(),
         assistantPrefill: String? = null,
-        systemPrompt: String? = null
+        systemPrompt: String? = null,
+        // llama.cpp-only hard reasoning-token cap; -1 = unlimited/not applicable. Ignored by the
+        // LiteRT-LM branch (its SDK has no native reasoning-budget hook).
+        reasoningBudget: Int = -1
     ): Flow<String> = flow {
         when (model.engine) {
             // llama.cpp already gets an exact native output-token cap (nativeGenerate's maxTokens
@@ -198,7 +305,8 @@ class AppContainer(app: Application) {
                     llamaCppEngine.generate(
                         prompt, imagePath, temperature, topP, topK, seed, maxOutputTokens, minP,
                         repetitionPenalty, chatTemplateOverride = model.chatTemplateOverride,
-                        assistantPrefill = assistantPrefill, systemPrompt = systemPrompt
+                        assistantPrefill = assistantPrefill, systemPrompt = systemPrompt,
+                        reasoningBudget = reasoningBudget
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -374,6 +482,22 @@ class VervanApp : Application() {
             // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
             if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
                 com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
+            }
+            // Same treatment for the Model Store's own pipeline: an install interrupted by
+            // process death is reconciled against the real .part files on disk and parked as
+            // PAUSED, never as FAILED. No service is started here — the store has no auto-resume
+            // policy yet, so recovery only makes the session resumable when the user returns.
+            container.storeInstallRecovery.recoverOnStartup()
+            // Catalogue refresh, blob GC and the integrity spot-check, each on its own throttle.
+            // Skipped entirely on a device that has never opened the store, so a feature the user
+            // has not touched never reaches the network on their behalf.
+            if (!container.storeHousekeeping.isDormant()) {
+                // recoverOnStartup() above may have left install sessions in PAUSED — their
+                // staging dirs (.part files) MUST be spared from the GC pass, otherwise the
+                // partial download the recovery just reconciled is deleted and the next resume
+                // re-downloads from zero. Pass the live set of in-flight variant ids.
+                val inFlight = container.db.storeInstallSessionDao().getUnfinished().map { it.variantId }.toSet()
+                container.storeHousekeeping.runIfDue(inFlight)
             }
         }.onFailure { Log.e(TAG, "Cold-start housekeeping failed", it) } }
     }
