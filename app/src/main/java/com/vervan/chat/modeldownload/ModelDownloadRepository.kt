@@ -465,8 +465,10 @@ class ModelDownloadRepository(
                 src.delete()
             }
         }
-        val modelFile = File(voiceDir, "model.onnx")
-        val hash = if (modelFile.isFile) sha256Of(modelFile) else ""
+        // Hash the actual MODEL-role file, not a hardcoded "model.onnx" — the whisper.cpp entry's
+        // model is ggml-tiny.bin, so the old constant always produced an empty hash for it.
+        val modelFile = files.firstOrNull { it.role == ModelFileRole.MODEL }?.let { File(voiceDir, it.fileName) }
+        val hash = if (modelFile?.isFile == true) sha256Of(modelFile) else ""
         return TtsVoiceModel(engine = engine, language = language, filePath = voiceDir.absolutePath, fileSizeBytes = totalBytes, sha256 = hash)
     }
 
