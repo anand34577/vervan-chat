@@ -33,7 +33,7 @@ object ChatFormatting {
     }
 
     /**
-     * Context eviction (spec §10) — drops the oldest turns first once the conversation would blow
+     * Context eviction — drops the oldest turns first once the conversation would blow
      * past ~60% of the model's usable context, instead of growing the prompt unbounded. The rest
      * of the budget covers persona, memories, retrieved sources, and the model's own output. Uses
      * the script-aware estimator (a flat chars/4 overshot ~4x on non-Latin scripts). Always keeps

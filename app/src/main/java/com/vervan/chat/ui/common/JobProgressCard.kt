@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
 
 /**
- * §6/§5.4 — the shared shape for any durable background job (model import, KB indexing,
+ * the shared shape for any durable background job (model import, KB indexing,
  * backup, workflow run): stage label, progress, elapsed/remaining estimate, and up to two
  * actions. Previously every job surface (Job Queue, Knowledge import, Model import) built its
  * own ad hoc progress row.

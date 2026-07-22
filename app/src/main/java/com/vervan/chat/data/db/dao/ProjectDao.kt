@@ -27,7 +27,7 @@ interface ProjectDao : BaseDao<Project> {
     @Query("SELECT * FROM projects WHERE id = :id")
     suspend fun get(id: String): Project?
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM projects WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<Project>>
 

@@ -8,7 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Clipboard hygiene (Phase H) — copies [text] normally, then after [clearAfterMs] clears the
+ * Clipboard hygiene — copies [text] normally, then after [clearAfterMs] clears the
  * clipboard only if it still holds exactly what was just copied, so a later, unrelated copy the
  * user made in the meantime isn't wiped out from under them.
  *

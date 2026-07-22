@@ -58,7 +58,7 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
 
     fun delete() {
         if (templateId == null || _isBuiltIn.value) return
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch { db.promptTemplateDao().get(templateId)?.let { db.promptTemplateDao().upsert(it.copy(deletedAt = System.currentTimeMillis())) } }
     }
 }

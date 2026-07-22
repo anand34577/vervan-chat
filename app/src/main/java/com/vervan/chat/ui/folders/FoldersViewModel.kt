@@ -121,7 +121,7 @@ class FolderDetailViewModel(private val app: VervanApp, private val folderId: St
         val chat = app.container.workspaceManager.applyDefaults(
             Chat(
                 folderId = folderId,
-                // §6/§11: a folder's chats must share its workspace.
+                // : a folder's chats must share its workspace.
                 workspaceId = f?.workspaceId ?: com.vervan.chat.data.db.entities.Workspace.DEFAULT_WORKSPACE_ID,
                 knowledgeBaseIds = f?.defaultKnowledgeBaseIds ?: "",
                 sourceGrounded = !f?.kbIdList().isNullOrEmpty()

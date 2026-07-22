@@ -11,7 +11,7 @@ data class Persona(
     val description: String = "",
     val systemInstruction: String,
     val isBuiltIn: Boolean = false,
-    // Phase 4, spec §25 — declarative behavior dials layered on top of the free-text
+    // declarative behavior dials layered on top of the free-text
     // systemInstruction, turned into an extra prompt line by PersonaTraits.instructionFor().
     val tone: String = "NEUTRAL", // WARM, NEUTRAL, DIRECT, PLAYFUL
     val formality: String = "NEUTRAL", // CASUAL, NEUTRAL, FORMAL
@@ -19,7 +19,7 @@ data class Persona(
     val creativity: Float = 0.5f, // 0..1, informs generation temperature
     val responseLength: String = "BALANCED", // SHORT, BALANCED, LONG
     val language: String = "", // free-text preferred reply language; blank = no preference
-    // Recycle bin coverage (Phase 6, spec §34) — same soft-delete pattern as Chat/Note/Document/Folder.
+    // Recycle bin coverage — same soft-delete pattern as Chat/Note/Document/Folder.
     val deletedAt: Long? = null,
     // Character card import (SillyTavern PNG cards, see CharacterCardImporter) — a copy of the
     // card's embedded portrait under filesDir/personas/avatars/, shown in place of the generic

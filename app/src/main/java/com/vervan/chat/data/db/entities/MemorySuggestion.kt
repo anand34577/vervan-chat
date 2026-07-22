@@ -4,11 +4,11 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-/** Suggestion-inbox states (spec §27.3). */
+/** Suggestion-inbox states. */
 enum class MemorySuggestionStatus { PENDING, ACCEPTED, REJECTED }
 
 /**
- * A proposed memory awaiting user review (spec §27.3 suggestion-inbox capture mode). The app
+ * A proposed memory awaiting user review (suggestion-inbox capture mode). The app
  * may detect something worth remembering (e.g. the user said "remember that …" in chat, or a
  * tool captured a fact) and enqueue it here *inactive* — it never enters the prompt until the
  * user explicitly accepts it, at which point it becomes a real [Memory].

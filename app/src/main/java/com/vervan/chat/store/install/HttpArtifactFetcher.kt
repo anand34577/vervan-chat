@@ -25,7 +25,7 @@ class HttpArtifactFetcher(
     private val downloader: HttpRangeDownloader,
     private val networkAuditLog: NetworkAuditLog,
     /** Resolves the user's own Hugging Face token, when they have supplied one. Never an
-     * app-owned/shared token — spec §9 and §14 forbid embedding one, because it would let this app
+     * app-owned/shared token — and forbid embedding one, because it would let this app
      * act as a shared credential for gated repos and bypass the rightsholder's approval. */
     private val userHuggingFaceToken: suspend () -> String? = { null }
 ) : ArtifactFetcher {

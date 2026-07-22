@@ -125,7 +125,7 @@ internal fun rememberBatchedStreamingText(text: String, isStreaming: Boolean): S
     return if (isStreaming) displayedText else text
 }
 
-/** §7.3.4 — Standard mode translates the raw retrieval score into a plain-language match
+/** Standard mode translates the raw retrieval score into a plain-language match
  * strength instead of a bare number; Expert mode shows the exact score (see call site). */
 private fun matchStrength(score: Double): String = when {
     score >= 0.75 -> "Strong"

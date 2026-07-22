@@ -37,7 +37,7 @@ interface ChatDao : BaseDao<Chat> {
     @Query("SELECT COUNT(*) FROM chats WHERE workspaceId = :workspaceId AND deletedAt IS NULL AND archived = 1")
     fun observeArchivedCountForWorkspace(workspaceId: String): Flow<Int>
 
-    // Workspace deletion cascade (§13) needs the actual rows first so their messages/tool-audit
+    // Workspace deletion cascade needs the actual rows first so their messages/tool-audit
     // records can be cleaned up too, before the bulk DELETE below.
     @Query("SELECT * FROM chats WHERE workspaceId = :workspaceId")
     suspend fun getForWorkspace(workspaceId: String): List<Chat>

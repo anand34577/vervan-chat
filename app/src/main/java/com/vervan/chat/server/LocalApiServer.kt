@@ -18,7 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Phase J — local OpenAI-compatible API server. Implements just enough of the `/v1/chat/
+ * local OpenAI-compatible API server. Implements just enough of the `/v1/chat/
  * completions` and `/v1/models` surface for an existing OpenAI-client config (base URL + API
  * key) to point at this app, reusing [com.vervan.chat.llm.LlmEngine] exactly as every other
  * caller does (through [VervanApp.container]'s `withLlm` mutex — one generation in flight

@@ -3,7 +3,7 @@ package com.vervan.chat.store.storage
 import android.util.Log
 
 /**
- * Periodic upkeep for the blob store (spec §7). Intended to be driven by WorkManager — this is
+ * Periodic upkeep for the blob store. Intended to be driven by WorkManager — this is
  * exactly the deferrable background work WorkManager is good at, as distinct from the large
  * user-facing download, which must not be a WorkManager job because Android 16's job quotas can
  * stall long-running workers.

@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Result of [DocumentImportManager.import] — a name+content conflict with an existing,
- * non-deleted document in the same knowledge base doesn't auto-overwrite (Phase 3, spec §20);
+ * non-deleted document in the same knowledge base doesn't auto-overwrite;
  * the caller decides via [DocumentImportManager.resolveVersionConflict]. */
 sealed class DocumentImportOutcome {
     data class Imported(val document: Document) : DocumentImportOutcome()
@@ -109,7 +109,7 @@ class DocumentImportManager(
         DocumentImportOutcome.Imported(document)
     }
 
-    /** Imports raw text directly (Phase 3, spec §17) — used to bring a note or a chat export
+    /** Imports raw text directly — used to bring a note or a chat export
      * into a knowledge base without a source file/Uri, reusing the same extract-free tail of
      * the normal pipeline (chunk -> embed -> persist). Written to a real .txt file so the
      * document viewer and re-index still work on it like any other import. */
@@ -150,7 +150,7 @@ class DocumentImportManager(
             else -> JobState.COMPLETED
         }
         jobDao?.upsert(job.copy(state = finalState, updatedAt = System.currentTimeMillis(), detail = result.status.name))
-        // Post a notification (spec §37.4) for completion or failure — only meaningful
+        // Post a notification for completion or failure — only meaningful
         // if the app is backgrounded, but cheap to post regardless.
         if (finalState == JobState.COMPLETED) {
             NotificationHelper.post(context, job.id.hashCode(), "Import complete", "\"$name\" is ready to search.")
@@ -276,8 +276,8 @@ class DocumentImportManager(
         return doc.copy(status = DocumentStatus.READY, failureReason = warning)
     }
 
-    /** Re-indexes an already-imported document from its stored file (spec §42 index repair /
-     * §40.14 embedding-model-changed re-index). Deletes old chunks, re-extracts and re-embeds. */
+    /** Re-indexes an already-imported document from its stored file (index repair /
+     * embedding-model-changed re-index). Deletes old chunks, re-extracts and re-embeds. */
     suspend fun reindexLocal(documentId: String) = withContext(Dispatchers.IO) {
         val doc = documentDao.get(documentId) ?: return@withContext
         // B12: INDEX_REBUILD is another job type the Job Queue promised but never created.

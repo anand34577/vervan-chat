@@ -43,7 +43,7 @@ import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
 
 /**
- * Phase J — on/off, LAN exposure (with an explicit warning), port, auth requirement + token,
+ * on/off, LAN exposure (with an explicit warning), port, auth requirement + token,
  * and a live request counter reusing [com.vervan.chat.system.NetworkAuditLog] so the same
  * trust dashboard that proves outbound silence also covers this server's inbound traffic.
  */

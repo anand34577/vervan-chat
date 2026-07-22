@@ -11,6 +11,6 @@ data class SavedOutput(
     val sourceChatId: String? = null,
     val label: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     val deletedAt: Long? = null
 )

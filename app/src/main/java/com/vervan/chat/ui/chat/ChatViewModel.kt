@@ -86,7 +86,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     val personas = db.personaDao().observePersonas()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Chat Screen spec §4/§5 — workspace/folder indicators in the top bar.
+    // Chat Screen — workspace/folder indicators in the top bar.
     val workspace: StateFlow<Workspace?> = chat.flatMapLatest { chatRow ->
         if (chatRow == null) flowOf(null) else db.workspaceDao().observe(chatRow.workspaceId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -95,7 +95,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (chatRow?.folderId == null) flowOf(null) else db.folderDao().observeAll().map { list -> list.find { it.id == chatRow.folderId } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    // Chat Screen spec §9/§23 — an archived workspace remains viewable but blocks new
+    // Chat Screen — an archived workspace remains viewable but blocks new
     // messages until it (or the chat) is restored.
     val isWorkspaceArchived: StateFlow<Boolean> = workspace.map { it?.archived == true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -162,8 +162,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     val modelLoadState: StateFlow<ModelLoadState> = _modelLoadState
 
     /** Null = not yet tested this process (attach stays enabled — "declared" capability,
-     * not disproven). Set once a real load attempt has happened, per spec 2.2's declared
-     * vs. tested distinction — we don't gate on a static per-model flag because the same
+     * not disproven). Set once a real load attempt has happened — a declared
+     * vs. tested distinction. We don't gate on a static per-model flag because the same
      * model can load with or without vision depending on which backend actually worked. */
     private val _visionAvailable = MutableStateFlow<Boolean?>(null)
     val visionAvailable: StateFlow<Boolean?> = _visionAvailable
@@ -297,7 +297,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     )
 
     init {
-        // Model Loading Strategy §5.2 — chat/conversation screens are a Category B screen
+        // Model Loading Strategy — chat/conversation screens are a Category B screen
         // ("can be viewed without a model, specific actions require one"), not Category A.
         // Opening a chat must never trigger a load on its own; this collector only *reflects*
         // whatever the coordinator's shared state already is (so this screen stays in sync if
@@ -402,7 +402,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 ModelLoadState.Loading(model.displayName, "Loading model into memory")
             info.error?.loadedModelId == model.id ->
                 ModelLoadState.Failed(model.displayName, info.error?.errorMessage.toUserMessage())
-            // §5.2 — nothing auto-loads this model just because the chat is open, so absent any
+            // nothing auto-loads this model just because the chat is open, so absent any
             // of the above this chat's model is simply not loaded yet; ModelReadinessPanel offers
             // "Load", and beginGeneration() loads it for real the moment a model-dependent action
             // (Send/regenerate/continue) actually happens.
@@ -489,7 +489,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             app.contentResolver.openInputStream(uri)?.use { input ->
                 dest.outputStream().use { output -> input.copyTo(output) }
             } ?: return@withContext null
-            // Orientation fix (Phase 7, spec §13) — bakes the EXIF rotation into the pixels so
+            // Orientation fix — bakes the EXIF rotation into the pixels so
             // the vision model (which has no EXIF awareness) doesn't see a sideways image.
             com.vervan.chat.model.ImageUtils.fixOrientation(dest)
             dest.absolutePath
@@ -692,7 +692,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    // Per-chat sampler overrides (spec §6/§7) — null clears back to inherited (model, then app
+    // Per-chat sampler overrides — null clears back to inherited (model, then app
     // default).
     fun setTemperatureOverride(value: Float?) {
         viewModelScope.launch { db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(temperature = value)) } }
@@ -704,7 +704,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         viewModelScope.launch { db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(topK = value)) } }
     }
 
-    // Chat Screen spec §17 — persists the reading position (not just "was at the bottom") so
+    // Chat Screen — persists the reading position (not just "was at the bottom") so
     // reopening the chat, rotating the device, or navigating back restores it instead of
     // always jumping to the latest message.
     fun saveScrollAnchor(messageId: String, offsetPx: Int) {
@@ -718,7 +718,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** B3: export/duplicate/archive/pin/trash used to only be reachable from the chat list
      * row menu — an already-open chat had no way to reach them. Same logic as
      * [com.vervan.chat.ui.chats.ChatListViewModel], scoped to this chat's id. */
-    // A manual rename permanently opts the chat out of auto-title generation (spec §18/§20:
+    // A manual rename permanently opts the chat out of auto-title generation (:
     // "manually edited titles are never overwritten automatically") — titleIsCustom locks it.
     fun rename(newTitle: String) {
         if (newTitle.isBlank()) return
@@ -732,7 +732,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     private val _titleGenerating = MutableStateFlow(false)
     val titleGenerating: StateFlow<Boolean> = _titleGenerating
 
-    // Manual "Generate title" / "Regenerate title" (spec §18) — an AI-produced title stays
+    // Manual "Generate title" / "Regenerate title" — an AI-produced title stays
     // eligible for later auto-regeneration (titleIsCustom = false), unlike a hand-typed rename.
     fun generateTitle() {
         if (_titleGenerating.value) return
@@ -766,7 +766,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    // Auto title generation (spec §20), workspace-scoped: run once, only after the response
+    // Auto title generation, workspace-scoped: run once, only after the response
     // that pushes the assistant-message count to the trigger threshold, only while the title
     // is still non-custom, and only for workspaces that opted in. Fire-and-forget on its own
     // coroutine so it never blocks or interrupts the interactive response that triggered it.
@@ -886,7 +886,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         viewModelScope.launch { db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(pinned = !it.pinned)) } }
     }
 
-    /** Incognito mode (Phase B). Takes effect for messages sent from this point forward — see
+    /** Incognito mode. Takes effect for messages sent from this point forward — see
      * [send]'s memory-suggestion skip and [com.vervan.chat.ui.chat.ChatScreen]'s hard-delete-on-
      * close, which only fires once this is true. */
     fun toggleTemporary() {
@@ -897,17 +897,17 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         viewModelScope.launch { db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(archived = !it.archived)) } }
     }
 
-    // One-shot confirmation banners (spec §2, §5) — "X is now active" / "Moved to X" — the
+    // One-shot confirmation banners — "X is now active" / "Moved to X" — the
     // screen shows these as a Snackbar then clears them, same pattern as WorkspacesViewModel.
     private val _confirmationMessage = MutableStateFlow<String?>(null)
     val confirmationMessage: StateFlow<String?> = _confirmationMessage
     fun clearConfirmation() { _confirmationMessage.value = null }
 
-    // Chat Screen spec §4 — moving a chat to another workspace unfiles it from its current
-    // folder (a folder must stay within one workspace, §6/§11); persona/model overrides are
+    // Chat Screen — moving a chat to another workspace unfiles it from its current
+    // folder (a folder must stay within one workspace); persona/model overrides are
     // left untouched so an explicit chat-level choice still wins, but a chat with no override
     // now inherits the destination workspace's persona (resolveEffectivePersona), matching
-    // "use destination workspace defaults only where no chat-specific override exists" (§5).
+    // "use destination workspace defaults only where no chat-specific override exists".
     fun moveToWorkspace(workspaceId: String, workspaceName: String) {
         viewModelScope.launch {
             db.chatDao().getChat(chatId)?.let {
@@ -917,7 +917,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    // Chat Screen spec §4 — "Set Chat X as active workspace" from the chat's own workspace
+    // Chat Screen — "Set Chat X as active workspace" from the chat's own workspace
     // indicator, distinct from just opening/viewing it.
     fun setChatWorkspaceActive() {
         viewModelScope.launch {
@@ -928,13 +928,13 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    // Chat Screen spec §9/§23 — an archived workspace stays viewable but blocks new messages
+    // Chat Screen — an archived workspace stays viewable but blocks new messages
     // until restored; this is the "Restore and continue" affordance.
     fun restoreChatWorkspace() {
         viewModelScope.launch { workspace.value?.let { app.container.workspaceManager.restore(it) } }
     }
 
-    // Chat Screen spec §10 — clears every chat-specific override so the chat falls back to
+    // Chat Screen — clears every chat-specific override so the chat falls back to
     // its workspace's persona/defaults (resolveEffectivePersona, model/profile/thinking-mode
     // fallbacks already read null as "inherit"). Messages, branches, folder, and workspace are
     // untouched — this only resets configuration, never data.
@@ -964,7 +964,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val updatedAt: Long
     )
 
-    // Chat Screen spec §26 — kept to what's actually recorded today (no token/duration fields
+    // Chat Screen — kept to what's actually recorded today (no token/duration fields
     // exist anywhere in this app yet, see Message.kt); this omits token counts rather than
     // faking them.
     fun chatStats(): ChatStats {
@@ -1002,7 +1002,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (hasNoConversation || chat.isTemporary) purgeTemporaryChat(chat)
     }
 
-    /** Incognito mode (Phase B) — hard-deletes everything scoped to a temporary chat on close
+    /** Incognito mode — hard-deletes everything scoped to a temporary chat on close
      * (not soft-deleted to the recycle bin, unlike a normal chat): messages, tool-audit rows,
      * and any per-chat attachment knowledge bases created via document
      * import (same document cleanup [com.vervan.chat.model.WorkspaceManager.delete] uses for a
@@ -1046,7 +1046,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     val knowledgeBases = db.knowledgeBaseDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Wires this chat's transcript into a knowledge base (Phase 3, spec §17). */
+    /** Wires this chat's transcript into a knowledge base. */
     fun addToKnowledgeBase(kbId: String) {
         viewModelScope.launch {
             val name = db.chatDao().getChat(chatId)?.title ?: "Chat"
@@ -1120,7 +1120,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         file
     }
 
-    /** Runs the rule-based detector (spec §27.3) over a just-sent user message and enqueues
+    /** Runs the rule-based detector over a just-sent user message and enqueues
      * any hits as pending [com.vervan.chat.data.db.entities.MemorySuggestion] rows — never a
      * real [com.vervan.chat.data.db.entities.Memory] directly. Skips a candidate if an
      * enabled global memory already carries the same key, or a suggestion for that key is
@@ -1156,7 +1156,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         launchGeneration {
             val expandedText = expandSlashCommand(text)
             val chatRow = db.chatDao().getChat(chatId) ?: return@launchGeneration null
-            // Auto-title from the first real message (spec §7.1's "Generate a new title" —
+            // Auto-title from the first real message ("Generate a new title" —
             // this is the automatic version) instead of leaving every chat labeled "New chat"
             // in the list forever. Only fires once: a chat the user already renamed, or one
             // past its first message, is left alone.
@@ -1176,7 +1176,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             )
             db.messageDao().upsert(userMessage)
             setActiveLeaf(userMessage.id)
-            // Incognito mode (Phase B) — nothing learned from a temporary chat persists past it.
+            // Incognito mode — nothing learned from a temporary chat persists past it.
             if (!chatRow.isTemporary) enqueueMemorySuggestions(expandedText)
 
             GenerationRequest(expandedText, imagePath, audioPath)
@@ -1330,7 +1330,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 Log.i(TAG, "[$chatId] generation start: triggerLen=${request.triggerText.length}, hasImage=${request.imagePath != null}, hasAudio=${request.audioPath != null}")
                 beginGeneration(request.triggerText, request.imagePath, request.audioPath, request.forceGrounding, request.profileOverride)
                 Log.i(TAG, "[$chatId] generation finished in ${System.currentTimeMillis() - startedAt}ms")
-            // Runs after the response completes, on its own coroutine (spec §20 — never
+            // Runs after the response completes, on its own coroutine (never
                 // interrupts interactive generation).
                 maybeAutoGenerateTitle()
                 // Same fire-and-forget shape as the title generator above — folds turns that
@@ -1440,7 +1440,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val profile = ModelProfiles.resolve(effectiveProfileType)
         val groundingRequested = (forceGrounding || chatRow.sourceGrounded) && chatRow.kbIdList().isNotEmpty() && profile.retrievalTopK > 0
         val passages = if (groundingRequested) retrieveSources(chatRow.kbIdList(), triggerText, profile.retrievalTopK) else emptyList()
-        // Grounding was on but nothing matched — abstain/weak-evidence signal (B6, spec §19.5)
+        // Grounding was on but nothing matched — abstain/weak-evidence signal (B6)
         // instead of silently answering as if grounding were off.
         val noEvidenceFound = groundingRequested && passages.isEmpty()
 
@@ -1464,7 +1464,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * for [confirmToolCall]. Every message created here immediately becomes the new active
      * leaf, so the hop chain — and any later branch off of it — stays a proper tree.
      * sequential, single-tool-per-turn, hard cap of [MAX_TOOL_HOPS] — no
-     * parallel calls, no multi-tool-per-response parsing (spec 16.7's fuller loop
+     * parallel calls, no multi-tool-per-response parsing (fuller loop
      * protection — per-tool rate limits, result-size caps — isn't built).
      */
     private suspend fun runGenerationLoop(
@@ -1793,7 +1793,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Walks parent links from [from] up to the nearest USER message and returns its content —
      * used where a retrieval query needs "what did the user actually ask" rather than whatever
      * text happens to be at the current leaf (e.g. a tool call or its result summary). */
-    /** Records an executed tool call to the audit history (spec §16.3 / §2.6). */
+    /** Records an executed tool call to the audit history. */
     private fun recordToolAudit(toolName: String, params: JSONObject, result: ToolResult, risk: String) {
         viewModelScope.launch {
             db.toolAuditDao().insert(
@@ -1912,8 +1912,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     /** Declared response-length/tone preference from Settings, formatted as a prompt
      * instruction — empty when both are left at their neutral defaults, so a user who never
-     * touches this setting pays zero prompt cost for it (spec §26's "declared, not inferred"
-     * personalization). The active model profile's output hint (spec §11.9) is folded in too. */
+     * touches this setting pays zero prompt cost for it ("declared, not inferred"
+     * personalization). The active model profile's output hint is folded in too. */
     private suspend fun stylePreferenceText(profileOutputHint: String = ""): String {
         val length = app.container.settingsRepository.responseLength.first()
         val tone = app.container.settingsRepository.responseTone.first()
@@ -2069,7 +2069,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 )
         }
         val historyText = buildString {
-            // Context eviction (Phase 2) dropped the oldest turns to fit the budget — say so
+            // Context eviction dropped the oldest turns to fit the budget — say so
             // rather than silently presenting a partial history as if it were the whole thing.
             if (historyTrimmed) appendLine("[Earlier turns omitted to fit this model's context budget]")
             // A stopped/failed assistant turn is cut off mid-sentence — re-embedding it as a
@@ -2086,7 +2086,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 }
                 // Strip any <thinking> block from prior assistant turns — the model's own
                 // past reasoning doesn't need to keep re-entering context every future turn,
-                // just its actual answer (spec §8.3-adjacent context hygiene for §15).
+                // just its actual answer (adjacent context hygiene for).
                 val text = if (m.role == MessageRole.ASSISTANT) {
                     val answer = com.vervan.chat.llm.ThinkingParser.parse(m.content).answer
                     val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
@@ -2148,7 +2148,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Memory readout is a binder call to ActivityManager — throttled separately (and
         // coarser) than the plain in-memory token-count/speed math above it.
         private const val LIVE_STATS_INTERVAL_MS = 500L
-        // Spec §20 — "two or three meaningful user-assistant exchanges."
+        // "two or three meaningful user-assistant exchanges."
         private const val AUTO_TITLE_TRIGGER_REPLIES = 2
         // Long-chat context management (summarizeOlderHistoryIfNeeded): turns this far back
         // from the tip always stay raw, never folded into the summary.

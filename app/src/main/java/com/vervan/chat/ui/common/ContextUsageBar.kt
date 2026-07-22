@@ -20,12 +20,12 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanWarning
 
-/** One named slice of the context budget (§7.2.2 context inspector: System/Persona/Project/
+/** One named slice of the context budget (context inspector: System/Persona/Project/
  * Folder/Memory/Sources/History/Current message/Reserved output). */
 data class ContextSlice(val label: String, val tokens: Int, val color: androidx.compose.ui.graphics.Color)
 
 /**
- * §6/§7.2.2 ContextUsageBar — a segmented bar showing how the context window is spent, plus
+ * ContextUsageBar — a segmented bar showing how the context window is spent, plus
  * a plain-language summary line. Standard mode should pass a human translation like "Balanced
  * · about 18-30 typical messages"; Expert mode passes the exact token breakdown as [slices].
  */

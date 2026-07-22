@@ -1,7 +1,7 @@
 package com.vervan.chat.llm
 
 /**
- * Splits a `<thinking>...</thinking>` block out of a raw model response — spec §15's
+ * Splits a `<thinking>...</thinking>` block out of a raw model response —
  * thinking mode, built as a prompt instruction (see [com.vervan.chat.ui.chat.ChatViewModel])
  * since `tasks-genai` exposes no native reasoning-mode API. If the model didn't emit the
  * tag (wrong mode, or it just ignored the instruction), [Parsed.reasoning] is null and

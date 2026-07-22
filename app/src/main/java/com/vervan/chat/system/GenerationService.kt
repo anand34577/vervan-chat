@@ -12,7 +12,7 @@ import androidx.core.content.ContextCompat
 import com.vervan.chat.R
 
 /**
- * Foreground service backing active generation (B16, spec §32.4) — the actual generation
+ * Foreground service backing active generation (B16) — the actual generation
  * coroutine still runs in ChatViewModel's viewModelScope; this service's only job is to hold
  * a foreground-priority process state (+ visible notification) for as long as generation is
  * in flight, so the OS doesn't kill the process just because the app was backgrounded mid-

@@ -30,12 +30,12 @@ enum class Capability(val label: String, val icon: ImageVector) {
 }
 
 /** Whether a capability is definitely supported/unsupported, or won't be known until the
- * model actually loads (§7.2.2 — "Will be checked when the model loads" is a distinct state
+ * model actually loads ("Will be checked when the model loads" is a distinct state
  * from "Unsupported", not the same disabled look). */
 enum class CapabilityState { Supported, Unsupported, Unknown }
 
 /**
- * §6 CapabilityBadge — one small chip per model capability (vision/audio/tools/thinking),
+ * CapabilityBadge — one small chip per model capability (vision/audio/tools/thinking),
  * used on model cards and attachment pickers so support state reads the same everywhere
  * instead of each screen inventing its own icon-only or text-only convention.
  */

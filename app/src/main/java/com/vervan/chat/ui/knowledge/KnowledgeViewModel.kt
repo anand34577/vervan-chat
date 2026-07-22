@@ -60,7 +60,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
     val error: StateFlow<String?> = _error
 
     /** Set when [importDocument] finds a same-named, different-content document already in
-     * this KB (Phase 3, spec §20) — the screen shows a replace/keep-both dialog. */
+     * this KB — the screen shows a replace/keep-both dialog. */
     private val _pendingVersionConflict = MutableStateFlow<com.vervan.chat.model.DocumentImportOutcome.VersionConflict?>(null)
     val pendingVersionConflict: StateFlow<com.vervan.chat.model.DocumentImportOutcome.VersionConflict?> = _pendingVersionConflict
 

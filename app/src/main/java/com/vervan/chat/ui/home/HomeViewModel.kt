@@ -21,7 +21,7 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
     // "recent" = full list ordered pinned-then-recent; callers slice further if they only
-    // want a preview (see HomeScreen). Incognito mode (Phase B) excludes temporary chats,
+    // want a preview (see HomeScreen). Incognito mode excludes temporary chats,
     // same as the main chat list and search.
     val recentChats: StateFlow<List<Chat>> = db.chatDao().observeChats()
         .map { it.filterNot { c -> c.isTemporary } }
@@ -40,7 +40,7 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
     val indexingDocuments: StateFlow<List<Document>> = db.documentDao().observeIndexing()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // §7.1.2 Home top bar — active workspace name, so switching workspaces is visible without
+    // Home top bar — active workspace name, so switching workspaces is visible without
     // opening Workspaces first.
     val activeWorkspaceName: StateFlow<String?> = app.container.settingsRepository.activeWorkspaceId
         .flatMapLatest { id -> db.workspaceDao().observe(id) }

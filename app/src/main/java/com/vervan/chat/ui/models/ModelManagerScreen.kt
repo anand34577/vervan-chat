@@ -219,7 +219,7 @@ fun ModelManagerScreen(
     ) { padding ->
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            // §7.4.1 readiness summary — the model manager used to open straight into the
+            // readiness summary — the model manager used to open straight into the
             // import card with no at-a-glance answer to "is anything actually usable right now."
             run {
                 val generationReady = generationLoadInfo.currentModelId != null
@@ -1651,7 +1651,7 @@ private fun com.vervan.chat.modeldownload.ModelUiState.fitsBudget(budgetBytes: L
 }
 
 /** "Available for Download" — collapsed by default, grouped by category, each category
- * independently expandable (spec §3.2). [highlightBudgetBytes], when set (Model Calculator's
+ * independently expandable. [highlightBudgetBytes], when set (Model Calculator's
  * "Browse models that fit"), force-opens this section and the generation category, and sorts
  * entries within each category so ones that fit the budget surface first with a fit badge. */
 @Composable
@@ -1845,7 +1845,7 @@ private fun CatalogEntryCard(
 }
 
 /** One card per actively downloading/paused/failed package — expands to per-file detail (spec
- * §20). Progress is always derived from bytes (never a stored percentage), and only rendered as
+ *). Progress is always derived from bytes (never a stored percentage), and only rendered as
  * determinate once a total is actually known. */
 @Composable
 private fun DownloadPackageCard(

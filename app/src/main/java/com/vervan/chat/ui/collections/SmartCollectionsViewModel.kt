@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
-/** Dynamic collections (spec §28.4) — read-only filters, never move underlying content. */
+/** Dynamic collections — read-only filters, never move underlying content. */
 enum class SmartCollection(val label: String, val description: String) {
     THIS_WEEK("This week", "Chats and notes from the last 7 days"),
     INTERRUPTED("Interrupted", "Responses cut off before finishing"),
@@ -34,7 +34,7 @@ data class CollectionContents(
 class SmartCollectionsViewModel(app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
-    // Incognito mode (Phase B) — a temporary chat never appears in a smart collection.
+    // Incognito mode — a temporary chat never appears in a smart collection.
     private val allChats = db.chatDao().observeAllChats()
         .map { chats -> chats.filterNot { it.isTemporary } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

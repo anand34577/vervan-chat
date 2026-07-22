@@ -59,7 +59,7 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     val filter: StateFlow<ChatFilter> = _filter
 
     val chats: StateFlow<List<Chat>> = combine(allChats, _filter) { chats, filter ->
-        // Incognito mode (Phase B) — a temporary chat never appears in the chat list; it's
+        // Incognito mode — a temporary chat never appears in the chat list; it's
         // only reachable by whatever navigated to it directly, and purges itself on close.
         val listable = chats.filterNot { it.isTemporary }
         when (filter) {

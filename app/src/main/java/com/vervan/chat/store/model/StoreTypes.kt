@@ -49,7 +49,7 @@ enum class RuntimeSubtype(val wireName: String) {
  * What an artifact *is*, semantically. This is the single most important field in the schema:
  * every runtime resolves the files it needs by role, never by filename or extension, so a repo
  * that names its projector `mmproj-f16.gguf` and one that names it `projector.gguf` are handled
- * by the same code path. Spec §14: never infer runtime behavior from a filename.
+ * by the same code path.: never infer runtime behavior from a filename.
  *
  * Adding a value here is a schema change and must be accompanied by a `schemaVersion` bump —
  * see [com.vervan.chat.store.catalog.CatalogParser] for why an unknown role fails closed.
@@ -115,7 +115,7 @@ enum class SourceProvider(val wireName: String) {
  * One place an artifact's bytes can be fetched from. A variant may list several; failover to a
  * later source is only permitted when the fetched bytes hash to the artifact's declared
  * [Artifact.sha256], so a compromised or stale mirror cannot substitute different content
- * (spec §9).
+ *.
  *
  * [revision] is always an immutable commit SHA. `main` or any branch name is rejected at parse
  * time by [com.vervan.chat.store.catalog.CatalogParser] — a repo owner replacing a file behind a
@@ -128,7 +128,7 @@ data class ArtifactSource(
     val path: String
 ) {
     /** Hugging Face `/resolve/` endpoints 302 to a CDN URL with its own expiry; resume logic must
-     * re-resolve from *this* URL rather than reusing the expired redirect target (spec §6.5). */
+     * re-resolve from *this* URL rather than reusing the expired redirect target. */
     fun toUrl(): String = when (provider) {
         SourceProvider.HUGGING_FACE ->
             "https://huggingface.co/$repository/resolve/$revision/$path"
@@ -155,7 +155,7 @@ data class Artifact(
 
 /**
  * What a device must offer before a variant may be installed. Checked *before* download starts
- * (spec §5) — discovering incompatibility after pulling 3 GB is the failure mode this exists to
+ * discovering incompatibility after pulling 3 GB is the failure mode this exists to
  * prevent.
  */
 data class VariantRequirements(
@@ -200,7 +200,7 @@ data class ModelVariant(
 }
 
 /** Licence facts a human reviewer recorded for a curated entry. Everything here is reviewed, not
- * scraped (spec §11) — [acceptanceHash] is what the tap-to-accept record is keyed on, so a
+ * scraped — [acceptanceHash] is what the tap-to-accept record is keyed on, so a
  * catalogue update that changes the licence text re-prompts an existing installer. */
 data class ModelLicense(
     val name: String,

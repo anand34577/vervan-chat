@@ -1,12 +1,12 @@
 package com.vervan.chat.data.repo
 
 /**
- * Rule-based "ask before saving" detector (spec §27.3 suggestion-inbox capture mode). Looks
+ * Rule-based "ask before saving" detector (suggestion-inbox capture mode). Looks
  * for explicit, unambiguous statements in a user message — never inferred from tone or
  * repeated behavior, since that needs conflict scoring this project doesn't have (see the
  * implementation note on [com.vervan.chat.data.db.entities.Memory]). A hit only ever produces a
  * [com.vervan.chat.data.db.entities.MemorySuggestion] for the user to accept or reject —
- * nothing here writes to the real memory table directly, so spec §2.3 ("no memory is added
+ * nothing here writes to the real memory table directly, so ("no memory is added
  * silently") still holds.
  */
 object MemorySuggestionDetector {

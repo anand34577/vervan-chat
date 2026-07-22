@@ -9,7 +9,7 @@ data class ToolResult(val success: Boolean, val summary: String)
 
 /**
  * A tool the model can ask the app to run. [execute] is only ever called by
- * [ToolExecutor] after risk-appropriate confirmation (see spec 16.4) — the model
+ * [ToolExecutor] after risk-appropriate confirmation — the model
  * emitting a call is a request, never an authorization.
  */
 data class ToolDefinition(

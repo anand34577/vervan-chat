@@ -15,7 +15,7 @@ import java.util.UUID
 data class Chat(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String = "New chat",
-    // Workspace System spec §4/§10: every chat belongs to exactly one workspace. Defaults to
+    // Workspace System: every chat belongs to exactly one workspace. Defaults to
     // the Default Workspace so pre-existing rows (migration 22->23) and any call site that
     // forgets to stamp this stay valid rather than orphaned.
     val workspaceId: String = Workspace.DEFAULT_WORKSPACE_ID,
@@ -29,7 +29,7 @@ data class Chat(
     val sourceGrounded: Boolean = false,
     val toolsEnabled: Boolean = false,
     // Model profile id (ModelProfileType.id) — shapes context budget, retrieval depth, output
-    // length and default thinking mode (spec §11.9). Defaults to BALANCED. See llm.ModelProfiles.
+    // length and default thinking mode. Defaults to BALANCED. See llm.ModelProfiles.
     val profile: String = "BALANCED",
     // OFF/FAST/BALANCED/DEEP — prompt-engineered, not a native reasoning-mode API (tasks-genai
     // doesn't expose one). See ChatViewModel.reasoningInstruction / llm/ThinkingParser.
@@ -45,7 +45,7 @@ data class Chat(
     // Soft delete — non-null means "in the recycle bin", see RecycleBinScreen. A background
     // sweep (SettingsViewModel.purgeExpiredRecycleBin) hard-deletes rows older than 30 days.
     val deletedAt: Long? = null,
-    // Per-chat sampler overrides (spec §6/§7) — null means "inherit" (model override, then the
+    // Per-chat sampler overrides — null means "inherit" (model override, then the
     // app-global SettingsRepository value). No maxOutputTokens field: LiteRT-LM's engine only
     // takes a max-token budget at model load() time (engine-wide), not per generate() call, so
     // a per-chat override here would be a field that silently does nothing — left out rather
@@ -53,12 +53,12 @@ data class Chat(
     val temperature: Float? = null,
     val topP: Float? = null,
     val topK: Int? = null,
-    // Scroll-position restore (spec §17) — the message the user was reading when they last
+    // Scroll-position restore — the message the user was reading when they last
     // left this chat, plus its pixel offset within the viewport, so reopening restores the
     // exact reading position instead of always jumping to the latest message.
     val scrollAnchorMessageId: String? = null,
     val scrollAnchorOffsetPx: Int = 0,
-    // Title generation (spec §18-20) — false means the title is still "temporary/automatic"
+    // Title generation — false means the title is still "temporary/automatic"
     // and eligible for auto-generation; a manual rename sets this true, permanently opting the
     // chat out of auto-title overwrites. previousTitle backs the "Restore previous title" menu
     // action after an AI (re)generation replaces it.

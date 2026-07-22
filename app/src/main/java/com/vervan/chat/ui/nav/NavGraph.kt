@@ -182,7 +182,7 @@ fun VervanNavGraph(
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Launcher shortcuts (spec §37.3) — navigate to the relevant destination on launch.
+    // Launcher shortcuts — navigate to the relevant destination on launch.
     androidx.compose.runtime.LaunchedEffect(shortcut, intentVersion) {
         if (shortcut == null || !prefs.getBoolean("onboarded", false)) return@LaunchedEffect
         // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
@@ -231,7 +231,7 @@ fun VervanNavGraph(
     val allTabs = tabs + trailingTabs
     val showBottomBar = allTabs.any { currentRoute?.hierarchy?.any { d -> d.route == it.route } == true }
     // Tablet/foldable: a side rail instead of a bottom bar once the window is wider than a
-    // phone (spec §4's adaptive-layout gap) — same destinations, just repositioned.
+    // phone (adaptive-layout gap) — same destinations, just repositioned.
     val useRail = windowSizeClass?.widthSizeClass != null && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val useTwoPane = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded
     val activeJobs by app.container.db.jobDao().observeActive().collectAsState(initial = emptyList())

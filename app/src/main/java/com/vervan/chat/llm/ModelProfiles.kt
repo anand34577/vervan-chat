@@ -1,7 +1,7 @@
 package com.vervan.chat.llm
 
 /**
- * Named generation profiles (spec §11.9). A profile shapes the *kind* of answer — how much
+ * Named generation profiles. A profile shapes the *kind* of answer — how much
  * context to spend, how hard to retrieve, how deeply to reason, how long to write — without
  * touching the raw sampler knobs (temperature / top-p / top-k), which stay in Settings as the
  * underlying sampler configuration for every profile.

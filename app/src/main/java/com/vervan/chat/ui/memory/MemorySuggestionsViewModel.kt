@@ -22,7 +22,7 @@ class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Detects whether accepting this suggestion would conflict with an existing memory that
-     * shares its canonical key (spec §27.5). Returns the conflicting memory if any. */
+     * shares its canonical key. Returns the conflicting memory if any. */
     fun conflictFor(suggestion: MemorySuggestion): Memory? {
         if (suggestion.key.isNullOrBlank()) return null
         return existingMemories.value.firstOrNull {
@@ -33,7 +33,7 @@ class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
     fun accept(suggestion: MemorySuggestion, overwriteConflict: Boolean) {
         viewModelScope.launch {
             // If a same-key memory exists in the same scope and the user chose to overwrite,
-            // replace it; otherwise add (canonical-key dedup — spec §27.4/§27.5).
+            // replace it; otherwise add (canonical-key dedup ).
             val conflict = conflictFor(suggestion)
             if (conflict != null && overwriteConflict) {
                 db.memoryDao().delete(conflict)
@@ -59,7 +59,7 @@ class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
         accept(suggestion.copy(text = editedText, key = editedKey), overwriteConflict = false)
     }
 
-    /** §27.3 "never suggest this type" — blocks future suggestions carrying this key and
+    /** "never suggest this type" — blocks future suggestions carrying this key and
      * rejects every other pending suggestion that already shares it. */
     fun blockType(suggestion: MemorySuggestion) {
         viewModelScope.launch {

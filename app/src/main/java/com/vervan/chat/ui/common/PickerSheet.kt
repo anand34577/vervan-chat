@@ -31,7 +31,7 @@ import com.vervan.chat.ui.theme.Space
 data class PickerOption<T>(val value: T, val label: String, val supporting: String? = null)
 
 /**
- * §6/§8 PickerSheet — the shared single/multi-select bottom sheet with an optional search
+ * PickerSheet — the shared single/multi-select bottom sheet with an optional search
  * field, used wherever a user chooses among items (persona, model, folder, retrieval mode)
  * instead of every screen building its own `ModalBottomSheet` + filter logic.
  */

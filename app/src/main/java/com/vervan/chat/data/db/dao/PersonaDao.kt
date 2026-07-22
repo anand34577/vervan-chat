@@ -18,7 +18,7 @@ interface PersonaDao : BaseDao<Persona> {
     @Query("SELECT * FROM personas WHERE deletedAt IS NULL AND name LIKE '%' || :q || '%' LIMIT 20")
     suspend fun search(q: String): List<Persona>
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM personas WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<Persona>>
 

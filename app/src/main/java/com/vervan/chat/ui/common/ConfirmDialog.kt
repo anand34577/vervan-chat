@@ -15,11 +15,11 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Unarchive
 
 /**
- * The one shared confirmation-dialog shape (§6, §8) — every destructive/reset/conflict
+ * The one shared confirmation-dialog shape — every destructive/reset/conflict
  * decision in the app used to be a hand-rolled `AlertDialog`, which let button order, cancel
  * placement, and destructive-color usage drift screen to screen. [destructive] swaps the
  * confirm button to the error color; it never doubles as the primary accent for a destructive
- * action (§3.2).
+ * action.
  */
 @Composable
 fun ConfirmDialog(

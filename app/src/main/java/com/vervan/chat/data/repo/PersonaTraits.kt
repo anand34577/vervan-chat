@@ -3,7 +3,7 @@ package com.vervan.chat.data.repo
 import com.vervan.chat.data.db.entities.Persona
 
 /**
- * Turns a [Persona]'s declarative behavior dials (Phase 4, spec §25) into one extra prompt
+ * Turns a [Persona]'s declarative behavior dials into one extra prompt
  * line layered after its free-text systemInstruction — every dial defaults to neutral/blank,
  * so a persona nobody has tuned pays zero extra prompt cost.
  */

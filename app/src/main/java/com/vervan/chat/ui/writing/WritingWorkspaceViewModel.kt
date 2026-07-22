@@ -23,7 +23,7 @@ enum class WritingAction(val label: String, val instruction: String) {
     TRANSLATE("Translate", "Translate the following text into {LANGUAGE}, keeping the meaning and tone:")
 }
 
-/** Standalone rewrite/shorten/expand/tone tool (spec §22) — not tied to a chat or a note,
+/** Standalone rewrite/shorten/expand/tone tool — not tied to a chat or a note,
  * just original text in, revision out. Uses the same on-device generation as everything
  * else, one-shot per action (no multi-turn refinement loop). */
 class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {

@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 /**
- * Phase J — foreground service owning the [LocalApiServer] instance, matching
+ * foreground service owning the [LocalApiServer] instance, matching
  * [com.vervan.chat.system.GenerationService]'s "visible while running, never silent" shape:
  * a persistent notification the entire time the server is up, started only by an explicit
  * Settings toggle, never on boot.

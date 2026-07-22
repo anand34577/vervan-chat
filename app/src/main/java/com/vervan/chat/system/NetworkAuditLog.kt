@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.update
 data class NetworkAuditEntry(val timestamp: Long, val reason: String)
 
 /**
- * Network trust dashboard (Phase D) — every intentional network call this app ever makes is
+ * Network trust dashboard — every intentional network call this app ever makes is
  * meant to call [record] first, so "no silent networking" is something the user can verify in
  * Diagnostics instead of just a claim in a settings screen nobody can check.
  *

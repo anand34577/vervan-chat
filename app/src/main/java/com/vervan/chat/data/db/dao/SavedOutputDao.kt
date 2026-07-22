@@ -10,7 +10,7 @@ interface SavedOutputDao : BaseDao<SavedOutput> {
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<SavedOutput>>
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<SavedOutput>>
 
