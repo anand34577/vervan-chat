@@ -112,6 +112,8 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         }
     }
 
+    fun setEmojiAvatar(emoji: String) { _avatarPath.value = "emoji:$emoji" }
+
     fun clearAvatar() { _avatarPath.value = null }
 
     suspend fun save(): Boolean {

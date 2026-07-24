@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.AccountTree
@@ -39,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +55,7 @@ import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
@@ -89,6 +93,7 @@ fun LibraryScreen(
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = tab, pageCount = { libTabs.size })
     val snackbarHostState = remember { SnackbarHostState() }
     val selectableIds = remember(tab, query, allPersonas, allTemplates, allWorkflows, allOutputs) {
         when (tab) {
@@ -96,6 +101,14 @@ fun LibraryScreen(
             1 -> allTemplates.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
             2 -> allWorkflows.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
             else -> allOutputs.filter { it.content.contains(query, ignoreCase = true) }.map { it.id }.toSet()
+        }
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        if (tab != pagerState.currentPage) {
+            tab = pagerState.currentPage
+            query = ""
+            selectionMode = false
+            selected = emptySet()
         }
     }
 
@@ -154,11 +167,20 @@ fun LibraryScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize()) {
+            ContextGuideCard(
+                icon = Icons.Outlined.BookmarkBorder,
+                title = "Your reusable toolkit",
+                body = "Swipe between personas, prompt templates, workflows, and saved responses.",
+                modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
+                accentIndex = 4,
+            )
             androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
                 libTabs.forEachIndexed { index, label ->
                     Tab(
                         selected = tab == index,
-                        onClick = { tab = index; query = ""; selectionMode = false; selected = emptySet() },
+                        onClick = {
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
                         text = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                     )
                 }
@@ -169,19 +191,21 @@ fun LibraryScreen(
                 placeholder = "Search ${libTabs[tab].lowercase()}",
                 modifier = Modifier.padding(vertical = Space.sm)
             )
-            when (tab) {
-                0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                3 -> SavedTab(
-                    app = app,
-                    query = query,
-                    outputs = allOutputs,
-                    selectionMode = selectionMode,
-                    selected = selected,
-                    onToggleSelected = { id -> selected = if (id in selected) selected - id else selected + id },
-                    onEnterSelection = { id -> selectionMode = true; selected = selected + id }
-                )
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                when (page) {
+                    0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                    1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                    2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                    else -> SavedTab(
+                        app = app,
+                        query = query,
+                        outputs = allOutputs,
+                        selectionMode = selectionMode,
+                        selected = selected,
+                        onToggleSelected = { id -> selected = if (id in selected) selected - id else selected + id },
+                        onEnterSelection = { id -> selectionMode = true; selected = selected + id }
+                    )
+                }
             }
           }
         }
@@ -259,10 +283,13 @@ private fun PersonaCard(
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             val avatar = remember(persona.avatarPath) {
-                persona.avatarPath?.let { com.vervan.chat.model.ImageUtils.decodeThumbnail(it, 128) }
+                persona.avatarPath?.takeUnless { it.startsWith("emoji:") }
+                    ?.let { com.vervan.chat.model.ImageUtils.decodeThumbnail(it, 128) }
             }
+            val emoji = persona.avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
+            val accent = com.vervan.chat.ui.theme.vervanAccentFor((persona.name.hashCode() and Int.MAX_VALUE) % 6)
             Box(
-                Modifier.size(32.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer),
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(accent.container),
                 contentAlignment = Alignment.Center
             ) {
                 if (avatar != null) {
@@ -270,10 +297,16 @@ private fun PersonaCard(
                         bitmap = avatar.asImageBitmap(),
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.size(32.dp).clip(MaterialTheme.shapes.small)
+                        modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.medium)
                     )
+                } else if (emoji != null) {
+                    Text(emoji, style = MaterialTheme.typography.titleMedium)
                 } else {
-                    Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Text(
+                        persona.name.trim().firstOrNull()?.uppercase() ?: "P",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = accent.onContainer,
+                    )
                 }
             }
             Column(Modifier.weight(1f).padding(start = 8.dp)) {

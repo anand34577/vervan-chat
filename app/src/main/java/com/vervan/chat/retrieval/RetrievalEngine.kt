@@ -2,7 +2,9 @@ package com.vervan.chat.retrieval
 
 import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
+import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.Chunk
+import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.toFloatArray
 
 // EXACT_PHRASE added — the other two modes the spec calls out
@@ -28,7 +30,8 @@ data class SourcePassage(
 class RetrievalEngine(
     private val chunkDao: ChunkDao,
     private val documentDao: DocumentDao,
-    private val embeddingEngine: EmbeddingEngine
+    private val embeddingEngine: EmbeddingEngine,
+    private val modelDao: ModelDao
 ) {
     suspend fun retrieve(
         kbIds: List<String>,
@@ -52,7 +55,8 @@ class RetrievalEngine(
 
         val keywordScores = if (mode == RetrievalMode.KEYWORD || mode == RetrievalMode.HYBRID) keywordScore(query, chunks) else emptyMap()
         val semanticScores = if ((mode == RetrievalMode.SEMANTIC || mode == RetrievalMode.HYBRID) && embeddingEngine.isLoaded) {
-            semanticScore(query, chunks)
+            val activeModelId = modelDao.getActiveModel(ModelRole.EMBEDDING)?.id
+            semanticScore(query, chunks, activeModelId)
         } else emptyMap()
         val exactPhraseScores = if (mode == RetrievalMode.EXACT_PHRASE) exactPhraseScore(query, chunks) else emptyMap()
         // Recency-weighting folded directly into HYBRID rather than a standalone
@@ -132,13 +136,16 @@ class RetrievalEngine(
         return chunks.associate { chunk -> chunk.id to ((timestamps[chunk.documentId] ?: minTs) - minTs).toFloat() / range }
     }
 
-    private suspend fun semanticScore(query: String, chunks: List<Chunk>): Map<String, Float> {
+    private suspend fun semanticScore(query: String, chunks: List<Chunk>, activeModelId: String?): Map<String, Float> {
         val queryEmbedding = embeddingEngine.embed(query, isQuery = true) ?: return emptyMap()
         return chunks.mapNotNull { chunk ->
             val embedding = chunk.embedding?.toFloatArray() ?: return@mapNotNull null
-            // Dimension mismatch means this chunk was embedded by a different model than the
-            // one currently loaded (B8) — exclude it from semantic scoring entirely rather
-            // than letting cosineSimilarity's built-in 0f-on-mismatch masquerade as "no match".
+            // Exact model-id mismatch (B8) is the authoritative staleness check — two different
+            // embedding models can coincidentally share an output dimension, which would let a
+            // dimension-only check silently cosine-compare vectors from different embedding
+            // spaces. Chunks embedded before embeddingModelId existed carry null, so they fall
+            // back to the dimension check alone rather than being treated as a hard mismatch.
+            if (chunk.embeddingModelId != null && activeModelId != null && chunk.embeddingModelId != activeModelId) return@mapNotNull null
             if (embedding.size != queryEmbedding.size) return@mapNotNull null
             chunk.id to EmbeddingEngine.cosineSimilarity(queryEmbedding, embedding)
         }.toMap()
