@@ -36,9 +36,7 @@ object ToolRegistry {
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_notes needs a non-empty 'query'")
-                val notes = app.container.db.noteDao().observeAll().first()
-                    .filter { it.title.contains(query, true) || it.content.contains(query, true) }
-                    .take(5)
+                val notes = app.container.db.noteDao().search(query).take(5)
                 if (notes.isEmpty()) ToolResult(true, "No notes matched \"$query\".")
                 else ToolResult(true, notes.joinToString("\n") { "- ${it.title}: ${it.content.take(150)}" })
             }
@@ -51,9 +49,7 @@ object ToolRegistry {
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_chats needs a non-empty 'query'")
-                val chats = app.container.db.chatDao().observeChats().first()
-                    .filter { it.title.contains(query, true) }
-                    .take(5)
+                val chats = app.container.db.chatDao().search(query).take(5)
                 if (chats.isEmpty()) ToolResult(true, "No chats matched \"$query\".")
                 else ToolResult(true, chats.joinToString("\n") { "- ${it.title}" })
             }
@@ -207,7 +203,7 @@ object ToolRegistry {
                 }, "calendar event")
             }
         ),
-        // On-device data sources (Phase G) — each gated on its own Settings toggle (off by
+        // On-device data sources — each gated on its own Settings toggle (off by
         // default) in addition to the OS runtime permission; a model call against a source the
         // user hasn't opted into gets a graceful no, not a crash or a permission-request popup
         // mid-conversation. See gatedResult() below.
@@ -476,7 +472,7 @@ object ToolRegistry {
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
             execute = { app, _ ->
-                val tasks = app.container.db.noteDao().observeAll().first()
+                val tasks = app.container.db.noteDao().getTaskNotes()
                     .filter { "task" in it.tags.split(",") }
                 if (tasks.isEmpty()) ToolResult(true, "No open tasks.")
                 else ToolResult(true, tasks.joinToString("\n") { "- ${it.title}" })
@@ -490,7 +486,7 @@ object ToolRegistry {
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "complete_task needs a non-empty 'query'")
-                val task = app.container.db.noteDao().observeAll().first()
+                val task = app.container.db.noteDao().getTaskNotes()
                     .firstOrNull { "task" in it.tags.split(",") && it.title.contains(query, true) }
                     ?: return@ToolDefinition ToolResult(false, "No open task matched \"$query\".")
                 app.container.db.noteDao().upsert(task.copy(tags = "task-done"))
@@ -607,7 +603,7 @@ object ToolRegistry {
                         if (events.isNotEmpty()) sections += "Today's schedule:\n" + events.joinToString("\n") { "- $it" }
                     }
                 }
-                val tasks = app.container.db.noteDao().observeAll().first().filter { "task" in it.tags.split(",") }
+                val tasks = app.container.db.noteDao().getTaskNotes().filter { "task" in it.tags.split(",") }
                 if (tasks.isNotEmpty()) sections += "Open tasks:\n" + tasks.joinToString("\n") { "- ${it.title}" }
                 sections += "Device: " + withContext(Dispatchers.IO) {
                     val battery = (app.getSystemService(android.content.Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)

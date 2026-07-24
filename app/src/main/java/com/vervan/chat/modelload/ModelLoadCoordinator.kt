@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Picks the replacement default when a role's current default is deleted (or when a role has
- * models but none is active yet) — spec §4.3's priority order collapses to this single
+ * models but none is active yet) — priority order collapses to this single
  * comparison in practice: "currently loaded" only matters when it's the *deleted* model itself
  * (which is about to be gone anyway), so what's left is most-recently-loaded, then
  * most-recently-imported. Reassignment reuses whatever license acknowledgment the candidate
@@ -77,13 +77,13 @@ class ModelLoadCoordinator(
     private val defaults: GenerationDefaults,
     private val scope: CoroutineScope,
     // Defaults to "unconstrained" rather than being required, so every existing call site
-    // (including the coordinator's own unit tests, which predate §13) keeps compiling and
+    // (including the coordinator's own unit tests, which predate) keeps compiling and
     // behaving exactly as before unless it deliberately opts into a real memory check.
     private val resourceMonitor: ResourceMonitor = UnconstrainedResourceMonitor
 ) {
     private val coordinatorMutex = Mutex()
 
-    // §9.2 follow-up: once a load's watchdog timeout fires, the blocking native call underneath
+    // follow-up: once a load's watchdog timeout fires, the blocking native call underneath
     // keeps running on nativeLoadDispatcher with no way to cancel it — releasing the engine mutex
     // (withLock's normal finally behavior) would let a retried load call close()/loadModel()
     // concurrently with that still-running orphaned call on the very same engine instance. These
@@ -119,7 +119,7 @@ class ModelLoadCoordinator(
         val contextTokensOverride: Int?
     )
     private data class InFlightLoad(val request: LoadRequest, val deferred: Deferred<EnsureLoadResult>)
-    // §10 priority — everything needed to actually start [request] as the next in-flight load,
+    // priority — everything needed to actually start [request] as the next in-flight load,
     // captured at registration time since the coroutine that ends up starting it (whichever one
     // wins the race right after the current in-flight load completes) is very often *not* the
     // same coroutine that originally wanted it.
@@ -141,7 +141,7 @@ class ModelLoadCoordinator(
         )
     )
 
-    // §23 "Memory pressure changed" event — a plain StateFlow rather than a one-shot signal so a
+    // "Memory pressure changed" event — a plain StateFlow rather than a one-shot signal so a
     // screen that starts observing mid-pressure-event (e.g. navigates in right after a trim
     // callback) still sees the current level instead of missing it.
     private val _memoryPressure = MutableStateFlow(MemoryPressureLevel.NORMAL)
@@ -196,7 +196,7 @@ class ModelLoadCoordinator(
             val (entry, joined) = coordinatorMutex.withLock {
                 val existing = inFlight[role]
                 if (existing != null) {
-                    // §10 priority: a load for a *different* request is already running and can't
+                    // priority: a load for a *different* request is already running and can't
                     // be interrupted (it's a blocking native call — see the watchdog dispatcher
                     // comment above for why that's a hard constraint, not an oversight). Register
                     // this request so that once the current one finishes, the highest-priority
@@ -215,7 +215,7 @@ class ModelLoadCoordinator(
                     // previous in-flight load finished — not necessarily the highest-priority
                     // waiter itself), start the highest-priority one instead of blindly running
                     // with this call's own `request`/`trigger`/`model`. Manual/validation always
-                    // outranks anything automatic, matching §10's stated priority order; ties keep
+                    // outranks anything automatic, matching stated priority order; ties keep
                     // FIFO order (List.minByOrNull returns the first minimum).
                     val waiters = pendingWaiters[role]
                     val winner = waiters?.minByOrNull { triggerPriority(it.trigger) }
@@ -257,7 +257,7 @@ class ModelLoadCoordinator(
         }
     }
 
-    /** §10's stated priority order: explicit manual selection > active foreground user operation
+    /** stated priority order: explicit manual selection > active foreground user operation
      * > automatic screen-entry request > background/preloading request. Lower number = higher
      * priority (wins the race to start next — see the `pendingWaiters` election in [requestLoad]).
      * VALIDATION sits alongside MANUAL_MODEL_MANAGER — both represent the user (or the import flow
@@ -378,10 +378,10 @@ class ModelLoadCoordinator(
         return unloaded
     }
 
-    /** §6.2 entry point for `Application.onTrimMemory`/`onLowMemory` — both are synchronous
+    /** entry point for `Application.onTrimMemory`/`onLowMemory` — both are synchronous
      * `ComponentCallbacks`/`ComponentCallbacks2` methods that cannot suspend, so this can't
      * either. [MemoryPressureLevel.MODERATE] only updates [memoryPressure] for any observer that
-     * cares (§23); this app has no speculative/background preload of a non-default model to
+     * cares; this app has no speculative/background preload of a non-default model to
      * cancel, so there's nothing else to *do* at that tier yet. [MemoryPressureLevel.CRITICAL]
      * additionally proactively unloads via [unloadUnderMemoryPressure] — returns the roles that
      * got unloaded so the caller can decide whether/how to notify the user (VervanApp does, for
@@ -404,7 +404,7 @@ class ModelLoadCoordinator(
         // holds this engine's mutex for its whole streaming duration, so without this, a delete/
         // update on a model that's actively generating would silently hang on withLock until
         // generation finished on its own instead of the cancel-in-flight-operations behavior
-        // Model Loading Strategy §4.4 step 2 requires for this exact combined case.
+        // Model Loading Strategy requires for this exact combined case.
         if (model.role == ModelRole.GENERATION) generationEngineFor(model).cancelActiveGeneration()
         val wasLoaded = when (model.role) {
             ModelRole.GENERATION -> {
@@ -434,7 +434,7 @@ class ModelLoadCoordinator(
         explicitModel: ModelInfo?,
         trigger: LoadTrigger,
         contextTokensOverride: Int?,
-        // §11.2 loop guard — true only on the one automatic retry below, so a device with
+        // loop guard — true only on the one automatic retry below, so a device with
         // every model of a role simultaneously missing its file fails cleanly on the second
         // attempt instead of recursing through every remaining candidate.
         retriedAfterUnavailable: Boolean = false
@@ -452,7 +452,7 @@ class ModelLoadCoordinator(
             return result
         }
         if (!File(model.filePath).exists()) {
-            // §11.2: a *default* model whose file vanished outside the app (moved, deleted, SD
+            // : a *default* model whose file vanished outside the app (moved, deleted, SD
             // card ejected) is a non-temporary unavailability, not a one-off glitch — reassign
             // default away from it and retry once with whatever's next, rather than leaving the
             // app failing to auto-load anything on every future chat until the user happens to
@@ -464,7 +464,7 @@ class ModelLoadCoordinator(
             // explicitModel is non-null there too; MANUAL_MODEL_MANAGER is the one trigger that
             // means "the user explicitly picked this exact model instance" (Model Manager's Load
             // button, and the validate/benchmark flows that route through it) — silently
-            // substituting a different model than the one they asked for would violate §10's
+            // substituting a different model than the one they asked for would violate
             // "explicit selection must not be silently replaced".
             if (trigger != LoadTrigger.MANUAL_MODEL_MANAGER && model.isActive && !retriedAfterUnavailable) {
                 Log.w(TAG, "doLoad() default ${model.displayName} (role=$role) file is missing; reassigning default and retrying once")
@@ -722,16 +722,16 @@ class ModelLoadCoordinator(
         else -> ModelLoadErrorCategory.UNKNOWN
     }
 
-    /** §13 pre-load resource estimate. Neither native runtime reports its actual working-set
+    /** pre-load resource estimate. Neither native runtime reports its actual working-set
      * size to this layer, so weight memory is proxied from the file itself (dominant cost either
-     * way, and per §13.1 an mmap'd llama.cpp weight still counts toward headroom even though it's
+     * way, and per an mmap'd llama.cpp weight still counts toward headroom even though it's
      * OS-reclaimable — reclaiming it mid-inference costs latency, not correctness, but it still
      * has to fit to be mapped in the first place). KV-cache is estimated per-token, then scaled by
      * context length — still a heuristic either way (no per-model hidden-dim/head-count is
      * available at this layer to compute the textbook `2 × layers × heads × head_dim × bytes`
      * formula exactly), but two tiers of it:
      *   - [ModelInfo.layerCount] known (llama.cpp models get this from `readModelInfo()` during
-     *     Configure's validate-then-close pass, §18.4): scales off actual per-model layer count,
+     * Configure's validate-then-close pass): scales off actual per-model layer count,
      *     a real measured property of *this* model rather than a guess.
      *   - Unknown (LiteRT-LM models — no native metadata surface for this today, or a llama.cpp
      *     model never yet validated): falls back to scaling off the weight file size as a proxy
@@ -749,7 +749,7 @@ class ModelLoadCoordinator(
         return weightBytes + kvCacheBytes + RUNTIME_OVERHEAD_BYTES
     }
 
-    /** §13.3 combined budget — GENERATION and EMBEDDING can be resident simultaneously (§3), so a
+    /** combined budget — GENERATION and EMBEDDING can be resident simultaneously, so a
      * check for one role must still count whatever's already loaded in the *other* one. Proxies
      * that resident model's footprint from its own file size too, for the same reason as above. */
     private fun residentWeightBytes(excludingRole: ModelRole): Long {
@@ -764,7 +764,7 @@ class ModelLoadCoordinator(
     }
 
     /** Returns a failure result when [model] clearly will not fit, or null to proceed. Named the
-     * specific numbers in the message per §13.4's example format ("needs ~X; ~Y is available") —
+     * specific numbers in the message per example format ("needs ~X; ~Y is available") —
      * a bare "insufficient memory" tells the user nothing they can act on. */
     private fun checkResourceBudget(role: ModelRole, model: ModelInfo, contextTokens: Int): EnsureLoadResult? {
         val required = estimateRequiredBytes(model, contextTokens) + residentWeightBytes(excludingRole = role)
@@ -779,11 +779,11 @@ class ModelLoadCoordinator(
         )
     }
 
-    /** §9.3 crash/timeout diagnostics — deliberately independent of the failed call itself (it
+    /** crash/timeout diagnostics — deliberately independent of the failed call itself (it
      * may have hung or died without writing anything), built purely from what the coordinator
      * already knows: the model's own identity/backend/engine fields plus static device info. Not
      * gated to timeouts only — cheap enough to attach to every load failure, and useful for the
-     * genuinely-crashed-JNI-call case too (§9.4's "capture what it safely can"). */
+     * genuinely-crashed-JNI-call case too ("capture what it safely can"). */
     private fun diagnosticContext(model: ModelInfo, trigger: LoadTrigger): String =
         "model=${model.displayName} engine=${model.engine} backend=${model.preferredBackend} " +
             "lastWorkingBackend=${model.lastWorkingBackend} trigger=$trigger " +
@@ -793,7 +793,7 @@ class ModelLoadCoordinator(
         private const val TAG = "ModelLoadCoordinator"
         private val ROLES = listOf(ModelRole.GENERATION, ModelRole.EMBEDDING)
         private const val MIN_CONTEXT_RETRY_TOKENS = 2048
-        // §9.2 watchdog — generous on purpose. Observed real loads (worst case: GPU shader
+        // watchdog — generous on purpose. Observed real loads (worst case: GPU shader
         // recompilation across a multi-attempt capability probe) taking up to ~30s; this exists
         // to catch a genuinely stuck native call (corrupted file, wedged delegate), not to
         // pressure a slow-but-progressing one. A model that legitimately needs longer than this
@@ -805,13 +805,13 @@ class ModelLoadCoordinator(
         // one thread permanently; isolating that to its own small pool means it can never
         // eventually starve Default's CPU-bound pool that the rest of the app's coroutines share.
         private val nativeLoadDispatcher = Dispatchers.IO.limitedParallelism(2)
-        // §13 KV-cache proxy, tier 1 (model.layerCount known) — bytes per transformer layer per
+        // KV-cache proxy, tier 1 (model.layerCount known) — bytes per transformer layer per
         // context token, f16 KV cache. Real hidden-dim/head-count metadata isn't available at
         // this layer, so this is a single constant tuned to the middle of the range typical
         // dense 1B-13B architectures (Llama/Mistral/Qwen-style) land in, not a per-architecture
         // computation — deliberately on the high side so the estimate errs toward overestimating.
         private const val KV_CACHE_BYTES_PER_LAYER_PER_TOKEN = 20_000L
-        // §13 KV-cache proxy, tier 2 (layerCount unknown — LiteRT-LM, or a llama.cpp model never
+        // KV-cache proxy, tier 2 (layerCount unknown — LiteRT-LM, or a llama.cpp model never
         // validated) — divides the weight file size by this to get a rough per-token byte cost
         // instead, then multiplies by context length. Tuned only to be in the right order of
         // magnitude so the check catches genuinely-oversized requests without false-positiving on

@@ -53,7 +53,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.ModelProfileType
+import com.vervan.chat.modeldownload.CatalogModel
+import com.vervan.chat.modeldownload.ModelCatalog
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
@@ -92,6 +95,10 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
         memory.totalMem >= 6L * 1024 * 1024 * 1024 -> "Comfortable headroom for everyday models."
         else -> "Smaller models will run best on this device."
     }
+    // Answer the hardest new-user question ("which model fits my phone?") instead of leaving them
+    // to guess in Model Manager. Pure, size/RAM-driven, so it auto-considers any generation model
+    // added to the catalog later.
+    val recommendation = recommendModel(memory.totalMem)
 
     val pages = listOf(
         OnboardPage(
@@ -219,12 +226,16 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                         Text(p.note, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
                     }
                     if (p.importButton) {
+                        recommendation?.let { OnboardRecommendationCard(it) }
                         Button(
                             onClick = onImportModel,
                             modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
                         ) {
                             Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
-                            Text("Browse models to download", Modifier.padding(start = Space.sm))
+                            Text(
+                                if (recommendation != null) "Download in Model Manager" else "Browse models to download",
+                                Modifier.padding(start = Space.sm)
+                            )
                         }
                     }
                     if (p.profilePicker) {
@@ -285,6 +296,66 @@ private data class OnboardPage(
     val importButton: Boolean = false,
     val profilePicker: Boolean = false
 )
+
+/** A starting generation model chosen for a device, plus whether it comfortably fits. */
+internal data class ModelRecommendation(val model: CatalogModel, val fits: Boolean, val reason: String)
+
+/**
+ * Picks a starting generation model for a device with [totalRamBytes] of RAM: the largest catalog
+ * model whose estimated RAM need fits, else the smallest (flagged as tight). Estimated need =
+ * declared [CatalogModel.minimumRamBytes], or ~1.3x the download size when undeclared (weights
+ * resident + KV/activation overhead — a rough but conservative floor). Returns null when the
+ * catalog ships no generation model. Pure and catalog-driven, so new models are auto-considered.
+ */
+internal fun recommendModel(
+    totalRamBytes: Long,
+    catalog: List<CatalogModel> = ModelCatalog.all
+): ModelRecommendation? {
+    val candidates = catalog.filter { it.category == ModelRole.GENERATION && it.enabled }
+    if (candidates.isEmpty()) return null
+    fun needBytes(m: CatalogModel): Long = m.minimumRamBytes ?: ((m.totalExpectedBytes ?: 0L) * 13 / 10)
+    val bySizeDesc = candidates.sortedByDescending { it.totalExpectedBytes ?: 0L }
+    val best = bySizeDesc.firstOrNull { totalRamBytes >= needBytes(it) }
+    return if (best != null) {
+        ModelRecommendation(best, fits = true, reason = "Runs comfortably on your ${formatGb(totalRamBytes)} GB of RAM.")
+    } else {
+        ModelRecommendation(bySizeDesc.last(), fits = false, reason = "The lightest option — memory may be tight on this device.")
+    }
+}
+
+@Composable
+private fun OnboardRecommendationCard(rec: ModelRecommendation) {
+    val sizeGb = rec.model.totalExpectedBytes?.let { formatGb(it) }
+    val onContainer = if (rec.fits) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+        colors = CardDefaults.cardColors(
+            containerColor = if (rec.fits) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        border = vervanBorder()
+    ) {
+        Column(Modifier.padding(Space.lg)) {
+            Text(
+                if (rec.fits) "Recommended for your device" else "Best fit for your device",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (rec.fits) onContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                if (sizeGb != null) "${rec.model.displayName}  •  $sizeGb GB download" else rec.model.displayName,
+                style = MaterialTheme.typography.titleMedium,
+                color = onContainer,
+                modifier = Modifier.padding(top = Space.xs)
+            )
+            Text(
+                rec.reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (rec.fits) onContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs)
+            )
+        }
+    }
+}
 
 private fun formatGb(bytes: Long): String = if (bytes % (1024L * 1024 * 1024) == 0L) {
     // Whole-GB numbers read better without the ".0" — "8 GB" instead of "8.0 GB".

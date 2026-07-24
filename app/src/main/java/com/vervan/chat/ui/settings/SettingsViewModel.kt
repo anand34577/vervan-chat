@@ -89,6 +89,10 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val expertMode: StateFlow<Boolean> = settings.expertMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val autoModelSelectionEnabled: StateFlow<Boolean> = settings.autoModelSelectionEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val deviceAwarePerformance: StateFlow<Boolean> = settings.deviceAwarePerformance
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val largeTouchTargets: StateFlow<Boolean> = settings.largeTouchTargets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val dynamicColor: StateFlow<Boolean> = settings.dynamicColor
@@ -96,7 +100,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val highContrast: StateFlow<Boolean> = settings.highContrast
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    // ---- App lock (Phase A) ----
+    // ---- App lock ----
     private val appLockManager = app.container.appLockManager
     val appLockEnabled: StateFlow<Boolean> = settings.appLockEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -118,7 +122,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setPin(pin: String) { appLockManager.setPin(pin) }
     fun clearPin() { appLockManager.clearPin() }
 
-    // ---- Quick-action bubble (Phase I) ----
+    // ---- Quick-action bubble ----
     val quickActionBubbleEnabled: StateFlow<Boolean> = settings.quickActionBubbleEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setQuickActionBubbleEnabled(v: Boolean) {
@@ -129,7 +133,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         else com.vervan.chat.overlay.BubbleService.stop(app)
     }
 
-    // ---- Local API server (Phase J) ----
+    // ---- Local API server ----
     val apiServerEnabled: StateFlow<Boolean> = settings.apiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val lanApiServerEnabled: StateFlow<Boolean> = settings.lanApiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerPort: StateFlow<Int> = settings.apiServerPort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 8080)
@@ -158,7 +162,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setApiServerPort(v: Int) { viewModelScope.launch { settings.setApiServerPort(v) }; restartIfRunning() }
     fun setApiServerRequireAuth(v: Boolean) { viewModelScope.launch { settings.setApiServerRequireAuth(v) }; restartIfRunning() }
 
-    // ---- On-device data sources (Phase G) ----
+    // ---- On-device data sources ----
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val filesToolEnabled: StateFlow<Boolean> = settings.filesToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -194,13 +198,13 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val screenshotBlockingEnabled: StateFlow<Boolean> = settings.screenshotBlockingEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setScreenshotBlockingEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenshotBlockingEnabled(v) } }
 
-    // ---- Retention policy (Phase C) ----
+    // ---- Retention policy ----
     val autoDeleteAfterDays: StateFlow<Int> = settings.autoDeleteAfterDays
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     fun setAutoDeleteAfterDays(days: Int) { viewModelScope.launch { settings.setAutoDeleteAfterDays(days) } }
 
     /**
-     * Panic wipe (Phase C) — best-effort secure-deletes every document/model file, clears every
+     * Panic wipe — best-effort secure-deletes every document/model file, clears every
      * preference and the app-lock PIN store, then closes and deletes the Room database, and
      * finally kills the process outright (there is deliberately no "restart cleanly" step —
      * this mirrors the abrupt, no-lingering-state behavior a panic wipe is supposed to have;
@@ -245,6 +249,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setHapticsEnabled(enabled: Boolean) { viewModelScope.launch { settings.setHapticsEnabled(enabled) } }
     fun setShowGenerationStats(enabled: Boolean) { viewModelScope.launch { settings.setShowGenerationStats(enabled) } }
     fun setExpertMode(enabled: Boolean) { viewModelScope.launch { settings.setExpertMode(enabled) } }
+    fun setDeviceAwarePerformance(enabled: Boolean) { viewModelScope.launch { settings.setDeviceAwarePerformance(enabled) } }
+    fun setAutoModelSelectionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setAutoModelSelectionEnabled(enabled) } }
     fun setLargeTouchTargets(enabled: Boolean) { viewModelScope.launch { settings.setLargeTouchTargets(enabled) } }
     fun setDynamicColor(enabled: Boolean) { viewModelScope.launch { settings.setDynamicColor(enabled) } }
     fun setHighContrast(enabled: Boolean) { viewModelScope.launch { settings.setHighContrast(enabled) } }

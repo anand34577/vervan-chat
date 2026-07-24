@@ -111,7 +111,10 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                     val prompt = "Compare version A and version B of this section and explain: what changed, important additions or removals, " +
                         "conflicting values, and any potentially risky clauses. If one side is empty, describe what was entirely added or removed. " +
                         "Be concise.\n\nVersion A:\n${a.ifBlank { "(missing)" }}\n\nVersion B:\n${b.ifBlank { "(missing)" }}"
-                    val explanation = OneShotLlm.run(app, prompt)?.trim()
+                    val explanation = OneShotLlm.run(
+                        app, prompt,
+                        runContext = com.vervan.chat.llm.ToolRunContext("tools/document-comparison", "Document comparison", "Version A:\n$a\n\nVersion B:\n$b"),
+                    )?.trim()
                         ?: throw IllegalStateException("No generation model is active. Load one from Models, then compare again.")
                     if (explanation.isNotBlank()) {
                         found += (i + 1) to explanation

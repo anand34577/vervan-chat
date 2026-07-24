@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface WorkspaceDao : BaseDao<Workspace> {
-    // Default Workspace always sorts first (§9's "isDefault"/pin-like ordering), then most
-    // recently active (spec §8's workspace-switcher "last active time").
+    // Default Workspace always sorts first ("isDefault"/pin-like ordering), then most
+    // recently active (workspace-switcher "last active time").
     @Query("SELECT * FROM workspaces WHERE archived = 0 ORDER BY isDefault DESC, lastActiveAt DESC")
     fun observeActive(): Flow<List<Workspace>>
 
@@ -29,7 +29,7 @@ interface WorkspaceDao : BaseDao<Workspace> {
     @Query("SELECT * FROM workspaces WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefault(): Workspace?
 
-    // §4: "removing a custom persona requires assigning another valid persona first" — this
+    // : "removing a custom persona requires assigning another valid persona first" — this
     // lets the persona deletion flow repoint any workspace using it in one statement instead
     // of the caller having to look each one up.
     @Query("UPDATE workspaces SET personaId = :newPersonaId WHERE personaId = :oldPersonaId")

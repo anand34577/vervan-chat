@@ -25,7 +25,7 @@ data class RecycleBinState(
     val notes: List<Note> = emptyList(),
     val documents: List<Document> = emptyList(),
     val folders: List<Folder> = emptyList(),
-    // Phase 6, spec §34 — recycle bin coverage extended to authored content that previously
+    // recycle bin coverage extended to authored content that previously
     // had no soft-delete path at all: personas, workflows, templates, projects, memories,
     // saved outputs.
     val personas: List<Persona> = emptyList(),

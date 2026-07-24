@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +53,8 @@ fun ExperienceControlsSettingsScreen(
     val contextLimit by vm.contextTokenLimit.collectAsState()
     val responseLength by vm.responseLength.collectAsState()
     val preferredBackend by vm.preferredBackend.collectAsState()
+    val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsState()
+    val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsState()
     var confirmExpert by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -90,6 +93,28 @@ fun ExperienceControlsSettingsScreen(
                                 if (enabled && !expertMode) confirmExpert = true else vm.setExpertMode(enabled)
                             }
                         )
+                    }
+                )
+            }
+
+            androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
+                ListItem(
+                    headlineContent = { Text("Model selection: Auto") },
+                    supportingContent = { Text("Picks the best installed model for each message's needs — speed, quality, or image/audio. Turn off to always choose a model yourself.") },
+                    leadingContent = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
+                    trailingContent = {
+                        Switch(checked = autoModelSelectionEnabled, onCheckedChange = vm::setAutoModelSelectionEnabled)
+                    }
+                )
+            }
+
+            androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
+                ListItem(
+                    headlineContent = { Text("Adapt to device conditions") },
+                    supportingContent = { Text("Uses Battery saver or Thermal safe only when Android reports power or heat pressure.") },
+                    leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
+                    trailingContent = {
+                        Switch(checked = deviceAwarePerformance, onCheckedChange = vm::setDeviceAwarePerformance)
                     }
                 )
             }

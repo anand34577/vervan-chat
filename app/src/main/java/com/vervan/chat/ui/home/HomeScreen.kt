@@ -82,6 +82,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.ModelBackend
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.system.ThermalLevel
 import com.vervan.chat.ui.common.ActionTile
@@ -124,6 +125,7 @@ fun HomeScreen(
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app) } })
     val recentChats by vm.recentChats.collectAsState()
+    val latestMessagesByChat by vm.latestMessagesByChat.collectAsState()
     val projects by vm.projects.collectAsState()
     val activeModel by vm.activeModel.collectAsState()
     val indexingDocuments by vm.indexingDocuments.collectAsState()
@@ -135,10 +137,14 @@ fun HomeScreen(
         scope.launch { onOpenChat(vm.createChat()) }
     }
 
-    // Hero quick-ask: the typed text lands in the new chat's composer, so the thought started
-    // on Home finishes in the chat without retyping. Blank text just opens an empty chat.
+    // Hero quick-ask: tapping Send actually sends — the question is submitted and generation
+    // starts the moment the chat opens, rather than landing as an unsent draft the user has to
+    // tap Send on a second time (which read as the first tap having failed). Blank text just
+    // opens an empty chat, same as "New chat".
     fun askVervan(text: String) {
-        scope.launch { onOpenChat(vm.createChat(text)) }
+        scope.launch {
+            onOpenChat(if (text.isBlank()) vm.createChat() else vm.createChatAndSend(text))
+        }
     }
 
     Scaffold(
@@ -154,16 +160,10 @@ fun HomeScreen(
                         ) {
                             Icon(Icons.Filled.AutoAwesome, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(22.dp))
                         }
-                        Column(Modifier.padding(start = Space.md)) {
-                            Text("Vervan", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                activeWorkspaceName ?: "Private offline workspace",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        // The active workspace name already appears right below in the hero (with
+                        // richer "· fully offline" context) — repeating it here duplicated the
+                        // same fact twice on one screen for no added information.
+                        Text("Vervan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
                     }
                 },
                 actions = {
@@ -184,6 +184,7 @@ fun HomeScreen(
                     HomeHero(
                         workspaceName = activeWorkspaceName,
                         model = activeModel,
+                        compact = recentChats.isNotEmpty(),
                         onAsk = ::askVervan,
                         onOpenModels = onOpenModels,
                         onOpenKnowledge = onOpenKnowledge
@@ -202,16 +203,16 @@ fun HomeScreen(
                             verticalAlignment = Alignment.Top
                         ) {
                             Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-                                ContinueCarousel(recentChats, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                                QuickStartSection(onOpenKnowledge, onOpenNotes, onOpenProjects, onOpenLibrary)
+                                ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
+                                QuickStartSection(onOpenNotes, onOpenProjects, onOpenLibrary, onOpenModels)
                             }
                             Column(Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                                 ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
                             }
                         }
                     } else {
-                        ContinueCarousel(recentChats, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                        QuickStartSection(onOpenKnowledge, onOpenNotes, onOpenProjects, onOpenLibrary)
+                        ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
+                        QuickStartSection(onOpenNotes, onOpenProjects, onOpenLibrary, onOpenModels)
                         ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
                     }
                 }
@@ -231,6 +232,7 @@ fun HomeScreen(
 private fun HomeHero(
     workspaceName: String?,
     model: ModelInfo?,
+    compact: Boolean,
     onAsk: (String) -> Unit,
     onOpenModels: () -> Unit,
     onOpenKnowledge: () -> Unit
@@ -250,12 +252,16 @@ private fun HomeHero(
             .fillMaxWidth()
             .clip(VervanExtraShapes.hero)
             .background(com.vervan.chat.ui.theme.vervanBrandGradient())
-            .padding(Space.lg)
+            .padding(if (compact) Space.md else Space.lg)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(greeting, style = MaterialTheme.typography.headlineMedium, color = heroFg)
+                    Text(
+                        greeting,
+                        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                        color = heroFg,
+                    )
                     Text(
                         workspaceName?.let { "$it · fully offline" } ?: "Private · everything stays on this device",
                         style = MaterialTheme.typography.bodyMedium,
@@ -273,7 +279,7 @@ private fun HomeHero(
                     Icon(Icons.Filled.Lock, contentDescription = "Offline and private", tint = heroFg, modifier = Modifier.size(18.dp))
                 }
             }
-            Spacer(Modifier.height(Space.md))
+            Spacer(Modifier.height(if (compact) Space.sm else Space.md))
             if (model != null) {
                 QuickAskField(fg = heroFg, onAsk = onAsk)
                 Spacer(Modifier.height(Space.md))
@@ -308,8 +314,9 @@ private fun HomeHero(
     }
 }
 
-/** Frosted single-line composer on the hero. Send (button or IME action) opens a new chat with
- * this text as its draft; blank send just opens an empty chat. */
+/** Frosted single-line composer on the hero. Send (button or IME action) opens a new chat and
+ * immediately submits this text — generation is already underway by the time the chat screen
+ * appears. Blank send just opens an empty chat. */
 @Composable
 private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
@@ -455,6 +462,7 @@ private fun SnapshotCard(label: String, value: String, icon: ImageVector, accent
 @Composable
 private fun ContinueCarousel(
     chats: List<Chat>,
+    latestMessagesByChat: Map<String, Message>,
     projects: List<Project>,
     onOpenChat: (String) -> Unit,
     onOpenProject: (String) -> Unit,
@@ -463,8 +471,8 @@ private fun ContinueCarousel(
 ) {
     Column {
         VervanSectionHeader("Continue", actionLabel = "All chats", onAction = onOpenChats)
-        val recentChats = chats.take(5)
-        val recentProjects = projects.take(2)
+        val recentChats = chats.take(3)
+        val recentProjects = projects.take(1)
         if (recentChats.isEmpty() && recentProjects.isEmpty()) {
             SectionCard(items = listOf<@Composable () -> Unit>({
                 Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
@@ -477,28 +485,69 @@ private fun ContinueCarousel(
                 }
             }))
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                itemsIndexed(recentChats, key = { _, c -> c.id }) { index, chat ->
-                    ContinueCard(
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                recentChats.forEachIndexed { index, chat ->
+                    ContinueRow(
                         icon = Icons.AutoMirrored.Filled.Chat,
                         eyebrow = "Chat",
                         title = chat.title,
+                        preview = latestMessagesByChat[chat.id]?.content.orEmpty(),
                         timeLabel = relativeTime(chat.updatedAt),
                         accent = vervanAccentFor(index),
                         onClick = { onOpenChat(chat.id) }
                     )
                 }
-                itemsIndexed(recentProjects, key = { _, p -> p.id }) { index, project ->
-                    ContinueCard(
+                recentProjects.forEachIndexed { index, project ->
+                    ContinueRow(
                         icon = Icons.AutoMirrored.Filled.MenuBook,
                         eyebrow = "Project",
                         title = project.name,
+                        preview = project.instructions,
                         timeLabel = "Workspace",
                         accent = vervanAccentFor(index + 5),
                         onClick = { onOpenProject(project.id) }
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ContinueRow(
+    icon: ImageVector,
+    eyebrow: String,
+    title: String,
+    preview: String,
+    timeLabel: String,
+    accent: com.vervan.chat.ui.theme.VervanAccent,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = SurfaceRole.Raised.cardColors(),
+        border = SurfaceRole.Raised.border(),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).background(accent.container, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = accent.onContainer)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(timeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    preview.ifBlank { "$eyebrow ready to continue" }.replace("\n", " "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open $title", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -573,10 +622,10 @@ private fun relativeTime(timestamp: Long): String {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickStartSection(
-    onOpenKnowledge: () -> Unit,
     onOpenNotes: () -> Unit,
     onOpenProjects: () -> Unit,
-    onOpenLibrary: () -> Unit
+    onOpenLibrary: () -> Unit,
+    onOpenModels: () -> Unit
 ) {
     Column {
         VervanSectionHeader("Start something")
@@ -588,7 +637,10 @@ private fun QuickStartSection(
         ) {
             val tile = Modifier.weight(1f).heightIn(min = 84.dp)
             val a0 = vervanAccentFor(0); val a1 = vervanAccentFor(1); val a2 = vervanAccentFor(2); val a3 = vervanAccentFor(3)
-            ActionTile(Icons.Filled.Description, "Ask documents", "Search private sources with citations", onOpenKnowledge, tile, iconContainerColor = a0.container, iconTint = a0.onContainer)
+            // "Ask documents" used to be a tile here too — it's already the hero's own quick-ask
+            // chip right above, so this repeated the exact same action on the same screen.
+            // Model setup fills the same "first thing a new user needs" role without duplicating it.
+            ActionTile(Icons.Filled.AutoAwesome, "Set up a model", "Import or download a local model", onOpenModels, tile, iconContainerColor = a0.container, iconTint = a0.onContainer)
             ActionTile(Icons.Filled.Edit, "Write a note", "Capture and shape an idea", onOpenNotes, tile, iconContainerColor = a1.container, iconTint = a1.onContainer)
             ActionTile(Icons.AutoMirrored.Filled.MenuBook, "Open projects", "Keep long-running work together", onOpenProjects, tile, iconContainerColor = a2.container, iconTint = a2.onContainer)
             ActionTile(Icons.AutoMirrored.Filled.LibraryBooks, "Browse library", "Personas, prompts, and saved work", onOpenLibrary, tile, iconContainerColor = a3.container, iconTint = a3.onContainer)

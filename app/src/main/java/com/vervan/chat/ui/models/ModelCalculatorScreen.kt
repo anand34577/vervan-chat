@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -70,7 +71,7 @@ private enum class FitLevel(val title: String, val body: String) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ModelCalculatorScreen(onBack: () -> Unit) {
+fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
     val context = LocalContext.current
     val memory = remember {
         ActivityManager.MemoryInfo().also(context.getSystemService(ActivityManager::class.java)::getMemoryInfo)
@@ -143,6 +144,19 @@ fun ModelCalculatorScreen(onBack: () -> Unit) {
 
             MemoryBreakdown(estimate)
             RecommendationCard(suggested, quantBits, contexts[contextIndex], fit)
+            // The one thing this screen was missing: it told you what fits, then stopped. Stash
+            // the computed budget for Model Manager to pick up once (see PendingModelBrowseFilter)
+            // so "Browse models" actually opens pre-filtered instead of a generic model list.
+            Button(
+                onClick = {
+                    com.vervan.chat.modeldownload.PendingModelBrowseFilter.stash((safeBudgetGb * 1_073_741_824f).toLong())
+                    onBrowseModels()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+            ) {
+                Icon(Icons.Filled.Memory, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Browse models that fit", modifier = Modifier.padding(start = Space.sm))
+            }
             Text(
                 "Estimate only. Model architecture, accelerator support, and thermal limits can change real performance.",
                 style = MaterialTheme.typography.bodySmall,

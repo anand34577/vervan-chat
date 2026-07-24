@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import java.util.UUID
 
 /**
- * Flashcard-set metadata (spec §55) — name + description + last-studied timestamp, separate
+ * Flashcard-set metadata — name + description + last-studied timestamp, separate
  * from the individual [StudyCard] rows (which only carry `setName`). Lets the Library list
  * decks with descriptions and "studied N ago" without scanning every card.
  */

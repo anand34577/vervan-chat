@@ -46,7 +46,7 @@ object TextExtractor {
             "epub" -> extractEpub(file)
             "doc" -> extractDoc(file)
             "xls" -> extractXls(file)
-            // Images route through the OCR path (Phase 3, spec §17) — same NeedsOcr signal
+            // Images route through the OCR path — same NeedsOcr signal
             // DocumentImportManager already handles for scanned PDFs, but resolved via
             // OcrExtractor.extractFromImage instead of PDF page rendering.
             in IMAGE_EXTENSIONS -> ExtractResult.NeedsOcr

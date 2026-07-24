@@ -5,11 +5,11 @@ import androidx.room.PrimaryKey
 import java.util.UUID
 
 /**
- * Workspace (Workspace System spec §1-3) — top container for a persona, chats, folders, and
+ * Workspace (Workspace System-3) — top container for a persona, chats, folders, and
  * documents. Exactly one workspace is active at a time; "active" is tracked in
  * SettingsRepository (a global selection), not as a field here.
  *
- * [isDefault] marks the single permanent Default Workspace seeded at cold start (§2, id
+ * [isDefault] marks the single permanent Default Workspace seeded at cold start (, id
  * [DEFAULT_WORKSPACE_ID]) — its name/persona/archive/delete state is locked in the UI layer.
  */
 @Entity(tableName = "workspaces")
@@ -23,7 +23,7 @@ data class Workspace(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis(),
-    // Auto title generation scope (spec §20) — kept at workspace level per request, not a
+    // Auto title generation scope — kept at workspace level per request, not a
     // global app setting and not per-chat: every chat in this workspace either gets
     // auto-generated titles or none do.
     val autoTitleGeneration: Boolean = false,

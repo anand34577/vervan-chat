@@ -114,16 +114,15 @@ class FolderDetailViewModel(private val app: VervanApp, private val folderId: St
 
     suspend fun createChat(): String {
         val f = folder.value
-        // Folder defaults win over the workspace's (applyDefaults only fills what's still
-        // blank/default) — a folder's own configured KBs/persona are more specific than its
-        // workspace's, same priority as spec's inclusion order elsewhere.
+        // Persona and model are left unset so they inherit live (chat → folder → workspace →
+        // default) through ChatDefaults — changing a folder's default now propagates to the chats
+        // already in it, instead of being frozen at whatever it was when each chat was created.
+        // KBs stay stamped: grounding is per-chat editable state, not a live-inherited default.
         val chat = app.container.workspaceManager.applyDefaults(
             Chat(
                 folderId = folderId,
-                // §6/§11: a folder's chats must share its workspace.
+                // : a folder's chats must share its workspace.
                 workspaceId = f?.workspaceId ?: com.vervan.chat.data.db.entities.Workspace.DEFAULT_WORKSPACE_ID,
-                personaId = f?.defaultPersonaId,
-                modelId = f?.defaultModelId,
                 knowledgeBaseIds = f?.defaultKnowledgeBaseIds ?: "",
                 sourceGrounded = !f?.kbIdList().isNullOrEmpty()
             )

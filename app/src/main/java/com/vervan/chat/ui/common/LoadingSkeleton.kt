@@ -24,8 +24,8 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
 
 /**
- * §6/§5.4 delay-aware list/card loading placeholder. A static tonal block under reduced
- * motion (§7.9.4/§11.5 — shimmer must not be the only way progress reads), a gentle alpha
+ * delay-aware list/card loading placeholder. A static tonal block under reduced
+ * motion (shimmer must not be the only way progress reads), a gentle alpha
  * pulse otherwise.
  */
 @Composable

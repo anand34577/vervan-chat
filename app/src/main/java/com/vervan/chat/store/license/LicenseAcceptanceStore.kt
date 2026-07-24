@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Durable record of every licence the user has tapped to accept (spec §11).
+ * Durable record of every licence the user has tapped to accept.
  *
  * Acceptance is keyed on `modelId` **plus the licence's [ModelLicense.acceptanceHash]**, not on
  * modelId alone. That is what makes the re-prompt rule work: if a later catalogue version changes

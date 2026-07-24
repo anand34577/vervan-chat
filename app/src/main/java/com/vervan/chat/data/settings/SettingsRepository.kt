@@ -21,7 +21,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class AccentTheme { AMBER, BLUE, GREEN, VIOLET, ROSE }
 
 /**
- * Real user-facing settings (spec §41), DataStore-backed. one flat preferences
+ * Real user-facing settings, DataStore-backed. one flat preferences
  * file covering the settings screens actually built today, not placeholder keys for the
  * spec's unbuilt groups (retrieval-mode picker per source type, per-tool timeouts, etc).
  */
@@ -36,6 +36,8 @@ class SettingsRepository(context: Context) {
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val SHOW_GENERATION_STATS = booleanPreferencesKey("show_generation_stats")
+        val DEVICE_AWARE_PERFORMANCE = booleanPreferencesKey("device_aware_performance")
+        val AUTO_MODEL_SELECTION = booleanPreferencesKey("auto_model_selection")
         val EXPERT_MODE = booleanPreferencesKey("expert_mode")
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
@@ -78,10 +80,10 @@ class SettingsRepository(context: Context) {
         val DEFAULT_PROFILE = stringPreferencesKey("default_profile")
         val DEFAULT_START_SCREEN = stringPreferencesKey("default_start_screen")
         val CONFIRM_DESTRUCTIVE = booleanPreferencesKey("confirm_destructive")
-        // Workspace System spec §5 — the single active workspace, global to the app (not a
+        // Workspace System — the single active workspace, global to the app (not a
         // per-workspace field). Null until the first cold-start seed sets it to "default".
         val ACTIVE_WORKSPACE_ID = stringPreferencesKey("active_workspace_id")
-        // User profile fields (spec §26.1) — optional, declared by the user.
+        // User profile fields — optional, declared by the user.
         val USER_NAME = stringPreferencesKey("user_name")
         val USER_OCCUPATION = stringPreferencesKey("user_occupation")
         val USER_EXPERTISE = stringPreferencesKey("user_expertise")
@@ -91,16 +93,16 @@ class SettingsRepository(context: Context) {
         val USER_UNITS = stringPreferencesKey("user_units")
         val USER_TOPICS_AVOID = stringPreferencesKey("user_topics_avoid")
         val USER_GOALS = stringPreferencesKey("user_goals")
-        // §27.3 — memory-suggestion keys the user opted out of via "Never suggest this type".
+        // memory-suggestion keys the user opted out of via "Never suggest this type".
         val BLOCKED_MEMORY_SUGGESTION_KEYS = stringSetPreferencesKey("blocked_memory_suggestion_keys")
-        // Privacy hardening (Phase A) — app-lock configuration. The PIN itself is never stored
+        // Privacy hardening — app-lock configuration. The PIN itself is never stored
         // here: it lives in AppLockManager's EncryptedSharedPreferences, not plain DataStore.
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_METHOD = stringPreferencesKey("app_lock_method")
         val AUTO_LOCK_TIMEOUT_SECONDS = intPreferencesKey("auto_lock_timeout_seconds")
-        // Phase C — retention policy. 0 means "off" (no auto-delete).
+        // retention policy. 0 means "off" (no auto-delete).
         val AUTO_DELETE_AFTER_DAYS = intPreferencesKey("auto_delete_after_days")
-        // Phase G — on-device data sources. Each is a separate app-level opt-in, independent
+        // on-device data sources. Each is a separate app-level opt-in, independent
         // of (and in addition to) the OS runtime permission — granting the Android permission
         // doesn't mean the model should always be allowed to query it.
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
@@ -112,10 +114,10 @@ class SettingsRepository(context: Context) {
         // default (same opt-in shape as the Phase G on-device sources) and additionally
         // gated at call time on a configured API key in KnowledgeGraphStore.
         val WEB_SEARCH_TOOL_ENABLED = booleanPreferencesKey("web_search_tool_enabled")
-        // Phase I — floating quick-action bubble, off by default (the one feature in this app
+        // floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
         val QUICK_ACTION_BUBBLE_ENABLED = booleanPreferencesKey("quick_action_bubble_enabled")
-        // Phase J — local OpenAI-compatible API server. The bearer token itself is NOT here —
+        // local OpenAI-compatible API server. The bearer token itself is NOT here —
         // see ApiServerAuth's EncryptedSharedPreferences, same reasoning as the app-lock PIN.
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
         val LAN_API_SERVER_ENABLED = booleanPreferencesKey("lan_api_server_enabled")
@@ -150,13 +152,13 @@ class SettingsRepository(context: Context) {
     }
     suspend fun setAccentTheme(theme: AccentTheme) { store.edit { it[Keys.ACCENT_THEME] = theme.name } }
 
-    // Phase 7 polish (spec §35-36) — OLED true-black dark variant and a haptics on/off switch
+    // OLED true-black dark variant and a haptics on/off switch
     // (the app already respects the system's reduced-motion/animation-scale setting directly
     // at the point animations happen, so that doesn't need its own preference).
     val oledTrueBlack: Flow<Boolean> = store.data.map { it[Keys.OLED_TRUE_BLACK] ?: false }
     suspend fun setOledTrueBlack(enabled: Boolean) { store.edit { it[Keys.OLED_TRUE_BLACK] = enabled } }
 
-    // §3.2 — Material You dynamic color and a high-contrast mode independent of accent/theme.
+    // Material You dynamic color and a high-contrast mode independent of accent/theme.
     val dynamicColor: Flow<Boolean> = store.data.map { it[Keys.DYNAMIC_COLOR] ?: false }
     suspend fun setDynamicColor(enabled: Boolean) { store.edit { it[Keys.DYNAMIC_COLOR] = enabled } }
 
@@ -170,6 +172,17 @@ class SettingsRepository(context: Context) {
     // expanded — optional since it's noise for anyone who doesn't care about performance.
     val showGenerationStats: Flow<Boolean> = store.data.map { it[Keys.SHOW_GENERATION_STATS] ?: false }
     suspend fun setShowGenerationStats(enabled: Boolean) { store.edit { it[Keys.SHOW_GENERATION_STATS] = enabled } }
+
+    val deviceAwarePerformance: Flow<Boolean> = store.data.map { it[Keys.DEVICE_AWARE_PERFORMANCE] ?: true }
+    suspend fun setDeviceAwarePerformance(enabled: Boolean) { store.edit { it[Keys.DEVICE_AWARE_PERFORMANCE] = enabled } }
+
+    // When on (default) and more than one GENERATION model is installed, a chat/folder that
+    // hasn't explicitly pinned a model picks one automatically per turn instead of always using
+    // whatever's currently loaded — see com.vervan.chat.llm.AutoModelSelector. An explicit pin
+    // (chat or folder default) always wins regardless of this setting; "Advanced" model choice
+    // stays exactly as manual as it is today by turning this off.
+    val autoModelSelectionEnabled: Flow<Boolean> = store.data.map { it[Keys.AUTO_MODEL_SELECTION] ?: true }
+    suspend fun setAutoModelSelectionEnabled(enabled: Boolean) { store.edit { it[Keys.AUTO_MODEL_SELECTION] = enabled } }
 
     val expertMode: Flow<Boolean> = store.data.map { it[Keys.EXPERT_MODE] ?: false }
     suspend fun setExpertMode(enabled: Boolean) { store.edit { it[Keys.EXPERT_MODE] = enabled } }
@@ -240,7 +253,7 @@ class SettingsRepository(context: Context) {
     val autoContextSummarization: Flow<Boolean> = store.data.map { it[Keys.AUTO_CONTEXT_SUMMARIZATION] ?: true }
     suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
 
-    /** UI text scale multiplier, 0.85x-1.3x — spec §38's font-scale accessibility setting. */
+    /** UI text scale multiplier, 0.85x-1.3x — font-scale accessibility setting. */
     val fontScale: Flow<Float> = store.data.map { it[Keys.FONT_SCALE] ?: 1.0f }
     suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale } }
 
@@ -248,7 +261,7 @@ class SettingsRepository(context: Context) {
     suspend fun setContextTokenLimit(limit: Int) { store.edit { it[Keys.CONTEXT_TOKEN_LIMIT] = limit } }
 
     /**
-     * Declared, not inferred (spec §26) — the user picks these explicitly in Settings, the
+     * Declared, not inferred — the user picks these explicitly in Settings, the
      * app never learns them from conversation history. "BALANCED"/"NEUTRAL" are the no-op
      * defaults, in which case no style section is added to the prompt at all (see
      * ChatViewModel.buildPromptSections) rather than spending tokens saying nothing useful.
@@ -324,26 +337,26 @@ class SettingsRepository(context: Context) {
     val vulkanDeviceIndex: Flow<Int> = store.data.map { it[Keys.VULKAN_DEVICE_INDEX] ?: 0 }
     suspend fun setVulkanDeviceIndex(value: Int) { store.edit { it[Keys.VULKAN_DEVICE_INDEX] = value } }
 
-    /** Default model profile for new chats (spec §11.9). One of ModelProfileType.id. */
+    /** Default model profile for new chats. One of ModelProfileType.id. */
     val defaultProfile: Flow<String> = store.data.map { it[Keys.DEFAULT_PROFILE] ?: "BALANCED" }
     suspend fun setDefaultProfile(value: String) { store.edit { it[Keys.DEFAULT_PROFILE] = value } }
 
-    /** Default start screen (spec §41.1) — "home"/"chats"/"knowledge"/"library". */
+    /** Default start screen — "home"/"chats"/"knowledge"/"library". */
     val defaultStartScreen: Flow<String> = store.data.map { it[Keys.DEFAULT_START_SCREEN] ?: "home" }
     suspend fun setDefaultStartScreen(value: String) { store.edit { it[Keys.DEFAULT_START_SCREEN] = value } }
 
-    /** Whether destructive actions require an extra confirmation (spec §41.1). */
+    /** Whether destructive actions require an extra confirmation. */
     val confirmDestructive: Flow<Boolean> = store.data.map { it[Keys.CONFIRM_DESTRUCTIVE] ?: true }
     suspend fun setConfirmDestructive(value: Boolean) { store.edit { it[Keys.CONFIRM_DESTRUCTIVE] = value } }
 
-    /** Falls back to the Default Workspace id (Workspace System spec §2, §5) until the user
+    /** Falls back to the Default Workspace id (Workspace System) until the user
      * switches — new chats always have somewhere valid to land. */
     val activeWorkspaceId: Flow<String> = store.data.map {
         it[Keys.ACTIVE_WORKSPACE_ID] ?: com.vervan.chat.data.db.entities.Workspace.DEFAULT_WORKSPACE_ID
     }
     suspend fun setActiveWorkspaceId(id: String) { store.edit { it[Keys.ACTIVE_WORKSPACE_ID] = id } }
 
-    // ---- User profile (spec §26.1) ----
+    // ---- User profile ----
     val userName: Flow<String> = store.data.map { it[Keys.USER_NAME] ?: "" }
     suspend fun setUserName(v: String) { store.edit { it[Keys.USER_NAME] = v } }
 
@@ -373,10 +386,10 @@ class SettingsRepository(context: Context) {
 
     /**
      * Renders the user-profile fields that are actually set into a prompt instruction (spec
-     * §26.1). Empty when nothing is filled in, so a user who never opens this screen pays
+     *). Empty when nothing is filled in, so a user who never opens this screen pays
      * zero prompt cost.
      */
-    // ---- App lock (Phase A) ----
+    // ---- App lock ----
     val appLockEnabled: Flow<Boolean> = store.data.map { it[Keys.APP_LOCK_ENABLED] ?: false }
     suspend fun setAppLockEnabled(enabled: Boolean) { store.edit { it[Keys.APP_LOCK_ENABLED] = enabled } }
 
@@ -390,7 +403,7 @@ class SettingsRepository(context: Context) {
     val quickActionBubbleEnabled: Flow<Boolean> = store.data.map { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] ?: false }
     suspend fun setQuickActionBubbleEnabled(v: Boolean) { store.edit { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] = v } }
 
-    // ---- Local API server (Phase J) ----
+    // ---- Local API server ----
     val apiServerEnabled: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ENABLED] ?: false }
     suspend fun setApiServerEnabled(v: Boolean) { store.edit { it[Keys.API_SERVER_ENABLED] = v } }
     val lanApiServerEnabled: Flow<Boolean> = store.data.map { it[Keys.LAN_API_SERVER_ENABLED] ?: false }
@@ -400,11 +413,11 @@ class SettingsRepository(context: Context) {
     val apiServerRequireAuth: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_REQUIRE_AUTH] ?: true }
     suspend fun setApiServerRequireAuth(v: Boolean) { store.edit { it[Keys.API_SERVER_REQUIRE_AUTH] = v } }
 
-    // ---- Retention policy (Phase C) ----
+    // ---- Retention policy ----
     val autoDeleteAfterDays: Flow<Int> = store.data.map { it[Keys.AUTO_DELETE_AFTER_DAYS] ?: 0 }
     suspend fun setAutoDeleteAfterDays(value: Int) { store.edit { it[Keys.AUTO_DELETE_AFTER_DAYS] = value.coerceAtLeast(0) } }
 
-    // ---- On-device data sources (Phase G) — all off by default ----
+    // ---- On-device data sources — all off by default ----
     val calendarToolEnabled: Flow<Boolean> = store.data.map { it[Keys.CALENDAR_TOOL_ENABLED] ?: false }
     suspend fun setCalendarToolEnabled(v: Boolean) { store.edit { it[Keys.CALENDAR_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
@@ -433,7 +446,7 @@ class SettingsRepository(context: Context) {
     val screenshotBlockingEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREENSHOT_BLOCKING_ENABLED] ?: false }
     suspend fun setScreenshotBlockingEnabled(v: Boolean) { store.edit { it[Keys.SCREENSHOT_BLOCKING_ENABLED] = v } }
 
-    /** Panic wipe (Phase C) — clears every preference back to defaults. Does not touch the
+    /** Panic wipe — clears every preference back to defaults. Does not touch the
      * Room database, model/document files, or the app-lock PIN store; those are separate
      * storage the caller (SettingsViewModel.panicWipe) clears independently. */
     suspend fun wipeAll() { store.edit { it.clear() } }

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Mail
@@ -56,6 +57,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanSectionHeader
@@ -177,6 +181,7 @@ private val categories = listOf(
         "Manage the local knowledge, models, and reusable context behind your work.",
         Icons.Filled.Psychology,
         listOf(
+            ToolEntry(Icons.Filled.History, "Run history", "Resume, save, share, or repeat recent tool results.", "tools/runs"),
             ToolEntry(Icons.AutoMirrored.Filled.MenuBook, "Knowledge bases", "Ground answers in your own local documents.", "knowledge"),
             ToolEntry(Icons.Filled.AutoAwesome, "Model capabilities", "See what each installed model can use.", "tools/model-dashboard"),
             ToolEntry(Icons.Filled.AutoAwesome, "Models", "Import, configure, load, and benchmark models.", "models"),
@@ -186,12 +191,20 @@ private val categories = listOf(
     ),
 )
 
+data class SearchableTool(val label: String, val description: String, val route: String)
+internal val searchableTools: List<SearchableTool> = categories.flatMap { category ->
+    category.entries.map { SearchableTool(it.label, it.description, it.route) }
+}
+
 /** A category-first directory: tools are organized by the job the user is trying to do, not by
  * implementation type or the order features were added. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val app = context.applicationContext as VervanApp
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
+    val recentRuns by app.container.db.toolRunDao().observeRecent(12).collectAsState(initial = emptyList())
     val prefs = remember { context.getSharedPreferences("vervan", 0) }
     // Favorites persist in the shared prefs the app already uses (no schema change): a set of
     // tool routes. Held in state so toggling re-renders immediately; prefs is the durable source
@@ -211,6 +224,24 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
         categories.flatMap { it.entries }.filter { it.route in favorites }
     }
     val showPinned = pinnedEntries.isNotEmpty() && query.isBlank() && selectedCategory == null
+    val recentEntries = remember(recentRuns) {
+        val byRoute = categories.flatMap { it.entries }.associateBy { it.route }
+        recentRuns.mapNotNull { byRoute[it.toolRoute] }.distinctBy { it.route }.take(4)
+    }
+    val showRecent = recentEntries.isNotEmpty() && query.isBlank() && selectedCategory == null
+    fun readiness(entry: ToolEntry): String {
+        val noModelNeeded = setOf(
+            "tools/document-scanner", "tools/ocr-scanner", "tools/chat-with-file", "study",
+            "knowledge", "models", "memory", "collections", "tools/runs",
+        )
+        if (entry.route in noModelNeeded) return "Ready"
+        val model = activeModel ?: return "Needs model"
+        val needsVision = entry.route in setOf(
+            "tools/image-caption", "tools/receipt-scanner", "tools/table-scanner",
+            "tools/smart-form-filler", "tools/flashcards-photo",
+        )
+        return if (needsVision && model.supportsVision == false) "Needs vision model" else "Ready"
+    }
     // Stable per-category color so a tool's icon is the same hue wherever it appears (grid or
     // pinned), turning a wall of identical amber chips into a scannable, colorful directory.
     val entryAccent = remember {
@@ -339,6 +370,24 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                             isFavorite = true,
                             onToggleFavorite = { toggleFavorite(entry.route) },
                             onClick = { onNavigate(entry.route) },
+                            readiness = readiness(entry),
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
+
+                if (showRecent) {
+                    item(key = "recent-header", span = { GridItemSpan(maxLineSpan) }) {
+                        VervanSectionHeader("Recent", count = recentEntries.size, topPadding = if (showPinned) Space.lg else 0.dp)
+                    }
+                    items(recentEntries, key = { "recent-${it.route}" }) { entry ->
+                        ToolCard(
+                            entry = entry,
+                            accent = entryAccent[entry.route],
+                            isFavorite = entry.route in favorites,
+                            onToggleFavorite = { toggleFavorite(entry.route) },
+                            onClick = { onNavigate(entry.route) },
+                            readiness = readiness(entry),
                             modifier = Modifier.animateItem(),
                         )
                     }
@@ -393,6 +442,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                     isFavorite = entry.route in favorites,
                                     onToggleFavorite = { toggleFavorite(entry.route) },
                                     onClick = { onNavigate(entry.route) },
+                                    readiness = readiness(entry),
                                     modifier = Modifier.animateItem(),
                                 )
                             }
@@ -419,6 +469,7 @@ private fun ToolCard(
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
+    readiness: String,
     modifier: Modifier = Modifier,
 ) {
     val container = accent?.container ?: MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
@@ -430,11 +481,11 @@ private fun ToolCard(
         ?: MaterialTheme.colorScheme.surfaceContainerLow
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().heightIn(min = 112.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 96.dp),
         colors = CardDefaults.cardColors(containerColor = cardContainer),
         border = vervanBorder(),
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
+        Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
@@ -466,6 +517,12 @@ private fun ToolCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = Space.sm),
+            )
+            Text(
+                readiness,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (readiness == "Ready") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = Space.xs),
             )
         }
     }

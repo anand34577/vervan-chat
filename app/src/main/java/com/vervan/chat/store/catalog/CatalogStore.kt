@@ -9,7 +9,7 @@ import org.json.JSONObject
  * On-disk home for the last catalogue the client accepted, plus the rollback-protection watermark.
  *
  * Writes are temp-file-plus-rename so a process death mid-write can never leave a truncated
- * catalogue behind — the app would then have neither the old nor the new one, which §4.6 forbids.
+ * catalogue behind — the app would then have neither the old nor the new one, which forbids.
  *
  * [highestAcceptedVersion] is stored *separately from* the catalogue file and is never lowered.
  * Keeping it separate matters: if the catalogue file is ever deleted (storage pressure, a user

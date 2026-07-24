@@ -33,7 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 
 /**
  * Master-detail layout for the Chats tab on expanded-width windows (tablet/foldable, spec
- * §4) — the list stays on screen while a chat is open, instead of a full-screen push. Kept
+ *) — the list stays on screen while a chat is open, instead of a full-screen push. Kept
  * as a separate composable from [ChatListScreen] rather than threading pane-mode through it,
  * so the phone path (the vast majority of real usage) is untouched.
  *

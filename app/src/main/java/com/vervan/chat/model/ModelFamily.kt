@@ -2,7 +2,7 @@ package com.vervan.chat.model
 
 /**
  * Guesses whether two imported model files are "the same model, different version" (spec
- * §11.12) from their display names alone — there's no explicit family/version field on
+ *) from their display names alone — there's no explicit family/version field on
  * [com.vervan.chat.data.db.entities.ModelInfo], so this strips common version/date suffixes
  * and compares what's left.
  * name-based heuristic, not a real family id. Good enough to prompt a relink

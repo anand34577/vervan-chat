@@ -18,7 +18,7 @@ data class Workflow(
     val description: String = "",
     val stepsJson: String,
     val isBuiltIn: Boolean = false,
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     val deletedAt: Long? = null
 ) {
     val steps: List<String>

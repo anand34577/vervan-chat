@@ -158,7 +158,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         // package has no audio (or vision) encoder can fail Engine.initialize() outright when
         // an unsupported modality backend is requested, and previously we asked for
         // audioBackend unconditionally on every load regardless of what the model actually
-        // supports. This mirrors spec §2.5's graceful-degradation principle instead of treating
+        // supports. This mirrors graceful-degradation principle instead of treating
         // that as a hard failure and moving straight to the next hardware backend. A modality
         // already proven absent on a prior load (knownAudioSupported/knownVisionSupported ==
         // false) skips its doomed attempt entirely rather than re-discovering the same failure.

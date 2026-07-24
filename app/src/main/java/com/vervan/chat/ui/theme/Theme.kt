@@ -137,7 +137,7 @@ private val VervanShapes = Shapes(
     extraLarge = RoundedCornerShape(32.dp)
 )
 
-/** Shapes outside Material3's fixed five-token [Shapes] scale (§3.5 + M3 Expressive additions).
+/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions).
  *  - hero/composer surfaces read as one deliberate size, distinct from both cards and dialogs
  *  - message bubbles get an asymmetric "tail" shape instead of every screen hand-rolling one
  *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
@@ -194,7 +194,7 @@ private val VervanTypography = Typography().let { base ->
  * since that reads clearly on both a light and dark settings row. */
 fun com.vervan.chat.data.settings.AccentTheme.swatchColor(): Color = DarkAccents.getValue(this).primary
 
-/** §3.2 high-contrast pass — applied on top of any resolved scheme, independent of accent/theme.
+/** high-contrast pass — applied on top of any resolved scheme, independent of accent/theme.
  * A hand-picked custom palette (not Material's dynamic contrast API, which only applies to
  * dynamic/harmonized schemes) so it works the same for both accent and Material You colors:
  * pulls muted text/borders to full-strength so state is never conveyed by a faint tint alone. */
@@ -218,7 +218,7 @@ fun VervanTheme(
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if (darkTheme) {
         val scheme = darkSchemeFor(DarkAccents.getValue(accent))
-        // OLED true-black variant (Phase 7, spec §35) — same accent, background/surface pushed
+        // OLED true-black variant — same accent, background/surface pushed
         // to pure black so OLED panels can actually turn those pixels off.
         if (oledTrueBlack) scheme.copy(background = Color(0xFF000000), surface = Color(0xFF000000), surfaceVariant = Color(0xFF121212)) else scheme
     } else {

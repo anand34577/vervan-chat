@@ -75,7 +75,7 @@ class ModelDownloadRepository(
     private var activeJob: Job? = null
     private var activePackageId: String? = null
 
-    // In-memory only (spec §17.2: "do not persist ETA as authoritative data") — a rolling
+    // In-memory only (: "do not persist ETA as authoritative data") — a rolling
     // window of (timestamp, totalBytesDownloaded) samples for whichever package is currently
     // active. Reset whenever the active package changes.
     private val speedSamples = ArrayDeque<Pair<Long, Long>>()
@@ -121,7 +121,7 @@ class ModelDownloadRepository(
 
     /** Called once at process start (see ModelDownloadService) — reconciles any package left in
      * an active-looking state by a process death against the real partial-file size on disk,
-     * per spec §29: a killed process is never itself treated as a failure. */
+     * a killed process is never itself treated as a failure. */
     suspend fun recoverOnStartup() = recoveryMutex.withLock {
         if (recoveryComplete) return@withLock
         val unfinished = packageDao.getUnfinished()
@@ -465,8 +465,10 @@ class ModelDownloadRepository(
                 src.delete()
             }
         }
-        val modelFile = File(voiceDir, "model.onnx")
-        val hash = if (modelFile.isFile) sha256Of(modelFile) else ""
+        // Hash the actual MODEL-role file, not a hardcoded "model.onnx" — the whisper.cpp entry's
+        // model is ggml-tiny.bin, so the old constant always produced an empty hash for it.
+        val modelFile = files.firstOrNull { it.role == ModelFileRole.MODEL }?.let { File(voiceDir, it.fileName) }
+        val hash = if (modelFile?.isFile == true) sha256Of(modelFile) else ""
         return TtsVoiceModel(engine = engine, language = language, filePath = voiceDir.absolutePath, fileSizeBytes = totalBytes, sha256 = hash)
     }
 
@@ -573,7 +575,7 @@ class ModelDownloadRepository(
         return downloaded
     }
 
-    /** Rolling-window speed (spec §19.1: recent window, not full-lifetime average). ETA is
+    /** Rolling-window speed (: recent window, not full-lifetime average). ETA is
      * derived, never stored — see [_speedInfo] and [toUiState]. */
     private fun recordSpeedSample(totalDownloadedForFile: Long) {
         val now = System.currentTimeMillis()

@@ -42,7 +42,7 @@ data class DeviceProfile(
 }
 
 /**
- * The verdict shown next to a variant *before* the user can tap install (spec §5) — the whole
+ * The verdict shown next to a variant *before* the user can tap install — the whole
  * point is that incompatibility is never discovered after a multi-gigabyte download.
  *
  * [DEGRADED] is a deliberate third state rather than folding into installable/incompatible: a

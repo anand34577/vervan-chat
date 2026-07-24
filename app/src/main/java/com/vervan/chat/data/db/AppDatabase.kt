@@ -27,6 +27,7 @@ import com.vervan.chat.data.db.dao.StoreInstallArtifactDao
 import com.vervan.chat.data.db.dao.StoreInstallSessionDao
 import com.vervan.chat.data.db.dao.StudyCardDao
 import com.vervan.chat.data.db.dao.ToolAuditDao
+import com.vervan.chat.data.db.dao.ToolRunDao
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.dao.WorkflowDao
 import com.vervan.chat.data.db.dao.WorkspaceDao
@@ -71,6 +72,8 @@ import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.data.db.entities.ToolAudit
+import com.vervan.chat.data.db.entities.ToolRun
+import com.vervan.chat.data.db.entities.ToolRunState
 import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
@@ -125,6 +128,8 @@ class Converters {
     @TypeConverter fun toStoreInstallState(v: String) = safeEnum<StoreInstallState>(v, StoreInstallState.FAILED_RETRYABLE)
     @TypeConverter fun fromStoreArtifactState(v: StoreArtifactState) = v.name
     @TypeConverter fun toStoreArtifactState(v: String) = safeEnum<StoreArtifactState>(v, StoreArtifactState.FAILED)
+    @TypeConverter fun fromToolRunState(v: ToolRunState) = v.name
+    @TypeConverter fun toToolRunState(v: String) = safeEnum<ToolRunState>(v, ToolRunState.FAILED)
 }
 
 @Database(
@@ -133,11 +138,11 @@ class Converters {
         KnowledgeBase::class, Document::class, Chunk::class, Note::class, Project::class,
         PromptTemplate::class, SavedOutput::class, Memory::class, Workflow::class, StudyCard::class,
         Folder::class, FlashcardSet::class, MemorySuggestion::class, ToolAudit::class, JobRecord::class,
-        Workspace::class, Expense::class, TtsVoiceModel::class,
+        Workspace::class, Expense::class, TtsVoiceModel::class, ToolRun::class,
         DownloadPackage::class, DownloadFile::class,
         StoreInstallSession::class, StoreInstallArtifact::class
     ],
-    version = 41,
+    version = 44,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -160,6 +165,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun flashcardSetDao(): FlashcardSetDao
     abstract fun memorySuggestionDao(): MemorySuggestionDao
     abstract fun toolAuditDao(): ToolAuditDao
+    abstract fun toolRunDao(): ToolRunDao
     abstract fun jobDao(): JobDao
     abstract fun workspaceDao(): WorkspaceDao
     abstract fun expenseDao(): ExpenseDao

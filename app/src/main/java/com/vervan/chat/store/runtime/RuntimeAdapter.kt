@@ -138,7 +138,7 @@ class LlamaCppAdapter : RuntimeAdapter {
 
 /**
  * whisper.cpp. Only ever loads a converted `ggml-*.bin`; a raw Hugging Face Transformers Whisper
- * repo is *not* compatible and must be a separate catalogue entry after conversion (spec §1) —
+ * repo is *not* compatible and must be a separate catalogue entry after conversion —
  * enforced by the catalogue build pipeline, not here, since by this point the role has already
  * asserted the file is a `asr_model` in ggml form.
  */
@@ -160,7 +160,7 @@ class WhisperCppAdapter : RuntimeAdapter {
 
 /**
  * sherpa-onnx, where composition is entirely a function of [RuntimeSubtype] — this is exactly the
- * case spec §1 warns about, where assuming a single `model.onnx` silently breaks half the
+ * case warns about, where assuming a single `model.onnx` silently breaks half the
  * architectures. Matcha splits the acoustic model from the vocoder; Kokoro and Kitten carry a
  * separate voices bank; VITS is the only one that really is one graph.
  *
@@ -201,7 +201,7 @@ class SherpaOnnxAdapter : RuntimeAdapter {
  * metadata, so a single [ArtifactRole.RUNTIME_CONTAINER] is the whole variant — and because the
  * Android API takes a filesystem path (not a descriptor or a URI), the manifest must resolve this
  * role to a real absolute path. That is why SAF imports are copied into managed storage rather
- * than handed over as `content://` (spec §7).
+ * than handed over as `content://`.
  */
 class LiteRtLmAdapter : RuntimeAdapter {
     override val runtimeId = RuntimeId.LITERT_LM

@@ -8,7 +8,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * Phase J — holds the local API server's bearer token in a Keystore-backed
+ * holds the local API server's bearer token in a Keystore-backed
  * [EncryptedSharedPreferences] file, same reasoning as [com.vervan.chat.security.AppLockManager]'s
  * PIN storage: never in plain DataStore alongside the rest of Settings.
  *

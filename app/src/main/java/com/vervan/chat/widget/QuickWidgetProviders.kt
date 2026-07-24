@@ -10,9 +10,9 @@ import com.vervan.chat.MainActivity
 import com.vervan.chat.R
 
 /**
- * Home screen widgets (Phase 7, spec §37) — Quick Ask and New Note. Both just launch
+ * Home screen widgets — Quick Ask and New Note. Both just launch
  * MainActivity with the same "vervan_shortcut" extra the launcher shortcuts already use
- * (spec §37.3), so no separate deep-link handling was needed in NavGraph.
+ *, so no separate deep-link handling was needed in NavGraph.
  */
 private fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, layoutId: Int, shortcut: String) {
     val intent = Intent(context, MainActivity::class.java).apply {

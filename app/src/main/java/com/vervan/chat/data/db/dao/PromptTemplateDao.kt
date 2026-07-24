@@ -18,7 +18,7 @@ interface PromptTemplateDao : BaseDao<PromptTemplate> {
     @Query("SELECT * FROM prompt_templates WHERE id = :id")
     suspend fun get(id: String): PromptTemplate?
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM prompt_templates WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<PromptTemplate>>
 

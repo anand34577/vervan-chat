@@ -13,7 +13,7 @@ import java.io.File
 
 /**
  * Renders each page of a scanned (text-layer-less) PDF to a bitmap and runs on-device ML Kit
- * text recognition (spec §13.3, §40.27). Uses the bundled `com.google.mlkit:text-recognition`
+ * text recognition. Uses the bundled `com.google.mlkit:text-recognition`
  * model, which ships inside the APK — no network fetch, unlike the Play-Services-backed
  * variant of the same API. Only called from [DocumentImportManager] when PDFBox's text layer
  * comes back empty.
@@ -57,7 +57,7 @@ object OcrExtractor {
         }
     }
 
-    /** Runs on-device OCR over a single image file (Phase 3, spec §17 image-into-KB import) —
+    /** Runs on-device OCR over a single image file —
      * the same recognizer as [extractFromPdf], no page-rendering step needed. */
     fun extractFromImage(file: File): String {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)

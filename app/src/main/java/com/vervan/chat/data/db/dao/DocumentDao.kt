@@ -28,7 +28,7 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT * FROM documents WHERE deletedAt IS NULL AND displayName LIKE '%' || :q || '%' LIMIT 20")
     suspend fun search(q: String): List<Document>
 
-    // Document versioning (Phase 3, spec §20) — detects a same-named re-import so the import
+    // Document versioning — detects a same-named re-import so the import
     // pipeline can offer replace/keep-both instead of silently creating a look-alike duplicate.
     @Query("SELECT * FROM documents WHERE knowledgeBaseId = :kbId AND displayName = :name AND deletedAt IS NULL LIMIT 1")
     suspend fun findActiveByNameInKb(kbId: String, name: String): Document?
@@ -39,7 +39,7 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT COUNT(*) FROM documents WHERE workspaceId = :workspaceId AND deletedAt IS NULL")
     fun observeCountForWorkspace(workspaceId: String): Flow<Int>
 
-    // Workspace deletion cascade (§13/§16) — returned so each can go through
+    // Workspace deletion cascade — returned so each can go through
     // DocumentImportManager.delete() (removes the copied file + embedded chunks), not a bare
     // SQL delete which would orphan them.
     @Query("SELECT * FROM documents WHERE workspaceId = :workspaceId")

@@ -10,7 +10,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import com.vervan.chat.ui.theme.VervanTheme
 
 /**
- * Phase I — handles `ACTION_PROCESS_TEXT` (the "select text in any app → Vervan Chat" entry
+ * handles `ACTION_PROCESS_TEXT` (the "select text in any app → Vervan Chat" entry
  * point declared in AndroidManifest.xml). Deliberately a standalone [ComponentActivity], not
  * routed through [com.vervan.chat.ui.nav.VervanNavGraph] — it's launched directly by another
  * app with no relationship to this app's own back stack, and is themed as a compact floating
