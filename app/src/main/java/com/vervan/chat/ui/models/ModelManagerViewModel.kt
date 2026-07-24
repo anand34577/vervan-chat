@@ -390,7 +390,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             _pendingAcknowledgment.value = model
             return
         }
-        viewModelScope.launch { coordinator.setDefault(model) }
+        viewModelScope.launch { activateModel(model) }
     }
 
     fun acknowledgeAndActivate(model: ModelInfo) {
@@ -399,7 +399,20 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             recommendedSetupCatalogId = null
             viewModelScope.launch { validateAndActivate(model.copy(licenseAcknowledged = true)) }
         } else {
-            viewModelScope.launch { coordinator.setDefault(model.copy(licenseAcknowledged = true)) }
+            viewModelScope.launch { activateModel(model.copy(licenseAcknowledged = true)) }
+        }
+    }
+
+    /** Activates [model] and, for an EMBEDDING model swap with existing indexed documents,
+     * nudges toward re-indexing. Without this, RetrievalEngine silently excludes every chunk
+     * embedded by the previous model from semantic scoring (see Chunk.embeddingModelId) and
+     * search just quietly degrades to keyword-only with no visible reason. */
+    private suspend fun activateModel(model: ModelInfo) {
+        val previousActiveId = db.modelDao().getActiveModel(model.role)?.id
+        coordinator.setDefault(model)
+        if (model.role == ModelRole.EMBEDDING && previousActiveId != model.id && db.documentDao().countReady() > 0) {
+            _status.value = "Embedding model changed — go to Settings → Index maintenance to " +
+                "re-index your knowledge bases so semantic search reflects the new model."
         }
     }
 

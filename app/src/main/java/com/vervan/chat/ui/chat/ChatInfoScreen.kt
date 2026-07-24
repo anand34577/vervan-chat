@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Link
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.MessageRole
+import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
@@ -82,6 +84,9 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
     val personas by app.container.db.personaDao().observePersonas().collectAsState(initial = emptyList())
     val models by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
+    val workspaces by app.container.db.workspaceDao().observeAll().collectAsState(initial = emptyList())
+    val knowledgeBases by app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList())
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
     val imagePaths = remember(messages) { messages.mapNotNull { it.imagePath }.distinct() }
     val sharedDocumentIds = remember(messages) { messages.mapNotNull { it.documentId }.toSet() }
     val sharedDocuments = remember(documents, sharedDocumentIds) { documents.filter { it.id in sharedDocumentIds } }
@@ -115,8 +120,13 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val dateFmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
     val lastActivity = visible.maxOfOrNull { it.createdAt }
 
-    val persona = personas.find { it.id == chat?.personaId }?.name
-    val model = models.find { it.id == chat?.modelId }?.displayName
+    val workspace = workspaces.find { it.id == chat?.workspaceId }
+    val explicitPersona = personas.find { it.id == chat?.personaId }
+    val workspacePersona = personas.find { it.id == workspace?.personaId }
+    val persona = (explicitPersona ?: workspacePersona)?.name ?: "Persona unavailable"
+    val model = (models.find { it.id == chat?.modelId } ?: activeModel)?.displayName ?: "No generation model"
+    val latestResponseModel = visible.lastOrNull { it.role == MessageRole.ASSISTANT && it.modelName != null }?.modelName
+    val sourceNames = chat?.kbIdList().orEmpty().mapNotNull { id -> knowledgeBases.find { it.id == id }?.name }
 
     var previewPath by remember { mutableStateOf<String?>(null) }
 
@@ -164,7 +174,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
                         )
-                        val subtitle = listOfNotNull(persona ?: "Default persona", model).joinToString(" · ")
+                        val subtitle = "$persona · ${latestResponseModel ?: model}"
                         Text(
                             subtitle,
                             style = MaterialTheme.typography.bodyMedium,
@@ -241,16 +251,31 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             items = listOf<@Composable () -> Unit>(
                                 {
                                     SectionRow(
+                                        icon = Icons.Filled.Dashboard,
+                                        title = "Workspace",
+                                        subtitle = workspace?.name ?: "Workspace unavailable"
+                                    )
+                                },
+                                {
+                                    SectionRow(
+                                        icon = Icons.Filled.Bolt,
+                                        title = "Latest response model",
+                                        subtitle = latestResponseModel ?: "No generated response yet"
+                                    )
+                                },
+                                {
+                                    SectionRow(
                                         icon = Icons.Filled.AutoAwesome,
-                                        title = "Model",
-                                        subtitle = model ?: "Default generation model"
+                                        title = "Model setting",
+                                        subtitle = if (chat?.modelId != null) "$model · selected for this chat" else "$model · app default"
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
                                         title = "Persona",
-                                        subtitle = persona ?: "Default persona"
+                                        subtitle = if (chat?.personaId != null) "$persona · selected for this chat"
+                                        else "$persona · inherited from ${workspace?.name ?: "space"}"
                                     )
                                 },
                                 {
@@ -274,7 +299,8 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                         icon = Icons.AutoMirrored.Filled.MenuBook,
                                         title = "Sources",
                                         subtitle = if (chat?.sourceGrounded == true && count > 0)
-                                            "$count source${if (count == 1) "" else "s"} · grounded"
+                                            sourceNames.takeIf { it.isNotEmpty() }?.joinToString(", ")
+                                                ?: "$count source${if (count == 1) "" else "s"} · grounded"
                                         else "Not grounded"
                                     )
                                 }

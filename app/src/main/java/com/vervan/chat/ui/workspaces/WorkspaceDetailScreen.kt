@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.workspaces
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -56,12 +58,15 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ArchiveMenuItem
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.DeleteMenuItem
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.launch
 
@@ -197,6 +202,13 @@ fun WorkspaceDetailScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.xs),
+            )
+            ContextGuideCard(
+                icon = Icons.AutoMirrored.Filled.Chat,
+                title = "One space, one working context",
+                body = "New chats inherit this space's persona, response profile, and knowledge sources.",
+                modifier = Modifier.padding(top = Space.md),
+                accentIndex = 2,
             )
 
             // status summary — horizontally scrollable stat cards (phone space rule:
@@ -471,13 +483,34 @@ private fun WorkspaceChatCard(
         preview = app.container.db.messageDao().getLatestForChat(chat.id)?.content
         messageCount = app.container.db.messageDao().countForChat(chat.id)
     }
+    val accent = vervanAccentFor((chat.title.hashCode() and Int.MAX_VALUE) % 6)
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        colors = if (selected) {
+            androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        } else {
+            SurfaceRole.Raised.cardColors()
+        },
+        border = SurfaceRole.Raised.border(),
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Top) {
             if (selectionMode) {
                 androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() }, modifier = Modifier.padding(end = 4.dp))
+            }
+            androidx.compose.foundation.layout.Box(
+                Modifier
+                    .padding(end = Space.md)
+                    .size(44.dp)
+                    .background(accent.container, MaterialTheme.shapes.medium),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Chat,
+                    contentDescription = null,
+                    tint = accent.onContainer,
+                    modifier = Modifier.size(22.dp),
+                )
             }
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -497,7 +530,7 @@ private fun WorkspaceChatCard(
                     )
                 }
                 Text(
-                    listOfNotNull(folderName ?: "Unfoldered", personaName, "$messageCount messages").joinToString(" · "),
+                    listOfNotNull(folderName ?: "No folder", personaName, "$messageCount messages").joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)
                 )

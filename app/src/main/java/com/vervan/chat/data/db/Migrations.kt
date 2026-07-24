@@ -519,5 +519,13 @@ val MIGRATIONS = arrayOf(
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE messages ADD COLUMN feedbackReason TEXT")
         }
+    },
+    object : Migration(44, 45) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Provenance for Chunk.embedding — see Chunk.embeddingModelId doc comment. Existing
+            // rows land NULL, which RetrievalEngine treats as "pre-migration, fall back to the
+            // dimension-only check" rather than as a hard mismatch.
+            db.execSQL("ALTER TABLE chunks ADD COLUMN embeddingModelId TEXT")
+        }
     }
 )
