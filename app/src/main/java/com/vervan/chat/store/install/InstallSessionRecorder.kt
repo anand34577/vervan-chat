@@ -14,7 +14,7 @@ import java.io.File
 
 /**
  * Durable record of an install in flight, so a process death is recoverable rather than a restart
- * (spec §6, Android execution details).
+ * (, Android execution details).
  *
  * Separated behind an interface for two reasons: [VariantInstaller]'s transaction logic stays
  * testable without a database, and the recording is genuinely optional — a no-op recorder produces
@@ -188,7 +188,7 @@ class RoomInstallSessionRecorder(
 }
 
 /**
- * Startup reconciliation for sessions a process death left mid-flight (spec §6/§29 precedent set
+ * Startup reconciliation for sessions a process death left mid-flight (precedent set
  * by the older pipeline's `recoverOnStartup`).
  *
  * The rule that matters: **a killed process is never itself treated as a failure.** An interrupted

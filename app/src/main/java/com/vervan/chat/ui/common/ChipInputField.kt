@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
 
 /**
- * §6/§9 chip-entry field for list-of-short-strings inputs (note tags, user interests,
+ * chip-entry field for list-of-short-strings inputs (note tags, user interests,
  * avoid-topics) — replaces comma-parsed free text so each item respects its own length limit
  * and the list respects a max item count, with the count always visible.
  */

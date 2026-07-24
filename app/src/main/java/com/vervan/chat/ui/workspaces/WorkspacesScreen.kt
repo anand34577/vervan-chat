@@ -286,7 +286,7 @@ private fun WorkspaceCard(
                         Icon(Icons.Filled.Archive, contentDescription = "Archived", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
-                // Compact card fields only (Android phone space rule §9/§18): persona, chat
+                // Compact card fields only (Android phone space rule): persona, chat
                 // count, last activity — advanced stats live on the detail screen.
                 Text(
                     "$personaName · $chatCount chat${if (chatCount == 1) "" else "s"} · ${relativeTime(workspace.lastActiveAt)}",

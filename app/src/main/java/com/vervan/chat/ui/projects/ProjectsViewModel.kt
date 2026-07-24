@@ -11,18 +11,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class ProjectsListViewModel(app: VervanApp) : ViewModel() {
+class ProjectsListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
-    val projects: StateFlow<List<Project>> = db.projectDao().observeAll()
+    // Scoped to the active workspace — projects now live inside a workspace like chats and folders.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val projects: StateFlow<List<Project>> = app.container.settingsRepository.activeWorkspaceId
+        .flatMapLatest { db.projectDao().observeForWorkspace(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun createProject(name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { db.projectDao().upsert(Project(name = name)) }
+        viewModelScope.launch {
+            val workspaceId = app.container.settingsRepository.activeWorkspaceId.first()
+            db.projectDao().upsert(Project(name = name, workspaceId = workspaceId))
+        }
     }
 
     fun rename(project: Project, newName: String) {
@@ -31,7 +38,7 @@ class ProjectsListViewModel(app: VervanApp) : ViewModel() {
     }
 
     fun delete(project: Project) {
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch {
             db.withTransaction {
                 db.chatDao().clearProject(project.id)
@@ -65,7 +72,7 @@ class ProjectDashboardViewModel(private val app: VervanApp, private val projectI
     }
 
     fun delete() {
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch {
             project.value?.let { p ->
                 db.withTransaction {
@@ -79,11 +86,12 @@ class ProjectDashboardViewModel(private val app: VervanApp, private val projectI
     }
 
     suspend fun createChat(): String {
-        // Projects are orthogonal to workspaces (a chat can have both) — this still stamps
-        // the active workspace so "every new chat uses the active workspace" holds regardless
-        // of which screen created it.
+        // A chat created in a project belongs to that project's workspace (falling back to the
+        // active one only if the project row hasn't loaded yet) — keeps the project, its chats,
+        // and its workspace consistent regardless of which workspace is currently active.
+        val workspaceId = project.value?.workspaceId ?: app.container.settingsRepository.activeWorkspaceId.first()
         val chat = app.container.workspaceManager.applyDefaults(
-            Chat(projectId = projectId, workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+            Chat(projectId = projectId, workspaceId = workspaceId)
         )
         db.chatDao().upsert(chat)
         return chat.id

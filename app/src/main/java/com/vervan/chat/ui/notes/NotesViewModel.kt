@@ -77,7 +77,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     val knowledgeBases = db.knowledgeBaseDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Wires this note into a knowledge base (Phase 3, spec §17) as a plain-text document. */
+    /** Wires this note into a knowledge base as a plain-text document. */
     fun addToKnowledgeBase(kbId: String) {
         viewModelScope.launch {
             val current = _note.value ?: return@launch

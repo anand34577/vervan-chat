@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import java.util.UUID
 
 /**
- * A flashcard generated from pasted text or a note (spec §24 study workspace).
+ * A flashcard generated from pasted text or a note (study workspace).
  * review tracking is one counter + a last-result flag, not a real spaced-repetition
  * scheduler (intervals, ease factor) — good enough to show progress, add SM-2 if this needs
  * to actually schedule reviews over time.

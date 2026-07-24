@@ -15,7 +15,7 @@ interface WorkflowDao : BaseDao<Workflow> {
     @Query("SELECT * FROM workflows WHERE id = :id")
     suspend fun get(id: String): Workflow?
 
-    // Recycle bin coverage (Phase 6, spec §34).
+    // Recycle bin coverage.
     @Query("SELECT * FROM workflows WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<Workflow>>
 

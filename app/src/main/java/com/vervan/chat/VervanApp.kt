@@ -90,7 +90,7 @@ class AppContainer(app: Application) {
             override suspend fun vulkanDeviceIndex() = settingsRepository.vulkanDeviceIndex.first()
         },
         modelLoadScope,
-        // Model Loading Strategy §13 — real ActivityManager-backed estimate, queried fresh on
+        // Model Loading Strategy — real ActivityManager-backed estimate, queried fresh on
         // every check (not cached) since available memory shifts constantly with whatever else
         // is running on the device.
         object : com.vervan.chat.modelload.ResourceMonitor {
@@ -329,7 +329,7 @@ class VervanApp : Application() {
         crashLogManager.install()
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
-        // App-wide backgrounded/foregrounded detection for auto-lock (Phase A) — observes the
+        // App-wide backgrounded/foregrounded detection for auto-lock — observes the
         // whole process's lifecycle, not one Activity's, so in-app navigation (which pauses/
         // resumes the single Activity) never trips it, only actually leaving the app does.
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -381,7 +381,7 @@ class VervanApp : Application() {
             container.db.messageDao().getUnfinished().forEach {
                 container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
             }
-            // Incognito mode (Phase B) — a temporary chat is meant to hard-delete itself on
+            // Incognito mode — a temporary chat is meant to hard-delete itself on
             // close (see ChatViewModel.purgeTemporaryChat); this is the fallback for a process
             // that died before that ran. Any chat still marked isTemporary at cold start is one
             // nothing ever cleaned up.
@@ -394,7 +394,7 @@ class VervanApp : Application() {
                 container.db.toolAuditDao().deleteForChat(chat.id)
                 container.db.chatDao().delete(chat)
             }
-            // Retention policy (Phase C) — soft-deletes (not hard-deletes) chats older than the
+            // Retention policy — soft-deletes (not hard-deletes) chats older than the
             // configured window, same reversible-first pattern as every other delete path in
             // this app; the existing 30-day recycle-bin sweep below eventually hard-deletes
             // them. Pinned chats are exempt — a retention timer silently eating something the
@@ -412,7 +412,7 @@ class VervanApp : Application() {
             // existing installs as well as seeding it on fresh installs.
             container.db.personaDao().update(BuiltInPersonas.vervan)
             // Fresh-install seed for the permanent Default Workspace (Workspace System spec
-            // §2) — a no-op once it exists, whether created here or by migration 22->23.
+            //) — a no-op once it exists, whether created here or by migration 22->23.
             container.db.workspaceDao().insertDefault(
                 Workspace(
                     id = Workspace.DEFAULT_WORKSPACE_ID,
@@ -449,7 +449,7 @@ class VervanApp : Application() {
                     container.db.chatDao().clearPersona(persona.id)
                     container.db.folderDao().clearDefaultPersona(persona.id)
                     container.db.projectDao().clearPersona(persona.id)
-                    // Workspace.personaId is NOT NULL (§4 — a workspace always has exactly one
+                    // Workspace.personaId is NOT NULL (a workspace always has exactly one
                     // persona), so a deleted persona repoints its workspaces at the Default
                     // Persona instead of being nulled out like the other FKs here.
                     container.db.workspaceDao().relinkPersona(persona.id, "builtin-general")
@@ -477,7 +477,7 @@ class VervanApp : Application() {
             container.db.documentDao().observeDeleted().first().forEach { doc ->
                 if (doc.deletedAt != null && doc.deletedAt < cutoff) container.documentImportManager.delete(doc)
             }
-            // A download package left active/paused by a process death (spec §29) needs the
+            // A download package left active/paused by a process death needs the
             // foreground service back up to reconcile and (if settings allow) auto-resume it —
             // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
             if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
@@ -503,8 +503,8 @@ class VervanApp : Application() {
     }
 
     /**
-     * Frees the loaded native model under real memory pressure (spec §40 / Model Loading
-     * Strategy §6.2) rather than letting the OS kill the process outright. Safe to do at any
+     * Frees the loaded native model under real memory pressure (/ Model Loading
+     * Strategy) rather than letting the OS kill the process outright. Safe to do at any
      * time — [LlmEngine] is lazily reloaded by whichever ChatViewModel/workspace next calls
      * `generate()`, same path as a cold start; the only cost is that next call re-pays the model
      * load time. Legacy callback (pre-API 14 fallback, and some OEMs still fire it alongside
@@ -516,7 +516,7 @@ class VervanApp : Application() {
         handleMemoryPressure(com.vervan.chat.modelload.MemoryPressureLevel.CRITICAL)
     }
 
-    /** §6.2's actual moderate/critical distinction — [onLowMemory] only ever signals the most
+    /** actual moderate/critical distinction — [onLowMemory] only ever signals the most
      * severe tier, so without this override the app never learns about pressure building up
      * *before* it's already critical, and the "moderate: stop speculative preloading" tier the
      * spec calls out has nothing to trigger it. */

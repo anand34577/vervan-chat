@@ -243,7 +243,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
     }
 }
 
-/** §7.3.2 staged import progress — Reading → OCR → Extracting → Chunking → Embedding → Ready,
+/** staged import progress — Reading → OCR → Extracting → Chunking → Embedding → Ready,
  * driven directly by [DocumentStatus] (the pipeline already tracks these exact stages; this
  * was previously rendered as a plain "Extracting…" text line instead of a real progress card). */
 private fun DocumentStatus.stageIndex(): Int = when (this) {

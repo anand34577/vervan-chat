@@ -55,11 +55,11 @@ data class ModelInfo(
     val importedAt: Long = System.currentTimeMillis(),
     // Set by ModelLoadCoordinator every time a load into the native engine actually succeeds —
     // doubles as both "last successfully used" and the tiebreaker for picking a replacement
-    // default when the current default is deleted (spec §4.3 priority order).
+    // default when the current default is deleted (priority order).
     val lastLoadedAt: Long? = null,
     // Bring-your-own-model means this app never ships or verifies the model's actual
     // license — it can only make the user actively acknowledge that one applies (spec
-    // §12) before the model is used. Not legal advice, not a fetched/verified license text.
+    //) before the model is used. Not legal advice, not a fetched/verified license text.
     val licenseAcknowledged: Boolean = false,
     val supportsVision: Boolean? = null,
     val supportsAudio: Boolean? = null,

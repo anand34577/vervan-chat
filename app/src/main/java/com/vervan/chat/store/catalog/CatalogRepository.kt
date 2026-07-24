@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** Outcome of one sync attempt. Never fatal to the caller: a failed sync always leaves the
- * previously accepted catalogue in place (spec §4.6). */
+ * previously accepted catalogue in place. */
 sealed interface SyncResult {
     data class Updated(val catalogVersion: Int, val modelCount: Int) : SyncResult
     data object AlreadyCurrent : SyncResult
@@ -23,7 +23,7 @@ sealed interface SyncResult {
 
 /**
  * Owns the catalogue lifecycle: fetch -> verify -> validate -> rollback-check -> persist, plus the
- * in-APK bootstrap so the store is never empty on first run with no network (spec §3).
+ * in-APK bootstrap so the store is never empty on first run with no network.
  *
  * ### Why `latest.json` is treated as untrusted
  * `latest.json` is **not signed** — only the versioned `catalog.json` is. Everything it says is
@@ -126,7 +126,7 @@ class CatalogRepository(
     private fun acceptCatalog(rawCatalog: ByteArray, signature: ByteArray?): SyncResult {
         if (signature == null || !verifier.verify(rawCatalog, signature)) {
             // Explicitly keep the previous good catalogue — never fall back to the unverified one
-            // we just fetched, however plausible it looks (spec §10).
+            // we just fetched, however plausible it looks.
             return fail("Catalogue signature is not valid")
         }
 

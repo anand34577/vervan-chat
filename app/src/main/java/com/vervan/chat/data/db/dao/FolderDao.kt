@@ -24,14 +24,14 @@ interface FolderDao : BaseDao<Folder> {
     @Query("SELECT COUNT(*) FROM folders WHERE workspaceId = :workspaceId AND deletedAt IS NULL")
     fun observeCountForWorkspace(workspaceId: String): Flow<Int>
 
-    // Workspace deletion cascade (§13): every folder inside a deleted workspace is deleted too.
+    // Workspace deletion cascade: every folder inside a deleted workspace is deleted too.
     @Query("DELETE FROM folders WHERE workspaceId = :workspaceId")
     suspend fun deleteForWorkspace(workspaceId: String)
 
     @Query("DELETE FROM folders WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 
-    // Model migration relink (spec §11.12) — points every folder default at the new model
+    // Model migration relink — points every folder default at the new model
     // artifact in one statement instead of round-tripping each Folder row through update().
     @Query("UPDATE folders SET defaultModelId = :newModelId WHERE defaultModelId = :oldModelId")
     suspend fun relinkDefaultModel(oldModelId: String, newModelId: String)

@@ -396,9 +396,10 @@ private fun SavedTab(
     onToggleSelected: (String) -> Unit,
     onEnterSelection: (String) -> Unit
 ) {
-    val filtered = remember(outputs, query) { outputs.filter { it.content.contains(query, ignoreCase = true) } }
+    val filtered = remember(outputs, query) { outputs.filter { it.content.contains(query, ignoreCase = true) || it.label.contains(query, ignoreCase = true) } }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     if (filtered.isEmpty()) {
         EmptyState(
@@ -411,11 +412,12 @@ private fun SavedTab(
     LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
         items(filtered, key = { it.id }) { output ->
             val isSelected = output.id in selected
+            var expanded by remember(output.id) { mutableStateOf(false) }
             Card(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     .selectableItem(
                         selectionMode = selectionMode,
-                        onClick = { clipboard.setText(output.content, scope) },
+                        onClick = { expanded = !expanded },
                         onToggleSelected = { onToggleSelected(output.id) },
                         onEnterSelection = { onEnterSelection(output.id) }
                     ),
@@ -431,10 +433,35 @@ private fun SavedTab(
                         )
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(output.content.take(300), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            output.label.takeIf { it.isNotBlank() && !it.contains('-') } ?: "Saved output",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            buildString {
+                                append(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(output.createdAt)))
+                                if (output.sourceChatId != null) append(" · From chat")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Text(
+                            output.content,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = if (expanded) 20 else 4,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = Space.sm),
+                        )
                         if (!selectionMode) {
                             Row {
                                 TextButton(onClick = { clipboard.setText(output.content, scope) }) { Text("Copy") }
+                                TextButton(onClick = {
+                                    context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, output.content)
+                                    }, "Share saved output"))
+                                }) { Text("Share") }
                                 TextButton(onClick = { scope.launch { app.container.db.savedOutputDao().upsert(output.copy(deletedAt = System.currentTimeMillis())) } }) { Text("Delete") }
                             }
                         }

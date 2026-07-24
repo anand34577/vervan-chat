@@ -472,7 +472,7 @@ fun ValidationMessage(message: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** §9.1 — large fields use compact notation ("12.4k / 100k") while the exact value stays
+/** large fields use compact notation ("12.4k / 100k") while the exact value stays
  * available to accessibility services via the field's own semantics. */
 private fun compactCount(n: Int): String = when {
     n < 1000 -> n.toString()

@@ -114,7 +114,10 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 if (kind == ScanKind.TABLE) {
                     val prompt = "Convert the table found in the following OCR text into a Markdown table (pipe-separated, with a header row). " +
                         "Respond with ONLY the Markdown table, no explanation.\n\nOCR text:\n$ocrText"
-                    markdownTable = OneShotLlm.run(app, prompt)?.trim()
+                    markdownTable = OneShotLlm.run(
+                        app, prompt,
+                        runContext = com.vervan.chat.llm.ToolRunContext("tools/table-scanner", "Table scanner", ocrText),
+                    )?.trim()
                         ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
                     if (markdownTable.isBlank()) errorText = "The model couldn't build a table from that image. Try again."
                 } else {
@@ -124,7 +127,11 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         ", extract a JSON object with exactly these keys: $keys" +
                         (if (kind == ScanKind.RECEIPT) ", lineItems (an array of short strings like \"Item name - price\")" else "") +
                         ". Use an empty string (or empty array) for anything not found. Respond with ONLY the JSON object, no markdown fences, no explanation.\n\nOCR text:\n$ocrText"
-                    val raw = OneShotLlm.run(app, prompt)?.trim()
+                    val route = if (kind == ScanKind.RECEIPT) "tools/receipt-scanner" else "tools/smart-form-filler"
+                    val raw = OneShotLlm.run(
+                        app, prompt,
+                        runContext = com.vervan.chat.llm.ToolRunContext(route, kind.title, ocrText),
+                    )?.trim()
                         ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
                     val json = runCatching { JSONObject(raw.substringAfter("{").let { "{$it" }.substringBeforeLast("}").let { "$it}" }) }.getOrNull()
                     fields = activeFields.associate { (key, _) -> key to (json?.optString(key).orEmpty()) }

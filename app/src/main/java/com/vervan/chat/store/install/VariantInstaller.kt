@@ -44,7 +44,7 @@ data class FetchMetadata(val etag: String?, val lastModified: String?)
 
 /** The source is gone or forbidden — retrying the same URL is pointless. Distinguished from
  * ordinary failures so [VariantInstaller] fails over to the next source (or gives up) instead of
- * backing off and retrying a URL that will never work (spec §6.5). */
+ * backing off and retrying a URL that will never work. */
 class PermanentFetchException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 sealed interface InstallOutcome {
@@ -62,7 +62,7 @@ data class InstallProgress(
 )
 
 /**
- * Installs one variant as a single all-or-nothing transaction (spec §6).
+ * Installs one variant as a single all-or-nothing transaction.
  *
  * The central invariant: **a variant is installed if and only if its manifest exists**, and the
  * manifest is written exactly once, last, after every artifact has been fetched, hash-verified and
@@ -253,7 +253,7 @@ class VariantInstaller(
     /**
      * Tries each source in order. Failover is safe here *only* because every fetched byte is
      * hash-checked against the signed catalogue afterwards — a mirror cannot substitute different
-     * content, it can only fail to provide the right content (spec §9).
+     * content, it can only fail to provide the right content.
      *
      * Resume validators (ETag / Last-Modified) are read from the recorder at entry and persisted
      * back after a successful fetch against each source — without that round-trip, a resume after

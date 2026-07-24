@@ -56,7 +56,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    // Pause/resume/cancel (Phase 5) — pauseRequested is checked between steps (not mid-stream),
+    // Pause/resume/cancel — pauseRequested is checked between steps (not mid-stream),
     // so "pause" takes effect after the current step finishes, not instantly.
     private val _paused = MutableStateFlow(false)
     val paused: StateFlow<Boolean> = _paused
@@ -65,7 +65,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     private var carryText = ""
     private var runJob: kotlinx.coroutines.Job? = null
 
-    /** Source selection (Phase 5, spec §31) — when set, the run is seeded with retrieved
+    /** Source selection — when set, the run is seeded with retrieved
      * passages from these knowledge bases instead of only the raw input text. */
     val knowledgeBases = db.knowledgeBaseDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -296,7 +296,7 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
 
     fun delete() {
         if (workflowId == null || _isBuiltIn.value) return
-        // Soft delete (Phase 6, spec §34) — recoverable from the recycle bin instead of gone instantly.
+        // Soft delete — recoverable from the recycle bin instead of gone instantly.
         viewModelScope.launch { db.workflowDao().get(workflowId)?.let { db.workflowDao().upsert(it.copy(deletedAt = System.currentTimeMillis())) } }
     }
 }

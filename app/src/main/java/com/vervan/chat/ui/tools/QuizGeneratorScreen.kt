@@ -85,7 +85,10 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                     "object having exactly these keys: type, question, options (array of strings, only for multiple_choice " +
                     "or true_false, empty array otherwise), correctAnswer (string), explanation (one short sentence).\n\nText:\n$sourceText"
                 // run() (not stream()) — the whole JSON array must be complete before it can be parsed.
-                val raw = OneShotLlm.run(app, prompt)?.trim()
+                val raw = OneShotLlm.run(
+                    app, prompt,
+                    runContext = com.vervan.chat.llm.ToolRunContext("tools/quiz-generator", "Quiz generator", sourceText),
+                )?.trim()
                 if (raw == null) {
                     errorText = "No generation model is active. Load one from Models, then generate again."
                 } else {

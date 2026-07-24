@@ -77,7 +77,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
             "Chats / notes" to "${chats.size} / ${notes.size}",
             "Database" to formatBytes(context.getDatabasePath("vervan.db").takeIf { it.exists() }?.length() ?: 0L)
         ),
-        // Network trust dashboard (Phase D) — every intentional network call this app makes is
+        // Network trust dashboard — every intentional network call this app makes is
         // meant to report to NetworkAuditLog first, so "no silent networking" is verifiable
         // instead of just claimed. Empty today because there are no network call sites at all
         // yet (no downloader, no update checker, no analytics) — see NetworkAuditLog's own doc.

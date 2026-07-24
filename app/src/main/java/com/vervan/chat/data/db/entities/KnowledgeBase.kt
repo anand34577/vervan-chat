@@ -10,7 +10,7 @@ data class KnowledgeBase(
     val name: String,
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    // Phase 3, spec §17 — display customization and default-context wiring. Chunking profile
+    // display customization and default-context wiring. Chunking profile
     // deliberately not added yet (lowest-value field of this group per the plan).
     val icon: String = "MenuBook",
     val color: String? = null,

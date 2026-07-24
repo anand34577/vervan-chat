@@ -29,7 +29,7 @@ class DocumentViewerViewModel(private val app: VervanApp, private val documentId
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    /** Re-indexes this document from its stored file (spec §42 index repair). */
+    /** Re-indexes this document from its stored file (index repair). */
     fun reindex() {
         if (_reindexing.value) return
         viewModelScope.launch {

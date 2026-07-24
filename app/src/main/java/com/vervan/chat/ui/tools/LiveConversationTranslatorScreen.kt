@@ -115,7 +115,10 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
         scope.launch {
             try {
                 val prompt = "Translate the following from $sourceLang to $targetLang. Respond with ONLY the translation.\n\nText:\n$text"
-                val translated = OneShotLlm.run(app, prompt)?.trim()
+                val translated = OneShotLlm.run(
+                    app, prompt,
+                    runContext = com.vervan.chat.llm.ToolRunContext("tools/live-translator", "Live translator · $targetLang", text),
+                )?.trim()
                     ?: throw IllegalStateException("No generation model is active. Load one from Models to translate.")
                 turns = turns + TranslatedTurn(fromA, text, translated)
                 speak(translated, targetLang)

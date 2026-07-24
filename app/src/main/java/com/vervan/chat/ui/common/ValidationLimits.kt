@@ -1,7 +1,7 @@
 package com.vervan.chat.ui.common
 
 /**
- * Central §9 length-limit matrix — product guardrails, not database limits. Every persisted
+ * Central length-limit matrix — product guardrails, not database limits. Every persisted
  * or submitted text field should reference a constant here (via [BoundedTextField]) instead of
  * an unbounded `OutlinedTextField`, so limits stay consistent and are defined in exactly one place.
  */

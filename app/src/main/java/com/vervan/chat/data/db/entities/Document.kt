@@ -15,7 +15,7 @@ enum class DocumentStatus { READING, OCR_RUNNING, EXTRACTING, CHUNKING, EMBEDDIN
 data class Document(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val knowledgeBaseId: String,
-    // Workspace System spec §16: documents added from a workspace default into it (separate
+    // Workspace System: documents added from a workspace default into it (separate
     // from knowledgeBaseId, which groups documents for retrieval — a workspace can span
     // multiple knowledge bases).
     val workspaceId: String = Workspace.DEFAULT_WORKSPACE_ID,
@@ -26,9 +26,9 @@ data class Document(
     val failureReason: String? = null,
     val importedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null,
-    // Spec §40.27 — text came from on-device OCR (scanned PDF), not a native text layer.
+    // text came from on-device OCR (scanned PDF), not a native text layer.
     val ocrApplied: Boolean = false,
     // SHA-256 of the source file — lets a re-import of the same-named file detect whether the
-    // content actually changed (Phase 3, spec §20) instead of always treating it as a fresh copy.
+    // content actually changed instead of always treating it as a fresh copy.
     val contentHash: String? = null
 )

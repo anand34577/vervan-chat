@@ -7,7 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * Reduced-motion respect (Phase 7, spec §35/§38) — reads the system "remove animations"
+ * Reduced-motion respect — reads the system "remove animations"
  * accessibility setting directly rather than adding a separate in-app toggle; if the user
  * turned this on system-wide, every app should honor it, not just ones that also ask again.
  */

@@ -215,7 +215,7 @@ private fun VariantRow(
 
             when {
                 variantUi.installed -> OutlinedButton(onClick = onUninstall) { Text("Remove") }
-                // The device check is enforced before the download, never after it — spec §5.
+                // The device check is enforced before the download, never after it —
                 !variantUi.eligibility.canInstall -> AssistChip(
                     onClick = {},
                     enabled = false,
@@ -318,7 +318,7 @@ private fun EmptyCatalogCard(syncing: Boolean) {
 }
 
 /**
- * Explicit tap-to-accept, shown before every first download of a model (spec §11/§14). Renders the
+ * Explicit tap-to-accept, shown before every first download of a model. Renders the
  * reviewed licence facts as plain text rather than the model card's Markdown — model-card content
  * is publisher-controlled and must not be rendered as rich text in-app without sanitising.
  */

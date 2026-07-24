@@ -106,7 +106,7 @@ class ModelStoreRepository(
             Log.w(TAG, "Refusing install of ${variant.variantId}: another install is in progress")
             return false
         }
-        // Spec §14: never skip tap-to-accept, in either tier.
+        // : never skip tap-to-accept, in either tier.
         if (needsLicenseAcceptance(model)) {
             Log.w(TAG, "Refusing install of ${variant.variantId}: licence not accepted")
             return false

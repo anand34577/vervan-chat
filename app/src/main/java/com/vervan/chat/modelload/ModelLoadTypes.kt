@@ -19,7 +19,7 @@ enum class ModelLoadErrorCategory {
     PERMISSION_DENIED,
     CANCELLED,
     SWITCH_CONFLICT,
-    // §9.2 — a native call that hung past the watchdog timeout. Distinct from CANCELLED (user-
+    // a native call that hung past the watchdog timeout. Distinct from CANCELLED (user-
     // initiated) even though a timeout is technically implemented as cancelling the wrapping
     // coroutine — the caller didn't ask for this, the runtime did.
     TIMED_OUT,
@@ -43,7 +43,7 @@ data class EnsureLoadResult(
     val errorCategory: ModelLoadErrorCategory? = null,
     val errorMessage: String? = null,
     val retryable: Boolean = false,
-    // §11.3 — true when this load only succeeded by falling back to a lower-capability delegate
+    // true when this load only succeeded by falling back to a lower-capability delegate
     // than requested (GPU asked for, CPU actually used). The underlying engines already detected
     // this correctly; it just never reached callers before, so the UI had no way to disclose it.
     val delegateFallback: Boolean = false
@@ -67,7 +67,7 @@ data class ModelLoadInfo(
  * parameter so a future UI distinction has a hook without another signature change. */
 enum class LoadTrigger { CHAT_SEND, CHAT_AUTOLOAD, RAG_RETRIEVAL, VOICE_SESSION, MANUAL_MODEL_MANAGER, VALIDATION }
 
-/** Model Loading Strategy §13 — abstracts the real `ActivityManager` memory query so tests can
+/** Model Loading Strategy — abstracts the real `ActivityManager` memory query so tests can
  * supply fixed values, same reasoning as [GenerationDefaults] below. Neither native runtime
  * exposes its actual working-set size to this Kotlin layer, so the coordinator's estimate is
  * necessarily a proxy (file size + a context-scaled KV-cache guess) rather than exact accounting
@@ -78,13 +78,13 @@ interface ResourceMonitor {
 }
 
 /** Default used when no real [ResourceMonitor] is wired in (e.g. existing coordinator unit tests
- * that predate §13 and don't exercise it) — always reports abundant memory, so §13's pre-load
+ * that predate and don't exercise it) — always reports abundant memory, so pre-load
  * check never blocks a load unless a caller deliberately supplies a constrained monitor. */
 object UnconstrainedResourceMonitor : ResourceMonitor {
     override fun availableMemoryBytes(): Long = Long.MAX_VALUE
 }
 
-/** Model Loading Strategy §6.2 — Android's [android.content.ComponentCallbacks2.onTrimMemory]
+/** Model Loading Strategy — Android's [android.content.ComponentCallbacks2.onTrimMemory]
  * levels collapsed to the two the spec actually distinguishes: [MODERATE] (stop any speculative/
  * background preloading — informational today, since nothing in this app preloads a non-default
  * model) and [CRITICAL] (the OS may reclaim the loaded model soon; the coordinator proactively

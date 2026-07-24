@@ -20,7 +20,7 @@ enum class DevAction(val label: String, val instruction: String) {
     EXPLAIN_STACK_TRACE("Explain stack trace", "The following is a stack trace or error output. Explain what went wrong, likely root cause, and where to look in the code:")
 }
 
-/** Standalone code assistant (spec §23) — paste code, run one action, get a streamed
+/** Standalone code assistant — paste code, run one action, get a streamed
  * response. No project/file awareness, no execution sandbox — just generation over
  * whatever text is pasted in, same runtime as everything else. */
 class DevWorkspaceViewModel(private val app: VervanApp) : ViewModel() {

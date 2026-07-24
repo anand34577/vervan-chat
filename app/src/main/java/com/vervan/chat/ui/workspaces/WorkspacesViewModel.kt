@@ -17,7 +17,7 @@ class WorkspacesViewModel(app: VervanApp) : ViewModel() {
     private val workspaceManager = app.container.workspaceManager
     private val settingsRepository = app.container.settingsRepository
 
-    // Workspace switch confirmation (spec §2) — a one-shot message the screen shows as a
+    // Workspace switch confirmation — a one-shot message the screen shows as a
     // Snackbar then clears; not a StateFlow of persistent UI state.
     private val _confirmationMessage = MutableStateFlow<String?>(null)
     val confirmationMessage: StateFlow<String?> = _confirmationMessage

@@ -19,7 +19,7 @@ class StorageManager(context: Context) {
 
     /** [remainingDownloadBytes] + a flat overhead margin for temp/copy overhead during import
      * (ModelImportManager streams a second copy into its own storage — see
-     * ModelInstallationRepository's import step) + a fixed safety margin, per spec §8. Storage
+     * ModelInstallationRepository's import step) + a fixed safety margin, per Storage
      * can still be exhausted mid-write after this check passes; callers must handle that as
      * [ModelErrorCode.STORAGE_WRITE_FAILED], not just preflight. */
     fun checkAvailable(remainingDownloadBytes: Long, requiresImportCopy: Boolean) {

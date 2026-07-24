@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import java.util.UUID
 
 /**
- * One executed tool call, recorded for audit (spec §16.3 step 13 / §2.6 "the application
+ * One executed tool call, recorded for audit (/ "the application
  * owns … audit history"). The model *proposes*; the app *executes* and *records*. This row is
  * the durable proof of what actually happened, queryable from Diagnostics.
  */

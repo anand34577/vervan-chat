@@ -16,7 +16,7 @@ import java.security.spec.X509EncodedKeySpec
  * platform primitive that has been present since before minSdk.
  *
  * **The public key ships only inside the APK and is never published alongside the catalogue**
- * (spec §3). Serving the key next to the thing it authenticates would make the signature
+ *. Serving the key next to the thing it authenticates would make the signature
  * decorative: anyone who could replace the catalogue could replace the key with their own.
  *
  * ### Key rotation

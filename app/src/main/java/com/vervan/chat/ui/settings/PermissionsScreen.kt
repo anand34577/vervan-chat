@@ -35,7 +35,7 @@ import com.vervan.chat.ui.theme.SurfaceRole
 
 private data class PermissionInfo(val permission: String, val label: String, val why: String)
 
-/** Phase H — plain-language "why we ask" per permission, with a live granted/not-granted
+/** plain-language "why we ask" per permission, with a live granted/not-granted
  * status instead of just a description. Pairs with DiagnosticsScreen (linked from there and
  * from Settings). */
 private val PERMISSIONS = listOf(

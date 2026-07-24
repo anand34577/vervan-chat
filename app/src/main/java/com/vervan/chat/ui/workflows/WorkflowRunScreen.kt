@@ -124,7 +124,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             }
             error?.let { ErrorCard("Workflow couldn't continue", it, Modifier.padding(top = 8.dp)) }
 
-            // §7.5 vertical stepper — the current (or next-to-run) step stays expanded with its
+            // vertical stepper — the current (or next-to-run) step stays expanded with its
             // live output; finished steps collapse to a one-line summary, and steps that
             // haven't started yet show as a dimmed pending row.
             val currentIndex = steps.indexOfFirst { !it.done }.let { if (it < 0) steps.lastIndex else it }

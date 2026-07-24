@@ -5,7 +5,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * Cheap header inspection run before an artifact is accepted (spec §6.8/§10).
+ * Cheap header inspection run before an artifact is accepted.
  *
  * This is *not* a substitute for the SHA-256 check and does not try to be — a matching hash
  * already proves the bytes are the ones the catalogue signed. The probe exists for the case the

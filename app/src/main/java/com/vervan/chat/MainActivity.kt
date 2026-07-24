@@ -152,7 +152,7 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
-     * Resolves a launcher-shortcut extra (spec §37.3) into a deep navigation target.
+     * Resolves a launcher-shortcut extra into a deep navigation target.
      *
      * MainActivity is exported, so any third-party app can send `vervan_shortcut`. Validate the
      * value here at the trust boundary rather than letting an untrusted string reach

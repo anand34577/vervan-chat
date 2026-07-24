@@ -18,7 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A catalogue was rejected outright. The caller keeps its previous good catalogue — the client
- * must never end up with *no* catalogue because one fetch was malformed (spec §4.6). */
+ * must never end up with *no* catalogue because one fetch was malformed. */
 class CatalogRejectedException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /**
@@ -28,7 +28,7 @@ class CatalogRejectedException(message: String, cause: Throwable? = null) : Exce
  *
  *  - **Whole-catalogue rejection** (throws [CatalogRejectedException]) for anything that means we
  *    do not understand the document at all: an unrecognised `schemaVersion`, a missing top-level
- *    field, malformed JSON. Spec §2 requires failing *closed* here — a partial parse of an unknown
+ * field, malformed JSON. requires failing *closed* here — a partial parse of an unknown
  *    schema is how you end up installing something the publisher described differently.
  *
  *  - **Per-variant rejection** (variant dropped, catalogue kept) for a variant this build cannot
@@ -245,7 +245,7 @@ class CatalogParser(
             ?: throw EntryUnusable("artifact '$artifactId' has unknown provider '$providerWire'")
 
         val revision = obj.requireString("revision")
-        // Spec §14, non-negotiable: a moving ref means the bytes behind the signed hash can change
+        //, non-negotiable: a moving ref means the bytes behind the signed hash can change
         // under us. Only a full 40-hex commit SHA is accepted — not `main`, not a tag, not a short
         // SHA (which is ambiguous and can become ambiguous later as the repo grows).
         if (!COMMIT_SHA_PATTERN.matches(revision)) {
@@ -270,7 +270,7 @@ class CatalogParser(
      * Install paths come from a signed catalogue, but signing proves authorship, not correctness —
      * a mistake in the build pipeline should not be able to write outside the variant's own
      * directory. Rejects absolute paths, parent traversal, and anything the store is forbidden to
-     * install as an artifact regardless of declared role (spec §10): native libraries, dex, APKs
+     * install as an artifact regardless of declared role: native libraries, dex, APKs
      * and shell scripts are code, and this pipeline installs data.
      */
     private fun validateInstallPath(artifactId: String, path: String) {
@@ -295,7 +295,7 @@ class CatalogParser(
     /** Deliberately throws [EntryUnusable], not [CatalogRejectedException]: a field missing from
      * one entry says nothing about whether the rest of the document is trustworthy, and the
      * signature has already established that the whole document came from us. Only genuinely
-     * document-level problems (§2's unknown schema, absent `models[]`) reject the catalogue. */
+     * document-level problems (unknown schema, absent `models[]`) reject the catalogue. */
     private fun JSONObject.requireString(key: String): String {
         val value = optString(key)
         if (value.isBlank()) throw EntryUnusable("missing required field '$key'")

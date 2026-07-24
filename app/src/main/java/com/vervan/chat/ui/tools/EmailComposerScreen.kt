@@ -102,7 +102,10 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                     appendLine()
                     append("Respond with ONLY the drafted reply, no preamble.")
                 }
-                val flow = OneShotLlm.stream(app, prompt)
+                val flow = OneShotLlm.stream(
+                    app, prompt,
+                    runContext = com.vervan.chat.llm.ToolRunContext("tools/email-composer", "Email composer", listOf(originalMessage, keyPoints).filter { it.isNotBlank() }.joinToString("\n\n")),
+                )
                 if (flow == null) {
                     errorText = "No generation model is active. Load one from Models, then draft again."
                 } else {
