@@ -18,7 +18,11 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import com.vervan.chat.modelload.GenerationLoadable
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
@@ -34,6 +38,11 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
     private var generateCallCounter = 0
     private val sendInFlight = AtomicBoolean(false)
     private val stoppedSinceLastSend = AtomicBoolean(false)
+    // App-scoped scope for fire-and-forget native teardown in [generate] — previously a raw
+    // Thread{}.start() with no supervision, so a hang in Conversation.close() leaked the thread
+    // for the process lifetime. LlmEngine is a single process-lifetime instance (see AppContainer),
+    // so this scope is never cancelled, matching the existing modelDownload/modelLoad scopes.
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private data class LoadKey(
         val modelPath: String,
         val maxTokens: Int,
@@ -283,7 +292,13 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
             topK = topK.coerceIn(1, MAX_TOP_K_CEILING),
             topP = topP.coerceIn(0.1f, 1f).toDouble(),
             temperature = temperature.coerceIn(0f, 2f).toDouble(),
-            seed = randomSeed ?: 0
+            // LiteRT-LM treats SamplerConfig.seed = 0 as a real fixed seed (verified against the
+            // SDK's sampler wiring), so the previous `randomSeed ?: 0` made every "random" turn
+            // byte-identical to the previous one with the same prompt — the user-visible default
+            // configuration was fully deterministic. The llama.cpp path uses DEFAULT_SEED = -1
+            // for the same "no fixed seed" intent; LiteRT-LM has no equivalent sentinel, so sample
+            // a fresh 31-bit positive int per call instead.
+            seed = randomSeed ?: (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
         )
         // Always build a fresh Conversation for this turn instead of reusing the previous one.
         // This app reconstructs the *entire* conversation history as prompt text on every call
@@ -310,10 +325,16 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
             )
         )
         if (previousConversation != null) {
-            Thread {
-                runCatching { previousConversation.close() }
+            // Previously a raw Thread{}.start() — fire-and-forget with no supervision; a hang in
+            // the native close() leaked the thread for the process lifetime. A supervised IO
+            // coroutine gives the same non-blocking teardown with proper lifecycle and exception
+            // handling. `toClose` captures the non-null local so the lambda doesn't rely on
+            // smart-casting a nullable capture across the suspension boundary.
+            val toClose = previousConversation
+            backgroundScope.launch {
+                runCatching { toClose.close() }
                     .onFailure { Log.w(TAG, "generate() background close of previous conversation threw", it) }
-            }.start()
+            }
         }
         val activeConversation = conversation ?: conv
         val callId = ++generateCallCounter

@@ -160,7 +160,12 @@ class HttpRangeDownloader {
                     throw ModelDownloadException(ModelErrorCode.RANGE_NOT_SUPPORTED, "Requested range not satisfiable; partial file discarded, restart needed")
                 }
             }
-            HttpURLConnection.HTTP_NOT_FOUND -> throw ModelDownloadException(ModelErrorCode.HTTP_NOT_FOUND, "File not found (404): ${connection.url}")
+            // 410 Gone is grouped with 404 on purpose: for a catalogue pinned to an immutable
+            // commit SHA it means the revision was withdrawn, which is exactly as permanent as a
+            // 404 and must not be retried with backoff. Left in the generic `else` branch it would
+            // surface as UNKNOWN and be treated as transient.
+            HttpURLConnection.HTTP_NOT_FOUND, HttpURLConnection.HTTP_GONE ->
+                throw ModelDownloadException(ModelErrorCode.HTTP_NOT_FOUND, "File not found (HTTP $code): ${connection.url}")
             HttpURLConnection.HTTP_UNAUTHORIZED, HttpURLConnection.HTTP_FORBIDDEN ->
                 throw ModelDownloadException(ModelErrorCode.AUTHENTICATION_FAILED, "Authentication failed (HTTP $code)")
             in 500..599 -> throw ModelDownloadException(ModelErrorCode.HTTP_SERVER_ERROR, "Server error (HTTP $code)")

@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.personas
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,8 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,6 +89,9 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val importCardLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { vm.importCharacterCard(context, it) } }
+    val pickAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> uri?.let { vm.importAvatar(context, it) } }
 
     Scaffold(
         topBar = {
@@ -112,7 +118,10 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                     avatarPath?.let { path -> runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() }
                 }
                 Box(
-                    Modifier.size(64.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                    Modifier
+                        .size(64.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        .then(if (!isBuiltIn) Modifier.clickable { pickAvatarLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) } else Modifier),
                     contentAlignment = Alignment.Center
                 ) {
                     if (avatarBitmap != null) {
@@ -137,13 +146,25 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             }
             if (!isBuiltIn) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
-                    TextButton(onClick = { importCardLauncher.launch("image/png") }, modifier = Modifier.padding(top = 8.dp)) {
+                    TextButton(onClick = { pickAvatarLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.padding(top = 8.dp)) {
+                        Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(if (avatarPath != null) "Change image" else "Set avatar", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    if (avatarPath != null) {
+                        TextButton(onClick = vm::clearAvatar, modifier = Modifier.padding(top = 8.dp)) {
+                            Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Remove", modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
+                    TextButton(onClick = { importCardLauncher.launch("image/png") }) {
                         Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text("Import character card (.png)", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
                 Text(
-                    "Fills in Name, Description, and Instructions from a SillyTavern-format character card. Review before saving.",
+                    "Pick an image for this persona's avatar, or import a SillyTavern-format character card to fill in Name, Description, and Instructions. Review before saving.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,

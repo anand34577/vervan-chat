@@ -5,6 +5,7 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -74,6 +75,7 @@ class CrashLogManager(private val context: Context) {
 
     /** Reason → (title, body with guidance); null for exits not worth a log entry (normal
      * user/system lifecycle: swipe-away, permission change, app update, ...). */
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun describe(exit: ApplicationExitInfo): Pair<String, String>? {
         val detail = exit.description?.takeIf { it.isNotBlank() }?.let { "\nSystem detail: $it" } ?: ""
         return when (exit.reason) {

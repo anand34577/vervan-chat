@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -257,10 +258,24 @@ private fun PersonaCard(
     ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
+            val avatar = remember(persona.avatarPath) {
+                persona.avatarPath?.let { com.vervan.chat.model.ImageUtils.decodeThumbnail(it, 128) }
+            }
             Box(
                 Modifier.size(32.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer),
                 contentAlignment = Alignment.Center
-            ) { Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+            ) {
+                if (avatar != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = avatar.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(32.dp).clip(MaterialTheme.shapes.small)
+                    )
+                } else {
+                    Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
             Column(Modifier.weight(1f).padding(start = 8.dp)) {
                 Text(persona.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (persona.description.isNotBlank()) {

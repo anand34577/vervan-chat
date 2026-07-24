@@ -63,12 +63,21 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         var bytesCopied = 0L
         var lastProgressBytes = 0L
         onProgress("Copying ${name.substringBeforeLast('.')}…")
+        // Resolve the input stream outside the `?.use` so a null return (cloud providers, revoked
+        // SAF grants, content:// schemes we can't read) still cleans up the empty destination file
+        // we just allocated on disk — otherwise the leak accumulates one model-sized file per
+        // failed import attempt, with no user-visible signal.
+        val input = context.contentResolver.openInputStream(uri)
+        if (input == null) {
+            dest.delete()
+            return@withContext ImportResult.Rejected("Could not open selected file")
+        }
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            input.use { src ->
                 dest.outputStream().use { output ->
                     val buffer = ByteArray(1 shl 20)
                     while (true) {
-                        val read = input.read(buffer)
+                        val read = src.read(buffer)
                         if (read == -1) break
                         output.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
@@ -79,7 +88,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
                         }
                     }
                 }
-            } ?: return@withContext ImportResult.Rejected("Could not open selected file")
+            }
         } catch (e: java.io.IOException) {
             dest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the model (${e.message})")
@@ -147,10 +156,15 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             return@withContext ImportResult.Rejected("Vision projectors must be GGUF files.")
         }
         val mmprojDest = File(modelsDir, "${System.currentTimeMillis()}_$mmprojName")
+        val mmprojInput = context.contentResolver.openInputStream(mmprojUri)
+        if (mmprojInput == null) {
+            mmprojDest.delete()
+            return@withContext ImportResult.Rejected("Could not open selected projector file")
+        }
         try {
-            context.contentResolver.openInputStream(mmprojUri)?.use { input ->
-                mmprojDest.outputStream().use { output -> input.copyTo(output) }
-            } ?: return@withContext ImportResult.Rejected("Could not open selected projector file")
+            mmprojInput.use { src ->
+                mmprojDest.outputStream().use { output -> src.copyTo(output) }
+            }
         } catch (e: java.io.IOException) {
             mmprojDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the projector (${e.message})")
@@ -178,10 +192,15 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             return@withContext ImportResult.Rejected("LoRA adapters must be GGUF files.")
         }
         val loraDest = File(modelsDir, "${System.currentTimeMillis()}_$loraName")
+        val loraInput = context.contentResolver.openInputStream(loraUri)
+        if (loraInput == null) {
+            loraDest.delete()
+            return@withContext ImportResult.Rejected("Could not open selected LoRA file")
+        }
         try {
-            context.contentResolver.openInputStream(loraUri)?.use { input ->
-                loraDest.outputStream().use { output -> input.copyTo(output) }
-            } ?: return@withContext ImportResult.Rejected("Could not open selected LoRA file")
+            loraInput.use { src ->
+                loraDest.outputStream().use { output -> src.copyTo(output) }
+            }
         } catch (e: java.io.IOException) {
             loraDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the LoRA adapter (${e.message})")
@@ -238,10 +257,15 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
 
         onProgress("Copying tokenizer…")
         val tokenizerDest = File(modelsDir, "${System.currentTimeMillis()}_$tokenizerName")
+        val tokenizerInput = context.contentResolver.openInputStream(tokenizerUri)
+        if (tokenizerInput == null) {
+            tokenizerDest.delete()
+            return@withContext ImportResult.Rejected("Could not open selected tokenizer file")
+        }
         try {
-            context.contentResolver.openInputStream(tokenizerUri)?.use { input ->
-                tokenizerDest.outputStream().use { output -> input.copyTo(output) }
-            } ?: return@withContext ImportResult.Rejected("Could not open selected tokenizer file")
+            tokenizerInput.use { src ->
+                tokenizerDest.outputStream().use { output -> src.copyTo(output) }
+            }
         } catch (e: java.io.IOException) {
             tokenizerDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the tokenizer (${e.message})")

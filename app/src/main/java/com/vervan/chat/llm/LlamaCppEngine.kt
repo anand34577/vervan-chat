@@ -137,14 +137,16 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
 
     /**
      * [GenerationLoadable] conformance — translates LiteRT-LM-shaped parameters onto llama.cpp's
-     * actual knobs: [maxTokens] becomes the context size (`n_ctx`); [backendPreference]
-     * GPU_ONLY/CPU_ONLY pin full Vulkan offload or none, AUTO tries full offload and falls back
-     * to CPU-only on failure (mirroring `LlmEngine`'s own AUTO retry ladder in spirit, since
-     * llama.cpp/Vulkan has no NPU concept to try first). [maxNumImages]/[preferredBackendHint]/
+     * actual knobs: [maxTokens] becomes the context size (`n_ctx`); [backendPreference] maps onto
+     * `n_gpu_layers` (Vulkan offload): GPU_ONLY loads with the full GPU layer count and fails if
+     * the driver can't, CPU_ONLY loads with 0, and AUTO tries GPU first and falls back to CPU on
+     * any native load failure (out of device memory, shader compile failure, no Vulkan device).
+     * The layer count offloaded is [pendingGpuLayerCount] when the user set a per-model override,
+     * otherwise the whole model ([pendingLayerCount] + 1 to cover the output layer; llama.cpp
+     * clamps anything above the real count). [maxNumImages]/[preferredBackendHint]/
      * [enableSpeculativeDecoding] have no llama.cpp equivalent in this pass and are ignored —
      * vision is determined purely by whether [pendingMmprojPath] is set, and there is no
-     * draft-model speculative decoding wired up here. [pendingGpuLayerCount], when set, overrides
-     * the usual full-offload-or-none binary with a specific layer count.
+     * draft-model speculative decoding wired up here.
      */
     override fun loadModel(
         modelPath: String,
@@ -160,21 +162,15 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         if (backendPreference == LlmEngine.BackendPreference.NPU_ONLY) {
             throw IllegalArgumentException("llama.cpp does not support Android NPU execution. Choose Auto, GPU, or CPU.")
         }
-        val requestedGpuLayers = pendingGpuLayerCount
-            ?: pendingLayerCount?.takeIf { it > 0 }?.plus(1)
-            ?: FULL_GPU_OFFLOAD
+        val gpuLayers = pendingGpuLayerCount?.coerceAtLeast(0)
+            ?: pendingLayerCount?.plus(1)
+            ?: ALL_GPU_LAYERS
         val attempts = when (backendPreference) {
             LlmEngine.BackendPreference.CPU_ONLY -> listOf(0)
-            LlmEngine.BackendPreference.GPU_ONLY -> listOf(requestedGpuLayers)
-            LlmEngine.BackendPreference.AUTO -> buildList {
-                add(requestedGpuLayers)
-                val finite = if (requestedGpuLayers == FULL_GPU_OFFLOAD) 32 else requestedGpuLayers
-                add((finite * 3 / 4).coerceAtLeast(1))
-                add((finite / 2).coerceAtLeast(1))
-                add((finite / 4).coerceAtLeast(1))
-                add(0)
-            }.distinct()
-            LlmEngine.BackendPreference.NPU_ONLY -> error("handled above")
+            LlmEngine.BackendPreference.GPU_ONLY -> listOf(gpuLayers.coerceAtLeast(1))
+            // AUTO: GPU first, CPU as the fallback rung. A per-model override of 0 GPU layers
+            // means the user already decided this model stays on CPU, so skip the GPU attempt.
+            else -> if (gpuLayers > 0) listOf(gpuLayers, 0) else listOf(0)
         }
         var lastError: Throwable? = null
         for (layers in attempts) {
@@ -213,7 +209,12 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         repeatLastN: Int = 64,
         chatTemplateOverride: String? = null,
         assistantPrefill: String? = null,
-        systemPrompt: String? = null
+        systemPrompt: String? = null,
+        // Hard cap on reasoning tokens before the native loop force-injects `</think>` — only
+        // acts when [assistantPrefill] left an open `<think>` block. -1 = no cap (see
+        // nativeGenerate). This is the real reasoning-budget control llama.cpp's raw
+        // (non-Jinja) template path otherwise can't express.
+        reasoningBudget: Int = -1
     ): Flow<String> = callbackFlow flow@{
         // Labeled + this@flow.close() throughout, not bare close() — this class has its own
         // close() (GenerationLoadable conformance), which would otherwise shadow/collide with
@@ -236,7 +237,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
                 val error = LlamaCppJni.nativeGenerate(
                     activeHandle, prompt, imagePath, temperature, topP, topK, minP,
                     repeatPenalty, repeatLastN, randomSeed ?: DEFAULT_SEED, maxTokens, chatTemplateOverride,
-                    assistantPrefill, systemPrompt, callback
+                    assistantPrefill, systemPrompt, reasoningBudget, callback
                 )
                 if (error != null) throw IllegalStateException(error)
                 this@flow.close()
@@ -275,8 +276,11 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
 
     companion object {
         private const val TAG = "LlamaCppEngine"
-        private const val FULL_GPU_OFFLOAD = 999
         private const val DEFAULT_SEED = -1
+
+        /** "Offload everything" when the model's real layer count isn't known yet — llama.cpp
+         * clamps n_gpu_layers to the model's actual count, so any large value means "all". */
+        private const val ALL_GPU_LAYERS = 999
 
         /** `llama_chat_builtin_templates()` names, for the chat-template-override dropdown —
          * static to the llama.cpp build, not per-model, so fetched once and cached. */

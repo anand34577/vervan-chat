@@ -8,9 +8,12 @@ import fi.iki.elonen.NanoHTTPD
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -39,6 +42,16 @@ class LocalApiServer(
 
     companion object {
         private const val TAG = "LocalApiServer"
+        // PipedInputStream's default 1 KB buffer fills in a single chunk under bursty token
+        // production; 64 KB smooths that out without allocating a large heap.
+        private const val SSE_PIPE_SIZE = 64 * 1024
+        // If the HTTP client disconnects mid-stream, NanoHTTPD stops draining the pipe and the
+        // producer coroutine's pipedOut.write() blocks forever — the original try/finally never
+        // ran because nothing cancelled the coroutine from inside the blocking call. Each write
+        // is wrapped in withTimeout(runInterruptible{ write }) so a stalled consumer breaks the
+        // underlying wait() via Thread.interrupt() and the coroutine tears down cleanly instead
+        // of leaking for the life of the server.
+        private const val SSE_WRITE_TIMEOUT_MS = 30_000L
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -93,7 +106,7 @@ class LocalApiServer(
 
         val completionId = "chatcmpl-${System.currentTimeMillis()}"
         return if (stream) {
-            val pipedIn = PipedInputStream()
+            val pipedIn = PipedInputStream(SSE_PIPE_SIZE)
             val pipedOut = PipedOutputStream(pipedIn)
             streamingScope.launch {
                 try {
@@ -105,10 +118,24 @@ class LocalApiServer(
                         params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
                         systemPrompt = systemPrompt
                     ).collect { chunk ->
-                        pipedOut.write(sseChunk(completionId, model.displayName, chunk).toByteArray())
-                        pipedOut.flush()
+                        val bytes = sseChunk(completionId, model.displayName, chunk).toByteArray()
+                        // Abort the stream if the consumer has stopped draining — see SSE_WRITE_TIMEOUT_MS.
+                        try {
+                            withTimeout(SSE_WRITE_TIMEOUT_MS) {
+                                runInterruptible { pipedOut.write(bytes); pipedOut.flush() }
+                            }
+                        } catch (e: TimeoutCancellationException) {
+                            Log.w(TAG, "SSE client stopped reading; aborting stream", e)
+                            throw kotlinx.coroutines.CancellationException("SSE consumer gone")
+                        }
                     }
-                    pipedOut.write("data: [DONE]\n\n".toByteArray())
+                    try {
+                        withTimeout(SSE_WRITE_TIMEOUT_MS) {
+                            runInterruptible { pipedOut.write("data: [DONE]\n\n".toByteArray()) }
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        Log.w(TAG, "SSE client stopped reading before [DONE]; aborting", e)
+                    }
                 } catch (t: Throwable) {
                     Log.e(TAG, "streaming chat completion failed", t)
                     runCatching { pipedOut.write(sseChunk(completionId, model.displayName, "[error: ${t.toUserMessage()}]").toByteArray()) }
