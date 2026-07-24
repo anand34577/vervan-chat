@@ -19,7 +19,12 @@ data class Chunk(
     val tokenCount: Int,
     // Null until an embedding model is active and has processed this chunk — chunks
     // stay keyword-searchable in the meantime.
-    val embedding: ByteArray? = null
+    val embedding: ByteArray? = null,
+    // ModelInfo.id of whichever embedding model produced [embedding] — null on chunks embedded
+    // before this field existed. Lets RetrievalEngine tell "stale embedding from a different
+    // model" apart from "current model, no match" by exact id rather than by vector dimension
+    // alone, which two different models can share by coincidence. Mirrors Memory.embeddingModelId.
+    val embeddingModelId: String? = null
 ) {
     override fun equals(other: Any?) = other is Chunk && id == other.id
     override fun hashCode() = id.hashCode()

@@ -355,9 +355,19 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /**
      * [resolveGenerationModelForChat]'s counterpart for the one call site that's actually about
      * to start a fresh turn ([beginGeneration]) rather than reflect already-resident state: when
-     * neither the chat nor its folder has explicitly pinned a model and "Model selection: Auto"
-     * is on, picks among every installed GENERATION model via [com.vervan.chat.llm.AutoModelSelector]
-     * instead of always falling back to "whatever happens to be currently loaded".
+     * neither the chat nor its folder has explicitly pinned a model, AND nothing is currently
+     * loaded for GENERATION, and "Model selection: Auto" is on, picks among every installed
+     * GENERATION model via [com.vervan.chat.llm.AutoModelSelector] instead of leaving the user
+     * with no model at all.
+     *
+     * A model already resident (loaded manually, or by a previous turn/screen) always wins over
+     * Auto — Auto's job is to pick a starting point from cold, not to second-guess or evict
+     * whatever the user is already talking to. Without this ordering, Auto would re-run on every
+     * single turn and could silently swap out a model the user explicitly loaded (e.g. from Model
+     * Manager) for a smaller/larger one chosen purely by size heuristics, which is surprising and
+     * wastes a reload. This also keeps this resolver in sync with [resolveGenerationModel]'s
+     * display-path ordering (chat pin > currently loaded > default), so the "Ready"/attachment
+     * capability the UI shows for the loaded model matches what generation actually uses.
      *
      * Deliberately NOT used by [resolveGenerationModelForChat]'s other call sites (per-hop model
      * lookup inside the tool loop, display/preload state, `inspectContext`) — once this picks a
@@ -371,6 +381,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         ChatDefaults.modelId(chatRow, folderRow)?.let { id ->
             db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
         }
+        app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId?.let { id ->
+            db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
+        }
         if (app.container.settingsRepository.autoModelSelectionEnabled.first()) {
             val installed = db.modelDao().observeModels().first().filter { it.role == ModelRole.GENERATION }
             // A single installed model has nothing to choose between — skip straight to the
@@ -381,9 +394,6 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     installed, effectiveProfileType, needsVision = imagePath != null, needsAudio = audioPath != null
                 )?.let { return it }
             }
-        }
-        app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId?.let { id ->
-            db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
         }
         return db.modelDao().getActiveModel(ModelRole.GENERATION)
     }

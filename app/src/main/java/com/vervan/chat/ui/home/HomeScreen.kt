@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -196,6 +197,21 @@ fun HomeScreen(
                         onOpenKnowledge = onOpenKnowledge
                     )
 
+                    HomeNavigationHub(
+                        onOpenChats = onOpenChats,
+                        onOpenWorkspaces = onOpenWorkspaces,
+                        onOpenKnowledge = onOpenKnowledge,
+                        onOpenLibrary = onOpenLibrary,
+                    )
+
+                    WorkspaceStatusSection(
+                        model = activeModel,
+                        workspaceName = activeWorkspaceName,
+                        indexingCount = indexingDocuments.size,
+                        onOpenModels = onOpenModels,
+                        onOpenWorkspaces = onOpenWorkspaces,
+                    )
+
                     if (expanded) {
                         Row(
                             Modifier.fillMaxWidth(),
@@ -204,7 +220,7 @@ fun HomeScreen(
                         ) {
                             Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                                 ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                                QuickStartSection(onOpenNotes, onOpenProjects, onOpenLibrary, onOpenModels)
+                                QuickStartSection(onOpenNotes, onOpenProjects, onOpenModels)
                             }
                             Column(Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                                 ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
@@ -212,11 +228,46 @@ fun HomeScreen(
                         }
                     } else {
                         ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                        QuickStartSection(onOpenNotes, onOpenProjects, onOpenLibrary, onOpenModels)
+                        QuickStartSection(onOpenNotes, onOpenProjects, onOpenModels)
                         ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HomeNavigationHub(
+    onOpenChats: () -> Unit,
+    onOpenWorkspaces: () -> Unit,
+    onOpenKnowledge: () -> Unit,
+    onOpenLibrary: () -> Unit,
+) {
+    Column {
+        VervanSectionHeader("Find your way")
+        Text(
+            "Everything you use most is one tap away.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = Space.sm),
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+            maxItemsInEachRow = 2,
+        ) {
+            val tile = Modifier.weight(1f).heightIn(min = 96.dp)
+            val chats = vervanAccentFor(1)
+            val spaces = vervanAccentFor(2)
+            val knowledge = vervanAccentFor(3)
+            val library = vervanAccentFor(4)
+            ActionTile(Icons.AutoMirrored.Filled.Chat, "Chats", "Continue or start a conversation", onOpenChats, tile, iconContainerColor = chats.container, iconTint = chats.onContainer)
+            ActionTile(Icons.Filled.Dashboard, "Spaces", "Switch work, study, and personal context", onOpenWorkspaces, tile, iconContainerColor = spaces.container, iconTint = spaces.onContainer)
+            ActionTile(Icons.AutoMirrored.Filled.MenuBook, "Knowledge", "Manage documents used for cited answers", onOpenKnowledge, tile, iconContainerColor = knowledge.container, iconTint = knowledge.onContainer)
+            ActionTile(Icons.AutoMirrored.Filled.LibraryBooks, "Library", "Personas, templates, workflows, and saved items", onOpenLibrary, tile, iconContainerColor = library.container, iconTint = library.onContainer)
         }
     }
 }
@@ -624,7 +675,6 @@ private fun relativeTime(timestamp: Long): String {
 private fun QuickStartSection(
     onOpenNotes: () -> Unit,
     onOpenProjects: () -> Unit,
-    onOpenLibrary: () -> Unit,
     onOpenModels: () -> Unit
 ) {
     Column {
@@ -636,14 +686,13 @@ private fun QuickStartSection(
             maxItemsInEachRow = 2
         ) {
             val tile = Modifier.weight(1f).heightIn(min = 84.dp)
-            val a0 = vervanAccentFor(0); val a1 = vervanAccentFor(1); val a2 = vervanAccentFor(2); val a3 = vervanAccentFor(3)
+            val a0 = vervanAccentFor(0); val a1 = vervanAccentFor(1); val a2 = vervanAccentFor(2)
             // "Ask documents" used to be a tile here too — it's already the hero's own quick-ask
             // chip right above, so this repeated the exact same action on the same screen.
             // Model setup fills the same "first thing a new user needs" role without duplicating it.
             ActionTile(Icons.Filled.AutoAwesome, "Set up a model", "Import or download a local model", onOpenModels, tile, iconContainerColor = a0.container, iconTint = a0.onContainer)
             ActionTile(Icons.Filled.Edit, "Write a note", "Capture and shape an idea", onOpenNotes, tile, iconContainerColor = a1.container, iconTint = a1.onContainer)
             ActionTile(Icons.AutoMirrored.Filled.MenuBook, "Open projects", "Keep long-running work together", onOpenProjects, tile, iconContainerColor = a2.container, iconTint = a2.onContainer)
-            ActionTile(Icons.AutoMirrored.Filled.LibraryBooks, "Browse library", "Personas, prompts, and saved work", onOpenLibrary, tile, iconContainerColor = a3.container, iconTint = a3.onContainer)
         }
     }
 }
