@@ -99,6 +99,8 @@ import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.data.db.entities.ToolApprovalMode
+import com.vervan.chat.data.db.entities.canSupportAudio
+import com.vervan.chat.data.db.entities.canSupportVision
 import com.vervan.chat.data.db.entities.displayName
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
@@ -107,6 +109,7 @@ import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.theme.VervanMono
@@ -117,7 +120,11 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ModelManagerScreen(onBack: () -> Unit = {}, onOpenCalculator: () -> Unit = {}) {
+fun ModelManagerScreen(
+    onBack: () -> Unit = {},
+    onOpenCalculator: () -> Unit = {},
+    onOpenStore: () -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ModelManagerViewModel = viewModel(factory = viewModelFactory {
         initializer { ModelManagerViewModel(app) }
@@ -295,6 +302,13 @@ fun ModelManagerScreen(onBack: () -> Unit = {}, onOpenCalculator: () -> Unit = {
                 AvailableForDownloadSection(catalogStates, onDownload = { vm.downloadModel(it.modelId, it.version) })
                 Box(Modifier.height(Space.lg))
             }
+
+            // Entry point to the curated Model Store (com.vervan.chat.store). Kept as a distinct
+            // destination rather than merged into the list above: the store's catalogue is signed
+            // and fetched remotely, its entries have per-runtime variants and per-device
+            // eligibility, and it installs through its own content-addressed pipeline.
+            StoreEntryCard(onOpenStore)
+            Box(Modifier.height(Space.lg))
 
             ImportCard(
                 importing = importing,
@@ -905,14 +919,32 @@ private fun ModelEditDialog(
     onSave: (ModelInfo) -> Unit
 ) {
     var displayName by remember(model.id) { mutableStateOf(model.displayName) }
+    // True for GGUF/llama.cpp models — used both inside the Configure dialog body and in the
+    // Save action (which lives in a separate scope), so declared at the top of the composable.
+    val isLlamaCpp = model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP
     // Toggle instead of Auto/On/Off (user ask): a model's capability is simply on or off,
     // defaulting to on until the model actually proves otherwise (see reconcileCapabilities).
-    var vision by remember(model.id) { mutableStateOf(model.supportsVision != false) }
-    var audio by remember(model.id) { mutableStateOf(model.supportsAudio != false) }
+    // A toggle is only meaningful when the engine can physically deliver the capability —
+    // llama.cpp needs an mmproj projector for vision (canSupportVision) and has no audio-input
+    // JNI at all (canSupportAudio). When the prerequisite is missing the toggle stays off and
+    // renders disabled, instead of letting the user turn on something that can never work.
+    val visionSupported = remember(model.id, model.mmprojPath) { model.canSupportVision() }
+    val audioSupported = remember(model.id, model.engine) { model.canSupportAudio() }
+    var vision by remember(model.id) { mutableStateOf(visionSupported && model.supportsVision != false) }
+    var audio by remember(model.id) { mutableStateOf(audioSupported && model.supportsAudio != false) }
     var tools by remember(model.id) { mutableStateOf(model.supportsTools != false) }
     var thinking by remember(model.id) { mutableStateOf(model.supportsThinking != false) }
     var mtpEnabled by remember(model.id) { mutableStateOf(model.mtpEnabled) }
-    var backend by remember(model.id) { mutableStateOf(model.preferredBackend) }
+    // llama.cpp has no NPU backend — a stale NPU choice persisted by an older build is shown
+    // (and re-saved) as AUTO, which is what the load coordinator resolves it to anyway.
+    var backend by remember(model.id) {
+        mutableStateOf(
+            if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP &&
+                model.preferredBackend == BackendChoice.NPU
+            ) BackendChoice.AUTO
+            else model.preferredBackend
+        )
+    }
     var approvalMode by remember(model.id) { mutableStateOf(model.toolApprovalMode) }
 
     // Every generation-default field is "use the app-wide Settings value" until the user
@@ -1075,25 +1107,25 @@ private fun ModelEditDialog(
                     // generation — an embedding model only ever turns text into a vector, so
                     // none of these apply and showing them was pure confusion.
                     if (isGeneration) {
-                        val isLlamaCpp = model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP
                         SectionLabel("Performance mode")
                         if (expertMode) {
+                            // llama.cpp offloads via Vulkan and has no NPU backend, so GGUF
+                            // models get Auto/GPU/CPU only.
+                            val backendChoices = if (isLlamaCpp) listOf(
+                                BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU (Vulkan)",
+                                BackendChoice.CPU to "CPU"
+                            ) else listOf(
+                                BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU",
+                                BackendChoice.CPU to "CPU", BackendChoice.NPU to "NPU"
+                            )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                // llama.cpp/Vulkan has no NPU backend — hide that chip for a GGUF model.
-                                (if (isLlamaCpp) {
-                                    listOf(BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU", BackendChoice.CPU to "CPU")
-                                } else {
-                                    listOf(
-                                        BackendChoice.AUTO to "Auto", BackendChoice.GPU to "GPU",
-                                        BackendChoice.CPU to "CPU", BackendChoice.NPU to "NPU"
-                                    )
-                                }).forEach { (choice, label) ->
+                                backendChoices.forEach { (choice, label) ->
                                     VervanFilterChip(selected = backend == choice, onClick = { backend = choice }, label = { Text(label) })
                                 }
                             }
                             Text(
                                 when {
-                                    isLlamaCpp && backend == BackendChoice.AUTO -> "Tries GPU (Vulkan), then falls back to CPU."
+                                    backend == BackendChoice.AUTO && isLlamaCpp -> "Tries Vulkan GPU offload, then falls back to CPU."
                                     backend == BackendChoice.AUTO -> "Tries NPU, then GPU, then falls back to CPU."
                                     else -> "Strict: use ${backend.name} only, with no fallback."
                                 },
@@ -1128,8 +1160,18 @@ private fun ModelEditDialog(
 
                         SectionDivider()
                         SectionLabel("Capabilities")
-                        CapabilityToggle("Vision", vision) { vision = it }
-                        CapabilityToggle("Audio", audio) { audio = it }
+                        CapabilityToggle(
+                            "Vision", vision, enabled = visionSupported,
+                            disabledHint = if (!visionSupported)
+                                "Needs an mmproj projector file — re-import this GGUF with one to enable vision."
+                            else null
+                        ) { vision = it }
+                        CapabilityToggle(
+                            "Audio", audio, enabled = audioSupported,
+                            disabledHint = if (!audioSupported)
+                                "llama.cpp has no audio input in this build."
+                            else null
+                        ) { audio = it }
                         CapabilityToggle("Tools", tools) { tools = it }
                         CapabilityToggle("Thinking", thinking) { thinking = it }
                         // A load that couldn't actually deliver a capability the user asked for
@@ -1271,9 +1313,19 @@ private fun ModelEditDialog(
                         if (isLlamaCpp && expertMode) {
                             SectionDivider()
                             SectionLabel("Advanced (llama.cpp)")
+                            // GPU layers: default (override off) = offload the whole model on
+                            // GPU/Auto; 0 keeps this model on CPU even under Auto.
+                            run {
+                                val maxGpuLayers = ((model.layerCount ?: 32) + 1).toFloat()
+                                OverrideSlider(
+                                    "GPU layers (Vulkan)", gpuLayerCountOn, { gpuLayerCountOn = it },
+                                    gpuLayerCount.coerceIn(0f, maxGpuLayers), { gpuLayerCount = it },
+                                    maxGpuLayers, "%.0f", 0f..maxGpuLayers
+                                )
+                            }
                             OverrideSlider(
-                                "GPU layers", gpuLayerCountOn, { gpuLayerCountOn = it }, gpuLayerCount, { gpuLayerCount = it },
-                                (model.layerCount ?: 32).toFloat(), "%.0f", 0f..(model.layerCount?.toFloat() ?: 100f), steps = 10
+                                "Vulkan device index", vulkanDeviceIndexOn, { vulkanDeviceIndexOn = it },
+                                vulkanDeviceIndex, { vulkanDeviceIndex = it }, 0f, "%.0f", 0f..3f, steps = 2
                             )
                             OverrideSlider(
                                 "CPU threads", cpuThreadsOn, { cpuThreadsOn = it }, cpuThreads, { cpuThreads = it },
@@ -1305,7 +1357,6 @@ private fun ModelEditDialog(
                                 "KV cache type", kvCacheTypeOn, { kvCacheTypeOn = it }, kvCacheType,
                                 { kvCacheType = it }, listOf("f16", "q8_0", "q4_0"), defaultValue = kvCacheTypeDefault
                             )
-                            OverrideSlider("Vulkan device index", vulkanDeviceIndexOn, { vulkanDeviceIndexOn = it }, vulkanDeviceIndex, { vulkanDeviceIndex = it }, 0f, "%.0f", 0f..4f)
                             OverrideField("RoPE freq base", ropeFreqBaseOn, { ropeFreqBaseOn = it }, ropeFreqBase, { ropeFreqBase = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
                             OverrideField("RoPE freq scale", ropeFreqScaleOn, { ropeFreqScaleOn = it }, ropeFreqScale, { ropeFreqScale = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
                             OverrideField(
@@ -1373,20 +1424,36 @@ private fun ModelEditDialog(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
-}
-
-@Composable
 private fun SectionDivider() {
     HorizontalDivider(Modifier.padding(top = 10.dp), color = vervanSubtleDividerColor())
 }
 
 @Composable
-private fun CapabilityToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+private fun CapabilityToggle(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    disabledHint: String? = null,
+    onChange: (Boolean) -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
+        }
+        if (!enabled && disabledHint != null) {
+            Text(
+                disabledHint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
     }
 }
 
@@ -2014,4 +2081,23 @@ private fun formatEta(seconds: Long): String = when {
     seconds < 60 -> "$seconds sec"
     seconds < 3600 -> "${seconds / 60} min"
     else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
+}
+
+/** Navigation affordance for the curated Model Store. */
+@Composable
+private fun StoreEntryCard(onOpenStore: () -> Unit) {
+    com.vervan.chat.ui.common.ContentCard {
+        Column(Modifier.padding(Space.lg)) {
+            Text("Model Store", style = MaterialTheme.typography.titleSmall)
+            Box(Modifier.height(Space.xs))
+            Text(
+                "Browse the curated catalogue of models reviewed for this app. Weights download " +
+                    "directly from their publisher.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Box(Modifier.height(Space.sm))
+            Button(onClick = onOpenStore) { Text("Open Model Store") }
+        }
+    }
 }

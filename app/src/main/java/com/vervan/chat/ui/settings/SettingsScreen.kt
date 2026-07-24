@@ -3,6 +3,7 @@ package com.vervan.chat.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -22,9 +23,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lock
@@ -49,11 +52,14 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,7 +68,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -72,14 +77,21 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.settings.AccentTheme
+import com.vervan.chat.data.settings.ThemeMode
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.swatchColor
+import kotlinx.coroutines.launch
+
+private const val GITHUB_REPOSITORY_URL = "https://github.com/anand34577/vervan-chat"
 
 private data class SettingsDestination(
     val icon: ImageVector,
@@ -117,6 +129,16 @@ fun SettingsScreen(
     val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
     val userName by app.container.settingsRepository.userName.collectAsState(initial = "")
     val userOccupation by app.container.settingsRepository.userOccupation.collectAsState(initial = "")
+    val themeMode by app.container.settingsRepository.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+    val scope = rememberCoroutineScope()
+    // Live build label from PackageInfo — the footer used to hardcode "version 0.1", which drifted
+    // from the actual release on every bump. Read once; it can't change during the session.
+    val versionLabel = remember {
+        runCatching {
+            val info = app.packageManager.getPackageInfo(app.packageName, 0)
+            "version ${info.versionName}"
+        }.getOrDefault("version 0.1")
+    }
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
@@ -210,6 +232,53 @@ fun SettingsScreen(
                     )
                 }
             }
+            // Model readiness — the single most important state for an on-device AI app: whether a
+            // model is loaded and ready. Surfacing it here answers "can I chat right now?" without
+            // forcing a dive into the Models row's subtitle. Both states link straight to model mgr.
+            val hasActiveModel = activeModel != null
+            SystemStatusStrip(
+                title = if (hasActiveModel) "Model ready" else "No model active",
+                body = activeModel?.displayName
+                    ?: if (modelCount.isEmpty()) "Download or import a model to get started."
+                    else "Choose a model to start chatting.",
+                tone = if (hasActiveModel) StatusTone.Ready else StatusTone.Warning,
+                actionLabel = if (hasActiveModel) "Manage" else "Add model",
+                onAction = onOpenModels,
+                modifier = Modifier.padding(top = Space.md)
+            )
+            // Quick theme switch — appearance is the most-reached-for setting, so the theme mode
+            // lives one tap here rather than only behind the Appearance screen. Writes the same
+            // store value, so this control and the Appearance chips stay in sync.
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                shape = MaterialTheme.shapes.large,
+                colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+                border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconAffordance(icon = Icons.Filled.Palette, size = IconAffordanceSize.Compact)
+                    Text("Theme", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = Space.md))
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .padding(start = Space.md)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ThemeMode.entries.forEach { mode ->
+                            VervanFilterChip(
+                                selected = themeMode == mode,
+                                onClick = { scope.launch { app.container.settingsRepository.setThemeMode(mode) } },
+                                label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
+                    }
+                }
+            }
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
@@ -236,7 +305,40 @@ fun SettingsScreen(
                         com.vervan.chat.ui.common.SectionRow(
                             title = "Vervan Chat",
                             icon = Icons.Filled.AutoAwesome,
-                            subtitle = "Private on-device AI workspace · version 0.1"
+                            subtitle = "Private on-device AI workspace · $versionLabel"
+                        )
+                    },
+                    {
+                        com.vervan.chat.ui.common.SectionRow(
+                            title = "Source code on GitHub",
+                            subtitle = "github.com/anand34577/vervan-chat",
+                            icon = Icons.Filled.Code,
+                            onClick = {
+                                // applicationContext startActivity needs NEW_TASK for an outbound
+                                // view intent; runCatching swallows the rare no-handler case
+                                // (a device with no browser) instead of crashing Settings.
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(GITHUB_REPOSITORY_URL)
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                runCatching { app.startActivity(intent) }
+                            },
+                            trailing = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.OpenInNew,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        )
+                    },
+                    {
+                        Text(
+                            "Your conversations and documents stay on this device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(Space.lg)
                         )
                     },
                     {
@@ -244,7 +346,7 @@ fun SettingsScreen(
                             "AI can be wrong. Review important answers and confirm actions.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(Space.lg)
+                            modifier = Modifier.padding(horizontal = Space.lg).padding(bottom = Space.lg)
                         )
                     }
                 )
@@ -370,16 +472,6 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
             modifier = Modifier.padding(top = 4.dp)
         )
     }
-}
-
-@Composable
-fun SectionLabel(title: String) {
-    Text(
-        title, style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = Space.lg, bottom = Space.sm)
-            .semantics { heading() }
-    )
 }
 
 @Composable

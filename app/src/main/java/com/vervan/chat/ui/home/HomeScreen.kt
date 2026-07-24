@@ -344,7 +344,7 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
             Box(
                 Modifier
                     .padding(vertical = Space.xs)
-                    .size(44.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(fg)
                     .clickable(onClick = ::submit),

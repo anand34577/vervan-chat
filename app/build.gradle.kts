@@ -10,43 +10,64 @@ plugins {
 }
 
 // llama.cpp (GGUF) backend support — optional, machine-local. `llamacpp.dir` in local.properties
-// (uncommitted, same convention as `sdk.dir`) points at a llama.cpp checkout that's already been
-// built for Android separately (this project does not build llama.cpp itself — see
-// app/src/main/cpp/CMakeLists.txt). Absent property -> the whole native target is skipped, so a
-// checkout without llama.cpp built still compiles/runs everything else normally.
+// (uncommitted, same convention as `sdk.dir`) points at a llama.cpp *source* checkout; Gradle
+// compiles it for Android/Vulkan itself via the `buildLlamaCppNative` task below, so no manual
+// build step is needed. Absent property -> the whole native target is skipped, and a checkout
+// without llama.cpp still compiles/runs everything else normally.
 val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
 val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
-val llamaCppLibsDir = llamaCppDir?.let { "$it/build-android/bin" }
-val llamaCppRequiredFiles = listOf(
-    "include/llama.h",
-    "build-android/bin/libllama.so",
-    "build-android/bin/libggml.so",
-    "build-android/bin/libggml-base.so",
-    "build-android/bin/libggml-cpu.so",
-    "build-android/bin/libggml-vulkan.so"
-)
+
+// Availability is decided by the *source* checkout, not by build outputs: the libraries may not
+// exist yet at configuration time precisely because buildLlamaCppNative hasn't run.
 val llamaCppAvailable = llamaCppDir?.let { dir ->
-    llamaCppRequiredFiles.all { File(dir, it).isFile }
+    File(dir, "CMakeLists.txt").isFile && File(dir, "include/llama.h").isFile
 } == true
-val llamaCppVisionAvailable = llamaCppAvailable && File(llamaCppDir!!, "build-android/bin/libmtmd.so").isFile
-// Optional 32-bit llama.cpp build — `llamacpp.dir32` in local.properties points at a second
-// llama.cpp checkout/build made with -DANDROID_ABI=armeabi-v7a. When present, the APK also ships
-// armeabi-v7a so 32-bit devices can install and run GGUF models. LiteRT-LM (MediaPipe) is
-// 64-bit-only upstream, so 32-bit devices get llama.cpp only (guarded at runtime in LlmEngine).
-val llamaCpp32Dir: String? = localProperties.getProperty("llamacpp.dir32")
-val llamaCpp32LibsDir = llamaCpp32Dir?.let { "$it/build-android/bin" }
-val llamaCpp32Available = llamaCpp32Dir?.let { dir ->
-    llamaCppRequiredFiles.filter { it.endsWith(".so") }.all { File(dir, it).isFile }
-} == true
-if (llamaCpp32Dir != null && !llamaCpp32Available) {
-    logger.warn("llamacpp.dir32 is set, but its .so files are missing; 32-bit GGUF support is disabled.")
-}
+// The build script always passes -DLLAMA_BUILD_MTMD=ON, so vision support tracks availability.
+val llamaCppVisionAvailable = llamaCppAvailable
 if (llamaCppDir != null && !llamaCppAvailable) {
-    logger.warn("llamacpp.dir is set, but required headers/libraries are missing; GGUF support is disabled for debug builds.")
+    logger.warn("llamacpp.dir is set but does not look like a llama.cpp checkout (no CMakeLists.txt / include/llama.h); GGUF support is disabled.")
 }
+
+// ARM ABIs to build llama.cpp for. Both are on by default so GGUF works on every ARM Android
+// device the app installs on — LiteRT-LM (MediaPipe) is 64-bit-only upstream, so on 32-bit
+// devices llama.cpp is the *only* inference backend (guarded at runtime in LlmEngine). Building
+// armeabi-v7a roughly doubles native build time; set llamacpp.abis=arm64-v8a to skip it.
+val llamaCppAbis = (localProperties.getProperty("llamacpp.abis") ?: "arm64-v8a,armeabi-v7a")
+    .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+// -march for the arm64 CPU backend. The default targets ARMv8.2 (dotprod + i8mm): every
+// mainstream arm64 phone since ~2019, but NOT early ARMv8.0 chips that can still run API 26.
+// Set llamacpp.cpuArch=armv8-a for maximum device compatibility at a cost to CPU throughput.
+// (Vulkan is the primary path either way; this only affects the CPU fallback backend.)
+val llamaCppCpuArch = localProperties.getProperty("llamacpp.cpuArch") ?: "armv8.2-a+dotprod+i8mm"
+// Escape hatch: set llamacpp.autobuild=false to manage the native build by hand.
+val llamaCppAutoBuild = localProperties.getProperty("llamacpp.autobuild")?.toBoolean() != false
+
+// whisper.cpp (GGML/GGML speech-to-text) backend — optional, PRE-BUILT. Unlike llama.cpp there is
+// no source checkout / build script: the developer builds whisper.cpp for Android themselves and
+// drops the resulting libwhisper.so (plus ggml .so deps if the ggml revision differs from
+// llama.cpp's) into app/src/main/jniLibs/<abi>/. Availability is decided by libwhisper.so being
+// present for at least one configured ABI. `whispercpp.dir`, if set, only supplies the whisper.h
+// header for the JNI bridge compile — it is never compiled from here.
+val whisperCppDir: String? = localProperties.getProperty("whispercpp.dir")
+val whisperCppAbis = listOf("arm64-v8a", "armeabi-v7a").filter { abi ->
+    file("src/main/jniLibs/$abi/libwhisper.so").isFile
+}
+val whisperCppAvailable = whisperCppAbis.isNotEmpty()
+
+// Per-ABI output tree written by the build script. Falls back to the legacy single-ABI layout
+// so an existing hand-built checkout keeps working without a rebuild.
+fun llamaCppLibsDirFor(abi: String): File? {
+    val dir = llamaCppDir ?: return null
+    val perAbi = File(dir, "build-android/$abi/bin")
+    if (File(perAbi, "libllama.so").isFile) return perAbi
+    val legacy = File(dir, "build-android/bin")
+    if (abi == "arm64-v8a" && File(legacy, "libllama.so").isFile) return legacy
+    return perAbi
+}
+val llamaCpp32Available = llamaCppAvailable && llamaCppAbis.contains("armeabi-v7a")
 
 android {
     namespace = "com.vervan.chat"
@@ -62,30 +83,32 @@ android {
 
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
+        buildConfigField("boolean", "WHISPER_CPP_AVAILABLE", whisperCppAvailable.toString())
 
         // armeabi-v7a is always packaged so 32-bit devices can install; on them LiteRT-LM is
         // unavailable (MediaPipe ships no 32-bit libs) and GGUF works only if a 32-bit llama.cpp
         // build was supplied via llamacpp.dir32.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-        if (llamaCppAvailable) {
+        if (llamaCppAvailable || whisperCppAvailable) {
             externalNativeBuild {
                 cmake {
+                    // LLAMA_CPP_LIBS_DIR is left to CMake to derive per-ABI from ANDROID_ABI —
+                    // a single Gradle-side value can't cover both ABIs in one invocation.
                     arguments += listOf(
-                        "-DLLAMA_CPP_DIR=$llamaCppDir",
-                        "-DLLAMA_CPP_LIBS_DIR=$llamaCppLibsDir",
-                        "-DLLAMA_CPP_LIBS32_DIR=${llamaCpp32LibsDir ?: ""}",
+                        "-DLLAMA_CPP_DIR=${llamaCppDir ?: ""}",
+                        "-DWHISPER_CPP_AVAILABLE=${whisperCppAvailable}",
+                        "-DWHISPER_CPP_DIR=${whisperCppDir ?: ""}",
                         "-DANDROID_STL=c++_shared"
                     )
-                    // The JNI bridge links against the prebuilt libllama for its ABI — only build
-                    // it for ABIs we actually have llama.cpp libs for.
-                    abiFilters += "arm64-v8a"
-                    if (llamaCpp32Available) abiFilters += "armeabi-v7a"
+                    // The JNI bridges link against native libs for their ABI — only build each
+                    // bridge for the ABIs its underlying native lib was actually built for.
+                    abiFilters += (if (llamaCppAvailable) llamaCppAbis else emptyList()) + whisperCppAbis
                 }
             }
         }
     }
 
-    if (llamaCppAvailable) {
+    if (llamaCppAvailable || whisperCppAvailable) {
         externalNativeBuild {
             cmake {
                 path = file("src/main/cpp/CMakeLists.txt")
@@ -144,7 +167,23 @@ android {
 val verifyLlamaCppRelease by tasks.registering {
     doLast {
         check(llamaCppAvailable) {
-            "Release builds require a complete llama.cpp Android/Vulkan build. Set llamacpp.dir in local.properties."
+            "Release builds require llama.cpp. Set llamacpp.dir in local.properties to a llama.cpp checkout; " +
+                "Gradle builds it for Android/Vulkan automatically."
+        }
+        // Guards against a stale or partial native build silently shipping in a release APK.
+        // Vulkan is only expected on 64-bit — see the ABI table in the build script.
+        llamaCppAbis.forEach { abi ->
+            val libs = llamaCppLibsDirFor(abi)
+            val required = buildList {
+                add("libllama.so")
+                add("libggml-cpu.so")
+                if (abi == "arm64-v8a") add("libggml-vulkan.so")
+            }
+            required.forEach { lib ->
+                check(libs != null && File(libs, lib).isFile) {
+                    "llama.cpp library $lib for $abi is missing (expected in $libs). Run :app:buildLlamaCppNative."
+                }
+            }
         }
     }
 }
@@ -285,28 +324,76 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-// Copies the user's separately-built llama.cpp shared libraries into jniLibs so they actually
-// land in the APK — Gradle's CMake integration only auto-packages libraries *built* by this
-// project's own CMake invocation; these are IMPORTED (prebuilt elsewhere), so they need this
-// explicit copy step, same loose-.so-under-jniLibs/ precedent this repo already uses for
-// LiteRT-LM's supplementary accelerator libraries. No-op (and no error) when llamacpp.dir isn't
-// set, or when the expected .so files aren't there yet (e.g. build still in progress).
-tasks.register<Copy>("syncLlamaCppLibs") {
-    onlyIf { llamaCppLibsDir != null && file(llamaCppLibsDir).exists() }
-    from(llamaCppLibsDir ?: ".") {
-        include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+// --- llama.cpp native build ------------------------------------------------------------------
+// Compiles llama.cpp for Android with the Vulkan backend, one output tree per ABI, so that
+// pointing llamacpp.dir at a plain source checkout is the only setup a developer does.
+//
+// It runs as a separate CMake invocation rather than an add_subdirectory() inside the app's own
+// externalNativeBuild because ggml's Vulkan backend builds `vulkan-shaders-gen` for the *host*:
+// that needs an MSVC (or host clang/gcc) toolchain and a Vulkan SDK on PATH, which Gradle's
+// CMake invocation has no way to set up. The script handles that — including importing the
+// vcvars64 environment — so no Developer PowerShell is needed either.
+val llamaCppBuildScript = rootProject.file("scripts/build-llama-android-vulkan.ps1")
+
+val buildLlamaCppNative by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds llama.cpp (Vulkan + CPU) for Android into <llamacpp.dir>/build-android/<abi>/bin"
+    onlyIf { llamaCppAvailable && llamaCppAutoBuild && llamaCppBuildScript.isFile }
+
+    // Re-run when the sources, the toolchain choice, or the script itself changes. HEAD covers
+    // `git pull` in the llama.cpp checkout without fingerprinting tens of thousands of files.
+    inputs.file(llamaCppBuildScript)
+    // The patches are compiled into the libraries, so editing one has to invalidate the build
+    // exactly like editing the script does.
+    inputs.dir(rootProject.file("scripts/patches")).optional()
+    inputs.property("abis", llamaCppAbis)
+    inputs.property("cpuArch", llamaCppCpuArch)
+    if (llamaCppDir != null) {
+        val head = File(llamaCppDir, ".git/HEAD")
+        if (head.isFile) inputs.file(head).optional()
     }
-    into("src/main/jniLibs/arm64-v8a")
+    // Declaring the produced libraries as outputs is what makes this task skippable: once they
+    // exist and nothing above changed, Gradle's up-to-date check keeps app builds fast.
+    llamaCppAbis.forEach { abi ->
+        llamaCppLibsDirFor(abi)?.let { outputs.dir(it) }
+    }
+
+    executable = "powershell.exe"
+    args(
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", llamaCppBuildScript.absolutePath,
+        "-Abi", llamaCppAbis.joinToString(","),
+        "-CpuArmArch", llamaCppCpuArch
+        // -ApiLevel is intentionally left at the script's default (28, not the app's minSdk of
+        // 26) because ggml's Vulkan backend needs Vulkan 1.1 symbols that Android's libvulkan.so
+        // only exports from API 28. See the parameter's comment in the script.
+    )
 }
 
-tasks.register<Copy>("syncLlamaCppLibs32") {
-    onlyIf { llamaCpp32Available }
-    from(llamaCpp32LibsDir ?: ".") {
-        include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+// Copies the built llama.cpp shared libraries into jniLibs so they actually land in the APK —
+// Gradle's CMake integration only auto-packages libraries built by *this* project's CMake
+// invocation; these are IMPORTED, so they need an explicit copy step. Same loose-.so-under-
+// jniLibs/ precedent this repo already uses for LiteRT-LM's accelerator libraries.
+val syncLlamaCppLibs = llamaCppAbis.map { abi ->
+    tasks.register<Copy>("syncLlamaCppLibs${abi.replace("-", "")}") {
+        dependsOn(buildLlamaCppNative)
+        val libsDir = llamaCppLibsDirFor(abi)
+        onlyIf { libsDir != null && libsDir.isDirectory }
+        from(libsDir ?: file(".")) {
+            include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+        }
+        into("src/main/jniLibs/$abi")
     }
-    into("src/main/jniLibs/armeabi-v7a")
 }
 
 tasks.named("preBuild") {
-    dependsOn("syncLlamaCppLibs", "syncLlamaCppLibs32")
+    dependsOn(syncLlamaCppLibs)
 }
+
+// The JNI bridge links directly against libllama.so, so llama.cpp must be built before any
+// native compile task runs — preBuild ordering alone doesn't guarantee that for CMake tasks.
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
+    .configureEach { dependsOn(buildLlamaCppNative) }
+
+// verifyLlamaCppRelease inspects the *result* of the native build, so that has to happen first.
+verifyLlamaCppRelease.configure { dependsOn(buildLlamaCppNative) }

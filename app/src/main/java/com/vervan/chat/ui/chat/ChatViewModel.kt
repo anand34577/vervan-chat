@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -132,10 +133,17 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     /** True only while [retrieveSources] is actively embedding the query/scanning chunks —
      * lets the UI show "Searching knowledge base" instead of folding that time invisibly
-     * into the generic generating state. */
+     * into the generic generating state.
+     *
+     * Backed by an [java.util.concurrent.atomic.AtomicInteger] counter rather than a boolean
+     * so two overlapping [retrieveSources] calls (e.g. a slow first call still in flight when
+     * the next keystroke triggers another) don't race the boolean back to false while work is
+     * still running — the flag is only cleared when the *last* call finishes. */
+    private val retrievingCount = java.util.concurrent.atomic.AtomicInteger(0)
     private val _isRetrieving = MutableStateFlow(false)
     val isRetrieving: StateFlow<Boolean> = _isRetrieving
 
+    private val recallingMemoryCount = java.util.concurrent.atomic.AtomicInteger(0)
     private val _isRecallingMemory = MutableStateFlow(false)
     val isRecallingMemory: StateFlow<Boolean> = _isRecallingMemory
 
@@ -205,33 +213,58 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         path?.let { runCatching { java.io.File(it).delete() } }
     }
 
+    // All attachment setters race on _attachments when called from background dispatchers
+    // (OCR extraction, audio import, image attach all complete off the main thread). The previous
+    // read-then-write pattern orphaned attachment files when two setters landed in the same frame
+    // — the loser's read-modify-write clobbered the winner's path without deleting it. CAS loop
+    // guarantees exactly one delete per displaced value, on the snapshot we actually replaced.
     fun setPendingImage(path: String?) {
-        _attachments.value.imagePath?.takeIf { it != path }?.let(::deleteFileQuietly)
-        _attachments.value = _attachments.value.copy(imagePath = path)
+        var displaced: String? = null
+        while (true) {
+            val current = _attachments.value
+            if (current.imagePath == path) return
+            val next = current.copy(imagePath = path)
+            if (_attachments.compareAndSet(current, next)) { displaced = current.imagePath; break }
+        }
+        if (displaced != null && displaced != path) deleteFileQuietly(displaced)
     }
 
     fun setPendingOcr(imagePath: String?, text: String?) {
-        _attachments.value.ocrImagePath?.takeIf { it != imagePath }?.let(::deleteFileQuietly)
-        _attachments.value = _attachments.value.copy(ocrImagePath = imagePath, ocrText = text)
+        var displacedImage: String? = null
+        while (true) {
+            val current = _attachments.value
+            val next = current.copy(ocrImagePath = imagePath, ocrText = text)
+            if (_attachments.compareAndSet(current, next)) { displacedImage = current.ocrImagePath; break }
+        }
+        if (displacedImage != null && displacedImage != imagePath) deleteFileQuietly(displacedImage)
     }
 
     fun updateOcrText(text: String) {
-        _attachments.value = _attachments.value.copy(ocrText = text)
+        _attachments.update { it.copy(ocrText = text) }
     }
 
     fun setPendingAudio(path: String?) {
-        _attachments.value.audioPath?.takeIf { it != path }?.let(::deleteFileQuietly)
-        _attachments.value = _attachments.value.copy(audioPath = path)
+        var displaced: String? = null
+        while (true) {
+            val current = _attachments.value
+            if (current.audioPath == path) return
+            val next = current.copy(audioPath = path)
+            if (_attachments.compareAndSet(current, next)) { displaced = current.audioPath; break }
+        }
+        if (displaced != null && displaced != path) deleteFileQuietly(displaced)
     }
 
     /** Clears attachment state for a send. Image/audio files are kept — the sent Message row
      * references them — but the OCR photo is deleted: only its extracted text goes into the
      * message. Returns what was pending so the caller can fold it into the outgoing send. */
     fun consumeAttachments(): ComposerAttachments {
-        val current = _attachments.value
-        deleteFileQuietly(current.ocrImagePath)
-        _attachments.value = ComposerAttachments()
-        return current
+        while (true) {
+            val current = _attachments.value
+            if (_attachments.compareAndSet(current, ComposerAttachments())) {
+                deleteFileQuietly(current.ocrImagePath)
+                return current
+            }
+        }
     }
 
     /**
@@ -528,6 +561,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val active = db.modelDao().getActiveModel(ModelRole.EMBEDDING) ?: return
         runCatching {
             app.container.modelLoadCoordinator.ensureLoaded(active, LoadTrigger.RAG_RETRIEVAL)
+        }.onFailure {
+            // A bare runCatching here previously swallowed every load failure — a corrupt or
+            // missing embedding model silently no-ops retrieval with zero diagnostic. Surface it
+            // so the failure is traceable in on-device logs; the DocumentAttachState "grounded"
+            // flag below already degrades gracefully when the engine isn't loaded.
+            Log.e(TAG, "ensureEmbeddingModelLoaded: embedding model failed to load", it)
         }
     }
 
@@ -1359,7 +1398,13 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // suppressed and stripped — see suppressReasoning below. Non-reasoning models pay no
             // extra prompt for OFF (the instruction stays empty).
             val isReasoningModel = model?.supportsThinking == true
-            val suppressReasoning = effectiveThinkingMode == "OFF" && isReasoningModel
+            // Strip any <think>/<thinking> block from the persisted/displayed answer whenever the
+            // user turned thinking OFF — not only for models we've *flagged* as reasoners. A model
+            // whose supportsThinking is still null (never probed) or false can still emit a think
+            // block, and gating the strip on isReasoningModel is exactly why "OFF still shows it
+            // thinking" on LiteRT: the block leaked through unstripped. ThinkingParser is a no-op
+            // on text with no tags, so this is safe for genuinely non-reasoning models.
+            val suppressReasoning = effectiveThinkingMode == "OFF"
             val (systemPrompt, prompt) = buildPrompt(
                 persona, projectInstructions, memories, history, promptPassages, toolsEnabled,
                 stylePreferenceText(profile.maxOutputHint),
@@ -1370,7 +1415,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 enabledToolIds = enabledToolIds,
                 earlierSummary = earlierSummary
             )
-            val assistantPrefill = assistantPrefillFor(effectiveThinkingMode, modelEngine)
+            val assistantPrefill = assistantPrefillFor(effectiveThinkingMode, modelEngine, isReasoningModel)
+            // llama.cpp only: hard cap on reasoning tokens before </think> is force-injected
+            // natively (see nativeGenerate). -1 when not applicable (LiteRT, non-reasoning model,
+            // or OFF — where the prefill already closed the block).
+            val reasoningBudget = reasoningBudgetFor(effectiveThinkingMode, modelEngine, isReasoningModel)
 
             val assistantMessage = Message(
                 chatId = chatId, parentId = chatRow.activeLeafId, role = MessageRole.ASSISTANT, content = "", state = MessageState.STREAMING,
@@ -1412,7 +1461,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     model, prompt, imagePath.takeIf { hop == 1 }, audioPath.takeIf { hop == 1 },
                     genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
                     genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences,
-                    assistantPrefill = assistantPrefill, systemPrompt = systemPrompt
+                    assistantPrefill = assistantPrefill, systemPrompt = systemPrompt, reasoningBudget = reasoningBudget
                 )
             } else {
                 engine.generate(
@@ -1675,11 +1724,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     }
 
     private suspend fun retrieveSources(kbIds: List<String>, query: String, topK: Int = 5): List<SourcePassage> {
-        _isRetrieving.value = true
+        if (retrievingCount.getAndIncrement() == 0) _isRetrieving.value = true
         try {
             return retrieveSourcesInner(kbIds, query, topK)
         } finally {
-            _isRetrieving.value = false
+            if (retrievingCount.decrementAndGet() == 0) _isRetrieving.value = false
         }
     }
 
@@ -1703,11 +1752,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     }
 
     private suspend fun recallMemories(chatRow: Chat, query: String): com.vervan.chat.data.repo.MemoryRecall {
-        _isRecallingMemory.value = true
+        if (recallingMemoryCount.getAndIncrement() == 0) _isRecallingMemory.value = true
         return try {
             app.container.memoryRepository.recallApplicable(chatRow.personaId, chatRow.projectId, query)
         } finally {
-            _isRecallingMemory.value = false
+            if (recallingMemoryCount.decrementAndGet() == 0) _isRecallingMemory.value = false
         }
     }
 
@@ -1849,9 +1898,41 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * literally continues from an already-open or already-closed `<think>` block instead of
      * hoping the model complies. `null` for OFF/non-thinking models leaves the prompt untouched.
      */
-    private fun assistantPrefillFor(mode: String, engine: com.vervan.chat.data.db.entities.ModelEngine): String? {
-        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) return null
+    private fun assistantPrefillFor(
+        mode: String,
+        engine: com.vervan.chat.data.db.entities.ModelEngine,
+        // Only force a <think> block on a model that actually reasons. Prefilling "<think>\n" onto
+        // a non-reasoning GGUF (e.g. a plain Gemma) would make it emit stray reasoning tags and,
+        // worse, arm the native reasoning-budget counter against ordinary answer tokens — so the
+        // </think> auto-inject could fire mid-answer. null here leaves such models untouched.
+        isReasoningModel: Boolean
+    ): String? {
+        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP || !isReasoningModel) return null
         return if (mode == "OFF") "<think>\n\n</think>\n\n" else "<think>\n"
+    }
+
+    /**
+     * The hard reasoning-token budget handed to llama.cpp's native loop ([nativeGenerate]), which
+     * force-injects `</think>` once the model has spent this many tokens still inside an open
+     * `<think>` block — the actual enforcement behind the soft "keep reasoning under N tokens"
+     * hint in [reasoningInstruction], and the answer to "the thinking budget can't be controlled":
+     * before this it was only ever a request in the prompt text. Returns -1 ("no cap / not
+     * applicable") for anything but a reasoning llama.cpp model in a non-OFF mode, since those are
+     * exactly the cases where [assistantPrefillFor] opens a `<think>` block for the budget to
+     * bound. LiteRT-LM's SDK exposes no equivalent native hook, so its budget stays a prompt hint.
+     */
+    private fun reasoningBudgetFor(
+        mode: String,
+        engine: com.vervan.chat.data.db.entities.ModelEngine,
+        isReasoningModel: Boolean
+    ): Int {
+        if (engine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP || !isReasoningModel) return -1
+        return when (mode) {
+            "FAST" -> 256
+            "BALANCED" -> 1024
+            "DEEP" -> 4096
+            else -> -1 // OFF: the prefill already closed the block, nothing to cap
+        }
     }
 
     /**
@@ -1906,11 +1987,20 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Tool ids this chat can actually call right now: the global Settings → Tools disable
      * list, with this chat's own per-tool overrides (Chat.toolOverrideMap()) taking priority —
      * lets a chat turn on a globally-disabled tool, or off a globally-enabled one, just for
-     * itself. */
+     * itself. web_search gets one extra check on top: unlike the plain on/off tools above, it's
+     * useless without both its Settings → Security toggle AND a configured API key, so it's
+     * dropped from the catalog rather than advertised and then rejected at call time — the model
+     * would otherwise call it, the user would tap through an EXTERNAL_ACTION confirmation, and
+     * only then find out it was never going to work. */
     private suspend fun effectiveToolIds(chatRow: Chat): Set<String> {
         val disabledGlobally = app.container.settingsRepository.disabledToolIds.first()
         val overrides = chatRow.toolOverrideMap()
-        return ToolRegistry.tools.map { it.name }.filter { overrides[it] ?: (it !in disabledGlobally) }.toSet()
+        val webSearchReady = app.container.settingsRepository.webSearchToolEnabled.first() &&
+            app.container.knowledgeGraphStore.get()?.isNotBlank() == true
+        return ToolRegistry.tools.map { it.name }
+            .filter { overrides[it] ?: (it !in disabledGlobally) }
+            .filter { it != "web_search" || webSearchReady }
+            .toSet()
     }
 
     /** Current date/time for the prompt, or null if the user turned this off in Settings —

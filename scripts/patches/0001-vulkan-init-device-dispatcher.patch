@@ -1,0 +1,187 @@
+Subject: [PATCH] vulkan: validate advertised capabilities against real entry points
+
+Qualcomm's Adreno 730 driver (Vulkan 1.4.350, Android 16) advertises features whose
+implementing functions it never exposes -- via vkGetInstanceProcAddr *and* via
+vkGetDeviceProcAddr. ggml trusts the capability bit, calls through a null function
+pointer, and the process jumps to address 0. Three related fixes.
+
+1. Dispatcher: add the third stage, `.init(device)`.
+
+   ggml only initialises the Vulkan-Hpp dispatcher to instance level (:7002, :7082)
+   even though the comments on both lines link the doc section prescribing all three.
+   Device-level resolution uses vkGetDeviceProcAddr, which skips loader trampolines.
+   Correct on its own merits, though on this driver it resolves nothing extra.
+
+2. bufferDeviceAddress: trust the entry point, not the feature bit.
+
+       device->buffer_device_address = vk12_features.bufferDeviceAddress;   // :6335
+       if (device->buffer_device_address) {
+           buf->bda_addr = device->device.getBufferAddress(addressInfo);    // :3281
+       }
+
+   The driver reports bufferDeviceAddress = true with vkGetBufferDeviceAddress null:
+
+       Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0
+         #01 libggml-vulkan.so  vk::Device::getBufferAddress<DispatchLoaderDynamic>
+         #02 libggml-vulkan.so  ggml_vk_create_buffer            (ggml-vulkan.cpp:3281)
+         #07 libllama.so        llama_model_base::load_tensors
+
+   After both dispatcher stages have run, if the pointer is still null, clear the
+   flag. Every consumer is gated on it (:3148, :3279, :5496, :11878, :17381), so
+   clearing it disables the BDA paths and ggml falls back to descriptor binding.
+
+3. Events / caps.events: same treatment for vkWaitSemaphores.
+
+   ggml implements backend events with timeline semaphores, and hardcodes
+   caps.events = true. vkWaitSemaphores is likewise null on this driver, so
+   llama_model_loader::load_all_data (:1477 gates its async upload path on
+   caps.async && caps.host_buffer && caps.events) takes the async path and dies:
+
+       Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0
+         #01 libggml-vulkan.so  vk::Device::waitSemaphores<DispatchLoaderDynamic>
+                                ggml_backend_vk_device_event_synchronize  (:18069)
+         #02 libllama.so        llama_model_loader::load_all_data
+         #03 libllama.so        llama_model_base::load_tensors
+
+   Report caps.events from the resolved pointer. The cost is the async upload
+   optimisation; ggml_backend_sched only allocates events when n_copies > 1, which
+   this configuration never sets.
+
+Each guard is written as "the pointer must exist", not as a driver denylist, so they
+also cover any other device advertising a feature without providing the function.
+
+4. Aligned matmul: do not select the aligned variants on Adreno.
+
+   The Adreno shader compiler fails to link every aligned matmul variant, across quants,
+   warptiles and accumulator precisions:
+
+       AdrenoVK-0: Failed to link shaders.
+       ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_f16acc_aligned_m
+       ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_f16acc_aligned_s
+       ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_aligned_m
+       ggml_vulkan: Compute pipeline creation failed for matmul_q4_k_f32_f16acc_aligned_s
+
+   q5_K and q4_K were each ruled out as the variable by fixing them individually and
+   watching the failure move to the next quant; f16acc was ruled out with
+   GGML_VK_DISABLE_F16, which only changed the shader name. "aligned" is the one token
+   common to all of them.
+
+   It is also the one that is safe to drop. "aligned" selects a shader that omits bounds
+   clamping because K is already a multiple of the tile size; the unaligned pipeline
+   computes the same result for any shape. vk_matmul_pipeline_struct::is_empty already
+   documents this -- the unaligned variants are required, the aligned ones optional. So
+   the two shape checks that opt into the aligned path now also require a non-Adreno
+   device. Cost is matmul throughput, not correctness.
+
+Upstream as of 178a6c4 (2026-07-19) does none of these.
+
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+index c3fd436..0f46b5c 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -6591,6 +6591,28 @@ static vk_device ggml_vk_get_device(size_t idx) {
+         device_create_info.setPNext(&device_features2);
+         device->device = device->physical_device.createDevice(device_create_info);
+ 
++        // Third dispatcher stage: resolve device-level entry points through
++        // vkGetDeviceProcAddr rather than the loader's instance-level trampolines.
++        // ggml otherwise stops at instance level, contrary to the Vulkan-Hpp guidance
++        // linked from ggml_vk_instance_init().
++        VULKAN_HPP_DEFAULT_DISPATCHER.init(device->device);
++
++        // Some drivers advertise bufferDeviceAddress in VkPhysicalDeviceVulkan12Features
++        // but never expose vkGetBufferDeviceAddress through either vkGetInstanceProcAddr
++        // or vkGetDeviceProcAddr -- observed on Adreno 730 / Vulkan 1.4.350. Believing the
++        // feature bit there means calling a null pointer the first time a buffer is
++        // allocated, which is a SIGSEGV at address 0 partway through model load.
++        //
++        // Validate the feature against the entry point that implements it. Every use of
++        // buffer_device_address is gated on this flag, so clearing it degrades cleanly to
++        // the non-BDA path instead of crashing.
++        if (device->buffer_device_address && !VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress) {
++            GGML_LOG_WARN("ggml_vulkan: %s reports bufferDeviceAddress but does not expose "
++                          "vkGetBufferDeviceAddress; disabling buffer device address usage\n",
++                          device->name.c_str());
++            device->buffer_device_address = false;
++        }
++
+         // Queues
+         ggml_vk_create_queue(device, device->compute_queue, compute_queue_family_index, 0, { vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer }, false);
+ 
+@@ -8400,6 +8422,27 @@ static uint32_t ggml_vk_guess_split_k(ggml_backend_vk_context * ctx, uint32_t m,
+     return split_k;
+ }
+ 
++// The Adreno shader compiler fails to link the aligned matmul variants. Observed on an
++// Adreno 730 (driver 0615.98, Vulkan 1.4.350) across multiple quants, both warptiles and
++// both accumulator precisions -- every reported failure carried "aligned" in its name:
++//
++//   AdrenoVK-0: Failed to link shaders.
++//   ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_f16acc_aligned_m
++//   ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_f16acc_aligned_s
++//   ggml_vulkan: Compute pipeline creation failed for matmul_q5_k_f32_aligned_m
++//   ggml_vulkan: Compute pipeline creation failed for matmul_q4_k_f32_f16acc_aligned_s
++//
++// ggml_vk_create_pipeline logs and rethrows, so a single such matmul kills llama_decode.
++//
++// "aligned" is an optimisation, not a capability: it selects a shader that omits bounds
++// clamping because K is already a multiple of the tile size. The unaligned pipeline
++// computes the same result for any shape, which is why vk_matmul_pipeline_struct treats
++// the aligned variants as optional while requiring the unaligned ones (see is_empty).
++// Declining the aligned path therefore degrades throughput and nothing else.
++static bool ggml_vk_aligned_matmul_supported(const vk_device& device) {
++    return device->vendor_id != VK_VENDOR_ID_QUALCOMM;
++}
++
+ static vk_pipeline ggml_vk_guess_matmul_pipeline(ggml_backend_vk_context * ctx, vk_matmul_pipeline& mmp, uint32_t m, uint32_t n, bool aligned, ggml_type src0_type, ggml_type src1_type) {
+     VK_LOG_DEBUG("ggml_vk_guess_matmul_pipeline(" << m << ", " << n << ", " << aligned << ", " << ggml_type_name(src0_type) << ", " << ggml_type_name(src1_type) << ")");
+ 
+@@ -8869,7 +8912,12 @@ static void ggml_vk_mul_mat_q_f16(ggml_backend_vk_context * ctx, vk_context& sub
+     const ggml_type effective_src1_type = quantize_y ? GGML_TYPE_Q8_1 : (y_f32_kernel ? GGML_TYPE_F32 : src1->type);
+ 
+     const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_pipeline_align(ctx, mmp, ne01, ne11, qx_needs_dequant ? f16_type : src0->type, effective_src1_type));
+-    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && ne11 > 8;
++    // The Adreno shader compiler cannot build the *aligned* matmul variants (see
++    // ggml_vk_aligned_matmul_supported). "aligned" is only an optimisation -- it selects a
++    // shader that skips bounds clamping because K is already a multiple of the tile size --
++    // so the unaligned pipeline is always a correct substitute.
++    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && ne11 > 8 &&
++                         ggml_vk_aligned_matmul_supported(ctx->device);
+ 
+     vk_pipeline pipeline = ggml_vk_guess_matmul_pipeline(ctx, mmp, ne01, ne11, aligned, qx_needs_dequant ? f16_type : src0->type, effective_src1_type);
+ 
+@@ -9805,7 +9853,9 @@ static void ggml_vk_mul_mat_id_q_f16(ggml_backend_vk_context * ctx, vk_context&
+     const ggml_type effective_src1_type = quantize_y ? GGML_TYPE_Q8_1 : (y_f32_kernel ? GGML_TYPE_F32 : src1->type);
+ 
+     const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_id_pipeline_align(ctx, mmp, ne01, nei1, qx_needs_dequant ? f16_type : src0->type, effective_src1_type));
+-    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && nei1 > 8;
++    // See the matching comment in ggml_vk_mul_mat_q_f16.
++    const bool aligned = !quantize_y && ne10 == kpad && ne01 > 8 && nei1 > 8 &&
++                         ggml_vk_aligned_matmul_supported(ctx->device);
+ 
+     vk_pipeline pipeline = ggml_vk_guess_matmul_id_pipeline(ctx, mmp, ne01, nei1, aligned, qx_needs_dequant ? f16_type : src0->type, effective_src1_type);
+ 
+@@ -17359,11 +17409,22 @@ static void ggml_backend_vk_device_get_props(ggml_backend_dev_t dev, struct ggml
+     props->type        = ggml_backend_vk_device_get_type(dev);
+     props->device_id   = ctx->pci_bus_id.empty() ? nullptr : ctx->pci_bus_id.c_str();
+     ggml_backend_vk_device_get_memory(dev, &props->memory_free, &props->memory_total);
++    // Events are implemented with timeline semaphores (see the comment above
++    // ggml_backend_vk_event_record), so event support is only real if vkWaitSemaphores
++    // actually resolved. Adreno 730 / Vulkan 1.4.350 leaves it null, and advertising
++    // events anyway means llama_model_loader::load_all_data takes its async upload path
++    // and calls through a null pointer in event_synchronize -- SIGSEGV at address 0.
++    //
++    // This mirrors the bufferDeviceAddress guard in ggml_vk_get_device: trust the entry
++    // point, not the capability. Reporting false costs the async upload optimisation and
++    // nothing else, since ggml_backend_sched only allocates events when n_copies > 1.
++    const bool timeline_semaphore_wait = VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitSemaphores != nullptr;
++
+     props->caps = {
+         /* .async                 = */ true,
+         /* .host_buffer           = */ true,
+         /* .buffer_from_host_ptr  = */ false,
+-        /* .events                = */ true,
++        /* .events                = */ timeline_semaphore_wait,
+     };
+ }
+ 

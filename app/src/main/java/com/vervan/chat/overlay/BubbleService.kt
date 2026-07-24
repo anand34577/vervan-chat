@@ -19,6 +19,7 @@ import android.view.WindowManager
 import android.widget.ImageView
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
+import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -113,7 +114,7 @@ class BubbleService : Service() {
         windowManager = wm
         val density = resources.displayMetrics.density
 
-        val bubble = ImageView(this).apply {
+        val bubble = AccessibleBubbleImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
             contentDescription = "Open Vervan Quick actions"
             background = GradientDrawable().apply {
@@ -148,7 +149,7 @@ class BubbleService : Service() {
         // Use the platform gesture threshold so a slightly shaky tap is not mistaken for a drag.
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
-        bubble.setOnTouchListener { _, event ->
+        bubble.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.rawX; downY = event.rawY
@@ -171,7 +172,7 @@ class BubbleService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(140).start()
-                    if (!moved) bubble.performClick()
+                    if (!moved) view.performClick()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -615,6 +616,14 @@ class BubbleService : Service() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
             runCatching { svc.startForeground(NOTIFICATION_ID, svc.buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) }
         }
+    }
+}
+
+/** Makes the draggable overlay operable through accessibility services as well as touch. */
+private class AccessibleBubbleImageView(context: Context) : AppCompatImageView(context) {
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 }
 

@@ -11,7 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,8 +35,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
+import com.vervan.chat.ui.common.ContentCard
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.data.settings.ThemeMode
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,8 +64,8 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            ContentCard {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
                     Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ThemeMode.entries.forEach { mode ->

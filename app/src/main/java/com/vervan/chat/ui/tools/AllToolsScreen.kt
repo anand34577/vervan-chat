@@ -1,6 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -17,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Rule
@@ -55,10 +59,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +75,7 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
+import kotlinx.coroutines.launch
 
 private data class ToolEntry(
     val icon: ImageVector,
@@ -260,23 +267,59 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     )
                 }
                 item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        item {
-                            VervanFilterChip(
-                                selected = selectedCategory == null,
-                                onClick = { selectedCategory = null },
-                                label = { Text("All") },
-                            )
+                    val filterListState = rememberLazyListState()
+                    val filterScrollScope = rememberCoroutineScope()
+                    Box(Modifier.fillMaxWidth()) {
+                        LazyRow(
+                            state = filterListState,
+                            contentPadding = PaddingValues(end = 56.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        ) {
+                            item {
+                                VervanFilterChip(
+                                    selected = selectedCategory == null,
+                                    onClick = { selectedCategory = null },
+                                    label = { Text("All") },
+                                )
+                            }
+                            items(categories, key = { it.title }) { category ->
+                                VervanFilterChip(
+                                    selected = selectedCategory == category.title,
+                                    onClick = { selectedCategory = category.title },
+                                    label = { Text(category.title) },
+                                    leadingIcon = if (selectedCategory == category.title) {
+                                        { Icon(category.icon, null, Modifier.size(18.dp)) }
+                                    } else null,
+                                )
+                            }
                         }
-                        items(categories, key = { it.title }) { category ->
-                            VervanFilterChip(
-                                selected = selectedCategory == category.title,
-                                onClick = { selectedCategory = category.title },
-                                label = { Text(category.title) },
-                                leadingIcon = if (selectedCategory == category.title) {
-                                    { Icon(category.icon, null, Modifier.size(18.dp)) }
-                                } else null,
-                            )
+                        if (filterListState.canScrollForward) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            0f to MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                                            0.45f to MaterialTheme.colorScheme.surface,
+                                        ),
+                                    )
+                                    .padding(start = Space.lg),
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        filterScrollScope.launch {
+                                            val target = (filterListState.firstVisibleItemIndex + 2)
+                                                .coerceAtMost(categories.size)
+                                            filterListState.animateScrollToItem(target)
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Show more tool categories",
+                                    )
+                                }
+                            }
                         }
                     }
                 }

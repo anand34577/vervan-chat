@@ -45,4 +45,13 @@ interface MessageDao : BaseDao<Message> {
             ") latest ON m.chatId = latest.chatId AND m.createdAt = latest.maxCreated"
     )
     fun observeLatestPerChat(): Flow<List<Message>>
+
+    // Smart collections (spec §28.4) — single round-trip replacements for the previous
+    // chats.forEach { getMessages(c.id) } N+1 in SmartCollectionsViewModel, which loaded every
+    // message of every chat into memory on each recompute. DISTINCT chatId rides the chatId index.
+    @Query("SELECT DISTINCT chatId FROM messages WHERE state IN (:states)")
+    suspend fun getChatIdsWithState(states: List<String>): List<String>
+
+    @Query("SELECT DISTINCT chatId FROM messages WHERE imagePath IS NOT NULL OR audioPath IS NOT NULL")
+    suspend fun getChatIdsWithAttachments(): List<String>
 }

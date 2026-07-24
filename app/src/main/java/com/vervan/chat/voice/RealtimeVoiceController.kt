@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.ContinuousAudioCapture
 import com.vervan.chat.audio.VoiceActivityDetector
@@ -14,6 +15,7 @@ import com.vervan.chat.modelload.LoadTrigger
 import java.io.File
 import java.util.UUID
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,7 +65,12 @@ class RealtimeVoiceController(private val app: VervanApp) {
 
     private val audioCapture = ContinuousAudioCapture()
     private val vad = VoiceActivityDetector(app)
-    private val inbuiltStt: SttEngine = WhisperSttEngine(app.container.db.ttsVoiceModelDao())
+    // Both offline STT runtimes are instantiated up front; pickInbuiltStt() selects which one a
+    // given turn reaches for based on the sttEnginePreference setting and which model is actually
+    // downloaded. The unchosen one stays unloaded (release() on a never-loaded engine is a no-op),
+    // so holding both instances costs nothing until one is used.
+    private val whisperOnnxStt: SttEngine = WhisperSttEngine(app.container.db.ttsVoiceModelDao())
+    private val whisperCppStt: SttEngine = WhisperCppSttEngine(app.container.db.ttsVoiceModelDao())
     private val engineSelector = TtsEngineSelector(
         app.container.settingsRepository,
         PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
@@ -146,7 +153,8 @@ class RealtimeVoiceController(private val app: VervanApp) {
         runCatching { activeSpeechRecognizer?.destroy() }
         activeSpeechRecognizer = null
         vad.release()
-        inbuiltStt.release()
+        whisperOnnxStt.release()
+        whisperCppStt.release()
         _state.value = VoiceControllerState.IDLE
         _liveWaveform.value = emptyList()
         _liveElapsedMs.value = 0
@@ -177,6 +185,38 @@ class RealtimeVoiceController(private val app: VervanApp) {
         generationJob?.cancel()
         if (::playbackQueue.isInitialized) playbackQueue.stop()
         _playbackPaused.value = false
+    }
+
+    /** Resolves which offline STT engine (if any) the current turn should fall back to, based on
+     *  the `inbuiltSttEnabled` master toggle and the `sttEnginePreference` choice:
+     *   - returns null when offline STT is disabled entirely,
+     *   - "WHISPER_CPP" / "WHISPER_ONNX" pin to that engine, but only if it's actually downloaded
+     *     and ready (else null — the caller falls through to the device recognizer tier),
+     *   - "AUTO" prefers whisper.cpp (generally faster on the same hardware), then sherpa-onnx.
+     *  Calling isReady() here is what lazily loads the chosen model; idempotent under each engine's
+     *  mutex, so the background warm-up in [runSession] racing this call is safe.
+     *
+     *  Never throws. A native model load is the one step here that can fail in ways an engine can't
+     *  fully anticipate (a missing/mismatched .so on this ABI, a corrupt model file), and this runs
+     *  on the session's main loop — an escaping exception would tear down the whole voice session
+     *  rather than degrading to the device recognizer tier, which is exactly what the 3-tier policy
+     *  exists to avoid. A failed engine is treated as "not available for this turn".
+     *  [CancellationException] is deliberately re-thrown — [stop] cancels the session through it,
+     *  and swallowing it here would leave the loop running after teardown. */
+    private suspend fun pickInbuiltStt(): SttEngine? {
+        return try {
+            if (!app.container.settingsRepository.inbuiltSttEnabled.first()) return null
+            when (app.container.settingsRepository.sttEnginePreference.first()) {
+                "WHISPER_CPP" -> whisperCppStt.takeIf { it.isReady() }
+                "WHISPER_ONNX" -> whisperOnnxStt.takeIf { it.isReady() }
+                else -> whisperCppStt.takeIf { it.isReady() } ?: whisperOnnxStt.takeIf { it.isReady() }
+            }
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            Log.w(TAG, "Inbuilt STT unavailable this turn; falling through to device recognizer", t)
+            null
+        }
     }
 
     private suspend fun runSession() {
@@ -213,10 +253,12 @@ class RealtimeVoiceController(private val app: VervanApp) {
         // Warm the inbuilt STT model up in the background while the session settles, so the first
         // turn that needs it doesn't pay the multi-second native model load synchronously inside
         // the LISTENING state (where the user is already talking with no feedback). isReady() is
-        // idempotent and mutex-guarded, so this racing with the first real isReady() below is safe
-        // — whichever runs first does the load, the other is a no-op.
+        // idempotent and mutex-guarded, so this racing with the first real pickInbuiltStt() below
+        // is safe — whichever runs first does the load, the other is a no-op. pickInbuiltStt()
+        // resolves the user's chosen engine AND its isReady() in one call, so the warm-up loads
+        // exactly the model the loop will end up using.
         if (app.container.settingsRepository.inbuiltSttEnabled.first()) {
-            controllerScope?.launch(Dispatchers.Default) { runCatching { inbuiltStt.isReady() } }
+            controllerScope?.launch(Dispatchers.Default) { runCatching { pickInbuiltStt() } }
         }
 
         while (true) {
@@ -232,8 +274,8 @@ class RealtimeVoiceController(private val app: VervanApp) {
             //     Whisper model — only if it's actually downloaded AND the user has it enabled.
             //  3. Otherwise fall back to Android's system SpeechRecognizer (live capture, no VAD
             //     buffer needed since it does its own endpointing).
-            val inbuiltSttReady = app.container.settingsRepository.inbuiltSttEnabled.first() && inbuiltStt.isReady()
-            if (modelSupportsAudio || inbuiltSttReady) {
+            val activeInbuiltStt = pickInbuiltStt()
+            if (modelSupportsAudio || activeInbuiltStt != null) {
                 val captured = captureUntilSilence()
                 if (captured.pcm.isEmpty()) continue
                 val wavFile = writePcmToWav(captured.pcm)
@@ -251,10 +293,10 @@ class RealtimeVoiceController(private val app: VervanApp) {
                     _sttLabel.value = "Model audio input"
                     transcript = transcribeAudio(wavFile.absolutePath)
                 }
-                if (transcript.isNullOrBlank() && inbuiltSttReady) {
-                    _sttLabel.value = inbuiltStt.label
+                if (transcript.isNullOrBlank() && activeInbuiltStt != null) {
+                    _sttLabel.value = activeInbuiltStt.label
                     _liveTranscript.value = ""
-                    transcript = inbuiltStt.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
+                    transcript = activeInbuiltStt.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
                 }
                 if (transcript.isNullOrBlank()) {
                     _liveTranscript.value = ""
@@ -586,6 +628,8 @@ class RealtimeVoiceController(private val app: VervanApp) {
     }
 
     companion object {
+        private const val TAG = "RealtimeVoiceController"
+
         /** Frame duration for the one shared [ContinuousAudioCapture] stream — both STT
          * endpointing and barge-in detection read frames at this size. */
         private const val CAPTURE_FRAME_MS = 20

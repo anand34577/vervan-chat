@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
+import com.vervan.chat.ui.common.SectionLabel
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -69,7 +70,6 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     val useMlock by vm.useMlock.collectAsState()
     val flashAttentionMode by vm.flashAttentionMode.collectAsState()
     val kvCacheType by vm.kvCacheType.collectAsState()
-    val vulkanDeviceIndex by vm.vulkanDeviceIndex.collectAsState()
 
     Scaffold(
         topBar = {
@@ -254,7 +254,8 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         GenerationSlider("CPU threads (0 = auto)", cpuThreads.toFloat(), "%.0f", 0f..16f) { vm.setCpuThreads(it.toInt()) }
                         GenerationSlider("Batch size (n_batch)", nBatch.toFloat(), "%.0f", 128f..4096f, steps = 30) { vm.setNBatch(it.toInt()) }
                         GenerationSlider("Physical batch size (n_ubatch)", nUbatch.toFloat(), "%.0f", 32f..2048f, steps = 30) { vm.setNUbatch(it.toInt()) }
-                        GenerationSlider("Vulkan device index", vulkanDeviceIndex.toFloat(), "%.0f", 0f..4f) { vm.setVulkanDeviceIndex(it.toInt()) }
+                        // Vulkan device index is no longer surfaced — llama.cpp is locked to the
+                        // CPU backend in this build, so per-device Vulkan selection doesn't apply.
 
                         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -285,7 +286,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         "Global model loading and engine defaults. Per-model engine choices take priority.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (expertMode) Row(
+                    Row(
                         Modifier.fillMaxWidth().padding(top = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
