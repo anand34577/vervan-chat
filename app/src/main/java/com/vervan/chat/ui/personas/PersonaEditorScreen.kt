@@ -20,7 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
@@ -60,8 +60,10 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.vervanAccentFor
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -85,10 +87,8 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val importError by vm.importError.collectAsState()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showAvatarChooser by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val importCardLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.GetContent()
-    ) { uri -> uri?.let { vm.importCharacterCard(context, it) } }
     val pickAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
     ) { uri -> uri?.let { vm.importAvatar(context, it) } }
@@ -114,14 +114,17 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
+                val avatarAccent = vervanAccentFor((name.hashCode() and Int.MAX_VALUE) % 6)
                 val avatarBitmap = remember(avatarPath) {
-                    avatarPath?.let { path -> runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() }
+                    avatarPath?.takeUnless { it.startsWith("emoji:") }
+                        ?.let { path -> runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() }
                 }
+                val avatarEmoji = avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
                 Box(
                     Modifier
                         .size(64.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                        .then(if (!isBuiltIn) Modifier.clickable { pickAvatarLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) } else Modifier),
+                        .background(avatarAccent.container, CircleShape)
+                        .then(if (!isBuiltIn) Modifier.clickable { showAvatarChooser = true } else Modifier),
                     contentAlignment = Alignment.Center
                 ) {
                     if (avatarBitmap != null) {
@@ -131,8 +134,14 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.size(64.dp).clip(CircleShape)
                         )
+                    } else if (avatarEmoji != null) {
+                        Text(avatarEmoji, style = MaterialTheme.typography.headlineMedium)
                     } else {
-                        Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            name.trim().firstOrNull()?.uppercase() ?: "P",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = avatarAccent.onContainer,
+                        )
                     }
                 }
             }
@@ -146,9 +155,9 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             }
             if (!isBuiltIn) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
-                    TextButton(onClick = { pickAvatarLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.padding(top = 8.dp)) {
-                        Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(if (avatarPath != null) "Change image" else "Set avatar", modifier = Modifier.padding(start = 6.dp))
+                    TextButton(onClick = { showAvatarChooser = true }, modifier = Modifier.padding(top = 8.dp)) {
+                        Icon(Icons.Filled.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(if (avatarPath != null) "Change icon" else "Choose icon", modifier = Modifier.padding(start = 6.dp))
                     }
                     if (avatarPath != null) {
                         TextButton(onClick = vm::clearAvatar, modifier = Modifier.padding(top = 8.dp)) {
@@ -157,24 +166,25 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
-                    TextButton(onClick = { importCardLauncher.launch("image/png") }) {
-                        Icon(Icons.Filled.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Import character card (.png)", modifier = Modifier.padding(start = 6.dp))
-                    }
-                }
                 Text(
-                    "Pick an image for this persona's avatar, or import a SillyTavern-format character card to fill in Name, Description, and Instructions. Review before saving.",
+                    "Use a photo, an emoji, or the persona's first initial.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                 )
             }
+            ContextGuideCard(
+                icon = Icons.Outlined.Person,
+                title = "What a persona changes",
+                body = "A persona controls how the assistant speaks and works. You can choose it for a space or a single chat.",
+                modifier = Modifier.padding(top = 12.dp),
+                accentIndex = 2,
+            )
             if (importError != null) {
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = vm::dismissImportError,
-                    title = { Text("Couldn't import card") },
+                    title = { Text("Couldn't use image") },
                     text = { Text(importError.orEmpty()) },
                     confirmButton = { TextButton(onClick = vm::dismissImportError) { Text("OK") } }
                 )
@@ -236,11 +246,55 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         }
         }
     }
+    if (showAvatarChooser) {
+        val emojis = listOf("🙂", "🧠", "✍️", "🔎", "🎓", "💡", "🧭", "🤝")
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAvatarChooser = false },
+            title = { Text("Choose persona icon") },
+            text = {
+                Column {
+                    Text("Select an emoji or use a personal image.", style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                        maxItemsInEachRow = 4,
+                    ) {
+                        emojis.forEach { emoji ->
+                            androidx.compose.material3.Surface(
+                                onClick = { vm.setEmojiAvatar(emoji); showAvatarChooser = false },
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(emoji, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(12.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAvatarChooser = false
+                    pickAvatarLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
+                }) {
+                    Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Choose image", modifier = Modifier.padding(start = 6.dp))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.clearAvatar(); showAvatarChooser = false }) { Text("Use initial") }
+            },
+        )
+    }
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = "Delete persona?",
-            body = "\"$name\" will be permanently deleted.",
-            confirmLabel = "Delete",
+            body = "\"$name\" will move to the recycle bin and can be restored.",
+            confirmLabel = "Move to recycle bin",
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
             onDismiss = { showDeleteConfirm = false }

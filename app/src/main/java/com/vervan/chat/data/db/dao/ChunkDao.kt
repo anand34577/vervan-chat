@@ -18,7 +18,10 @@ interface ChunkDao {
     // [limit] bounds the fetch itself (RetrievalEngine passes MAX_CHUNKS_PER_QUERY + 1) so an
     // oversized KB's memory spike happens on a bounded read, not on the full table scan that a
     // post-fetch cap alone would still incur.
-    @Query("SELECT * FROM chunks WHERE knowledgeBaseId IN (:kbIds) LIMIT :limit")
+    // ORDER BY id makes the cap deterministic — without it, which chunks land in the first
+    // [limit] rows once a KB exceeds the cap is unspecified by SQLite (no index backs this
+    // query's natural order, and it isn't guaranteed to be insertion order either).
+    @Query("SELECT * FROM chunks WHERE knowledgeBaseId IN (:kbIds) ORDER BY id LIMIT :limit")
     suspend fun getForKnowledgeBases(kbIds: List<String>, limit: Int): List<Chunk>
 
     @Query("SELECT COUNT(*) FROM chunks WHERE documentId = :documentId")

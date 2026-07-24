@@ -6,12 +6,14 @@ import android.provider.OpenableColumns
 import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
 import com.vervan.chat.data.db.dao.JobDao
+import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.Chunk
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
+import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.toBytes
 import com.vervan.chat.retrieval.EmbeddingEngine
 import com.vervan.chat.system.NotificationHelper
@@ -40,6 +42,7 @@ class DocumentImportManager(
     private val documentDao: DocumentDao,
     private val chunkDao: ChunkDao,
     private val embeddingEngine: EmbeddingEngine,
+    private val modelDao: ModelDao,
     private val jobDao: JobDao? = null
 ) {
     private val docsDir: File
@@ -252,6 +255,10 @@ class DocumentImportManager(
         doc = doc.copy(status = DocumentStatus.EMBEDDING)
         documentDao.update(doc)
         ensureJobActive(jobId)
+        // Looked up once per document, not per chunk — the active embedding model can't change
+        // mid-import, and this is what stamps every chunk's embeddingModelId so a later model
+        // switch can be told apart from "still current" (see Chunk.embeddingModelId).
+        val activeEmbeddingModelId = if (embeddingEngine.isLoaded) modelDao.getActiveModel(ModelRole.EMBEDDING)?.id else null
         var embedFailures = 0
         val chunks = raw.map { rc ->
             val embedding = if (embeddingEngine.isLoaded) embeddingEngine.embed(rc.text, title = rc.sectionPath)?.toBytes() else null
@@ -262,7 +269,8 @@ class DocumentImportManager(
                 sectionPath = rc.sectionPath,
                 text = rc.text,
                 tokenCount = rc.tokenCount,
-                embedding = embedding
+                embedding = embedding,
+                embeddingModelId = if (embedding != null) activeEmbeddingModelId else null
             )
         }
         ensureJobActive(jobId)

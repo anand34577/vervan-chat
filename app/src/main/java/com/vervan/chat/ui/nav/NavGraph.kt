@@ -307,8 +307,8 @@ fun VervanNavGraph(
                     onOpenModels = { navController.navigate("models") },
                     onOpenNotes = { navController.navigate("notes") },
                     onOpenProjects = { navController.navigate("projects") },
-                    onOpenLibrary = { navController.navigate("library") },
-                    onOpenChats = { navController.navigate("chats") },
+                    onOpenLibrary = { navController.navigatePrimaryRoot("library") },
+                    onOpenChats = { navController.navigatePrimaryRoot("chats") },
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
@@ -975,11 +975,19 @@ private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: 
 }
 
 private fun NavHostController.navigatePrimaryRoot(route: String) {
+    // Home is the actual shell root. Restoring state while navigating to it can restore the
+    // destination that was previously popped above Home (for example Chats), making the Home
+    // button appear to open Chats. Collapse directly to the existing Home entry instead.
+    if (route == "home") {
+        popBackStack("home", inclusive = false)
+        return
+    }
     navigate(route) {
-        // Home is the stable app shell root; the graph's configured start can be onboarding,
-        // which is removed after setup and therefore cannot anchor restored tab stacks.
-        popUpTo("home") { saveState = true }
+        // These are flat top-level destinations rather than separate nested navigation graphs.
+        // Replace the current primary destination instead of saving it under Home, which would
+        // make that child stack eligible to reappear when Home is selected.
+        popUpTo("home") { saveState = false }
         launchSingleTop = true
-        restoreState = true
+        restoreState = false
     }
 }

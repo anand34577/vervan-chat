@@ -39,6 +39,12 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT COUNT(*) FROM documents WHERE workspaceId = :workspaceId AND deletedAt IS NULL")
     fun observeCountForWorkspace(workspaceId: String): Flow<Int>
 
+    // Used to decide whether switching the active embedding model is worth nudging the user to
+    // re-index (see ModelManagerViewModel.setActive) — no point prompting when there's nothing
+    // indexed yet.
+    @Query("SELECT COUNT(*) FROM documents WHERE status = 'READY' AND deletedAt IS NULL")
+    suspend fun countReady(): Int
+
     // Workspace deletion cascade — returned so each can go through
     // DocumentImportManager.delete() (removes the copied file + embedded chunks), not a bare
     // SQL delete which would orphan them.
