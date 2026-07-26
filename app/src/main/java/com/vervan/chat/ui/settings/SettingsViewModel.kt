@@ -40,6 +40,12 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val whisperGpuEnabled: StateFlow<Boolean> = settings.whisperGpuEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val supertonicVoiceVariant: StateFlow<String> = settings.supertonicVoiceVariant
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "multi")
+    fun setSupertonicVoiceVariant(v: String) = viewModelScope.launch { settings.setSupertonicVoiceVariant(v) }
+    val whisperModelVariant: StateFlow<String> = settings.whisperModelVariant
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "multi")
+    fun setWhisperModelVariant(v: String) = viewModelScope.launch { settings.setWhisperModelVariant(v) }
     val speechInputEnabled = settings.speechInputEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val voiceReplyMode = settings.voiceReplyMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "MANUAL")
     val voiceInputMethod = settings.voiceInputMethod.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DICTATION")

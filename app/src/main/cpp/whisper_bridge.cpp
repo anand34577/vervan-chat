@@ -13,6 +13,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <string>
 #include <thread>
 
@@ -42,6 +43,33 @@ struct WhisperSession {
     whisper_context *ctx = nullptr;
     int n_threads = 0;
 };
+
+// Escapes '"', '\', and control characters for embedding decoded text inside a JSON string
+// literal — whisper.cpp segment text is plain speech transcription, never untrusted markup, so
+// this only needs to keep the JSON well-formed, not defend against injection. Plain C++ linkage
+// (declared here, outside extern "C") since it returns std::string, not a JNI type.
+std::string json_escape(const char *s) {
+    if (s == nullptr) return "";
+    std::string out;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p; ++p) {
+        switch (*p) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (*p < 0x20) {
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04x", *p);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(*p);
+                }
+        }
+    }
+    return out;
+}
 
 } // namespace
 
@@ -179,6 +207,90 @@ Java_com_vervan_chat_voice_WhisperCppJni_nativeTranscribe(
         return nullptr;
     }
     return env->NewStringUTF(transcript.c_str());
+}
+
+// Timestamp-synced playback (see TranscriptionScreen) needs per-segment start/end times, not
+// just the flattened transcript nativeTranscribe returns — a second entry point rather than
+// changing nativeTranscribe's contract, since the realtime voice pipeline (its only other
+// caller) has no use for timestamps and every existing caller stays untouched.
+JNIEXPORT jstring JNICALL
+Java_com_vervan_chat_voice_WhisperCppJni_nativeTranscribeSegments(
+    JNIEnv *env, jobject /*thiz*/, jlong handle, jfloatArray samples, jint nSamples,
+    jstring language, jboolean translate
+) {
+    auto *session = reinterpret_cast<WhisperSession *>(handle);
+    if (session == nullptr || session->ctx == nullptr) {
+        set_last_error("nativeTranscribeSegments called with null session");
+        return nullptr;
+    }
+
+    const jsize arrayLen = env->GetArrayLength(samples);
+    const int sampleCount = std::min(static_cast<int>(arrayLen), std::max(0, static_cast<int>(nSamples)));
+    if (sampleCount <= 0) {
+        set_last_error("nativeTranscribeSegments called with no samples");
+        return nullptr;
+    }
+
+    jfloat *pcm = env->GetFloatArrayElements(samples, nullptr);
+    if (pcm == nullptr) {
+        set_last_error("GetFloatArrayElements returned null");
+        return nullptr;
+    }
+
+    const char *langC = env->GetStringUTFChars(language, nullptr);
+    std::string langStr(langC != nullptr ? langC : "auto");
+    if (langC != nullptr) env->ReleaseStringUTFChars(language, langC);
+    if (langStr.empty() || (langStr != "auto" && whisper_lang_id(langStr.c_str()) == -1)) {
+        langStr = "auto";
+    }
+
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    params.print_realtime = false;
+    params.print_progress = false;
+    params.print_timestamps = false;
+    params.print_special = false;
+    params.no_timestamps = false; // the whole point of this entry point, unlike nativeTranscribe
+    params.single_segment = false;
+    params.no_context = true;
+    params.translate = translate == JNI_TRUE;
+    params.n_threads = session->n_threads;
+    params.language = langStr.c_str();
+
+    int result = whisper_full(session->ctx, params, pcm, sampleCount);
+    env->ReleaseFloatArrayElements(samples, pcm, JNI_ABORT);
+
+    if (result != 0) {
+        set_last_error("whisper_full failed with code " + std::to_string(result));
+        return nullptr;
+    }
+
+    // whisper_full_get_segment_t0/t1 return centisecond (10ms) ticks — see whisper.h — multiplied
+    // by 10 here so the Kotlin side works in plain milliseconds like everything else in the app.
+    const int nSegments = whisper_full_n_segments(session->ctx);
+    std::string json = "[";
+    bool any = false;
+    for (int i = 0; i < nSegments; i++) {
+        const char *seg = whisper_full_get_segment_text(session->ctx, i);
+        if (seg == nullptr) continue;
+        std::string text = json_escape(seg);
+        // Leading/trailing whitespace on each segment's own text — whisper.cpp pads most
+        // segments with a leading space so they concatenate cleanly; not wanted per-segment here.
+        size_t start = text.find_first_not_of(" \t\n\r");
+        size_t end = text.find_last_not_of(" \t\n\r");
+        if (start == std::string::npos) continue;
+        text = text.substr(start, end - start + 1);
+        if (any) json += ",";
+        json += "{\"start\":" + std::to_string(whisper_full_get_segment_t0(session->ctx, i) * 10) +
+                ",\"end\":" + std::to_string(whisper_full_get_segment_t1(session->ctx, i) * 10) +
+                ",\"text\":\"" + text + "\"}";
+        any = true;
+    }
+    json += "]";
+
+    if (!any) {
+        return nullptr;
+    }
+    return env->NewStringUTF(json.c_str());
 }
 
 JNIEXPORT void JNICALL

@@ -87,6 +87,10 @@ class WhisperCppSttEngine(
     @Volatile private var usingGpu = false
     /** Set by [release]; the next mutex holder (a running decode, or release itself) frees. */
     @Volatile private var releaseRequested = false
+    /** Which model variant (see [SettingsRepository.whisperModelVariant]) [handle] was built
+     * from — lets [ensureLoadedLocked] notice the user switched models and rebuild instead of
+     * silently keeping the old one loaded. */
+    private var loadedVariant: String? = null
 
     override suspend fun isReady(): Boolean = mutex.withLock {
         ensureLoadedLocked()
@@ -124,6 +128,35 @@ class WhisperCppSttEngine(
         result
     }
 
+    /** One decoded whisper.cpp segment — [startMs]/[endMs] are offsets into the audio that was
+     *  transcribed, for the Transcription screen's timestamp-synced playback. */
+    data class TranscriptSegment(val startMs: Long, val endMs: Long, val text: String)
+
+    /** Same shape as [transcribe] but returns per-segment timestamps — used by the Transcription
+     *  screen (a whole-file batch job, unlike the realtime pipeline's short VAD utterances, where
+     *  timestamps have no UI to attach to). Not part of the [SttEngine] interface: nothing else
+     *  in the app needs timestamps, so this stays a concrete-class extra rather than a contract
+     *  every [SttEngine] implementation would have to satisfy. */
+    suspend fun transcribeWithTimestamps(pcm: ShortArray): List<TranscriptSegment>? = mutex.withLock {
+        ensureLoadedLocked()
+        val h = handle
+        val result = if (h == 0L) {
+            null
+        } else {
+            try {
+                withContext(Dispatchers.Default) { decodeSegments(h, pcm) }
+            } catch (c: CancellationException) {
+                applyPendingReleaseLocked()
+                throw c
+            } catch (t: Throwable) {
+                Log.w(TAG, "whisper.cpp segment decode failed", t)
+                null
+            }
+        }
+        applyPendingReleaseLocked()
+        result
+    }
+
     override fun release() {
         releaseRequested = true
         // If no decode/load currently holds the lock, free immediately. Otherwise the in-flight
@@ -139,10 +172,17 @@ class WhisperCppSttEngine(
      *  into this APK, or if the model isn't downloaded yet (in which case it stays unlatched so a
      *  later call retries). */
     private suspend fun ensureLoadedLocked() {
-        if (loaded || releaseRequested) return
+        if (releaseRequested) return
         if (!BuildConfig.WHISPER_CPP_AVAILABLE) return
-        val row = voiceModelDao.getByEngine(ENGINE, MODEL_LANGUAGE_KEY) ?: return
-        val modelFile = findInstalledModelFile(context, row.filePath) ?: return
+        val variant = settingsRepository.whisperModelVariant.first()
+        if (loaded && variant == loadedVariant) return
+        if (loaded && variant != loadedVariant) {
+            // The selected model changed since the last load — free the stale context so the
+            // block below rebuilds from the newly selected model instead of silently keeping it.
+            freeAndResetLocked()
+        }
+        val row = voiceModelDao.getByEngine(ENGINE, variant) ?: return
+        val modelFile = findInstalledModelFile(context, row.filePath, variant) ?: return
         // System.loadLibrary must be inside the guard, not outside it: WHISPER_CPP_AVAILABLE is a
         // single app-wide boolean, but the native libs are packaged per-ABI (see whisperCppAbis in
         // app/build.gradle.kts). A build that ships libwhisper.so for arm64-v8a only sets the flag
@@ -174,6 +214,7 @@ class WhisperCppSttEngine(
         if (h != 0L) {
             handle = h
             loaded = true
+            loadedVariant = variant
         }
     }
 
@@ -208,6 +249,7 @@ class WhisperCppSttEngine(
             handle = 0L
         }
         loaded = false
+        loadedVariant = null
         releaseRequested = false
     }
 
@@ -217,6 +259,18 @@ class WhisperCppSttEngine(
     private fun decode(h: Long, pcm: ShortArray): String? {
         val samples = FloatArray(pcm.size) { pcm[it] / 32768f }
         return WhisperCppJni.nativeTranscribe(h, samples, samples.size, DECODE_LANGUAGE, translate = false)?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun decodeSegments(h: Long, pcm: ShortArray): List<TranscriptSegment>? {
+        val samples = FloatArray(pcm.size) { pcm[it] / 32768f }
+        val json = WhisperCppJni.nativeTranscribeSegments(h, samples, samples.size, DECODE_LANGUAGE, translate = false) ?: return null
+        val array = org.json.JSONArray(json)
+        val segments = (0 until array.length()).mapNotNull { i ->
+            val obj = array.optJSONObject(i) ?: return@mapNotNull null
+            val text = obj.optString("text").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TranscriptSegment(obj.optLong("start"), obj.optLong("end"), text)
+        }
+        return segments.takeIf { it.isNotEmpty() }
     }
 
     /** The downloader ([com.vervan.chat.modeldownload.ModelDownloadRepository.finalizeVoiceModel])
@@ -235,18 +289,21 @@ class WhisperCppSttEngine(
 
         const val ENGINE = "WHISPER_CPP"
 
-        /** Row key in [TtsVoiceModelDao], matching the catalog entry's `ttsLanguage` (see
-         *  [com.vervan.chat.modeldownload.ModelCatalog]). This is a *catalog* label meaning "the
-         *  multilingual model", NOT a language whisper.cpp understands — see [DECODE_LANGUAGE]. */
+        /** Default row key in [TtsVoiceModelDao] — the catalog entry's `ttsLanguage` for the
+         *  original bundled Tiny model (see [com.vervan.chat.modeldownload.ModelCatalog]). This
+         *  is a *catalog* label meaning "the multilingual Tiny model", NOT a language whisper.cpp
+         *  understands — see [DECODE_LANGUAGE]. Larger models ("base"/"small") use their own
+         *  variant key instead — see [SettingsRepository.whisperModelVariant]. */
         const val MODEL_LANGUAGE_KEY = "multi"
 
-        /** Resolves both catalog downloads and local imports. The canonical directory fallback
-         * also repairs status after an older/stale database row even though the copied model is
-         * present and loadable on disk. */
-        fun findInstalledModelFile(context: Context, recordedPath: String? = null): File? {
+        /** Resolves both catalog downloads and local imports for the given model [variant]
+         * (default the original Tiny model, for callers that only care whether *something* is
+         * installed). The canonical directory fallback also repairs status after an
+         * older/stale database row even though the copied model is present and loadable on disk. */
+        fun findInstalledModelFile(context: Context, recordedPath: String? = null, variant: String = MODEL_LANGUAGE_KEY): File? {
             val canonicalDir = File(
                 context.filesDir,
-                "stt_models/${ENGINE.lowercase()}_$MODEL_LANGUAGE_KEY"
+                "stt_models/${ENGINE.lowercase()}_$variant"
             )
             return listOfNotNull(recordedPath?.let(::File), canonicalDir)
                 .asSequence()

@@ -47,6 +47,12 @@ internal object WhisperCppJni {
      *  English instead of transcription. Blocks the calling thread — invoke off the main thread. */
     external fun nativeTranscribe(handle: Long, samples: FloatArray, nSamples: Int, language: String, translate: Boolean): String?
 
+    /** Same contract as [nativeTranscribe], but returns a JSON array of per-segment
+     *  `{"start":ms,"end":ms,"text":"..."}` objects instead of one flat string — used by the
+     *  Transcription screen for timestamp-synced playback. Returns null on failure or if no
+     *  segment produced text (same "fall through" contract as [nativeTranscribe]). */
+    external fun nativeTranscribeSegments(handle: Long, samples: FloatArray, nSamples: Int, language: String, translate: Boolean): String?
+
     /** Frees the whisper context. Safe to call on an already-closed (0) handle. */
     external fun nativeFree(handle: Long)
 

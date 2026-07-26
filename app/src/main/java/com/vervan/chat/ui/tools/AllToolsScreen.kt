@@ -102,6 +102,8 @@ private val categories = listOf(
         Icons.Filled.RecordVoiceOver,
         listOf(
             ToolEntry(Icons.Filled.Mic, "Voice chat", "Have a hands-free local conversation.", "tools/voice-chat"),
+            ToolEntry(Icons.Filled.Mic, "Transcribe", "Turn a recording or audio/video file into editable text.", "tools/transcribe"),
+            ToolEntry(Icons.Filled.RecordVoiceOver, "Text to speech", "Convert text into spoken audio you can export.", "tools/text-to-speech"),
             ToolEntry(Icons.Filled.Translate, "Translate", "Translate typed text or text from a photo.", "tools/translate"),
             ToolEntry(Icons.Filled.Forum, "Live translator", "Take turns speaking across two languages.", "tools/live-translator"),
             ToolEntry(Icons.Filled.RecordVoiceOver, "Pronunciation coach", "Compare a spoken attempt with a target phrase.", "tools/pronunciation-coach"),
@@ -518,12 +520,16 @@ private fun ToolCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = Space.sm),
             )
-            Text(
-                readiness,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (readiness == "Ready") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = Space.xs),
-            )
+            // Positive readiness is the normal state and does not need repeating on every card.
+            // Keep only the exceptions, where the label tells the user what must change.
+            if (readiness != "Ready") {
+                Text(
+                    readiness,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+            }
         }
     }
 }

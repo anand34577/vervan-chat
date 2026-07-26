@@ -28,6 +28,8 @@ import com.vervan.chat.data.db.dao.StoreInstallSessionDao
 import com.vervan.chat.data.db.dao.StudyCardDao
 import com.vervan.chat.data.db.dao.ToolAuditDao
 import com.vervan.chat.data.db.dao.ToolRunDao
+import com.vervan.chat.data.db.dao.TranscriptionProjectDao
+import com.vervan.chat.data.db.dao.TtsProjectDao
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.dao.WorkflowDao
 import com.vervan.chat.data.db.dao.WorkspaceDao
@@ -74,6 +76,8 @@ import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.data.db.entities.ToolAudit
 import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.ToolRunState
+import com.vervan.chat.data.db.entities.TranscriptionProject
+import com.vervan.chat.data.db.entities.TtsProject
 import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
@@ -140,9 +144,10 @@ class Converters {
         Folder::class, FlashcardSet::class, MemorySuggestion::class, ToolAudit::class, JobRecord::class,
         Workspace::class, Expense::class, TtsVoiceModel::class, ToolRun::class,
         DownloadPackage::class, DownloadFile::class,
-        StoreInstallSession::class, StoreInstallArtifact::class
+        StoreInstallSession::class, StoreInstallArtifact::class, TranscriptionProject::class,
+        TtsProject::class
     ],
-    version = 47,
+    version = 50,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -174,4 +179,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadFileDao(): DownloadFileDao
     abstract fun storeInstallSessionDao(): StoreInstallSessionDao
     abstract fun storeInstallArtifactDao(): StoreInstallArtifactDao
+    abstract fun transcriptionProjectDao(): TranscriptionProjectDao
+    abstract fun ttsProjectDao(): TtsProjectDao
 }

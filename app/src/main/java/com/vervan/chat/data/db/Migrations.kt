@@ -289,8 +289,8 @@ val MIGRATIONS = arrayOf(
     },
     object : Migration(31, 32) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Downloaded voice files for the realtime voice pipeline's Piper/Kokoro TTS
-            // engines (Supertonic manages its own storage via the SDK, no row here).
+            // Downloaded voice files for the realtime voice pipeline's Piper/Kokoro/Supertonic
+            // TTS engines.
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS tts_voice_models (" +
                     "id TEXT NOT NULL PRIMARY KEY, engine TEXT NOT NULL, language TEXT NOT NULL, " +
@@ -539,6 +539,56 @@ val MIGRATIONS = arrayOf(
     object : Migration(46, 47) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE messages ADD COLUMN voiceRecordingPath TEXT")
+        }
+    },
+    object : Migration(47, 48) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Transcription screen's persistence unit — see TranscriptionProject.
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS transcription_projects (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    fileName TEXT NOT NULL,
+                    audioPath TEXT NOT NULL,
+                    durationMs INTEGER NOT NULL,
+                    transcript TEXT NOT NULL,
+                    engine TEXT NOT NULL,
+                    modelVariant TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    errorMessage TEXT,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_transcription_projects_createdAt ON transcription_projects(createdAt)")
+        }
+    },
+    object : Migration(48, 49) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Per-segment timestamps for timestamp-synced playback — see TranscriptionProject.segmentsJson.
+            db.execSQL("ALTER TABLE transcription_projects ADD COLUMN segmentsJson TEXT")
+        }
+    },
+    object : Migration(49, 50) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Text-to-Speech screen's history — see TtsProject.
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS tts_projects (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    sourceText TEXT NOT NULL,
+                    engine TEXT NOT NULL,
+                    voiceVariant TEXT NOT NULL,
+                    language TEXT NOT NULL,
+                    audioPath TEXT NOT NULL,
+                    durationMs INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tts_projects_createdAt ON tts_projects(createdAt)")
         }
     }
 )
