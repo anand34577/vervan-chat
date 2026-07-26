@@ -193,10 +193,11 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(Space.lg)) {
                     Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Auto uses Piper. Choose Kokoro for higher quality with slower playback.",
+                        "Auto uses Piper. Choose Kokoro for higher quality with slower playback, or Supertonic for a 31-language voice (largest download, slowest).",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val kokoroDownloaded = downloadedVoiceModels.any { it.engine == "KOKORO" && it.language == "multi" && it.isReady }
+                    val supertonicDownloaded = downloadedVoiceModels.any { it.engine == "SUPERTONIC" && it.language == "multi" && it.isReady }
                     androidx.compose.foundation.layout.FlowRow(
                         modifier = Modifier.padding(top = 8.dp),
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
@@ -213,6 +214,47 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             enabled = kokoroDownloaded,
                             label = { Text(if (kokoroDownloaded) "Kokoro" else "Kokoro (download below)") }
                         )
+                        FilterChip(
+                            selected = ttsEnginePreference == "SUPERTONIC",
+                            onClick = { vm.setTtsEnginePreference("SUPERTONIC") },
+                            enabled = supertonicDownloaded,
+                            label = { Text(if (supertonicDownloaded) "Supertonic" else "Supertonic (download in Model Manager)") }
+                        )
+                    }
+                    if (!supertonicDownloaded) {
+                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = 4.dp)) {
+                            Text("Open Model Manager to download Supertonic", style = MaterialTheme.typography.labelSmall)
+                        }
+                    } else {
+                        // Every voice besides "multi" (M1) is a separate ~290 KB download layered
+                        // on the shared acoustic model — see SupertonicTtsEngine's class doc. Only
+                        // list voices actually installed; the rest are downloadable in Model Manager.
+                        val supertonicVoiceVariant by vm.supertonicVoiceVariant.collectAsState()
+                        val installedVoices = downloadedVoiceModels.filter { it.engine == "SUPERTONIC" && it.isReady }
+                        Text(
+                            "Supertonic voice",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        androidx.compose.foundation.layout.FlowRow(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                        ) {
+                            installedVoices.forEach { voice ->
+                                val label = com.vervan.chat.modeldownload.ModelCatalog.all
+                                    .find { it.ttsEngine == "SUPERTONIC" && it.ttsLanguage == voice.language }
+                                    ?.displayName?.substringAfter("— ") ?: voice.language
+                                FilterChip(
+                                    selected = supertonicVoiceVariant == voice.language,
+                                    onClick = { vm.setSupertonicVoiceVariant(voice.language) },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = 4.dp)) {
+                            Text("Download more Supertonic voices in Model Manager", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
@@ -252,13 +294,14 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         modelAudioSttEnabled,
                         vm::setModelAudioSttEnabled
                     )
+                    val whisperModelVariant by vm.whisperModelVariant.collectAsState()
                     val whisperModel = downloadedVoiceModels.firstOrNull {
                         it.engine.equals("WHISPER_CPP", ignoreCase = true) &&
-                            it.language.equals("multi", ignoreCase = true) && it.isReady
+                            it.language.equals(whisperModelVariant, ignoreCase = true) && it.isReady
                     }
                     val whisperAvailable = com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE &&
                         com.vervan.chat.voice.WhisperCppSttEngine.findInstalledModelFile(
-                            app, whisperModel?.filePath
+                            app, whisperModel?.filePath, whisperModelVariant
                         ) != null
                     VoiceToggleRow(
                         "whisper.cpp",
@@ -308,12 +351,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     } else {
-                        val whisperModel = downloadedVoiceModels.firstOrNull {
-                            it.engine.equals("WHISPER_CPP", ignoreCase = true) &&
-                                it.language.equals("multi", ignoreCase = true) && it.isReady
-                        }
                         val whisperFile = com.vervan.chat.voice.WhisperCppSttEngine
-                            .findInstalledModelFile(app, whisperModel?.filePath)
+                            .findInstalledModelFile(app, whisperModel?.filePath, whisperModelVariant)
                         val lastBackend = remember { vm.whisperLastKnownBackend() }
                         Text(
                             when {
@@ -324,6 +363,36 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp)
                         )
+                        val installedWhisperModels = downloadedVoiceModels.filter {
+                            it.engine.equals("WHISPER_CPP", ignoreCase = true) && it.isReady
+                        }
+                        if (installedWhisperModels.size > 1) {
+                            Text(
+                                "Model size",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 12.dp)
+                            )
+                            Text(
+                                "Tiny/Base: fastest, least accurate. Small: balanced. Larger models are slower and use more memory.",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            androidx.compose.foundation.layout.FlowRow(
+                                modifier = Modifier.padding(top = 8.dp),
+                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                            ) {
+                                installedWhisperModels.forEach { model ->
+                                    val label = com.vervan.chat.modeldownload.ModelCatalog.all
+                                        .find { it.ttsEngine == "WHISPER_CPP" && it.ttsLanguage == model.language }
+                                        ?.displayName?.substringBefore(" —") ?: model.language
+                                    FilterChip(
+                                        selected = whisperModelVariant == model.language,
+                                        onClick = { vm.setWhisperModelVariant(model.language) },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                        }
                     }
                     androidx.compose.material3.TextButton(
                         onClick = onOpenModelManager,

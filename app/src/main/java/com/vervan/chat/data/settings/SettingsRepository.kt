@@ -50,6 +50,8 @@ class SettingsRepository(context: Context) {
         val STT_ENGINE_PREFERENCE = stringPreferencesKey("stt_engine_preference")
         val STT_FALLBACK_ENABLED = booleanPreferencesKey("stt_fallback_enabled")
         val WHISPER_GPU_ENABLED = booleanPreferencesKey("whisper_gpu_enabled")
+        val SUPERTONIC_VOICE_VARIANT = stringPreferencesKey("supertonic_voice_variant")
+        val WHISPER_MODEL_VARIANT = stringPreferencesKey("whisper_model_variant")
         val SPEECH_INPUT_ENABLED = booleanPreferencesKey("speech_input_enabled")
         val VOICE_REPLY_MODE = stringPreferencesKey("voice_reply_mode")
         val VOICE_INPUT_METHOD = stringPreferencesKey("voice_input_method")
@@ -259,6 +261,22 @@ class SettingsRepository(context: Context) {
      * turning this on costs at most one crash, never a repeat one. */
     val whisperGpuEnabled: Flow<Boolean> = store.data.map { it[Keys.WHISPER_GPU_ENABLED] ?: false }
     suspend fun setWhisperGpuEnabled(v: Boolean) { store.edit { it[Keys.WHISPER_GPU_ENABLED] = v } }
+
+    /** Which installed Supertonic voice is used — a [com.vervan.chat.modeldownload.CatalogModel]
+     * `ttsLanguage` key ("multi" for the original bundled M1 voice, or "F1"/"M2"/etc. for one of
+     * the other 9 installable voice styles — see [com.vervan.chat.voice.SupertonicTtsEngine]).
+     * Defaults to "multi" so existing installs keep using the same voice they already have,
+     * unchanged. Every voice other than "multi" is just a ~290 KB style file that reuses the
+     * shared ~400 MB acoustic model from the "multi" package, so that package must stay
+     * installed regardless of which voice is selected here. */
+    val supertonicVoiceVariant: Flow<String> = store.data.map { it[Keys.SUPERTONIC_VOICE_VARIANT] ?: "multi" }
+    suspend fun setSupertonicVoiceVariant(v: String) { store.edit { it[Keys.SUPERTONIC_VOICE_VARIANT] = v } }
+
+    /** Which installed whisper.cpp model is loaded — a catalog `ttsLanguage` key ("multi" for the
+     * original bundled Tiny model, or "base"/"small"). Defaults to "multi" so existing installs
+     * keep working unchanged. See [com.vervan.chat.voice.WhisperCppSttEngine]. */
+    val whisperModelVariant: Flow<String> = store.data.map { it[Keys.WHISPER_MODEL_VARIANT] ?: "multi" }
+    suspend fun setWhisperModelVariant(v: String) { store.edit { it[Keys.WHISPER_MODEL_VARIANT] = v } }
 
     // ---- Unified multimodal voice UX ----
     val speechInputEnabled: Flow<Boolean> = store.data.map { it[Keys.SPEECH_INPUT_ENABLED] ?: true }

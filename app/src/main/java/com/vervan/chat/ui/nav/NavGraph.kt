@@ -305,15 +305,11 @@ fun VervanNavGraph(
                 HomeScreen(
                     onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
                     onOpenModels = { navController.navigate("models") },
-                    onOpenNotes = { navController.navigate("notes") },
-                    onOpenProjects = { navController.navigate("projects") },
-                    onOpenLibrary = { navController.navigatePrimaryRoot("library") },
                     onOpenChats = { navController.navigatePrimaryRoot("chats") },
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
                     onOpenSearch = { navController.navigate("search") },
-                    onOpenProfile = { navController.navigate("profile") },
                     onOpenWorkspaces = { navController.navigate("workspaces") },
                     onOpenDocScanner = { navController.navigate("tools/document-scanner") },
                     onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
@@ -347,6 +343,8 @@ fun VervanNavGraph(
                     androidx.compose.material3.CircularProgressIndicator()
                 }
             }
+            composable("tools/transcribe") { com.vervan.chat.ui.tools.TranscriptionScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/text-to-speech") { com.vervan.chat.ui.tools.TextToSpeechScreen(onBack = { navController.popBackStack() }) }
             composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/writing-assistant") { com.vervan.chat.ui.tools.WritingAssistantScreen(onBack = { navController.popBackStack() }) }
             composable("tools/smart-notes") { com.vervan.chat.ui.tools.SmartNotesScreen(onBack = { navController.popBackStack() }) }
@@ -694,7 +692,20 @@ fun VervanNavGraph(
                     onOpenVoice = { navController.navigate("settings/voice") },
                     onOpenStorage = { navController.navigate("settings/storage") },
                     onOpenSecurity = { navController.navigate("settings/security") },
-                    onOpenTools = { navController.navigate("settings/tools") }
+                    onOpenTools = { navController.navigate("settings/tools") },
+                    onOpenHelp = { navController.navigate("settings/help") }
+                )
+            }
+            composable("settings/help") {
+                com.vervan.chat.ui.settings.HelpSupportScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenModels = { navController.navigate("models") },
+                    onOpenKnowledge = { navController.navigate("knowledge") },
+                    onOpenGeneration = { navController.navigate("settings/generation") },
+                    onOpenPermissions = { navController.navigate("settings/permissions") },
+                    onOpenJobs = { navController.navigate("jobs") },
+                    onOpenStorage = { navController.navigate("settings/storage") },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") }
                 )
             }
             composable("settings/tools") { com.vervan.chat.ui.settings.ToolsScreen(onBack = { navController.popBackStack() }) }

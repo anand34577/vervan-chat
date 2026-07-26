@@ -1,10 +1,12 @@
 package com.vervan.chat.voice
 
-/** Shared standard-44-byte-header WAV <-> PCM16 mono codec. [decode] is used by every
- * [TtsEngine] that hands back a WAV file/bytes instead of raw samples (Android system TTS,
- * Supertonic) — stereo is downmixed to mono (left channel) since every downstream consumer
- * (VAD, playback) is mono. [encode] is used by [RealtimeVoiceController] to package captured
- * mic PCM into the WAV format `LlmEngine.generate(audioPath=...)` requires. */
+/** Shared standard-44-byte-header WAV <-> PCM16 mono codec. [decode] reads the WAV files
+ * whisper.cpp/Android system STT hand back (see [OfflineDictationTranscriber],
+ * [AndroidSystemSttRecognizer]) — stereo is downmixed to mono (left channel) since every
+ * downstream consumer (VAD, playback) is mono. None of the TTS engines need it: Piper/Kokoro's
+ * sherpa-onnx API and Supertonic's ONNX vocoder both hand back raw PCM samples directly, not a
+ * WAV container. [encode] is used by [RealtimeVoiceController] to package captured mic PCM into
+ * the WAV format `LlmEngine.generate(audioPath=...)` requires. */
 internal object WavPcmDecoder {
     fun decode(bytes: ByteArray): TtsAudio {
         require(bytes.size >= 44) { "Not a valid WAV: only ${bytes.size} bytes" }

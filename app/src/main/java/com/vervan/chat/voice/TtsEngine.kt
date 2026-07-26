@@ -5,10 +5,10 @@ package com.vervan.chat.voice
  * varies by engine. */
 data class TtsAudio(val samples: ShortArray, val sampleRateHz: Int)
 
-/** One TTS backend (Piper, plus the optional Kokoro quality tier — Android's system TTS is
- * deliberately never used). [com.vervan.chat.voice.TtsEngineSelector] picks which implementation
- * is active; [com.vervan.chat.voice.RealtimeVoiceController] only ever talks to this interface,
- * never a concrete engine. */
+/** One TTS backend (Piper, plus the optional Kokoro and Supertonic quality tiers — Android's
+ * system TTS is deliberately never used). [com.vervan.chat.voice.TtsEngineSelector] picks which
+ * implementation is active; [com.vervan.chat.voice.RealtimeVoiceController] only ever talks to
+ * this interface, never a concrete engine. */
 interface TtsEngine {
     /** Shown in the UI badge (e.g. "TTS: Supertonic") — same pattern as the existing
      * "STT: ..." badge in [com.vervan.chat.ui.tools.VoiceChatScreen]. */

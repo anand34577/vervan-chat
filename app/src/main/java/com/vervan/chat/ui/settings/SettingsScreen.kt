@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -114,7 +115,8 @@ fun SettingsScreen(
     onOpenVoice: () -> Unit = {},
     onOpenStorage: () -> Unit = {},
     onOpenSecurity: () -> Unit = {},
-    onOpenTools: () -> Unit = {}
+    onOpenTools: () -> Unit = {},
+    onOpenHelp: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val modelCount by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
@@ -133,6 +135,18 @@ fun SettingsScreen(
     }
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
+        SettingsSection(
+            "Help",
+            listOf(
+                SettingsDestination(
+                    Icons.AutoMirrored.Filled.Help,
+                    "Help & troubleshooting",
+                    "How-to guides, common fixes, and app diagnostics",
+                    listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
+                    onOpenHelp
+                )
+            )
+        ),
         SettingsSection(
             "Look & feel",
             listOf(
@@ -320,18 +334,10 @@ fun SettingsScreen(
                     },
                     {
                         Text(
-                            "Chats and documents stay on this device.",
+                            "Chats and documents stay on this device. Check important answers before acting on them.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(Space.lg)
-                        )
-                    },
-                    {
-                        Text(
-                            "Check important answers before acting on them.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = Space.lg).padding(bottom = Space.lg)
                         )
                     }
                 )

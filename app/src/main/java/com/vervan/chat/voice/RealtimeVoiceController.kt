@@ -87,7 +87,8 @@ class RealtimeVoiceController(
     private val engineSelector = TtsEngineSelector(
         app.container.settingsRepository,
         PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
-        KokoroTtsEngine(app.container.db.ttsVoiceModelDao())
+        KokoroTtsEngine(app.container.db.ttsVoiceModelDao()),
+        SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
     )
     private lateinit var playbackQueue: TtsPlaybackQueue
     private var controllerScope: CoroutineScope? = null

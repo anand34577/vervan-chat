@@ -980,7 +980,8 @@ fun ChatScreen(
         com.vervan.chat.voice.TtsEngineSelector(
             app.container.settingsRepository,
             com.vervan.chat.voice.PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
-            com.vervan.chat.voice.KokoroTtsEngine(app.container.db.ttsVoiceModelDao())
+            com.vervan.chat.voice.KokoroTtsEngine(app.container.db.ttsVoiceModelDao()),
+            com.vervan.chat.voice.SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
         )
     }
     val autoReadQueue = remember { com.vervan.chat.voice.TtsPlaybackQueue(app, ttsEngineSelector, scope) }
@@ -996,6 +997,14 @@ fun ChatScreen(
     }
     var autoReadBaselineReady by remember(chatId) { mutableStateOf(false) }
     var lastAutoReadId by remember(chatId) { mutableStateOf<String?>(null) }
+    // Tracks the assistant message currently being streamed to TTS, plus how much of its
+    // (thinking/clarification-stripped) spoken text has already been fed to the chunker — lets
+    // each LaunchedEffect firing (one per streamed token batch, since it's keyed on `messages`)
+    // enqueue only the new delta, so TTS starts speaking sentence 1 while the LLM is still
+    // generating the rest instead of waiting for MessageState.COMPLETE.
+    var speakingMessageId by remember(chatId) { mutableStateOf<String?>(null) }
+    var spokenSoFar by remember(chatId) { mutableStateOf("") }
+    var activeChunker by remember(chatId) { mutableStateOf<com.vervan.chat.voice.SentenceChunker?>(null) }
     LaunchedEffect(chatId) {
         val chatRow = app.container.db.chatDao().getChat(chatId)
         val stored = app.container.db.messageDao().getMessages(chatId)
@@ -1006,11 +1015,35 @@ fun ChatScreen(
     }
     LaunchedEffect(autoReadAloud, messages, autoReadBaselineReady) {
         val last = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
-        if (!autoReadBaselineReady || last == null || last.state != MessageState.COMPLETE) return@LaunchedEffect
+        if (!autoReadBaselineReady || last == null) return@LaunchedEffect
         if (!autoReadAloud) {
+            if (speakingMessageId != null) {
+                autoReadQueue.stop()
+                activeChunker = null
+                speakingMessageId = null
+                spokenSoFar = ""
+            }
             lastAutoReadId = last.id
-        } else if (last.id != lastAutoReadId) {
-            speakAloud(assistantSpokenText(last.content))
+            return@LaunchedEffect
+        }
+        if (last.id == lastAutoReadId) return@LaunchedEffect
+        if (last.id != speakingMessageId) {
+            autoReadQueue.startTurn()
+            activeChunker = com.vervan.chat.voice.SentenceChunker { sentence ->
+                autoReadQueue.enqueue(com.vervan.chat.voice.markdownToSpeechText(sentence))
+            }
+            speakingMessageId = last.id
+            spokenSoFar = ""
+        }
+        val fullSpoken = assistantSpokenText(last.content)
+        val delta = if (fullSpoken.startsWith(spokenSoFar)) fullSpoken.removePrefix(spokenSoFar) else fullSpoken
+        spokenSoFar = fullSpoken
+        if (delta.isNotEmpty()) activeChunker?.append(delta)
+        if (last.state == MessageState.COMPLETE) {
+            activeChunker?.flush()
+            autoReadQueue.endTurn()
+            activeChunker = null
+            speakingMessageId = null
             lastAutoReadId = last.id
         }
     }

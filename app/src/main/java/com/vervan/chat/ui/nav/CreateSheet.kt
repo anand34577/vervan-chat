@@ -35,7 +35,7 @@ data class CreateAction(val icon: ImageVector, val label: String, val descriptio
 @Composable
 fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: () -> Unit) {
     var showAll by rememberSaveable { mutableStateOf(false) }
-    val quickLabels = setOf("New chat", "New note", "New project", "Scan image")
+    val quickLabels = setOf("New chat", "New note", "Scan image", "Voice note")
     val visibleActions = if (showAll) actions else actions.filter { it.label in quickLabels }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {

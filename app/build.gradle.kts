@@ -304,10 +304,28 @@ dependencies {
     // bzip2 support, and this is exactly commons-compress's job; avoids hand-rolling a bzip2
     // decoder for what TtsModelDownloadManager.downloadArchiveVoice needs.
     implementation("org.apache.commons:commons-compress:1.26.1")
-    // Supertonic's Android SDK (ai.supertone:supertonic-android, per the original spec) does
-    // not appear to be publicly documented or Maven-resolvable at all — its own GitHub repo
-    // lists iOS/Flutter/Java/web support but nothing for Android. Disabled pending a real
-    // integration path: see SupertonicTtsEngine.kt.disabled.
+    // Supertonic (github.com/supertone-inc/supertonic) has no official Android SDK, but its
+    // Java reference example (java/ExampleONNX.java, java/Helper.java) is plain
+    // ai.onnxruntime.* code with no Android-specific dependency — SupertonicTtsEngine.kt ports
+    // that pipeline to Kotlin against this same API surface, which onnxruntime-android exposes
+    // identically. This DOES publish a real Maven Central coordinate (confirmed), unlike the
+    // fictional "ai.supertone:supertonic-android" the original disabled stub assumed.
+    //
+    // sherpa-onnx's vendored AAR (see the fileTree dependency above) bundles its own
+    // libonnxruntime.so per ABI, which collides at APK-merge time with this artifact's copy at
+    // the identical jniLibs path. Rather than leave that to pickFirsts's unspecified tie-break,
+    // the vendored app/libs/sherpa-onnx-1.13.4.aar has been repacked (jni/*/libonnxruntime.so
+    // removed from each ABI, everything else byte-identical) so exactly one ONNX Runtime build
+    // ships in the APK — this one — and sherpa-onnx's C-API/JNI libraries load against it
+    // instead. The version below MUST match the exact onnxruntime build sherpa-onnx-1.13.4 was
+    // linked against: its libsherpa-onnx-jni.so requires the versioned symbol
+    // "OrtGetApiBase@VERS_1.27.0" (see `llvm-readelf -V`), and Bionic's linker requires an
+    // *exact* symbol-version match, not just ABI/API compatibility — an older or newer
+    // onnxruntime-android release that only defines a different VERS_x.y.z node fails to load
+    // with "cannot locate symbol OrtGetApiBase" even though the C API itself is compatible.
+    // Verify by exercising Piper/Kokoro (sherpa-onnx-backed) after any onnxruntime-android or
+    // sherpa-onnx version bump, since a version mismatch here is exactly this failure mode.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
 
     // PDF text extraction for document import
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
