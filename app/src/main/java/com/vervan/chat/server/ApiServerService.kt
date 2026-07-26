@@ -80,7 +80,7 @@ class ApiServerService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("Local API server is running")
-            .setContentText("Turn off in Settings → Security if you're not using it.")
+            .setContentText("Turn off in Settings → Privacy & security when unused.")
             .setContentIntent(openApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -131,7 +131,7 @@ fun TextActionScreen(
                     runContext = com.vervan.chat.llm.ToolRunContext(route, "$title · ${action.label}", inputText),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Choose and load one from Models, then try again."
+                    errorText = "No model is ready. Open Settings → AI models, load one, then try again."
                 } else {
                     // throttle the state write (not the collection) to ~16 fps so
                     // MarkdownLiteText isn't re-parsed on every single token during a fast stream.

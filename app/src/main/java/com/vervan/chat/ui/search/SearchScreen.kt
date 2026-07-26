@@ -148,7 +148,7 @@ fun SearchScreen(
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = "Search your private workspace",
-                        body = "Find conversations, messages, projects, files, tools, workflows, and saved work locally."
+        body = "Search chats, files, tools, workflows, and saved work on this device."
                     )
                     searching -> LoadingSkeletonList(
                         rows = 6,
@@ -178,7 +178,10 @@ fun SearchScreen(
                         }
                         if (results.messages.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Messages)) {
                             item { GroupLabel("Messages") }
-                            items(results.messages, key = { "m_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.content.take(100), "Message in a conversation", query) { onOpenMessage(it.chatId, it.id) } }
+                            items(results.messages, key = { "m_" + it.id }) {
+                                val preview = com.vervan.chat.ui.chat.chatPreviewText(it.content, it.role == com.vervan.chat.data.db.entities.MessageRole.USER)
+                                ResultRow(Icons.AutoMirrored.Filled.Chat, preview.take(100), "Message in a conversation", query) { onOpenMessage(it.chatId, it.id) }
+                            }
                         }
                         if (results.memories.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Reusable)) {
                             item { GroupLabel("Memory") }

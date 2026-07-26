@@ -84,7 +84,7 @@ fun ToolRunHistoryScreen(
             Column(Modifier.fillMaxSize()) {
                 VervanSearchField(query, { query = it }, "Search tool results", Modifier.padding(vertical = Space.sm))
                 if (filtered.isEmpty()) {
-                    EmptyState(Icons.Filled.History, "No tool runs yet", "Results from AI tools and voice sessions will stay here after you leave their screens.")
+        EmptyState(Icons.Filled.History, "No tool runs yet", "Tool and voice results appear here after you leave.")
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         items(filtered, key = { it.id }) { run ->

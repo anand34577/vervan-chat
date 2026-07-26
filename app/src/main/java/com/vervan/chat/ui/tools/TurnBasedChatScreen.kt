@@ -110,7 +110,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     runContext = com.vervan.chat.llm.ToolRunContext(route, title, transcriptText()),
                 )
                 if (flow == null) {
-                    turns = turns + ChatTurn(false, "⚠️ No generation model is active. Load one from Models, then continue.")
+                    turns = turns + ChatTurn(false, "⚠️ No model is ready. Open Settings → AI models and load one.")
                 } else {
                     // Grow one assistant bubble as tokens arrive; throttle the state write so the
                     // markdown isn't re-parsed on every token during a fast stream (ponytail).

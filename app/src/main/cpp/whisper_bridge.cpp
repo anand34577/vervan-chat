@@ -1,13 +1,13 @@
 // JNI bridge between com.vervan.chat.voice.WhisperCppJni (Kotlin) and whisper.cpp's C API,
-// linked against a prebuilt libwhisper.so (see CMakeLists.txt — this project does not build
-// whisper.cpp itself; the developer drops libwhisper.so + its ggml deps into jniLibs/<abi>/).
+// linked against a prebuilt libwhisper.so (see CMakeLists.txt — built by
+// scripts/build-whisper-android.ps1 from a whisper.cpp source checkout, not compiled from this
+// project directly; see that script and scripts/whisper-cmake/CMakeLists.txt).
 //
 // VERSION-SENSITIVE API NOTE: written against the long-stable whisper.h surface
 // (whisper_init_from_file_with_params / whisper_full / whisper_full_get_segment_text). The
 // struct field names in whisper_full_params have been stable for years; if a future whisper.cpp
 // renames one, the compiler will point at the exact line. The transcribe path is intentionally
-// minimal — greedy decoding, no callbacks, no timestamps — matching how WhisperSttEngine uses
-// sherpa-onnx (one shot in, one transcript out).
+// minimal — greedy decoding, no callbacks, no timestamps (one shot in, one transcript out).
 
 #include <jni.h>
 #include <android/log.h>
@@ -49,7 +49,7 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_com_vervan_chat_voice_WhisperCppJni_nativeInit(
-    JNIEnv *env, jobject /*thiz*/, jstring modelPath, jint nThreads
+    JNIEnv *env, jobject /*thiz*/, jstring modelPath, jint nThreads, jboolean useGpu
 ) {
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
     if (path == nullptr) {
@@ -59,12 +59,18 @@ Java_com_vervan_chat_voice_WhisperCppJni_nativeInit(
     std::string modelPathStr(path);
     env->ReleaseStringUTFChars(modelPath, path);
 
-    // whisper_context_default_params() gained a use_gpu field later than the original struct;
-    // leaving it at defaults matches whisper.cpp's own cli default (CPU on Android — no metal/
-    // cuda here). The field's presence is the only thing most revisions disagree on; reading
-    // defaults from the library instead of hardcoding keeps this forward-compatible.
+    // use_gpu = true lets whisper_backend_init_gpu() try a compiled-in GPU backend first (Vulkan
+    // on arm64-v8a — see scripts/build-whisper-android.ps1) and fall back to CPU automatically
+    // when no GPU backend was compiled in, or none is found at runtime. That graceful path is
+    // NOT enough on its own, though: on at least one real Adreno device, Vulkan backend/pipeline
+    // initialization inside libwhisper.so has crashed the whole process with a native SIGSEGV
+    // instead of returning null — a hard crash a whisper_backend_dev_init() nullptr-check can't
+    // help with. useGpu is therefore decided by WhisperCppSttEngine's crash-loop breaker (a
+    // persisted "did the last GPU attempt even return" flag), not hardcoded here, so a device
+    // that crashes once falls back to the CPU backend for good rather than crash-looping every
+    // time voice chat starts.
     whisper_context_params cparams = whisper_context_default_params();
-    cparams.use_gpu = false; // CPU-only: whisper.cpp's Android build has no GPU backend wired here.
+    cparams.use_gpu = useGpu == JNI_TRUE;
 
     whisper_context *ctx = whisper_init_from_file_with_params(modelPathStr.c_str(), cparams);
     if (ctx == nullptr) {

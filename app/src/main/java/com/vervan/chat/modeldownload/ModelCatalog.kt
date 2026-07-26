@@ -3,12 +3,12 @@ package com.vervan.chat.modeldownload
 import com.vervan.chat.data.db.entities.ModelFileRole
 import com.vervan.chat.data.db.entities.ModelRole
 
-/** Model formats the app's loaders (LlmEngine, EmbeddingEngine, sherpa-onnx TTS voices, sherpa-onnx
- * offline ASR, whisper.cpp ASR) actually know how to open — kept to exactly what's real rather
- * than a speculative superset. ONNX_TTS/ONNX_STT/WHISPER_CPP need no litertlm/tflite-style
- * validation (see ModelDownloadRepository.verifyAndImport's format `when` — all three are no-op
- * branches there), just the files present. */
-enum class ModelFormat { LITERTLM, TFLITE, ONNX_TTS, ONNX_STT, WHISPER_CPP }
+/** Model formats the app's loaders (LlmEngine, EmbeddingEngine, sherpa-onnx TTS voices,
+ * whisper.cpp ASR) actually know how to open — kept to exactly what's real rather than a
+ * speculative superset. ONNX_TTS/WHISPER_CPP need no litertlm/tflite-style validation (see
+ * ModelDownloadRepository.verifyAndImport's format `when` — both are no-op branches there), just
+ * the files present. */
+enum class ModelFormat { LITERTLM, TFLITE, ONNX_TTS, WHISPER_CPP }
 
 data class ModelFileSpec(
     val fileId: String,
@@ -54,7 +54,7 @@ data class CatalogModel(
     val enabled: Boolean = true,
     // Only set (and only meaningful) for category == ModelRole.TTS_VOICE or ModelRole.STT_MODEL —
     // tells ModelDownloadRepository.verifyAndImport which TtsVoiceModel(engine, language) row to
-    // write once the package reaches READY, so PiperTtsEngine/KokoroTtsEngine/WhisperSttEngine
+    // write once the package reaches READY, so PiperTtsEngine/KokoroTtsEngine/WhisperCppSttEngine
     // (which all read via TtsVoiceModelDao, not the download system) find it exactly like any
     // other downloaded voice/STT model. Despite the "tts" name, the same two fields carry the
     // engine/language identity for a downloadable STT model too — it's the same
@@ -134,37 +134,15 @@ object ModelCatalog {
         mmsVoice(iso = "hin", displayName = "Hindi Voice (MMS)", language = "hi"),
         mmsVoice(iso = "eng", displayName = "English Voice (MMS)", language = "en"),
         // Inbuilt offline speech-to-text tier for the realtime voice pipeline (see
-        // com.vervan.chat.voice.WhisperSttEngine / RealtimeVoiceController's 3-tier STT policy):
-        // used when the loaded generation model doesn't support audio input, or as a fallback
-        // when it does but a transcription attempt comes back blank. Multilingual Whisper tiny
-        // (not the English-only tiny.en variant) covers Hindi + English in one model. int8
-        // quantized files confirmed present at this exact layout on the source repo.
-        CatalogModel(
-            modelId = "sherpa-onnx-whisper-tiny",
-            version = "1",
-            displayName = "Whisper Tiny (offline speech-to-text)",
-            description = "Multilingual Whisper Tiny for offline voice transcription.",
-            category = ModelRole.STT_MODEL,
-            format = ModelFormat.ONNX_STT,
-            files = listOf(
-                ModelFileSpec(fileId = "encoder", fileName = "model.onnx", downloadUrl = "$WHISPER_BASE/tiny-encoder.int8.onnx", role = ModelFileRole.MODEL),
-                ModelFileSpec(fileId = "decoder", fileName = "decoder.onnx", downloadUrl = "$WHISPER_BASE/tiny-decoder.int8.onnx", role = ModelFileRole.AUXILIARY),
-                ModelFileSpec(fileId = "tokens", fileName = "tokens.txt", downloadUrl = "$WHISPER_BASE/tiny-tokens.txt", role = ModelFileRole.TOKENIZER)
-            ),
-            totalExpectedBytes = null,
-            capabilities = setOf("Speech-to-text", "Multilingual", "Offline"),
-            sourceUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny",
-            requiresAuthToken = false,
-            ttsEngine = "WHISPER",
-            ttsLanguage = "multi"
-        ),
-        // whisper.cpp alternative to the sherpa-onnx Whisper Tiny tier above — same multilingual
-        // tiny model, different runtime. Lands in stt_models/whisper_cpp_multi/ and is read by
-        // WhisperCppSttEngine (engine="WHISPER_CPP") via TtsVoiceModelDao, exactly parallel to the
-        // ONNX entry. Only meaningful on builds with WHISPER_CPP_AVAILABLE (a prebuilt libwhisper.so
-        // in jniLibs); on a whisper-less build the catalog entry still downloads fine but the engine
-        // reports not-ready and the pipeline falls through to sherpa-onnx / device STT. ggml-tiny is
-        // ~75 MB and covers Hindi + English (the .en variant would not).
+        // com.vervan.chat.voice.WhisperCppSttEngine / RealtimeVoiceController's 2-tier STT
+        // policy): used when the loaded generation model doesn't support audio input, or as a
+        // fallback when it does but a transcription attempt comes back blank. Lands in
+        // stt_models/whisper_cpp_multi/ and is read by WhisperCppSttEngine (engine="WHISPER_CPP")
+        // via TtsVoiceModelDao. Gated on WHISPER_CPP_AVAILABLE (a prebuilt libwhisper.so in
+        // jniLibs, built by scripts/build-whisper-android.ps1 when whispercpp.dir is set) so a
+        // whisper-less build doesn't offer a download that can never actually be used — see the
+        // `enabled` filter in ModelDownloadRepository. Multilingual (not the English-only tiny.en
+        // variant) covers Hindi + English in one ~75 MB model.
         CatalogModel(
             modelId = "whisper-cpp-tiny",
             version = "1",
@@ -184,13 +162,13 @@ object ModelCatalog {
             capabilities = setOf("Speech-to-text", "Multilingual", "Offline"),
             sourceUrl = "https://huggingface.co/ggerganov/whisper.cpp",
             requiresAuthToken = false,
+            enabled = com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE,
             ttsEngine = "WHISPER_CPP",
             ttsLanguage = "multi"
         )
     )
 
     private const val MMS_BASE = "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main"
-    private const val WHISPER_BASE = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main"
     private const val WHISPER_CPP_BASE = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 
     private fun mmsVoice(iso: String, displayName: String, language: String) = CatalogModel(

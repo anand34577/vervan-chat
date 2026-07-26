@@ -42,20 +42,46 @@ val llamaCppAbis = (localProperties.getProperty("llamacpp.abis") ?: "arm64-v8a,a
 // Set llamacpp.cpuArch=armv8-a for maximum device compatibility at a cost to CPU throughput.
 // (Vulkan is the primary path either way; this only affects the CPU fallback backend.)
 val llamaCppCpuArch = localProperties.getProperty("llamacpp.cpuArch") ?: "armv8.2-a+dotprod+i8mm"
+// GGML_CPU_ALL_VARIANTS runtime CPU dispatch (see build-llama-android-vulkan.ps1's -CpuAllVariants
+// doc comment) — on by default. Set llamacpp.cpuAllVariants=false to fall back to the single
+// llamacpp.cpuArch build above (faster local rebuilds; no per-device dispatch).
+val llamaCppCpuAllVariants = localProperties.getProperty("llamacpp.cpuAllVariants")?.toBoolean() != false
+// ARM KleidiAI kernels, layered on top of CPU_ALL_VARIANTS. Needs network access at CMake
+// configure time (FetchContent-downloads the KleidiAI source tarball). Set
+// llamacpp.cpuKleidiAI=false for an offline/CI build.
+val llamaCppCpuKleidiAI = localProperties.getProperty("llamacpp.cpuKleidiAI")?.toBoolean() != false
 // Escape hatch: set llamacpp.autobuild=false to manage the native build by hand.
 val llamaCppAutoBuild = localProperties.getProperty("llamacpp.autobuild")?.toBoolean() != false
 
-// whisper.cpp (GGML/GGML speech-to-text) backend — optional, PRE-BUILT. Unlike llama.cpp there is
-// no source checkout / build script: the developer builds whisper.cpp for Android themselves and
-// drops the resulting libwhisper.so (plus ggml .so deps if the ggml revision differs from
-// llama.cpp's) into app/src/main/jniLibs/<abi>/. Availability is decided by libwhisper.so being
-// present for at least one configured ABI. `whispercpp.dir`, if set, only supplies the whisper.h
-// header for the JNI bridge compile — it is never compiled from here.
+// whisper.cpp (GGML speech-to-text) backend — optional, machine-local, same `*.dir` convention as
+// llama.cpp above. `whispercpp.dir` in local.properties points at a whisper.cpp *source*
+// checkout; Gradle compiles it for Android itself via the `buildWhisperCppNative` task below (no
+// Vulkan/MSVC involved — whisper.cpp's CPU backend cross-compiles with the NDK's own clang, same
+// as llama.cpp's CPU-only path), then `syncWhisperCppLibs` copies the resulting libwhisper.so
+// into jniLibs/<abi>/.
+//
+// Availability is decided by the *source* checkout, not by build outputs (see llamaCppAvailable's
+// comment above for why: the libraries may not exist yet at configuration time precisely because
+// buildWhisperCppNative hasn't run) — mirroring the llama.cpp property exactly. whispercpp.dir
+// also supplies the whisper.h header for the JNI bridge compile (see
+// app/src/main/cpp/CMakeLists.txt's whisper.cpp block).
 val whisperCppDir: String? = localProperties.getProperty("whispercpp.dir")
-val whisperCppAbis = listOf("arm64-v8a", "armeabi-v7a").filter { abi ->
-    file("src/main/jniLibs/$abi/libwhisper.so").isFile
+val whisperCppAvailableSource = whisperCppDir?.let { dir ->
+    File(dir, "CMakeLists.txt").isFile && File(dir, "include/whisper.h").isFile
+} == true
+if (whisperCppDir != null && !whisperCppAvailableSource) {
+    logger.warn("whispercpp.dir is set but does not look like a whisper.cpp checkout (no CMakeLists.txt / include/whisper.h); whisper.cpp STT support is disabled.")
 }
-val whisperCppAvailable = whisperCppAbis.isNotEmpty()
+val whisperCppAbis = (localProperties.getProperty("whispercpp.abis") ?: "arm64-v8a,armeabi-v7a")
+    .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+val whisperCppAutoBuild = localProperties.getProperty("whispercpp.autobuild")?.toBoolean() != false
+val whisperCppAvailable = whisperCppAvailableSource
+
+// Per-ABI output tree written by the build script.
+fun whisperCppLibsDirFor(abi: String): File? {
+    val dir = whisperCppDir ?: return null
+    return File(dir, "build-android/$abi/bin")
+}
 
 // Per-ABI output tree written by the build script. Falls back to the legacy single-ABI layout
 // so an existing hand-built checkout keeps working without a rebuild.
@@ -102,7 +128,8 @@ android {
                     )
                     // The JNI bridges link against native libs for their ABI — only build each
                     // bridge for the ABIs its underlying native lib was actually built for.
-                    abiFilters += (if (llamaCppAvailable) llamaCppAbis else emptyList()) + whisperCppAbis
+                    abiFilters += (if (llamaCppAvailable) llamaCppAbis else emptyList()) +
+                        (if (whisperCppAvailable) whisperCppAbis else emptyList())
                 }
             }
         }
@@ -176,13 +203,21 @@ val verifyLlamaCppRelease by tasks.registering {
             val libs = llamaCppLibsDirFor(abi)
             val required = buildList {
                 add("libllama.so")
-                add("libggml-cpu.so")
                 if (abi == "arm64-v8a") add("libggml-vulkan.so")
             }
             required.forEach { lib ->
                 check(libs != null && File(libs, lib).isFile) {
                     "llama.cpp library $lib for $abi is missing (expected in $libs). Run :app:buildLlamaCppNative."
                 }
+            }
+            // The CPU backend is either one fixed libggml-cpu.so (legacy -CpuAllVariants:$false
+            // build) or several libggml-cpu-<tag>.so GGML_CPU_ALL_VARIANTS plugins (the default —
+            // see scripts/build-llama-android-vulkan.ps1) — either is fine, just require at least
+            // one landed so a broken/partial native build can't silently ship.
+            val hasCpuBackend = libs != null && libs.listFiles { f -> f.name.matches(Regex("libggml-cpu.*\\.so")) }
+                ?.isNotEmpty() == true
+            check(hasCpuBackend) {
+                "No llama.cpp CPU backend (libggml-cpu.so or libggml-cpu-*.so) for $abi in $libs. Run :app:buildLlamaCppNative."
             }
         }
     }
@@ -348,6 +383,8 @@ val buildLlamaCppNative by tasks.registering(Exec::class) {
     inputs.dir(rootProject.file("scripts/patches")).optional()
     inputs.property("abis", llamaCppAbis)
     inputs.property("cpuArch", llamaCppCpuArch)
+    inputs.property("cpuAllVariants", llamaCppCpuAllVariants)
+    inputs.property("cpuKleidiAI", llamaCppCpuKleidiAI)
     if (llamaCppDir != null) {
         val head = File(llamaCppDir, ".git/HEAD")
         if (head.isFile) inputs.file(head).optional()
@@ -363,7 +400,9 @@ val buildLlamaCppNative by tasks.registering(Exec::class) {
         "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", llamaCppBuildScript.absolutePath,
         "-Abi", llamaCppAbis.joinToString(","),
-        "-CpuArmArch", llamaCppCpuArch
+        "-CpuArmArch", llamaCppCpuArch,
+        "-CpuAllVariants", llamaCppCpuAllVariants.toString(),
+        "-CpuKleidiAI", llamaCppCpuKleidiAI.toString()
         // -ApiLevel is intentionally left at the script's default (28, not the app's minSdk of
         // 26) because ggml's Vulkan backend needs Vulkan 1.1 symbols that Android's libvulkan.so
         // only exports from API 28. See the parameter's comment in the script.
@@ -380,7 +419,11 @@ val syncLlamaCppLibs = llamaCppAbis.map { abi ->
         val libsDir = llamaCppLibsDirFor(abi)
         onlyIf { libsDir != null && libsDir.isDirectory }
         from(libsDir ?: file(".")) {
-            include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so")
+            // libomp.so: the NDK's OpenMP runtime, needed at load time whenever
+            // GGML_OPENMP=ON (the GGML_CPU_ALL_VARIANTS default — see the build script). Missing
+            // it doesn't fail the build; it fails System.loadLibrary() on-device instead, since
+            // libggml-base.so is a transitive dependency of the whole JNI bridge.
+            include("libllama.so", "libggml*.so", "libmtmd.so", "libc++_shared.so", "libomp.so")
         }
         into("src/main/jniLibs/$abi")
     }
@@ -397,3 +440,56 @@ tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("bui
 
 // verifyLlamaCppRelease inspects the *result* of the native build, so that has to happen first.
 verifyLlamaCppRelease.configure { dependsOn(buildLlamaCppNative) }
+
+// --- whisper.cpp native build -----------------------------------------------------------------
+// Compiles whisper.cpp for Android (CPU only — no Vulkan/MSVC needed, unlike llama.cpp above),
+// one self-contained libwhisper.so per ABI, so that pointing whispercpp.dir at a plain source
+// checkout is the only setup a developer does. See scripts/whisper-cmake/CMakeLists.txt for why
+// ggml is statically embedded into libwhisper.so rather than built as separate libggml*.so
+// files: this app already ships llama.cpp's own same-named libraries in jniLibs/<abi>/, almost
+// certainly at a different ggml revision.
+val whisperCppBuildScript = rootProject.file("scripts/build-whisper-android.ps1")
+
+val buildWhisperCppNative by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds whisper.cpp (CPU) for Android into <whispercpp.dir>/build-android/<abi>/bin"
+    onlyIf { whisperCppAvailableSource && whisperCppAutoBuild && whisperCppBuildScript.isFile }
+
+    inputs.file(whisperCppBuildScript)
+    inputs.property("abis", whisperCppAbis)
+    if (whisperCppDir != null) {
+        val head = File(whisperCppDir, ".git/HEAD")
+        if (head.isFile) inputs.file(head).optional()
+    }
+    whisperCppAbis.forEach { abi ->
+        whisperCppLibsDirFor(abi)?.let { outputs.dir(it) }
+    }
+
+    executable = "powershell.exe"
+    args(
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", whisperCppBuildScript.absolutePath,
+        "-Abi", whisperCppAbis.joinToString(",")
+    )
+}
+
+// Same reasoning as syncLlamaCppLibs above: IMPORTED libraries need an explicit copy into
+// jniLibs to land in the APK.
+val syncWhisperCppLibs = whisperCppAbis.map { abi ->
+    tasks.register<Copy>("syncWhisperCppLibs${abi.replace("-", "")}") {
+        dependsOn(buildWhisperCppNative)
+        val libsDir = whisperCppLibsDirFor(abi)
+        onlyIf { libsDir != null && libsDir.isDirectory }
+        from(libsDir ?: file(".")) {
+            include("libwhisper.so")
+        }
+        into("src/main/jniLibs/$abi")
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncWhisperCppLibs)
+}
+
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
+    .configureEach { dependsOn(buildWhisperCppNative) }

@@ -50,12 +50,37 @@ param(
     # CPU-only GGUF on the handful still running Android 8.
     [int] $ApiLevel = 28,
 
-    # -march for the arm64 ggml-cpu backend. See the compatibility note in the README: the default
-    # targets ARMv8.2 (dotprod + i8mm), which is every mainstream arm64 phone from ~2019 on but
-    # NOT early ARMv8.0 chips (e.g. Cortex-A53-era devices that can still run API 26). Pass
-    # -CpuArmArch armv8-a for a build that runs on literally any arm64 Android device, at a real
-    # cost to CPU-path token throughput. Ignored for armeabi-v7a.
+    # arm64-v8a CPU backend strategy. Default ON: builds ggml's GGML_CPU_ALL_VARIANTS (one
+    # ggml-cpu-<tag>.so per ARM feature tier: baseline armv8.0, dotprod, dotprod+fp16, SVE/i8mm
+    # combinations, ...) via GGML_BACKEND_DL, and llama_bridge.cpp picks the best one for the
+    # running device at load time (ggml_backend_load_all_from_path — see ggml-backend-reg.cpp).
+    # This is the same mechanism SmolChat-Android hand-rolls at the Kotlin level (picking among
+    # smollm_v8/_v8_2_fp16/_v8_4_..._sve .so variants via /proc/cpuinfo) and what llama.cpp's own
+    # examples/llama.android reference app uses — but it's ggml's own upstream-supported path, so
+    # the dispatch logic (feature scoring, fallback to baseline) lives in ggml, not hand-copied
+    # into this app. Without it every device got the single -march baked in at build time
+    # (previously armv8.2-a+dotprod+i8mm), which is a real perf cliff on both ends: older devices
+    # without dotprod/i8mm would SIGILL, and newer devices with SVE/i8mm/fp16-arith left real
+    # matmul throughput on the table. Pass -CpuAllVariants:$false to fall back to the old
+    # single--march build (e.g. for a faster local rebuild loop, or if GGML_CPU_ALL_VARIANTS
+    # doesn't support some future ABI). Ignored for armeabi-v7a, which stays on the single-variant
+    # path unconditionally (examples/llama.android only supports arm64-v8a/x86_64 for this scheme,
+    # and armeabi-v7a is already treated as the low-end compatibility tier here).
+    #
+    # [string], not [bool]: PowerShell's -File argument binding converts any non-empty string to
+    # $true for a [bool] parameter (it does NOT parse "true"/"false" semantically — "-Foo false"
+    # binds $true), which is exactly backwards for a flag Gradle's Exec task passes as a literal
+    # "true"/"false" string. Parsed below with ordinary string comparison instead.
+    [string] $CpuAllVariants = "true",
+
+    # Only used when -CpuAllVariants is false. See the removed comment above for what this covered.
     [string] $CpuArmArch = "armv8.2-a+dotprod+i8mm",
+
+    # ARM's optimized KleidiAI CPU kernels (extra matmul fast paths on top of GGML_CPU_ALL_VARIANTS
+    # feature dispatch). Requires network access at configure time: ggml FetchContent-downloads
+    # the KleidiAI source tarball from GitHub releases. Only takes effect with -CpuAllVariants.
+    # Pass -CpuKleidiAI false for an offline/CI build. [string], not [bool] — see -CpuAllVariants.
+    [string] $CpuKleidiAI = "true",
 
     # Wipe each ABI's build directory first. Off by default so repeat runs are incremental.
     [switch] $Clean,
@@ -65,6 +90,9 @@ param(
 
     [int] $Jobs = [Environment]::ProcessorCount
 )
+
+$CpuAllVariantsBool = $CpuAllVariants -notin @("false", "0", "off", "no")
+$CpuKleidiAIBool = $CpuKleidiAI -notin @("false", "0", "off", "no")
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -457,10 +485,34 @@ foreach ($currentAbi in $Abi) {
         $configureArguments += "-DGGML_VULKAN=OFF"
     }
 
-    if ($settings.UsesArmArch) {
+    $useAllVariants = $settings.UsesArmArch -and $CpuAllVariantsBool
+    if ($useAllVariants) {
+        # GGML_CPU_ALL_VARIANTS builds one ggml-cpu-<tag>.so per ARM feature tier (baseline
+        # armv8.0 up through dotprod/fp16/i8mm/SVE combinations) as GGML_BACKEND_DL plugins;
+        # llama_bridge.cpp's ggml_backend_load_all_from_path() call picks the best match for the
+        # running device at load time instead of one -march baked in at build time. GGML_VULKAN
+        # (set above) also becomes a DL plugin as a side effect of GGML_BACKEND_DL — same
+        # libggml-vulkan.so filename, just dlopen'd instead of statically linked.
+        $configureArguments += @(
+            "-DGGML_BACKEND_DL=ON"
+            "-DGGML_CPU_ALL_VARIANTS=ON"
+            "-DGGML_OPENMP=ON"
+            "-DGGML_CPU_KLEIDIAI=$(if ($CpuKleidiAIBool) { 'ON' } else { 'OFF' })"
+            # A build dir from a previous -CpuAllVariants:$false run leaves GGML_CPU_ARM_ARCH in
+            # CMakeCache.txt; CMake's own -D can't unset a cached value (it only writes a *new*
+            # UNINITIALIZED entry, same class of trap as the LLAMA_CPP_LIBS_DIR staleness this
+            # script has already been bitten by once), and GGML_CPU_ALL_VARIANTS refuses to
+            # configure at all while GGML_CPU_ARM_ARCH is set. -U actually removes the cache
+            # entry.
+            "-UGGML_CPU_ARM_ARCH"
+        )
+    } elseif ($settings.UsesArmArch) {
         # Without an explicit -march, cross-compiled ggml-cpu falls back to baseline armv8-a
         # scalar kernels (GGML_NATIVE only auto-detects on native builds) - no SDOT/UDOT or I8MM.
         if ($CpuArmArch) { $configureArguments += "-DGGML_CPU_ARM_ARCH=$CpuArmArch" }
+        # Symmetric to the -UGGML_CPU_ARM_ARCH above: a build dir from a previous
+        # -CpuAllVariants:$true run left these cached, and GGML_CPU_ARM_ARCH conflicts with them.
+        $configureArguments += @("-UGGML_CPU_ALL_VARIANTS", "-UGGML_BACKEND_DL")
     } else {
         # 32-bit ARM: llamafile's sgemm.cpp takes its NEON path on any __ARM_NEON target but uses
         # fp16 vector intrinsics (vld1q_f16/vld1_f16) that only exist on AArch64 / ARMv8.2-FP16,
@@ -482,10 +534,18 @@ foreach ($currentAbi in $Abi) {
         }
     }
 
-    Write-Ok "Compiling (llama + mtmd, $Jobs jobs)"
-    # mtmd is a sibling target of llama, not a dependency, so it must be named explicitly or the
-    # vision projector support silently won't be built.
-    & $CMake --build $buildDir --target llama mtmd --parallel $Jobs
+    if ($useAllVariants) {
+        # The CPU/Vulkan backend plugins (ggml-cpu-<tag>, ggml-vulkan) are dlopen'd at runtime,
+        # not linked against llama/mtmd at build time, so restricting --target to llama+mtmd (as
+        # below) would silently skip building every one of them. Build the whole project instead.
+        Write-Ok "Compiling (full project incl. CPU variant + Vulkan plugins, $Jobs jobs)"
+        & $CMake --build $buildDir --parallel $Jobs
+    } else {
+        Write-Ok "Compiling (llama + mtmd, $Jobs jobs)"
+        # mtmd is a sibling target of llama, not a dependency, so it must be named explicitly or
+        # the vision projector support silently won't be built.
+        & $CMake --build $buildDir --target llama mtmd --parallel $Jobs
+    }
     if ($LASTEXITCODE -ne 0) { throw "Build failed for $currentAbi." }
 
     # The NDK's libc++_shared.so is a runtime dependency of every library above but is not
@@ -493,10 +553,39 @@ foreach ($currentAbi in $Abi) {
     $stl = "$Ndk/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/$($settings.Triple)/libc++_shared.so"
     if (Test-Path $stl) { Copy-Item $stl -Destination $outputDir -Force }
 
+    if ($useAllVariants) {
+        # GGML_OPENMP=ON (set above) links libggml-base.so against libomp.so, which — like
+        # libc++_shared.so above — is an NDK toolchain runtime lib, not something the build
+        # produces or CMake packages. Missing it is a silent link-time no-op (both compile and
+        # `cmake --build` succeed) that only surfaces on-device as a dlopen UnsatisfiedLinkError
+        # for the *whole* JNI bridge the first time it's touched, since libggml-base.so is a
+        # transitive dependency of everything. Lives under lib/clang/<ver>/lib/linux/<arch>, not
+        # the per-triple sysroot dir libc++_shared.so comes from.
+        $ompArch = @{ "arm64-v8a" = "aarch64"; "armeabi-v7a" = "arm" }[$currentAbi]
+        $ompCandidates = Get-ChildItem "$Ndk/toolchains/llvm/prebuilt/windows-x86_64/lib/clang" -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "lib/linux/$ompArch/libomp.so" } |
+            Where-Object { Test-Path $_ }
+        $omp = $ompCandidates | Select-Object -First 1
+        if (-not $omp) {
+            throw "GGML_OPENMP=ON but no libomp.so found under $Ndk/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/*/lib/linux/$ompArch/ for $currentAbi."
+        }
+        Copy-Item $omp -Destination $outputDir -Force
+    }
+
     $produced = Get-ChildItem -Path $outputDir -Filter "*.so" -File -ErrorAction SilentlyContinue
     if (-not $produced) { throw "Build reported success but no .so files landed in $outputDir." }
 
-    $expectedLibraries = @("libllama.so", "libggml.so", "libggml-base.so", "libggml-cpu.so")
+    $expectedLibraries = @("libllama.so", "libggml.so", "libggml-base.so")
+    if ($useAllVariants) {
+        # Variant filenames (ggml-cpu-android_armv8.2_1.so, ...) are ggml's own naming, not ours
+        # to predict here — just require that at least one CPU backend plugin landed.
+        if (-not ($produced.Name -match "^libggml-cpu.*\.so$")) {
+            throw "No libggml-cpu*.so (GGML_CPU_ALL_VARIANTS plugins) landed in $outputDir."
+        }
+    } else {
+        $expectedLibraries += "libggml-cpu.so"
+    }
+    if ($useAllVariants) { $expectedLibraries += "libomp.so" }
     if ($settings.Vulkan) { $expectedLibraries += "libggml-vulkan.so" }
     foreach ($expected in $expectedLibraries) {
         if (-not ($produced.Name -contains $expected)) {

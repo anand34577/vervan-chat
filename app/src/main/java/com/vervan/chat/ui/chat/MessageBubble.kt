@@ -229,6 +229,7 @@ internal fun MessageBubble(
     onReaction: (String?) -> Unit,
     onReadAloud: (text: String, utteranceId: String) -> Unit,
     isGenerating: Boolean,
+    showStreamingStatus: Boolean = true,
     siblingPosition: Pair<Int, Int>,
     onConfirmTool: (Boolean) -> Unit,
     onEditAndResend: (String) -> Unit,
@@ -551,6 +552,32 @@ internal fun MessageBubble(
                         }
                     }
                 }
+                message.voiceRecordingPath?.let { recordingPath ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = Space.xs)
+                    ) {
+                        Column(Modifier.padding(horizontal = Space.xs, vertical = Space.xs)) {
+                            Text(
+                                if (message.inputModality in setOf("AUDIO_FILE", "VOICE_FILE")) {
+                                    "Original audio"
+                                } else {
+                                    "Voice request"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(
+                                    start = Space.xs,
+                                    end = Space.xs,
+                                    bottom = Space.xs
+                                )
+                            )
+                            VoiceMessageRow(recordingPath)
+                        }
+                    }
+                }
                 message.audioPath?.let { audioPath ->
                     if (isUser) {
                         // The slider's primary-colored track would be invisible against the
@@ -589,6 +616,38 @@ internal fun MessageBubble(
                         TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text("Cancel") }
                     }
                 } else {
+                    if (isUser && message.inputModality != "TEXT") {
+                        Row(
+                            Modifier.padding(bottom = Space.xs),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                            )
+                            Text(
+                                when (message.inputModality) {
+                                    "HANDS_FREE" -> "Hands-free"
+                                    "VOICE_DICTATION" -> "Dictated"
+                                    "MIXED" -> "Typed + dictated"
+                                    else -> "Voice"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
+                                modifier = Modifier.padding(start = Space.xs)
+                            )
+                        }
+                    }
+                    if (isUser && message.voiceRecordingPath != null) {
+                        Text(
+                            "Transcription",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
+                            modifier = Modifier.padding(bottom = Space.xs)
+                        )
+                    }
                     // Strip <tool_call> markup before Thinking/Clarification parsing, same as
                     // those two already do for their own tags — without this, the raw
                     // {"tool": ..., "params": ...} JSON types out visibly in the bubble while
@@ -635,7 +694,7 @@ internal fun MessageBubble(
                         modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
                     )
                 }
-                if (message.state == MessageState.STREAMING) {
+                if (message.state == MessageState.STREAMING && isGenerating && showStreamingStatus) {
                     // "Thinking" indicator while the model is alive but hasn't emitted its first
                     // token yet — replaces the silent gap that previously made the app feel broken
                     // on slow models. Once the first token is in, the dots hand off to the

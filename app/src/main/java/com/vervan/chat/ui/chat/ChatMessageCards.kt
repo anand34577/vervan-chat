@@ -96,6 +96,22 @@ internal fun ClarificationCard(
     }
 }
 
+/**
+ * Text for a message-list/home-screen preview line (one truncated line, no formatting) — strips
+ * `<tool_call>`/`<thinking>`/`<clarify>` markup the same way the bubble's own visible text does,
+ * so a chat whose last reply was a reasoning block or tool call doesn't show raw tags in the
+ * preview (see [com.vervan.chat.ui.chat.MessageBubble]'s `quotableText`).
+ */
+fun chatPreviewText(content: String, isUser: Boolean): String {
+    if (isUser || content.isBlank()) return content
+    val stripped = com.vervan.chat.tools.ToolCallParser.stripForDisplay(content)
+    val answer = com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
+    val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
+    // Fall back to the request's question, never to the pre-clarification `answer` — that still
+    // has the <clarify> tag in it whenever the tag's own JSON failed to parse into a question.
+    return clarification.answer.ifBlank { clarification.request?.question ?: "" }.trim()
+}
+
 internal fun assistantSpokenText(content: String): String {
     val answer = com.vervan.chat.llm.ThinkingParser.parse(content).answer
     val parsed = com.vervan.chat.llm.ClarificationParser.parse(answer)
@@ -165,7 +181,7 @@ internal fun SourceCards(
             }
             betterModelName?.let {
                 Text(
-                    "$it is also installed and may do better with this question — switch it from Mode & model.",
+                    "$it may work better for this question. Switch models in Mode & model.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.xs)
@@ -388,9 +404,6 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
     // message) gets a required acknowledgment checkbox before Allow is enabled — REVERSIBLE_WRITE
     // (undoable in-app, e.g. via recycle bin) keeps the single-tap flow (B4).
     val isExternal = obj.optString("risk") == "EXTERNAL_ACTION"
-    // web_search is the one EXTERNAL_ACTION tool that doesn't launch an Intent — it's a silent
-    // background network call, so "leaves the app" would be a factually wrong warning for it.
-    val leavesApp = obj.optString("tool") != "web_search"
     var acknowledged by remember(toolCallJson) { mutableStateOf(!isExternal) }
     Card(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -416,8 +429,7 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
                 Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = acknowledged, onCheckedChange = { acknowledged = it })
                     Text(
-                        if (leavesApp) "This leaves the app and can't be undone from here"
-                        else "This sends your query to Google's servers over the network",
+                        "This leaves the app and can't be undone from here",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 4.dp)
                     )

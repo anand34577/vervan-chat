@@ -90,7 +90,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/quiz-generator", "Quiz generator", sourceText),
                 )?.trim()
                 if (raw == null) {
-                    errorText = "No generation model is active. Load one from Models, then generate again."
+                    errorText = "No model is ready. Open Settings → AI models, load one, then generate again."
                 } else {
                     val jsonText = raw.substringAfter("[", "").let { if (it.isBlank()) raw else "[$it" }.substringBeforeLast("]", "").let { if (it.isBlank()) raw else "$it]" }
                     questions = runCatching {

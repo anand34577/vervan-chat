@@ -264,7 +264,7 @@ fun WorkspaceDetailScreen(
                     Text("Lock this workspace", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         if (lockCredentialsExist) "Requires biometrics or your PIN to switch into this workspace."
-                        else "Set up app lock in Settings → Security first.",
+                        else "Set up app lock in Settings → Privacy & security first.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

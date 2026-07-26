@@ -336,17 +336,16 @@ fun VervanNavGraph(
                 )
             }
             composable("tools/voice-chat") {
-                com.vervan.chat.ui.tools.VoiceChatScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenKeyboard = {
-                        scope.launch {
-                            val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
-                            app.container.db.chatDao().upsert(chat)
-                            navController.navigate("chat/${chat.id}")
-                        }
-                    },
-                    onOpenModelManager = { navController.navigate("models") }
-                )
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                    app.container.db.chatDao().upsert(chat)
+                    navController.navigate("chat/${chat.id}/handsfree") {
+                        popUpTo("tools/voice-chat") { inclusive = true }
+                    }
+                }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
             }
             composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/writing-assistant") { com.vervan.chat.ui.tools.WritingAssistantScreen(onBack = { navController.popBackStack() }) }
@@ -610,6 +609,7 @@ fun VervanNavGraph(
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     // Forking replaces this chat in the back stack instead of stacking on top of
                     // it — otherwise forking twice then pressing Back walks back through each
@@ -633,6 +633,7 @@ fun VervanNavGraph(
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     onForkChat = { forkedChatId ->
                         navController.navigate("chat/$forkedChatId") {
@@ -975,6 +976,11 @@ private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: 
 }
 
 private fun NavHostController.navigatePrimaryRoot(route: String) {
+    // Re-tapping the already-selected tab (or a rapid double-tap landing before the first
+    // navigate/popBackStack finishes) re-entered this while the previous call was still tearing
+    // down the old destination's composition, detaching a LayoutNode mid-layout and crashing
+    // with "LayoutNode should be attached to an owner". A same-destination no-op sidesteps both.
+    if (currentDestination?.hierarchy?.any { it.route == route } == true) return
     // Home is the actual shell root. Restoring state while navigating to it can restore the
     // destination that was previously popped above Home (for example Chats), making the Home
     // button appear to open Chats. Collapse directly to the existing Home entry instead.

@@ -104,7 +104,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
         OnboardPage(
             icon = Icons.Filled.AutoAwesome,
             title = "Your private AI workspace",
-            body = "Chat, write, study, and work with documents—privately on your device.",
+        body = "Chat, write, study, and use documents privately on your device.",
             note = "AI can make mistakes. Review important answers and actions.",
             accentTone = OnboardAccentTone.Primary
         ),
@@ -112,14 +112,14 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
             icon = Icons.Filled.Security,
             title = "Choose a model for this device",
             body = "Android ${Build.VERSION.RELEASE}  •  $abi\n$ramGb GB RAM  •  $storageGb GB storage free\n$capabilityBlurb",
-            note = "Vervan checks every package. Advanced runtime and import options stay in Model Manager.",
+        note = "Vervan checks each package. Find advanced options later in AI models.",
             accentTone = OnboardAccentTone.Tertiary,
             importButton = true
         ),
         OnboardPage(
             icon = Icons.Filled.Tune,
             title = "Choose your starting balance",
-            body = "Choose a balance of speed, answer depth, and battery use, then start your first conversation.",
+        body = "Balance speed, answer depth, and battery use.",
             note = "Balanced suits most devices. You can change this later in Settings.",
             accentTone = OnboardAccentTone.Primary,
             profilePicker = true

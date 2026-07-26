@@ -90,6 +90,7 @@ private data class SettingsDestination(
     val icon: ImageVector,
     val title: String,
     val subtitle: String,
+    val searchTerms: List<String> = emptyList(),
     val onClick: () -> Unit
 )
 
@@ -133,29 +134,68 @@ fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
-            "Experience",
+            "Look & feel",
             listOf(
-                SettingsDestination(Icons.Filled.Palette, "Appearance", "Theme, accent color, and display options", onOpenAppearance),
-                SettingsDestination(Icons.Filled.Tune, "Interaction", "Defaults and device-aware controls", onOpenExperience),
-                SettingsDestination(Icons.Filled.AutoAwesome, "AI responses", "Generation, retrieval, context, and sampling", onOpenGeneration),
-                SettingsDestination(Icons.Filled.Accessibility, "Accessibility", "Text scale, motion, touch targets, and haptics", onOpenAccessibility),
-                SettingsDestination(Icons.Filled.Mic, "Voice", "Read-aloud, playback, and voice models", onOpenVoice)
+                SettingsDestination(
+                    Icons.Filled.Palette, "Appearance", "Theme, colors, and dark mode",
+                    listOf("dark", "light", "OLED", "Material You", "display"), onOpenAppearance
+                ),
+                SettingsDestination(
+                    Icons.Filled.Accessibility, "Accessibility", "Text, contrast, motion, and touch size",
+                    listOf("TalkBack", "screen reader", "vibration"), onOpenAccessibility
+                ),
+                SettingsDestination(
+                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, and voice models",
+                    listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
+                )
             )
         ),
         SettingsSection(
-            "Local AI & data",
+            "AI & chat",
             listOf(
-                SettingsDestination(Icons.Filled.AutoAwesome, "Models", "${modelCount.size} installed • ${activeModel?.displayName ?: "none active"}", onOpenModels),
-                SettingsDestination(Icons.AutoMirrored.Filled.List, "Model tools", "Choose what the model can call", onOpenTools),
-                SettingsDestination(Icons.Filled.Storage, "Storage & data", "Backups, diagnostics, jobs, and indexing", onOpenStorage)
+                SettingsDestination(
+                    Icons.Filled.AutoAwesome, "AI models",
+                    "${modelCount.size} installed · ${activeModel?.displayName ?: "none active"}",
+                    listOf("download", "import", "load", "active model", "GGUF"), onOpenModels
+                ),
+                SettingsDestination(
+                    Icons.Filled.Tune, "Chat behavior", "Model choice, presets, and device performance",
+                    listOf("interaction", "expert mode", "automatic", "battery", "thermal"), onOpenExperience
+                ),
+                SettingsDestination(
+                    Icons.Filled.AutoAwesome, "Responses & search", "Length, tone, context, and retrieval",
+                    listOf("generation", "sampling", "temperature", "top p", "semantic", "keyword", "summary"), onOpenGeneration
+                ),
+                SettingsDestination(
+                    Icons.AutoMirrored.Filled.List, "Tools", "Choose what AI can use in chats",
+                    listOf("model tools", "calculator", "date", "time"), onOpenTools
+                )
             )
         ),
         SettingsSection(
-            "Privacy & personalization",
+            "Personalization",
             listOf(
-                SettingsDestination(Icons.Filled.Lock, "Security", "App lock, biometrics, PIN, and auto-lock", onOpenSecurity),
-                SettingsDestination(Icons.Filled.Psychology, "Personal memory", "${memoryCount.size} memories saved", onOpenMemory),
-                SettingsDestination(Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions pending review", onOpenMemorySuggestions)
+                SettingsDestination(
+                    Icons.Filled.Psychology, "Memory", "${memoryCount.size} saved",
+                    listOf("personal memory", "remember", "facts"), onOpenMemory
+                ),
+                SettingsDestination(
+                    Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions to review",
+                    listOf("pending", "learned"), onOpenMemorySuggestions
+                )
+            )
+        ),
+        SettingsSection(
+            "Privacy & data",
+            listOf(
+                SettingsDestination(
+                    Icons.Filled.Lock, "Privacy & security", "App lock, permissions, and local access",
+                    listOf("biometrics", "PIN", "auto lock", "screenshots", "API server", "panic wipe"), onOpenSecurity
+                ),
+                SettingsDestination(
+                    Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, and diagnostics",
+                    listOf("export", "restore", "recycle bin", "jobs", "index", "cache"), onOpenStorage
+                )
             )
         )
     )
@@ -163,7 +203,8 @@ fun SettingsScreen(
         val matchesSection = section.title.contains(query, ignoreCase = true)
         val destinations = section.destinations.filter { destination ->
             query.isBlank() || matchesSection || destination.title.contains(query, ignoreCase = true) ||
-                destination.subtitle.contains(query, ignoreCase = true)
+                destination.subtitle.contains(query, ignoreCase = true) ||
+                destination.searchTerms.any { it.contains(query, ignoreCase = true) }
         }
         section.copy(destinations = destinations).takeIf { destinations.isNotEmpty() }
     }
@@ -210,7 +251,7 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            userOccupation.trim().ifBlank { "Personalize how Vervan responds to you" },
+                            userOccupation.trim().ifBlank { "Add details for more relevant replies" },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
@@ -233,7 +274,7 @@ fun SettingsScreen(
                 EmptyState(
                     icon = Icons.Filled.Tune,
                     title = "No settings found",
-                    body = "Try another term or clear the search."
+                    body = "Try a simpler term, such as “voice,” “backup,” or “model.”"
                 )
             } else {
                 visibleSections.forEach { section ->
@@ -279,7 +320,7 @@ fun SettingsScreen(
                     },
                     {
                         Text(
-                            "Your conversations and documents stay on this device.",
+                            "Chats and documents stay on this device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(Space.lg)
@@ -287,7 +328,7 @@ fun SettingsScreen(
                     },
                     {
                         Text(
-                            "AI can be wrong. Review important answers and confirm actions.",
+                            "Check important answers before acting on them.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = Space.lg).padding(bottom = Space.lg)

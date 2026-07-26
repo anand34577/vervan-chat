@@ -115,7 +115,7 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                         app, prompt,
                         runContext = com.vervan.chat.llm.ToolRunContext("tools/document-comparison", "Document comparison", "Version A:\n$a\n\nVersion B:\n$b"),
                     )?.trim()
-                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then compare again.")
+                        ?: throw IllegalStateException("No model is ready. Open Settings → AI models, load one, then compare again.")
                     if (explanation.isNotBlank()) {
                         found += (i + 1) to explanation
                         results = found.toList() // surface each section as it completes, not all at the end

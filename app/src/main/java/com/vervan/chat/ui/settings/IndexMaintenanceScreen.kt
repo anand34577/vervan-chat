@@ -130,14 +130,14 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Index maintenance") },
+                title = { Text("Search index") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           Column(Modifier.fillMaxSize().padding(vertical = 8.dp)) {
-            Text("Rebuild after changing the embedding model or to repair search.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+            Text("Rebuild after changing the embedding model or when document search is wrong.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
             Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = 8.dp)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                 Text("Re-index all documents")
@@ -145,7 +145,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
             if (busy && busyDocumentId == null) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Rebuilding the search index",
-                    body = status ?: "Preparing documents for local search. Keep this screen open.",
+                    body = status ?: "Preparing documents. Keep this screen open.",
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }

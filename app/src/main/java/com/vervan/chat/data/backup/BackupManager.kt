@@ -194,6 +194,11 @@ object BackupManager {
         put("id", m.id); put("chatId", m.chatId); put("parentId", m.parentId ?: JSONObject.NULL)
         put("role", m.role.name); put("content", m.content); put("state", m.state.name)
         put("imagePath", m.imagePath ?: JSONObject.NULL); put("audioPath", m.audioPath ?: JSONObject.NULL)
+        put("voiceRecordingPath", m.voiceRecordingPath ?: JSONObject.NULL)
+        put("inputModality", m.inputModality)
+        put("transcriptMetadataJson", m.transcriptMetadataJson ?: JSONObject.NULL)
+        put("outputModalities", m.outputModalities)
+        put("playbackMetadataJson", m.playbackMetadataJson ?: JSONObject.NULL)
         put("sourcesJson", m.sourcesJson ?: JSONObject.NULL)
         put("memoryActivityJson", m.memoryActivityJson ?: JSONObject.NULL)
         put("toolCallJson", m.toolCallJson ?: JSONObject.NULL); put("toolResultJson", m.toolResultJson ?: JSONObject.NULL)
@@ -204,6 +209,11 @@ object BackupManager {
         role = MessageRole.valueOf(o.getString("role")), content = o.getString("content"),
         state = MessageState.valueOf(o.optString("state", "COMPLETE")), imagePath = o.optStringOrNull("imagePath"),
         audioPath = o.optStringOrNull("audioPath"),
+        voiceRecordingPath = o.optStringOrNull("voiceRecordingPath"),
+        inputModality = o.optString("inputModality", "TEXT"),
+        transcriptMetadataJson = o.optStringOrNull("transcriptMetadataJson"),
+        outputModalities = o.optString("outputModalities", "TEXT"),
+        playbackMetadataJson = o.optStringOrNull("playbackMetadataJson"),
         sourcesJson = o.optStringOrNull("sourcesJson"), memoryActivityJson = o.optStringOrNull("memoryActivityJson"),
         toolCallJson = o.optStringOrNull("toolCallJson"),
         toolResultJson = o.optStringOrNull("toolResultJson"), createdAt = o.getLong("createdAt")

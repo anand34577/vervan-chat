@@ -15,7 +15,10 @@ import java.io.RandomAccessFile
  * this is a bounded start/stop lifecycle, not a stream anything else needs to observe.
  * Caller must already hold RECORD_AUDIO before calling [start].
  */
-class WavRecorder(val outputFile: File) {
+class WavRecorder(
+    val outputFile: File,
+    private val onLevel: ((Float) -> Unit)? = null
+) {
     private val sampleRate = 16000
     private var audioRecord: AudioRecord? = null
     @Volatile private var recording = false
@@ -57,6 +60,21 @@ class WavRecorder(val outputFile: File) {
                     val read = record.read(buffer, 0, buffer.size)
                     if (read > 0) {
                         out.write(buffer, 0, read)
+                        onLevel?.let { listener ->
+                            var sumSquares = 0.0
+                            var sampleCount = 0
+                            var i = 0
+                            while (i + 1 < read) {
+                                val sample = ((buffer[i].toInt() and 0xff) or (buffer[i + 1].toInt() shl 8)).toShort()
+                                sumSquares += sample.toDouble() * sample
+                                sampleCount++
+                                i += 2
+                            }
+                            if (sampleCount > 0) {
+                                val rms = kotlin.math.sqrt(sumSquares / sampleCount)
+                                listener((rms / 6000.0).toFloat().coerceIn(0f, 1f))
+                            }
+                        }
                     } else if (read < 0) {
                         // A negative return (ERROR_DEAD_OBJECT, ERROR_INVALID_OPERATION,
                         // ERROR_BAD_VALUE — e.g. RECORD_AUDIO revoked mid-recording via the

@@ -26,6 +26,10 @@
 #include "llama.h"
 #include "ggml-cpu.h"
 
+#ifdef VERVAN_GGML_BACKEND_DL
+#include "ggml-backend.h"
+#endif
+
 #ifdef VERVAN_HAS_MTMD
 #include "mtmd.h"
 #include "mtmd-helper.h"
@@ -127,6 +131,17 @@ struct LlamaSession {
     std::mutex generate_mutex;
 };
 
+#ifndef VERVAN_GGML_BACKEND_DL
+// ggml_threadpool_new()/_free() (used below) are GGML_BACKEND_API — part of the CPU backend
+// itself, not core ggml. Under GGML_CPU_ALL_VARIANTS + GGML_BACKEND_DL that backend is one of
+// several plugin .so's chosen and dlopen'd at *runtime* (see ensure_backend_initialized()), so
+// there is no fixed libggml-cpu.so left to link this call against at build time — only
+// llama.cpp's own public API (n_threads via llama_context_params) reaches across that boundary.
+// Losing hard core-affinity pinning is a real trade, but a small one next to what
+// GGML_CPU_ALL_VARIANTS buys: every device now gets matmul kernels matched to its actual CPU
+// features instead of one -march baked in at build time, which was leaving far more throughput
+// on the table than this pinning ever recovered.
+
 // Mirrors llama.rn's set_best_cores(): reads each core's max scaling frequency from sysfs, sorts
 // descending, and returns the fastest `nThreads` core indices — so compute threads can be pinned
 // to a big.LITTLE/tri-cluster chip's prime cores instead of drifting onto its slow efficiency
@@ -172,6 +187,7 @@ ggml_threadpool_t create_pinned_threadpool(int nThreads) {
     tpp.strict_cpu = true;
     return ggml_threadpool_new(&tpp);
 }
+#endif // VERVAN_GGML_BACKEND_DL
 
 std::string jstring_to_std(JNIEnv *env, jstring s) {
     if (s == nullptr) return {};
@@ -251,7 +267,9 @@ void destroy_session(LlamaSession *session) {
         llama_detach_threadpool(session->ctx);
     }
     if (session->ctx != nullptr) llama_free(session->ctx);
+#ifndef VERVAN_GGML_BACKEND_DL
     if (session->threadpool != nullptr) ggml_threadpool_free(session->threadpool);
+#endif
     if (session->model != nullptr) llama_model_free(session->model);
     delete session;
 }
@@ -300,11 +318,30 @@ void llama_log_to_logcat(ggml_log_level level, const char *text, void * /*user_d
 }
 
 std::once_flag g_backend_init_flag;
+// Set once by nativeInit() (see Java_..._nativeInit below) from Kotlin's
+// context.applicationInfo.nativeLibraryDir — the directory the CPU/Vulkan backend plugin .so's
+// actually get extracted to on-device. Only meaningful under VERVAN_GGML_BACKEND_DL; unused
+// otherwise since those backends self-register statically in that build mode.
+std::string g_native_lib_dir;
 
 void ensure_backend_initialized() {
     std::call_once(g_backend_init_flag, [] {
         redirect_stderr_to_logcat();
         llama_log_set(llama_log_to_logcat, nullptr);
+#ifdef VERVAN_GGML_BACKEND_DL
+        // GGML_CPU_ALL_VARIANTS + GGML_BACKEND_DL (see CMakeLists.txt/the build script) means the
+        // CPU/Vulkan backends are separate plugin .so's, not statically linked — nothing
+        // registers them until this call. It scores every libggml-cpu-*.so in the directory
+        // against the running CPU's actual features (via cpuinfo) and dlopen's the best match,
+        // same for libggml-vulkan.so. Without this, llama_backend_init() finds zero backends and
+        // every model load fails.
+        if (g_native_lib_dir.empty()) {
+            LOGE("ensure_backend_initialized(): nativeInit() was never called — no backend "
+                 "plugin directory known. Falling back to ggml's default dlopen search, which is "
+                 "not guaranteed to find this app's jniLibs directory on every Android version.");
+        }
+        ggml_backend_load_all_from_path(g_native_lib_dir.empty() ? nullptr : g_native_lib_dir.c_str());
+#endif
         llama_backend_init();
     });
 }
@@ -312,6 +349,19 @@ void ensure_backend_initialized() {
 } // namespace
 
 extern "C" {
+
+// Must be called once, before the first nativeLoadModel(), with
+// context.applicationInfo.nativeLibraryDir — see g_native_lib_dir/ensure_backend_initialized()
+// above. Safe to call more than once; only the first call's directory sticks (ensure_backend_
+// initialized() is the actual once-only gate). Cheap no-op when VERVAN_GGML_BACKEND_DL isn't
+// defined (legacy single-.so build), but still fine to call — the directory is just unused.
+JNIEXPORT void JNICALL
+Java_com_vervan_chat_llm_LlamaCppJni_nativeInit(JNIEnv *env, jobject /* thiz */, jstring jNativeLibDir) {
+    if (g_native_lib_dir.empty()) {
+        g_native_lib_dir = jstring_to_std(env, jNativeLibDir);
+    }
+    ensure_backend_initialized();
+}
 
 JNIEXPORT jlong JNICALL
 Java_com_vervan_chat_llm_LlamaCppJni_nativeLoadModel(
@@ -406,14 +456,16 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeLoadModel(
     session->n_ctx = ctxParams.n_ctx;
     session->n_batch = ctxParams.n_batch;
 
+#ifndef VERVAN_GGML_BACKEND_DL
     // Pin compute threads to this device's fastest cores (see create_pinned_threadpool) instead
     // of leaving them free to drift onto slow little/efficiency cores — same threadpool is used
     // for both prompt-batch and per-token decode, matching ctxParams.n_threads_batch == n_threads
-    // above.
+    // above. Not available under GGML_BACKEND_DL — see create_pinned_threadpool's doc comment.
     session->threadpool = create_pinned_threadpool(static_cast<int>(ctxParams.n_threads));
     if (session->threadpool != nullptr) {
         llama_attach_threadpool(ctx, session->threadpool, session->threadpool);
     }
+#endif
 
     if (!loraPath.empty()) {
         session->lora_adapter = llama_adapter_lora_init(model, loraPath.c_str());

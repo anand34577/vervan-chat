@@ -27,7 +27,11 @@ object ClarificationParser {
                 }.orEmpty()
                 Request(question, options).takeIf { question.isNotBlank() }
             }.getOrNull()
-            if (request != null) return Parsed(content.removeRange(match.range).trim(), request)
+            // A closed <clarify>...</clarify> tag is always internal markup, never something to
+            // show verbatim — even when its JSON body doesn't parse into a usable question (a
+            // model that emitted malformed or empty JSON), still cut the tag out of what's shown
+            // rather than falling through to the raw, un-stripped content below.
+            return Parsed(content.removeRange(match.range).trim(), request)
         }
         val streaming = STREAMING.find(content)
         return if (streaming != null) Parsed(content.substring(0, streaming.range.first).trim(), null)

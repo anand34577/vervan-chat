@@ -76,7 +76,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
     ) { padding ->
         ScrollablePage(padding) {
             Text(
-                "Use the active model through OpenAI-compatible local endpoints. Off by default.",
+                "Let local apps use the active model through OpenAI-compatible endpoints.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -103,7 +103,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("Allow other devices on this Wi-Fi", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Off allows this phone only. On allows devices on the same Wi-Fi; require an API key.",
+                                "Turn on for same-Wi-Fi access. An API key is then required.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -135,7 +135,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text("Require an API key", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                if (lan) "Always on while Wi-Fi access is enabled — the server never runs open on the network."
+                                if (lan) "Required for Wi-Fi access. The server never runs open on the network."
                                 else "Requests must include a bearer token.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -169,7 +169,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Requests this session: $requestCount", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Requests appear in Diagnostics > Network activity.",
+                        "View requests in Settings → Storage & backup → Diagnostics.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -181,7 +181,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
     if (confirmRegenerate) {
         ConfirmDialog(
             title = "Regenerate API key?",
-            body = "The current key stops working immediately. Connected apps need the new key.",
+            body = "The current key stops working now. Update it in every connected app.",
             confirmLabel = "Regenerate",
             destructive = true,
             onConfirm = { token = vm.regenerateApiServerToken(); confirmRegenerate = false },

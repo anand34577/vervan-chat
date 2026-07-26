@@ -120,7 +120,7 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
                     valueRange = 0.5f..32f,
                     steps = 62
                 )
-                Text("Larger models can be more capable but need more memory and run slower.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Larger models may answer better but use more memory and run slower.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             CalculatorCard("Quantization", "$quantBits-bit") {
@@ -278,7 +278,7 @@ private fun RecommendationCard(suggested: Float, bits: Int, context: Int, fit: F
                     modifier = Modifier.padding(top = Space.xs)
                 )
                 Text(
-                    if (fit == FitLevel.TOO_LARGE) "Try this smaller size in GGUF or a LiteRT-LM model optimized for your device." else "GGUF offers broad compatibility; LiteRT-LM may be faster when an optimized model is available.",
+                    if (fit == FitLevel.TOO_LARGE) "Choose a smaller GGUF or a LiteRT-LM model for this device." else "GGUF is widely compatible. Optimized LiteRT-LM models may run faster.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = Space.sm)

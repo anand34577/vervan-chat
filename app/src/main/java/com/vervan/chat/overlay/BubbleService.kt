@@ -369,7 +369,7 @@ class BubbleService : Service() {
             val loadedId = app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId
             val model = loadedId?.let { db.modelDao().get(it) }
                 ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
-                ?: error("No chat model selected. Import or activate one in Models.")
+                ?: error("No model is ready. Open Settings → AI models, then import or activate one.")
             val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
             check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
             check(app.container.visionEnabled(model)) { "The active model (${model.displayName}) doesn't support image understanding." }
@@ -539,7 +539,7 @@ class BubbleService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle("Quick-action bubble is on")
-            .setContentText("Tap to explain what's on screen. Turn off in Settings → Security.")
+            .setContentText("Tap to explain the screen. Turn off in Settings → Privacy & security.")
             .setContentIntent(openApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

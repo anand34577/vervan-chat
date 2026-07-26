@@ -97,7 +97,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics & storage") },
+                title = { Text("Diagnostics") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = {
@@ -158,7 +158,7 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
             }
             if (logs.isEmpty()) {
                 Text(
-                    "No crashes recorded. If the app ever crashes or is stopped by the system, a report appears here.",
+                    "No crashes recorded. New crash reports will appear here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp)

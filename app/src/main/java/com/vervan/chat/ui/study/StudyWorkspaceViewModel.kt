@@ -75,7 +75,7 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
             _generationStage.value = "Preparing the local model"
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No chat model selected. Import or activate one in Models."
+                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
                 _generating.value = false
                 return@launch
             }

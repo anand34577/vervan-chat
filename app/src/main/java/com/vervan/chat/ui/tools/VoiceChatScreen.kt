@@ -193,9 +193,9 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack, onO
                             }
                         }
                         Column(Modifier.padding(start = Space.sm)) {
-                            Text("Vervan Voice", style = MaterialTheme.typography.titleMedium)
+                            Text("Voice conversation", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "On-device · English + Hindi",
+                                "Private · on this device",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -217,7 +217,7 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack, onO
                                 Text("On-device voice", style = MaterialTheme.typography.titleSmall)
                                 EngineDetail("Speech input", sttLabel)
                                 EngineDetail("Speech output", ttsLabel)
-                                EngineDetail("Barge-in", if (hasEchoCancellation) "Available" else "Tap the mic to interrupt")
+                                EngineDetail("Interruption", if (hasEchoCancellation) "Hands-free" else "Tap the mic")
                                 if (state != VoiceControllerState.IDLE) {
                                     TextButton(
                                         onClick = { controller.stop(); showEngineMenu = false },
@@ -245,7 +245,7 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack, onO
             if (sttUnavailable && modelLoadError == null) {
                 ErrorCard(
                     title = "No speech input available",
-                    body = "This device has no built-in speech recognizer, and the active model can't hear audio. Download the offline voice model to talk to the assistant.",
+                    body = "No speech model is ready. Open AI models to download whisper.cpp or load an audio model.",
                     actionLabel = "Get voice model",
                     onAction = onOpenModelManager,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm)
@@ -290,6 +290,9 @@ fun VoiceChatScreen(onBack: () -> Unit, onOpenKeyboard: () -> Unit = onBack, onO
                     liveTranscript = liveTranscript,
                     playbackPaused = playbackPaused,
                     loadingModelName = loadingModelName,
+                    sttLabel = sttLabel,
+                    ttsLabel = ttsLabel,
+                    hasEchoCancellation = hasEchoCancellation,
                     onStart = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                     onCancel = controller::stop,
                     onFinishListening = controller::finishListening,
@@ -316,37 +319,52 @@ private fun EngineDetail(label: String, value: String) {
 
 @Composable
 private fun VoiceEmptyState() {
-    Card(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = Space.xxl, bottom = Space.lg),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(56.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(26.dp))
-                }
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.size(30.dp))
             }
-            Text("A private voice conversation", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.md))
-            Text(
-            "Speak naturally. Vervan listens and replies on your device.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = Space.sm)
-            )
-            Text(
-                "On-device · Conversation history stays visible",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = Space.md)
-            )
         }
+        Text(
+            "Talk, read, or switch anytime",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = Space.lg)
+        )
+        Text(
+            "Your transcript stays visible while Vervan listens and replies.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = Space.sm).widthIn(max = 420.dp)
+        )
+        Row(
+            modifier = Modifier.padding(top = Space.lg),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            QuietFeaturePill("On-device")
+            QuietFeaturePill("Live captions")
+            QuietFeaturePill("Interruptible")
+        }
+    }
+}
+
+@Composable
+private fun QuietFeaturePill(label: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm))
     }
 }
 
@@ -505,6 +523,9 @@ private fun VoiceControlCluster(
     liveTranscript: String,
     playbackPaused: Boolean,
     loadingModelName: String?,
+    sttLabel: String,
+    ttsLabel: String,
+    hasEchoCancellation: Boolean,
     onStart: () -> Unit,
     onCancel: () -> Unit,
     onFinishListening: () -> Unit,
@@ -514,30 +535,124 @@ private fun VoiceControlCluster(
     onKeyboard: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 840.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 840.dp)
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        AnimatedContent(
-            targetState = state,
-            // The new state eases in, while the old live waveform stops immediately so the
-            // UI never appears to keep listening after capture has ended.
-            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(0)) },
-            label = "voice-control-state"
-        ) { activeState ->
-            when (activeState) {
-                VoiceControllerState.IDLE -> IdleControls(onStart, onKeyboard)
-                VoiceControllerState.LISTENING -> ListeningControls(
-                    liveWaveform, liveElapsedMs, liveTranscript, onCancel, onFinishListening, onKeyboard
+        Column {
+            VoiceSessionHeader(
+                state = state,
+                playbackPaused = playbackPaused,
+                loadingModelName = loadingModelName,
+                sttLabel = sttLabel,
+                ttsLabel = ttsLabel,
+                hasEchoCancellation = hasEchoCancellation
+            )
+            AnimatedContent(
+                targetState = state,
+                // The new state eases in, while the old live waveform stops immediately so the
+                // UI never appears to keep listening after capture has ended.
+                transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(0)) },
+                label = "voice-control-state"
+            ) { activeState ->
+                when (activeState) {
+                    VoiceControllerState.IDLE -> IdleControls(onStart, onKeyboard)
+                    VoiceControllerState.LISTENING -> ListeningControls(
+                        liveWaveform, liveElapsedMs, liveTranscript, onCancel, onFinishListening, onKeyboard
+                    )
+                    VoiceControllerState.SPEAKING -> SpeakingControls(playbackPaused, onBargeIn, onPause, onStop)
+                    VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL, VoiceControllerState.TRANSCRIBING -> ProcessingControls(
+                        label = voiceStatusLabel(activeState, playbackPaused, loadingModelName),
+                        liveTranscript = liveTranscript.takeIf { activeState == VoiceControllerState.TRANSCRIBING }.orEmpty(),
+                        onCancel = onCancel,
+                        onKeyboard = onKeyboard
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceSessionHeader(
+    state: VoiceControllerState,
+    playbackPaused: Boolean,
+    loadingModelName: String?,
+    sttLabel: String,
+    ttsLabel: String,
+    hasEchoCancellation: Boolean
+) {
+    Column(Modifier.fillMaxWidth().padding(start = Space.lg, top = Space.lg, end = Space.lg)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    voiceStatusLabel(state, playbackPaused, loadingModelName),
+                    style = MaterialTheme.typography.titleMedium
                 )
-                VoiceControllerState.SPEAKING -> SpeakingControls(playbackPaused, onBargeIn, onPause, onStop)
-                VoiceControllerState.THINKING, VoiceControllerState.LOADING_MODEL, VoiceControllerState.TRANSCRIBING -> ProcessingControls(
-                    label = voiceStatusLabel(activeState, playbackPaused, loadingModelName),
-                    liveTranscript = liveTranscript.takeIf { activeState == VoiceControllerState.TRANSCRIBING }.orEmpty(),
-                    onCancel = onCancel,
-                    onKeyboard = onKeyboard
+                Text(
+                    voiceStatusSupportText(state, hasEchoCancellation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+            ) {
+                Row(
+                    Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(7.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
+                    Text("OFFLINE", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = Space.sm))
+                }
+            }
+        }
+        VoiceStateRail(state, Modifier.padding(top = Space.md))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
+            EnginePill("Mic", sttLabel, Modifier.weight(1f))
+            EnginePill("Voice", ttsLabel, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun EnginePill(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
+            Text(label.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun VoiceStateRail(state: VoiceControllerState, modifier: Modifier = Modifier) {
+    val stages = listOf(
+        VoiceControllerState.LISTENING,
+        VoiceControllerState.TRANSCRIBING,
+        VoiceControllerState.THINKING,
+        VoiceControllerState.SPEAKING
+    )
+    val activeIndex = stages.indexOf(state)
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        stages.forEachIndexed { index, _ ->
+            val active = activeIndex >= 0 && index <= activeIndex
+            Box(
+                Modifier.weight(1f).height(3.dp).background(
+                    if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    CircleShape
+                )
+            )
         }
     }
 }
@@ -545,22 +660,35 @@ private fun VoiceControlCluster(
 @Composable
 private fun IdleControls(onStart: () -> Unit, onKeyboard: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.md),
+        Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Tap to speak", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
-            Modifier.padding(top = Space.sm),
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedIconButton(onClick = onStart, modifier = Modifier.size(64.dp)) {
-                Icon(Icons.Filled.Mic, contentDescription = "Start voice conversation", modifier = Modifier.size(28.dp))
+            FilledIconButton(
+                onClick = onStart,
+                modifier = Modifier.size(72.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(Icons.Filled.Mic, contentDescription = "Start voice conversation", modifier = Modifier.size(30.dp))
             }
-            IconButton(onClick = onKeyboard, modifier = Modifier.size(48.dp)) {
+            OutlinedIconButton(onClick = onKeyboard, modifier = Modifier.size(52.dp)) {
                 Icon(Icons.Filled.Keyboard, contentDescription = "Switch to keyboard")
             }
         }
+        Text("Tap the mic to begin", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+        Text(
+            "The keyboard remains available at every stage.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = Space.xs)
+        )
     }
 }
 
@@ -582,12 +710,7 @@ private fun ListeningControls(
             modifier = Modifier.fillMaxWidth().widthIn(max = 380.dp).height(44.dp),
             color = MaterialTheme.colorScheme.primary
         )
-        Text(
-            "Listening… · ${formatDuration(elapsedMs)}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = Space.sm)
-        )
+        Text(formatDuration(elapsedMs), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
         LiveTranscriptCaption(liveTranscript)
         Row(
             Modifier.fillMaxWidth().padding(top = Space.md),
@@ -622,7 +745,7 @@ private fun SpeakingControls(paused: Boolean, onBargeIn: () -> Unit, onPause: ()
     ) {
         SpeakingPulse(paused)
         Text(
-            if (paused) "Paused" else "Speaking…",
+            if (paused) "Playback paused" else "Tap the mic to interrupt",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.sm)
@@ -700,7 +823,7 @@ private fun LiveTranscriptCaption(text: String) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "LIVE TRANSCRIPT",
+                text = "LIVE CAPTION",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -814,10 +937,21 @@ private fun formatDuration(ms: Int): String {
 }
 
 internal fun voiceStatusLabel(state: VoiceControllerState, paused: Boolean, loadingModelName: String?): String = when (state) {
-    VoiceControllerState.IDLE -> "Ready"
+    VoiceControllerState.IDLE -> "Ready when you are"
     VoiceControllerState.LOADING_MODEL -> "Preparing ${loadingModelName ?: "local model"}…"
-    VoiceControllerState.LISTENING -> "Listening…"
-    VoiceControllerState.TRANSCRIBING -> "Transcribing…"
-    VoiceControllerState.THINKING -> "Thinking…"
-    VoiceControllerState.SPEAKING -> if (paused) "Paused" else "Speaking…"
+    VoiceControllerState.LISTENING -> "Listening"
+    VoiceControllerState.TRANSCRIBING -> "Turning speech into text"
+    VoiceControllerState.THINKING -> "Preparing a response"
+    VoiceControllerState.SPEAKING -> if (paused) "Response paused" else "Speaking"
+}
+
+private fun voiceStatusSupportText(state: VoiceControllerState, hasEchoCancellation: Boolean): String = when (state) {
+    VoiceControllerState.IDLE -> "Speak now or switch to the keyboard"
+    VoiceControllerState.LOADING_MODEL -> "Everything is being prepared locally"
+    VoiceControllerState.LISTENING -> "Speak naturally; tap stop when you’re done"
+    VoiceControllerState.TRANSCRIBING -> "Your words will remain visible in the transcript"
+    VoiceControllerState.THINKING -> "The text response will appear before audio finishes"
+    VoiceControllerState.SPEAKING ->
+        if (hasEchoCancellation) "Start speaking to interrupt"
+        else "Tap the mic to interrupt"
 }

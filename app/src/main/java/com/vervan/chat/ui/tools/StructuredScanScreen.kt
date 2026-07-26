@@ -118,7 +118,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         app, prompt,
                         runContext = com.vervan.chat.llm.ToolRunContext("tools/table-scanner", "Table scanner", ocrText),
                     )?.trim()
-                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                        ?: throw IllegalStateException("No model is ready. Open Settings → AI models, load one, then scan again.")
                     if (markdownTable.isBlank()) errorText = "The model couldn't build a table from that image. Try again."
                 } else {
                     val keys = activeFields.joinToString(", ") { it.first }
@@ -132,7 +132,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         app, prompt,
                         runContext = com.vervan.chat.llm.ToolRunContext(route, kind.title, ocrText),
                     )?.trim()
-                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                        ?: throw IllegalStateException("No model is ready. Open Settings → AI models, load one, then scan again.")
                     val json = runCatching { JSONObject(raw.substringAfter("{").let { "{$it" }.substringBeforeLast("}").let { "$it}" }) }.getOrNull()
                     fields = activeFields.associate { (key, _) -> key to (json?.optString(key).orEmpty()) }
                     lineItems = json?.optJSONArray("lineItems")?.let { arr -> (0 until arr.length()).joinToString("\n") { arr.optString(it) } }.orEmpty()

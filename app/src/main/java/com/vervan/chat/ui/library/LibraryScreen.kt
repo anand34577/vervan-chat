@@ -170,7 +170,7 @@ fun LibraryScreen(
             ContextGuideCard(
                 icon = Icons.Outlined.BookmarkBorder,
                 title = "Your reusable toolkit",
-                body = "Swipe between personas, prompt templates, workflows, and saved responses.",
+        body = "Browse personas, prompts, workflows, and saved responses.",
                 modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
                 accentIndex = 4,
             )
@@ -228,7 +228,7 @@ private fun PersonasTab(
         EmptyState(
             Icons.Outlined.Person,
             if (query.isBlank()) "No personas yet" else "No matching personas",
-            if (query.isBlank()) "Create a persona to give chats a reusable voice and working style." else "Try another name or clear your search.",
+                    if (query.isBlank()) "Create a persona to reuse a voice and working style." else "Try another name or clear the search.",
             actionLabel = if (query.isBlank()) "New persona" else null,
             onAction = if (query.isBlank()) onNewPersona else null
         )

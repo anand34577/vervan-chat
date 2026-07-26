@@ -63,10 +63,10 @@ import java.io.File
 private data class CaptionMode(val label: String, val prompt: String)
 
 private val CAPTION_MODES = listOf(
-    CaptionMode("Alt text", "Write concise, accessible alt text describing this image for a screen reader user."),
+    CaptionMode("Alt text", "Write concise alt text for screen readers."),
     CaptionMode("Social caption", "Write a short, engaging social media caption for this image."),
     CaptionMode("Product description", "Write a short product description for what's shown in this image."),
-    CaptionMode("Document description", "Describe the content and layout of this document/screen image in a few sentences.")
+    CaptionMode("Document description", "Describe this document or screen and its layout.")
 )
 
 /** Vision-model image captioning — requires the active model to declare vision support; shows a
@@ -107,7 +107,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/image-caption", "Image caption · ${mode.label}", "Image: ${java.io.File(path).name}"),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Load a vision-capable model from Models."
+                    errorText = "No vision model is ready. Open Settings → AI models and load one."
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L
@@ -175,7 +175,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
             ToolIntro(
                 icon = Icons.Filled.ImageSearch,
                 title = "Describe an image for any audience",
-                body = "Create alt text, captions, or detailed image descriptions locally."
+        body = "Create alt text, captions, or image descriptions on-device."
             )
             if (visionAvailable == false) {
                 Text(

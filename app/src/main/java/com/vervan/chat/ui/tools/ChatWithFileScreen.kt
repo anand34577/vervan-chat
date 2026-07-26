@@ -50,7 +50,7 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
                 ToolIntro(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Ask questions about a document",
-                    body = "Pick a PDF, Word, or text file and start a chat grounded in it — answers cite the file, and nothing leaves your device."
+        body = "Choose a PDF, Word, or text file. Answers cite it and stay on-device."
                 )
                 Button(
                     onClick = {

@@ -92,7 +92,7 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.MyLocation,
                 title = "No branches yet",
-                body = "Edit or regenerate a message to fork the conversation — every branch shows up here."
+            body = "Edit or retry a message to create a branch. Every branch appears here."
             )
         } else {
             LazyColumn(

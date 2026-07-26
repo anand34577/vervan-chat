@@ -33,8 +33,12 @@ internal object WhisperCppJni {
 
     /** Loads `modelPath` (a whisper.cpp `ggml-*.bin` file) and returns an opaque native handle,
      *  or 0 on failure — call [nativeGetLastError] to find out why. [nThreads] controls
-     *  whisper.cpp's mel-spectrogram + encoder parallelism; pass 0 to let the bridge pick. */
-    external fun nativeInit(modelPath: String, nThreads: Int): Long
+     *  whisper.cpp's mel-spectrogram + encoder parallelism; pass 0 to let the bridge pick.
+     *  [useGpu] requests the Vulkan backend on a build/device that has one — see
+     *  [WhisperCppSttEngine]'s crash-loop breaker for why this is a caller-supplied flag rather
+     *  than always-on: GPU init has crashed the whole process on at least one real device instead
+     *  of failing gracefully, so this call is NOT safe to retry blindly with GPU on. */
+    external fun nativeInit(modelPath: String, nThreads: Int, useGpu: Boolean): Long
 
     /** Transcribes [samples] (mono float PCM at 16 kHz, values normalized to [-1, 1]). Returns the
      *  trimmed transcript, or null on any failure (decode error / blank output) — see

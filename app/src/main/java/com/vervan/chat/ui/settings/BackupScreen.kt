@@ -116,7 +116,7 @@ fun BackupScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Import & export") },
+                title = { Text("Backup & restore") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
         }
@@ -136,7 +136,7 @@ fun BackupScreen(onBack: () -> Unit) {
             }
             Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Restore from backup", style = MaterialTheme.typography.titleSmall)
+                    Text("Restore backup", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Adds backup data and replaces matching items.",
                         style = MaterialTheme.typography.bodySmall,
@@ -148,8 +148,8 @@ fun BackupScreen(onBack: () -> Unit) {
             }
             if (busy) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Working with your backup",
-                    body = "Reading or saving local data. Keep this screen open.",
+                    title = "Processing backup",
+                    body = "Keep this screen open until the work finishes.",
                     modifier = Modifier.padding(top = 16.dp)
                 )
             }
@@ -175,7 +175,7 @@ fun BackupScreen(onBack: () -> Unit) {
 
     pendingImportUri?.let { uri ->
         ConfirmDialog(
-            title = "Restore from backup?",
+            title = "Restore this backup?",
             body = "Matching items will be replaced. Other local data stays unchanged.",
             confirmLabel = "Restore",
             destructive = true,

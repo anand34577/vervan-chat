@@ -34,10 +34,24 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
     suspend fun import(
         uri: Uri,
         role: ModelRole = ModelRole.GENERATION,
+        // false only for the plain "LiteRT-LM" import card — GGUF has its own dedicated import
+        // dialog ([importLlamaCppModel]) with its own (stricter) messaging, and letting a .gguf
+        // file quietly succeed here just because ".gguf" is also a valid GENERATION extension
+        // meant picking "LiteRT-LM" and a GGUF file silently produced a llama.cpp model with no
+        // indication you'd picked the "wrong" card. importLlamaCppModel and importEmbeddingModel
+        // both call back into this with the default (true) — GGUF is exactly what the former
+        // wants, and the latter's extensions never include .gguf in the first place.
+        allowGguf: Boolean = true,
         onProgress: (String) -> Unit = {}
     ): ImportResult = withContext(Dispatchers.IO) {
         val name = safeFileName(queryDisplayName(uri) ?: uri.lastPathSegment ?: "model")
-        if (name.endsWith(".gguf", ignoreCase = true) && !BuildConfig.LLAMA_CPP_AVAILABLE) {
+        val isGguf = name.endsWith(".gguf", ignoreCase = true)
+        if (isGguf && !allowGguf) {
+            return@withContext ImportResult.Rejected(
+                "GGUF files need the llama.cpp import option, not LiteRT-LM — use \"llama.cpp\" above instead."
+            )
+        }
+        if (isGguf && !BuildConfig.LLAMA_CPP_AVAILABLE) {
             return@withContext ImportResult.Rejected(
                 "This app build does not include the llama.cpp Android/Vulkan runtime required for GGUF models."
             )
@@ -48,6 +62,32 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
                 "Unsupported file type \"${name.substringAfterLast('.', "(no extension)")}\". " +
                     "Expected one of: ${supportedExtensions.joinToString()}"
             )
+        }
+        // Content sniffing on top of the extension check above — catches a renamed file (a
+        // language model saved as .task, or vice versa) extension alone would miss. GGUF is one
+        // container shared by llama.cpp language models and whisper.cpp speech models, so a
+        // magic-byte match alone isn't enough there — general.architecture disambiguates.
+        if (role == ModelRole.GENERATION) {
+            if (isGguf) {
+                if (!ModelFileSniffer.looksLikeGguf(context, uri)) {
+                    return@withContext ImportResult.Rejected("This file doesn't look like a valid GGUF model (missing GGUF header).")
+                }
+                val architecture = ModelFileSniffer.ggufArchitecture(context, uri)
+                if (architecture == "whisper") {
+                    return@withContext ImportResult.Rejected(
+                        "This is a whisper.cpp speech-to-text model, not a chat model — import it from the " +
+                            "Whisper (offline speech-to-text) option instead."
+                    )
+                }
+            } else if (name.endsWith(".task", ignoreCase = true) &&
+                !ModelFileSniffer.looksLikeZipBundle(context, uri)
+            ) {
+                // Only the older MediaPipe Task Bundle (.task) is a documented ZIP container.
+                // .litertlm/.litert have no published magic number (see ArtifactFormatProbe's
+                // same finding) — sniffing them as ZIP rejects every genuine file, so those defer
+                // to the runtime's own load-time validation instead.
+                return@withContext ImportResult.Rejected("This doesn't look like a valid LiteRT-LM model bundle.")
+            }
         }
 
         val sourceSize = queryFileSize(uri)
@@ -139,7 +179,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
                 "This llama.cpp build has no mtmd vision support. Rebuild llama.cpp with LLAMA_BUILD_MTMD=ON first."
             )
         }
-        val modelResult = import(modelUri, ModelRole.GENERATION, onProgress)
+        val modelResult = import(modelUri, ModelRole.GENERATION, onProgress = onProgress)
         val model = when (modelResult) {
             is ImportResult.Success -> modelResult.model
             is ImportResult.Duplicate -> modelResult.existing
@@ -154,6 +194,9 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         val mmprojName = safeFileName(queryDisplayName(mmprojUri) ?: mmprojUri.lastPathSegment ?: "mmproj.gguf")
         if (!mmprojName.endsWith(".gguf", ignoreCase = true)) {
             return@withContext ImportResult.Rejected("Vision projectors must be GGUF files.")
+        }
+        if (!ModelFileSniffer.looksLikeGguf(context, mmprojUri)) {
+            return@withContext ImportResult.Rejected("This doesn't look like a valid GGUF vision projector (missing GGUF header).")
         }
         val mmprojDest = File(modelsDir, "${System.currentTimeMillis()}_$mmprojName")
         val mmprojInput = context.contentResolver.openInputStream(mmprojUri)
@@ -190,6 +233,9 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         val loraName = safeFileName(queryDisplayName(loraUri) ?: loraUri.lastPathSegment ?: "lora.gguf")
         if (!loraName.endsWith(".gguf", ignoreCase = true)) {
             return@withContext ImportResult.Rejected("LoRA adapters must be GGUF files.")
+        }
+        if (!ModelFileSniffer.looksLikeGguf(context, loraUri)) {
+            return@withContext ImportResult.Rejected("This doesn't look like a valid GGUF LoRA adapter (missing GGUF header).")
         }
         val loraDest = File(modelsDir, "${System.currentTimeMillis()}_$loraName")
         val loraInput = context.contentResolver.openInputStream(loraUri)
@@ -245,7 +291,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             )
         }
 
-        val modelResult = import(modelUri, ModelRole.EMBEDDING, onProgress)
+        val modelResult = import(modelUri, ModelRole.EMBEDDING, onProgress = onProgress)
         val model = when (modelResult) {
             is ImportResult.Success -> modelResult.model
             is ImportResult.Duplicate -> modelResult.existing

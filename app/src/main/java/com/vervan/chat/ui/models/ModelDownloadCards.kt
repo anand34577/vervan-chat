@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.CheckCircle
@@ -324,6 +325,11 @@ internal fun DownloadPackageCard(
     onStop: () -> Unit,
     onDelete: () -> Unit
 ) {
+    if (state.status == ModelStatus.READY) {
+        InstalledPackageCard(state = state, onDelete = onDelete)
+        return
+    }
+
     var expanded by rememberSaveable(state.packageId) { mutableStateOf(false) }
     var confirmStop by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -391,7 +397,10 @@ internal fun DownloadPackageCard(
                 SemanticChip(statusChipLabel(state.status), tone)
             }
 
-            if (state.status != ModelStatus.QUEUED) {
+            // READY means the model is fully installed — there's nothing left to show progress
+            // for, so the bar (previously falling into the indeterminate "else" branch below,
+            // since READY isn't PAUSED/FAILED either) no longer renders once installed.
+            if (state.status != ModelStatus.QUEUED && state.status != ModelStatus.READY) {
                 if (state.status in setOf(ModelStatus.PREPARING, ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING, ModelStatus.PAUSING, ModelStatus.CANCELLING, ModelStatus.DELETING)) {
                     LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
@@ -542,6 +551,78 @@ internal fun DownloadPackageCard(
 }
 
 @Composable
+private fun InstalledPackageCard(
+    state: com.vervan.chat.modeldownload.ModelUiState,
+    onDelete: () -> Unit
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, vervanSubtleDividerColor())
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.md, top = Space.md, bottom = Space.md, end = Space.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.vervanSuccess.copy(alpha = 0.12f),
+                contentColor = MaterialTheme.colorScheme.vervanSuccess
+            ) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = "Installed",
+                    modifier = Modifier.padding(10.dp).size(20.dp)
+                )
+            }
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text(
+                    state.displayName,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    buildString {
+                        append(categoryLabel(state.category))
+                        append(" · v${state.version}")
+                        state.installedSizeBytes?.let { append(" · ${formatModelSize(it)}") }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = { confirmDelete = true }) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "Delete ${state.displayName}",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        ConfirmDialog(
+            title = "Delete downloaded model?",
+            body = "Remove downloaded data for \"${state.displayName}\"?",
+            confirmLabel = "Delete",
+            destructive = true,
+            onConfirm = {
+                confirmDelete = false
+                onDelete()
+            },
+            onDismiss = { confirmDelete = false }
+        )
+    }
+}
+
+@Composable
 internal fun DownloadFactRow(
     label: String,
     value: String,
@@ -641,18 +722,40 @@ internal fun formatEta(seconds: Long): String = when {
 /** Navigation affordance for the curated Model Store. */
 @Composable
 internal fun StoreEntryCard(onOpenStore: () -> Unit) {
-    com.vervan.chat.ui.common.ContentCard {
-        Column(Modifier.padding(Space.lg)) {
-            Text("Model Store", style = MaterialTheme.typography.titleSmall)
-            Box(Modifier.height(Space.xs))
-            Text(
-                "Browse the curated catalogue of models reviewed for this app. Weights download " +
-                    "directly from their publisher.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+    Card(
+        onClick = onOpenStore,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(Space.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(
+                    Icons.Filled.CloudDownload,
+                    contentDescription = null,
+                    modifier = Modifier.padding(Space.md).size(24.dp)
+                )
+            }
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text("Model Store", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Curated models with device-aware options",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
             )
-            Box(Modifier.height(Space.sm))
-            Button(onClick = onOpenStore) { Text("Open Model Store") }
         }
     }
 }

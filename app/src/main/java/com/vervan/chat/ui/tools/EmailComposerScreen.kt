@@ -107,7 +107,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/email-composer", "Email composer", listOf(originalMessage, keyPoints).filter { it.isNotBlank() }.joinToString("\n\n")),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Load one from Models, then draft again."
+                    errorText = "No model is ready. Open Settings → AI models, load one, then draft again."
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L

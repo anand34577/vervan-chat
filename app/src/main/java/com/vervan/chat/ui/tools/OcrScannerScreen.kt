@@ -107,7 +107,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             val (file, uri) = newImageFile()
             pendingCameraFile = file
             takePicture.launch(uri)
-            } else errorText = "Camera access is off. Choose an image or allow it in Settings."
+            } else errorText = "Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions."
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
