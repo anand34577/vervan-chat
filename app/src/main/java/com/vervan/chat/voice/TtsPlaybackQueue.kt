@@ -160,7 +160,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     private fun CoroutineScope.asyncSynthesize(text: String): Deferred<TtsAudio?> = async(Dispatchers.Default) {
         synthSemaphore.withPermit {
-            runCatching { engineSelector.resolve().synthesize(text, currentLang) }.getOrNull()
+            runCatching { engineSelector.resolve()?.synthesize(text, currentLang) }.getOrNull()
         }
     }
 

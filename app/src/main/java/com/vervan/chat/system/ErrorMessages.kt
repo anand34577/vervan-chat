@@ -20,7 +20,7 @@ fun Throwable.toUserMessage(): String {
         "no space" in detail || "disk full" in detail || "sqlite_full" in detail ->
             "Not enough storage. Free some space, then try again."
         "no generation model" in detail || "no active model" in detail || "model is not loaded" in detail ->
-            "No model is ready. Open Models and load one."
+            "No model is ready. Open Settings → AI models and load one."
         "context" in detail && ("length" in detail || "window" in detail || "token" in detail || "too long" in detail) ->
             "Input is too long. Shorten it or use a model with more context."
         "unsupported" in detail || "not supported" in detail ->
@@ -30,7 +30,7 @@ fun Throwable.toUserMessage(): String {
         "model" in detail && ("load" in detail || "backend" in detail || "runtime" in detail) ->
             "The model could not load. Retry, switch runtime, or use a smaller model."
         root is IOException -> "Could not read or save the data. Check the file and free storage."
-        else -> "Could not finish. Try again or check Settings > Diagnostics."
+        else -> "Could not finish. Try again or check Settings → Storage & backup → Diagnostics."
     }
 }
 

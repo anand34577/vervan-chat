@@ -350,6 +350,13 @@ class ModelLoadCoordinator(
         publishUnloaded(role)
     }
 
+    /** Native generation may outlive coroutine cancellation until its runtime is explicitly
+     * signalled, so every UI stop action must hit both possible generation backends. */
+    fun cancelActiveGeneration() {
+        litertEngine.cancelActiveGeneration()
+        llamaCppEngine.cancelActiveGeneration()
+    }
+
     /** Synchronous (`tryLock`-based, not suspend) variant for `Application.onLowMemory()`, which
      * cannot suspend. Returns the roles that actually got unloaded. */
     fun unloadUnderMemoryPressure(): List<ModelRole> {

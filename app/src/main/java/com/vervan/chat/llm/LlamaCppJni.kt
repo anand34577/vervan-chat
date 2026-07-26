@@ -26,6 +26,17 @@ internal object LlamaCppJni {
         fun onToken(token: String)
     }
 
+    /** Must be called once before the first [nativeLoadModel], with the app's own
+     * `applicationInfo.nativeLibraryDir` — the on-device directory the native build's CPU/Vulkan
+     * backend plugin `.so`s land in (see `scripts/build-llama-android-vulkan.ps1`'s
+     * `GGML_CPU_ALL_VARIANTS`/`GGML_BACKEND_DL` build). Native-side backend registration happens
+     * lazily on the first call via `ggml_backend_load_all_from_path()`, scoring every
+     * `libggml-cpu-*.so` in that directory against the device's actual CPU features and loading
+     * the best match — this is what replaces one build-time `-march` choice with per-device
+     * runtime dispatch. Cheap to call repeatedly; only the first call's directory is used.
+     * [LlamaCppEngine.load] calls this before every load. */
+    external fun nativeInit(nativeLibDir: String)
+
     /** Returns an opaque native context handle, or 0 on failure — call [nativeGetLastError] to
      * find out why. [mmprojPath] is non-null only for a vision-capable model (initializes an
      * `mtmd_context` alongside the base model). [useMmap] should stay true except for

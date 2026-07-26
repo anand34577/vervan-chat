@@ -190,7 +190,9 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             _importing.value = true
             _busyLabel.value = "Opening model…"
             try {
-                when (val result = importManager.import(uri, role) { progress ->
+                // allowGguf = false: this is the plain "LiteRT-LM" card's import path — GGUF has
+                // its own dedicated "llama.cpp" card/dialog (importLlamaCppModel below).
+                when (val result = importManager.import(uri, role, allowGguf = false) { progress ->
                     _busyLabel.value = progress
                     _status.value = progress
                 }) {
@@ -278,6 +280,40 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importLlamaCppModel() threw unexpectedly", t)
+                _status.value = "Import failed. ${t.toUserMessage()}"
+            } finally {
+                _importing.value = false
+                _busyLabel.value = null
+            }
+        }
+    }
+
+    /** Local counterpart to downloading a whisper.cpp model from the catalog — lets a ggml/GGUF
+     * whisper.cpp model already on-device be picked up without any network access. Registers
+     * into the same [com.vervan.chat.data.db.dao.TtsVoiceModelDao] row
+     * [com.vervan.chat.voice.WhisperCppSttEngine] reads, so it shows up in Voice settings and
+     * Model Manager exactly like a catalog download would. */
+    fun importWhisperCppModel(uri: Uri) {
+        Log.i(TAG, "importWhisperCppModel() requested: $uri")
+        viewModelScope.launch {
+            _importing.value = true
+            _busyLabel.value = "Opening model…"
+            try {
+                when (val result = app.container.ttsModelDownloadManager.importWhisperCppModel(app, uri) { progress ->
+                    _busyLabel.value = progress
+                    _status.value = progress
+                }) {
+                    is com.vervan.chat.voice.TtsDownloadResult.Success -> {
+                        Log.i(TAG, "importWhisperCppModel() copied file ok: ${result.model.fileSizeBytes} bytes")
+                        _status.value = "Imported whisper.cpp model."
+                    }
+                    is com.vervan.chat.voice.TtsDownloadResult.Failed -> {
+                        Log.w(TAG, "importWhisperCppModel() failed: ${result.reason}")
+                        _status.value = "Import failed. ${result.reason}"
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "importWhisperCppModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
                 _importing.value = false
@@ -395,11 +431,18 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
 
     fun acknowledgeAndActivate(model: ModelInfo) {
         _pendingAcknowledgment.value = null
+        val acknowledged = model.copy(licenseAcknowledged = true)
         if (model.catalogModelId == recommendedSetupCatalogId) {
             recommendedSetupCatalogId = null
-            viewModelScope.launch { validateAndActivate(model.copy(licenseAcknowledged = true)) }
+            viewModelScope.launch {
+                db.modelDao().upsert(acknowledged)
+                validateAndActivate(acknowledged)
+            }
         } else {
-            viewModelScope.launch { activateModel(model.copy(licenseAcknowledged = true)) }
+            viewModelScope.launch {
+                db.modelDao().upsert(acknowledged)
+                activateModel(acknowledged)
+            }
         }
     }
 
@@ -411,8 +454,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         val previousActiveId = db.modelDao().getActiveModel(model.role)?.id
         coordinator.setDefault(model)
         if (model.role == ModelRole.EMBEDDING && previousActiveId != model.id && db.documentDao().countReady() > 0) {
-            _status.value = "Embedding model changed — go to Settings → Index maintenance to " +
-                "re-index your knowledge bases so semantic search reflects the new model."
+            _status.value = "Embedding model changed. Rebuild search in Settings → Storage & backup → Search index."
         }
     }
 

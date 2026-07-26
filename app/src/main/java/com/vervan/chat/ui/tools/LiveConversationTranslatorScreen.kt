@@ -119,7 +119,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                     app, prompt,
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/live-translator", "Live translator · $targetLang", text),
                 )?.trim()
-                    ?: throw IllegalStateException("No generation model is active. Load one from Models to translate.")
+                    ?: throw IllegalStateException("No model is ready. Open Settings → AI models and load one.")
                 turns = turns + TranslatedTurn(fromA, text, translated)
                 speak(translated, targetLang)
             } catch (t: Throwable) {

@@ -56,14 +56,38 @@ endfunction()
 vervan_import_prebuilt(llama libllama.so)
 vervan_import_prebuilt(ggml libggml.so)
 vervan_import_prebuilt(ggml-base libggml-base.so)
-vervan_import_prebuilt(ggml-cpu libggml-cpu.so)
+
+# CPU/Vulkan backend selection: the build script (scripts/build-llama-android-vulkan.ps1) has two
+# modes. Default (GGML_CPU_ALL_VARIANTS + GGML_BACKEND_DL): the CPU backend is built as several
+# ARM-feature-tier plugins — libggml-cpu-<tag>.so, no fixed filename — plus Vulkan as a plugin
+# too (still named libggml-vulkan.so). Neither is a link-time dependency in this mode; ggml
+# discovers and dlopen's the best-matching one at runtime via ggml_backend_load_all_from_path(),
+# which llama_bridge.cpp calls from nativeInit() before any model load. Legacy mode
+# (-CpuAllVariants:$false): a single libggml-cpu.so/libggml-vulkan.so built for one fixed -march,
+# statically linked below exactly as before — kept working so an old build-android/ output (or a
+# deliberate compatibility build) doesn't break.
+file(GLOB VERVAN_GGML_CPU_VARIANTS "${LLAMA_CPP_LIBS_DIR}/libggml-cpu-*.so")
+if(VERVAN_GGML_CPU_VARIANTS)
+    list(LENGTH VERVAN_GGML_CPU_VARIANTS VERVAN_GGML_CPU_VARIANT_COUNT)
+    message(STATUS "llama.cpp CPU backend for ${ANDROID_ABI}: ${VERVAN_GGML_CPU_VARIANT_COUNT} GGML_CPU_ALL_VARIANTS plugin(s), runtime-dispatched")
+    set(VERVAN_GGML_BACKEND_DL TRUE)
+elseif(EXISTS "${LLAMA_CPP_LIBS_DIR}/libggml-cpu.so")
+    message(STATUS "llama.cpp CPU backend for ${ANDROID_ABI}: single libggml-cpu.so (legacy fixed -march build)")
+    vervan_import_prebuilt(ggml-cpu libggml-cpu.so)
+else()
+    message(FATAL_ERROR "No CPU backend (libggml-cpu.so or libggml-cpu-*.so) found in ${LLAMA_CPP_LIBS_DIR}.")
+endif()
 
 # The Vulkan backend is 64-bit only — on 32-bit targets Vulkan's non-dispatchable handles are
 # plain uint64_t instead of distinct types, and vulkan.hpp's C++ wrappers don't compile. The
-# build script therefore produces a CPU-only llama.cpp for armeabi-v7a. ggml selects backends at
-# runtime, so linking without it just means no GPU offload on those devices.
+# build script therefore produces a CPU-only llama.cpp for armeabi-v7a.
 if(EXISTS "${LLAMA_CPP_LIBS_DIR}/libggml-vulkan.so")
-    vervan_import_prebuilt(ggml-vulkan libggml-vulkan.so)
+    if(NOT VERVAN_GGML_BACKEND_DL)
+        # Legacy mode only: DL-mode Vulkan is dlopen'd by ggml_backend_load_all_from_path(), not
+        # linked — see the CPU backend comment above for why.
+        vervan_import_prebuilt(ggml-vulkan libggml-vulkan.so)
+        set(VERVAN_LINK_VULKAN TRUE)
+    endif()
     set(VERVAN_HAS_VULKAN TRUE)
 else()
     message(STATUS "No libggml-vulkan.so for ${ANDROID_ABI} — CPU-only llama.cpp for this ABI.")
@@ -92,6 +116,13 @@ if(VERVAN_HAS_MTMD)
     target_compile_definitions(vervan_llama_jni PRIVATE VERVAN_HAS_MTMD=1)
 endif()
 
+if(VERVAN_GGML_BACKEND_DL)
+    # Tells llama_bridge.cpp to call ggml_backend_load_all_from_path() before touching any
+    # backend — required in this mode since CPU/Vulkan plugins are dlopen'd, not statically
+    # registered (see the CPU backend selection comment above).
+    target_compile_definitions(vervan_llama_jni PRIVATE VERVAN_GGML_BACKEND_DL=1)
+endif()
+
 find_library(log-lib log)
 find_library(android-lib android)
 
@@ -99,8 +130,8 @@ target_link_libraries(vervan_llama_jni
     llama
     ggml
     ggml-base
-    ggml-cpu
-    $<$<BOOL:${VERVAN_HAS_VULKAN}>:ggml-vulkan>
+    $<$<NOT:$<BOOL:${VERVAN_GGML_BACKEND_DL}>>:ggml-cpu>
+    $<$<BOOL:${VERVAN_LINK_VULKAN}>:ggml-vulkan>
     $<$<BOOL:${VERVAN_HAS_MTMD}>:mtmd>
     ${log-lib}
     ${android-lib}
@@ -165,9 +196,15 @@ if(VERVAN_BUILD_WHISPER)
     # clearly meant to be on, but without whisper.h the bridge compile dies on a bare
     # "'whisper.h' file not found" that says nothing about how to fix it. This IS fatal (unlike the
     # missing-.so case above, which legitimately means "not enabled for this ABI").
+    # NO_CMAKE_FIND_ROOT_PATH is required in addition to NO_DEFAULT_PATH: the Android NDK
+    # toolchain file sets CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY, which restricts find_file() to
+    # the NDK sysroot unless explicitly told not to — WHISPER_CPP_DIR is a host-filesystem path
+    # (the developer's whisper.cpp checkout), never inside the sysroot, so without this the
+    # search always comes back empty regardless of whether the header actually exists.
     find_file(VERVAN_WHISPER_HEADER whisper.h
         PATHS "${WHISPER_CPP_DIR}/include" "${WHISPER_CPP_DIR}" "${WHISPER_LIBS_DIR}/include"
         NO_DEFAULT_PATH
+        NO_CMAKE_FIND_ROOT_PATH
     )
     if(NOT VERVAN_WHISPER_HEADER)
         message(FATAL_ERROR

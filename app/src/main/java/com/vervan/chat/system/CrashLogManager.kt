@@ -84,7 +84,7 @@ class CrashLogManager(private val context: Context) {
                 "If this happened while a model was loaded or generating, the model plus its " +
                 "context likely exceeded what this device can hold alongside other apps. " +
                 "Try a smaller model or quantization, reduce the context size in " +
-                "Settings → Generation, or close other apps before long generations."
+                "Settings → Responses & search, or close other apps before long responses."
             ApplicationExitInfo.REASON_CRASH_NATIVE -> "Native crash" to
                 "The app's native code (model inference runtime) crashed.$detail\n\n" +
                 "This usually points at a model file/runtime incompatibility or running out of " +

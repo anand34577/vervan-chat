@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.CheckCircle
@@ -161,10 +162,185 @@ internal fun SectionHeader(text: String, icon: androidx.compose.ui.graphics.vect
     }
 }
 
+@Composable
+internal fun ModelManagerSwitcher(
+    showingDiscover: Boolean,
+    installedCount: Int,
+    onLibrary: () -> Unit,
+    onDiscover: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Row(Modifier.padding(4.dp)) {
+            ModelManagerSwitchItem(
+                label = "My models",
+                supportingLabel = installedCount.toString(),
+                selected = !showingDiscover,
+                onClick = onLibrary,
+                modifier = Modifier.weight(1f)
+            )
+            ModelManagerSwitchItem(
+                label = "Discover",
+                supportingLabel = null,
+                selected = showingDiscover,
+                onClick = onDiscover,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelManagerSwitchItem(
+    label: String,
+    supportingLabel: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        shadowElevation = if (selected) 1.dp else 0.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = Space.md, vertical = 11.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            if (supportingLabel != null) {
+                Surface(
+                    modifier = Modifier.padding(start = Space.sm),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        supportingLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Icon(
+                Icons.Filled.Bolt,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(Space.lg).size(28.dp)
+            )
+        }
+        Text(
+            "Your models will live here",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = Space.lg)
+        )
+        Text(
+            "Download a verified model or bring one you already have.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Space.xs, bottom = Space.lg)
+        )
+        Button(onClick = onDiscover) {
+            Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("Discover models", modifier = Modifier.padding(start = Space.sm))
+        }
+        TextButton(onClick = onImport) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("Import from device", modifier = Modifier.padding(start = Space.sm))
+        }
+    }
+}
+
+@Composable
+internal fun ImportModelDialog(
+    importing: Boolean,
+    onDismiss: () -> Unit,
+    onImport: (ModelRole) -> Unit,
+    onImportGguf: () -> Unit,
+    onImportWhisper: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import from device") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(
+                    "Choose the format of your model file.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = Space.xs)
+                )
+                ImportChoiceCard(
+                    title = "LiteRT-LM",
+                    subtitle = "Android-optimized · .task / .litertlm",
+                    icon = Icons.Filled.Bolt,
+                    enabled = !importing,
+                    horizontal = true,
+                    onClick = { onImport(ModelRole.GENERATION) }
+                )
+                ImportChoiceCard(
+                    title = "llama.cpp",
+                    subtitle = "GGUF · Vulkan / CPU",
+                    icon = Icons.Filled.Bolt,
+                    enabled = !importing,
+                    horizontal = true,
+                    onClick = onImportGguf
+                )
+                ImportChoiceCard(
+                    title = "Embeddings",
+                    subtitle = "Model + tokenizer",
+                    icon = Icons.Outlined.Storage,
+                    enabled = !importing,
+                    horizontal = true,
+                    onClick = { onImport(ModelRole.EMBEDDING) }
+                )
+                if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
+                    ImportChoiceCard(
+                        title = "Whisper",
+                        subtitle = "Offline speech-to-text · .bin / .gguf",
+                        icon = Icons.Filled.Mic,
+                        enabled = !importing,
+                        horizontal = true,
+                        onClick = onImportWhisper
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 /** Keeps the runtime choice explicit. LiteRT-LM and llama.cpp are peers, while embeddings are
  * supporting infrastructure; stacking these options on phones avoids unreadably narrow cards. */
 @Composable
-internal fun ImportCard(importing: Boolean, onImport: (ModelRole) -> Unit, onImportGguf: () -> Unit) {
+internal fun ImportCard(
+    importing: Boolean,
+    onImport: (ModelRole) -> Unit,
+    onImportGguf: () -> Unit,
+    onImportWhisper: () -> Unit
+) {
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
@@ -213,6 +389,17 @@ internal fun ImportCard(importing: Boolean, onImport: (ModelRole) -> Unit, onImp
                         horizontal = compact,
                         onClick = { onImport(ModelRole.EMBEDDING) }
                     )
+                    if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
+                        ImportChoiceCard(
+                            title = "Whisper (offline STT)",
+                            subtitle = "Speech-to-text • .bin (ggml) / .gguf",
+                            icon = Icons.Filled.Mic,
+                            enabled = !importing,
+                            modifier = Modifier.fillMaxWidth(choiceWidth),
+                            horizontal = compact,
+                            onClick = onImportWhisper
+                        )
+                    }
                 }
             }
         }
@@ -325,6 +512,53 @@ internal fun LlamaCppImportDialog(
                     validationError = "Select the GGUF model file first."
                 } else {
                     onImport(modelUri, mmprojUri)
+                }
+            }) { Text("Import") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Single-file import — a whisper.cpp ggml (.bin) or GGUF model, brought in locally without
+ * going through the catalog/network. Content-validated ([com.vervan.chat.model.ModelFileSniffer])
+ * on Import, not here — this dialog is just the file picker. */
+@Composable
+internal fun WhisperCppImportDialog(
+    modelUri: Uri?,
+    onPickModel: () -> Unit,
+    onDismiss: () -> Unit,
+    onImport: (Uri) -> Unit
+) {
+    val context = LocalContext.current
+    var validationError by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import whisper.cpp model") },
+        text = {
+            Column {
+                Text(
+                    "Choose a whisper.cpp model file (.bin ggml, or .gguf).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 14.dp)
+                )
+                EmbeddingImportStep(
+                    stepNumber = 1,
+                    label = "Model file (.bin / .gguf)",
+                    fileName = modelUri?.let { queryDisplayName(context, it) },
+                    onPick = { validationError = null; onPickModel() }
+                )
+                validationError?.let {
+                    ValidationMessage(it, modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (modelUri == null) {
+                    validationError = "Select the whisper.cpp model file first."
+                } else {
+                    onImport(modelUri)
                 }
             }) { Text("Import") }
         },

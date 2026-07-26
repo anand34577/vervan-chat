@@ -41,15 +41,37 @@ class SettingsRepository(context: Context) {
         val EXPERT_MODE = booleanPreferencesKey("expert_mode")
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
-        val TTS_RATE = floatPreferencesKey("tts_rate")
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
-        val KOKORO_QUALITY_ENABLED = booleanPreferencesKey("kokoro_quality_enabled")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
         val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
-        // Which downloaded offline STT engine the realtime voice pipeline prefers: "AUTO"
-        // (whisper.cpp first, then sherpa-onnx Whisper), "WHISPER_CPP", or "WHISPER_ONNX".
+        val MODEL_AUDIO_STT_ENABLED = booleanPreferencesKey("model_audio_stt_enabled")
+        val ANDROID_STT_ENABLED = booleanPreferencesKey("android_stt_enabled")
         val STT_ENGINE_PREFERENCE = stringPreferencesKey("stt_engine_preference")
+        val STT_FALLBACK_ENABLED = booleanPreferencesKey("stt_fallback_enabled")
+        val WHISPER_GPU_ENABLED = booleanPreferencesKey("whisper_gpu_enabled")
+        val SPEECH_INPUT_ENABLED = booleanPreferencesKey("speech_input_enabled")
+        val VOICE_REPLY_MODE = stringPreferencesKey("voice_reply_mode")
+        val VOICE_INPUT_METHOD = stringPreferencesKey("voice_input_method")
+        val TRANSCRIPT_REVIEW_ENABLED = booleanPreferencesKey("transcript_review_enabled")
+        val HANDS_FREE_AUTO_SEND = booleanPreferencesKey("hands_free_auto_send")
+        val CONTINUE_LISTENING = booleanPreferencesKey("continue_listening")
+        val HEADPHONES_ONLY_PLAYBACK = booleanPreferencesKey("headphones_only_playback")
+        val HEADPHONE_PRIVACY_PAUSE = booleanPreferencesKey("headphone_privacy_pause")
+        val VOICE_INPUT_LANGUAGE = stringPreferencesKey("voice_input_language")
+        val VAD_SENSITIVITY = floatPreferencesKey("vad_sensitivity")
+        val VOICE_SILENCE_DURATION_MS = intPreferencesKey("voice_silence_duration_ms")
+        val MAX_UTTERANCE_SECONDS = intPreferencesKey("max_utterance_seconds")
+        val STORE_VOICE_RECORDINGS = booleanPreferencesKey("store_voice_recordings")
+        val VOICE_SPEECH_RATE = floatPreferencesKey("voice_speech_rate")
+        val VOICE_SPEECH_PITCH = floatPreferencesKey("voice_speech_pitch")
+        val READ_CODE_MODE = stringPreferencesKey("read_code_mode")
+        val READ_TABLE_MODE = stringPreferencesKey("read_table_mode")
+        val LONG_RESPONSE_VOICE_MODE = stringPreferencesKey("long_response_voice_mode")
+        val BACKGROUND_VOICE_ENABLED = booleanPreferencesKey("background_voice_enabled")
+        val VOICE_BATTERY_SAVER = booleanPreferencesKey("voice_battery_saver")
+        val TRANSCRIPT_RETENTION_ENABLED = booleanPreferencesKey("transcript_retention_enabled")
+        val RECORDING_RETENTION_MODE = stringPreferencesKey("recording_retention_mode")
         val WIFI_ONLY_MODEL_DOWNLOADS = booleanPreferencesKey("wifi_only_model_downloads")
         val AUTO_CONTEXT_SUMMARIZATION = booleanPreferencesKey("auto_context_summarization")
         val AUTO_RESUME_MODEL_DOWNLOADS = booleanPreferencesKey("auto_resume_model_downloads")
@@ -107,13 +129,7 @@ class SettingsRepository(context: Context) {
         // doesn't mean the model should always be allowed to query it.
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
         val DEVICE_STATUS_TOOL_ENABLED = booleanPreferencesKey("device_status_tool_enabled")
-        val FILES_TOOL_ENABLED = booleanPreferencesKey("files_tool_enabled")
         val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
-        val SCREEN_TIME_TOOL_ENABLED = booleanPreferencesKey("screen_time_tool_enabled")
-        // web_search tool — the only tool whose execute path leaves the device. Off by
-        // default (same opt-in shape as the Phase G on-device sources) and additionally
-        // gated at call time on a configured API key in KnowledgeGraphStore.
-        val WEB_SEARCH_TOOL_ENABLED = booleanPreferencesKey("web_search_tool_enabled")
         // floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
         val QUICK_ACTION_BUBBLE_ENABLED = booleanPreferencesKey("quick_action_bubble_enabled")
@@ -195,23 +211,14 @@ class SettingsRepository(context: Context) {
     val defaultRetrievalMode: Flow<String> = store.data.map { it[Keys.DEFAULT_RETRIEVAL_MODE] ?: "HYBRID" }
     suspend fun setDefaultRetrievalMode(mode: String) { store.edit { it[Keys.DEFAULT_RETRIEVAL_MODE] = mode } }
 
-    val ttsRate: Flow<Float> = store.data.map { it[Keys.TTS_RATE] ?: 1.0f }
-    suspend fun setTtsRate(rate: Float) { store.edit { it[Keys.TTS_RATE] = rate } }
-
     val autoReadAloud: Flow<Boolean> = store.data.map { it[Keys.AUTO_READ_ALOUD] ?: false }
     suspend fun setAutoReadAloud(enabled: Boolean) { store.edit { it[Keys.AUTO_READ_ALOUD] = enabled } }
 
-    /** "AUTO" (Supertonic, falling back to Piper then the Android system engine), or an
-     * explicit pin: "SUPERTONIC", "PIPER", "SYSTEM". Realtime voice pipeline engine choice —
-     * see [com.vervan.chat.voice.TtsEngineSelector]. */
+    /** "AUTO" (Piper, once its voice is downloaded), or the explicit "KOKORO" pin. Android's
+     * system TTS engine is deliberately never used. Realtime voice pipeline engine choice — see
+     * [com.vervan.chat.voice.TtsEngineSelector]. */
     val ttsEnginePreference: Flow<String> = store.data.map { it[Keys.TTS_ENGINE_PREFERENCE] ?: "AUTO" }
     suspend fun setTtsEnginePreference(value: String) { store.edit { it[Keys.TTS_ENGINE_PREFERENCE] = value } }
-
-    /** Opt-in "higher quality voice (slower)" tier — Kokoro is noticeably higher quality than
-     * Piper but can be 2-3 minutes of compute per minute of audio on budget devices, so it's
-     * never selected by AUTO even when enabled here. */
-    val kokoroQualityEnabled: Flow<Boolean> = store.data.map { it[Keys.KOKORO_QUALITY_ENABLED] ?: false }
-    suspend fun setKokoroQualityEnabled(v: Boolean) { store.edit { it[Keys.KOKORO_QUALITY_ENABLED] = v } }
 
     /** Whether the realtime voice pipeline listens for interrupting speech while TTS is
      * playing. Best-effort (needs hardware echo cancellation) — off automatically falls back
@@ -222,20 +229,82 @@ class SettingsRepository(context: Context) {
     /** Realtime voice pipeline's speech-to-text policy (see
      * [com.vervan.chat.voice.RealtimeVoiceController]): the active generation model is tried
      * first when it supports audio input; this toggle only controls whether the downloaded
-     * on-device Whisper model is used as the fallback tier (default on) or skipped straight to
-     * Android's system speech recognizer (off). Has no effect until the Whisper model is
-     * actually downloaded via Model Manager. */
+     * on-device whisper.cpp model — the only offline STT engine — is used as the fallback tier
+     * (default on). There is no device speech-recognizer fallback tier — Android's system STT is
+     * deliberately never used, so with this off (or no model downloaded) voice chat only works
+     * via the active model's own audio input. Has no effect until the whisper.cpp model is
+     * actually downloaded via Model Manager, or on a build with no whisper.cpp native library
+     * (see [com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE]). */
     val inbuiltSttEnabled: Flow<Boolean> = store.data.map { it[Keys.INBUILT_STT_ENABLED] ?: true }
     suspend fun setInbuiltSttEnabled(v: Boolean) { store.edit { it[Keys.INBUILT_STT_ENABLED] = v } }
 
-    /** Which downloaded offline STT engine the realtime voice pipeline reaches for first (see
-     *  [com.vervan.chat.voice.RealtimeVoiceController]): "AUTO" prefers whisper.cpp when the app
-     *  was built with it AND its model is downloaded, falling back to the sherpa-onnx Whisper;
-     *  "WHISPER_CPP" / "WHISPER_ONNX" pin to one. Has no effect until the relevant model is
-     *  actually downloaded, and no effect at all when [inbuiltSttEnabled] is off — the pipeline
-     *  then skips straight to Android's system speech recognizer. */
+    /** Speech recognition is independently configurable from the active chat model. AUTO tries
+     * enabled engines in the privacy-first order: model audio, whisper.cpp, Android on-device
+     * recognition. An explicit preference stays strict unless fallback is enabled. */
+    val modelAudioSttEnabled: Flow<Boolean> = store.data.map { it[Keys.MODEL_AUDIO_STT_ENABLED] ?: true }
+    suspend fun setModelAudioSttEnabled(v: Boolean) { store.edit { it[Keys.MODEL_AUDIO_STT_ENABLED] = v } }
+    val androidSttEnabled: Flow<Boolean> = store.data.map { it[Keys.ANDROID_STT_ENABLED] ?: true }
+    suspend fun setAndroidSttEnabled(v: Boolean) { store.edit { it[Keys.ANDROID_STT_ENABLED] = v } }
     val sttEnginePreference: Flow<String> = store.data.map { it[Keys.STT_ENGINE_PREFERENCE] ?: "AUTO" }
     suspend fun setSttEnginePreference(v: String) { store.edit { it[Keys.STT_ENGINE_PREFERENCE] = v } }
+    val sttFallbackEnabled: Flow<Boolean> = store.data.map { it[Keys.STT_FALLBACK_ENABLED] ?: true }
+    suspend fun setSttFallbackEnabled(v: Boolean) { store.edit { it[Keys.STT_FALLBACK_ENABLED] = v } }
+
+    /** Whether [com.vervan.chat.voice.WhisperCppSttEngine] is allowed to try its Vulkan GPU
+     * backend. OFF by default: GPU init has been observed to crash the whole process with a
+     * native SIGSEGV during device/pipeline setup on at least one real device instead of failing
+     * gracefully, whereas the CPU backend has been reliable — so this app never risks that crash
+     * without the user explicitly opting in here. Even opted in, a crash-loop breaker (see that
+     * class's doc) permanently falls back to CPU for this install after the first crash, so
+     * turning this on costs at most one crash, never a repeat one. */
+    val whisperGpuEnabled: Flow<Boolean> = store.data.map { it[Keys.WHISPER_GPU_ENABLED] ?: false }
+    suspend fun setWhisperGpuEnabled(v: Boolean) { store.edit { it[Keys.WHISPER_GPU_ENABLED] = v } }
+
+    // ---- Unified multimodal voice UX ----
+    val speechInputEnabled: Flow<Boolean> = store.data.map { it[Keys.SPEECH_INPUT_ENABLED] ?: true }
+    suspend fun setSpeechInputEnabled(v: Boolean) { store.edit { it[Keys.SPEECH_INPUT_ENABLED] = v } }
+    val voiceReplyMode: Flow<String> = store.data.map { it[Keys.VOICE_REPLY_MODE] ?: "MANUAL" }
+    suspend fun setVoiceReplyMode(v: String) { store.edit { it[Keys.VOICE_REPLY_MODE] = v } }
+    val voiceInputMethod: Flow<String> = store.data.map { it[Keys.VOICE_INPUT_METHOD] ?: "DICTATION" }
+    suspend fun setVoiceInputMethod(v: String) { store.edit { it[Keys.VOICE_INPUT_METHOD] = v } }
+    val transcriptReviewEnabled: Flow<Boolean> = store.data.map { it[Keys.TRANSCRIPT_REVIEW_ENABLED] ?: true }
+    suspend fun setTranscriptReviewEnabled(v: Boolean) { store.edit { it[Keys.TRANSCRIPT_REVIEW_ENABLED] = v } }
+    val handsFreeAutoSend: Flow<Boolean> = store.data.map { it[Keys.HANDS_FREE_AUTO_SEND] ?: true }
+    suspend fun setHandsFreeAutoSend(v: Boolean) { store.edit { it[Keys.HANDS_FREE_AUTO_SEND] = v } }
+    val continueListening: Flow<Boolean> = store.data.map { it[Keys.CONTINUE_LISTENING] ?: true }
+    suspend fun setContinueListening(v: Boolean) { store.edit { it[Keys.CONTINUE_LISTENING] = v } }
+    val headphonesOnlyPlayback: Flow<Boolean> = store.data.map { it[Keys.HEADPHONES_ONLY_PLAYBACK] ?: false }
+    suspend fun setHeadphonesOnlyPlayback(v: Boolean) { store.edit { it[Keys.HEADPHONES_ONLY_PLAYBACK] = v } }
+    val headphonePrivacyPause: Flow<Boolean> = store.data.map { it[Keys.HEADPHONE_PRIVACY_PAUSE] ?: true }
+    suspend fun setHeadphonePrivacyPause(v: Boolean) { store.edit { it[Keys.HEADPHONE_PRIVACY_PAUSE] = v } }
+    val voiceInputLanguage: Flow<String> = store.data.map { it[Keys.VOICE_INPUT_LANGUAGE] ?: "AUTO" }
+    suspend fun setVoiceInputLanguage(v: String) { store.edit { it[Keys.VOICE_INPUT_LANGUAGE] = v } }
+    val vadSensitivity: Flow<Float> = store.data.map { it[Keys.VAD_SENSITIVITY] ?: 0.5f }
+    suspend fun setVadSensitivity(v: Float) { store.edit { it[Keys.VAD_SENSITIVITY] = v.coerceIn(0f, 1f) } }
+    val voiceSilenceDurationMs: Flow<Int> = store.data.map { it[Keys.VOICE_SILENCE_DURATION_MS] ?: 600 }
+    suspend fun setVoiceSilenceDurationMs(v: Int) { store.edit { it[Keys.VOICE_SILENCE_DURATION_MS] = v.coerceIn(300, 3000) } }
+    val maxUtteranceSeconds: Flow<Int> = store.data.map { it[Keys.MAX_UTTERANCE_SECONDS] ?: 30 }
+    suspend fun setMaxUtteranceSeconds(v: Int) { store.edit { it[Keys.MAX_UTTERANCE_SECONDS] = v.coerceIn(10, 180) } }
+    val storeVoiceRecordings: Flow<Boolean> = store.data.map { it[Keys.STORE_VOICE_RECORDINGS] ?: false }
+    suspend fun setStoreVoiceRecordings(v: Boolean) { store.edit { it[Keys.STORE_VOICE_RECORDINGS] = v } }
+    val voiceSpeechRate: Flow<Float> = store.data.map { it[Keys.VOICE_SPEECH_RATE] ?: 1f }
+    suspend fun setVoiceSpeechRate(v: Float) { store.edit { it[Keys.VOICE_SPEECH_RATE] = v.coerceIn(0.6f, 1.6f) } }
+    val voiceSpeechPitch: Flow<Float> = store.data.map { it[Keys.VOICE_SPEECH_PITCH] ?: 1f }
+    suspend fun setVoiceSpeechPitch(v: Float) { store.edit { it[Keys.VOICE_SPEECH_PITCH] = v.coerceIn(0.7f, 1.3f) } }
+    val readCodeMode: Flow<String> = store.data.map { it[Keys.READ_CODE_MODE] ?: "SUMMARY" }
+    suspend fun setReadCodeMode(v: String) { store.edit { it[Keys.READ_CODE_MODE] = v } }
+    val readTableMode: Flow<String> = store.data.map { it[Keys.READ_TABLE_MODE] ?: "SUMMARY" }
+    suspend fun setReadTableMode(v: String) { store.edit { it[Keys.READ_TABLE_MODE] = v } }
+    val longResponseVoiceMode: Flow<String> = store.data.map { it[Keys.LONG_RESPONSE_VOICE_MODE] ?: "ASK" }
+    suspend fun setLongResponseVoiceMode(v: String) { store.edit { it[Keys.LONG_RESPONSE_VOICE_MODE] = v } }
+    val backgroundVoiceEnabled: Flow<Boolean> = store.data.map { it[Keys.BACKGROUND_VOICE_ENABLED] ?: false }
+    suspend fun setBackgroundVoiceEnabled(v: Boolean) { store.edit { it[Keys.BACKGROUND_VOICE_ENABLED] = v } }
+    val voiceBatterySaver: Flow<Boolean> = store.data.map { it[Keys.VOICE_BATTERY_SAVER] ?: true }
+    suspend fun setVoiceBatterySaver(v: Boolean) { store.edit { it[Keys.VOICE_BATTERY_SAVER] = v } }
+    val transcriptRetentionEnabled: Flow<Boolean> = store.data.map { it[Keys.TRANSCRIPT_RETENTION_ENABLED] ?: true }
+    suspend fun setTranscriptRetentionEnabled(v: Boolean) { store.edit { it[Keys.TRANSCRIPT_RETENTION_ENABLED] = v } }
+    val recordingRetentionMode: Flow<String> = store.data.map { it[Keys.RECORDING_RETENTION_MODE] ?: "TEMPORARY" }
+    suspend fun setRecordingRetentionMode(v: String) { store.edit { it[Keys.RECORDING_RETENTION_MODE] = v } }
 
     /** Model downloader (see com.vervan.chat.modeldownload) network settings. Off by default —
      * a large model download simply waits for Wi-Fi instead of silently spending mobile data
@@ -422,15 +491,8 @@ class SettingsRepository(context: Context) {
     suspend fun setCalendarToolEnabled(v: Boolean) { store.edit { it[Keys.CALENDAR_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
     suspend fun setDeviceStatusToolEnabled(v: Boolean) { store.edit { it[Keys.DEVICE_STATUS_TOOL_ENABLED] = v } }
-    val filesToolEnabled: Flow<Boolean> = store.data.map { it[Keys.FILES_TOOL_ENABLED] ?: false }
-    suspend fun setFilesToolEnabled(v: Boolean) { store.edit { it[Keys.FILES_TOOL_ENABLED] = v } }
     val locationToolEnabled: Flow<Boolean> = store.data.map { it[Keys.LOCATION_TOOL_ENABLED] ?: false }
     suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
-    val screenTimeToolEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREEN_TIME_TOOL_ENABLED] ?: false }
-    suspend fun setScreenTimeToolEnabled(v: Boolean) { store.edit { it[Keys.SCREEN_TIME_TOOL_ENABLED] = v } }
-    // ---- Web search (the one outbound-network tool) ----
-    val webSearchToolEnabled: Flow<Boolean> = store.data.map { it[Keys.WEB_SEARCH_TOOL_ENABLED] ?: false }
-    suspend fun setWebSearchToolEnabled(v: Boolean) { store.edit { it[Keys.WEB_SEARCH_TOOL_ENABLED] = v } }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: Flow<Set<String>> = store.data.map { it[Keys.DISABLED_TOOL_IDS] ?: emptySet() }

@@ -1,12 +1,15 @@
 package com.vervan.chat.voice
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.vervan.chat.data.db.dao.JobDao
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.data.db.entities.TtsVoiceModel
+import com.vervan.chat.model.ModelFileSniffer
 import com.vervan.chat.system.NetworkAuditLog
 import java.io.File
 import java.io.IOException
@@ -105,6 +108,113 @@ class TtsModelDownloadManager(
         val existing = voiceModelDao.getByEngine(engine, language) ?: return@withContext
         File(existing.filePath).deleteRecursively()
         voiceModelDao.delete(existing)
+    }
+
+    /**
+     * Imports a whisper.cpp ggml/GGUF model file already on-device (SAF-picked) — the
+     * local-file counterpart to [downloadArchiveVoice], for bringing your own whisper.cpp model
+     * (a different size/quantization, or simply without going through the catalog/network at
+     * all) the same way [com.vervan.chat.model.ModelImportManager] lets you locally import a
+     * generation/embedding model. Extension- and magic-byte-validated via [ModelFileSniffer] so
+     * this can't silently accept, say, a renamed GGUF language model. Writes into the exact
+     * directory [WhisperCppSttEngine] already reads
+     * (`stt_models/whisper_cpp_multi/`, matching what a catalog `STT_MODEL` download produces —
+     * see [ModelDownloadRepository][com.vervan.chat.modeldownload.ModelDownloadRepository]'s
+     * `finalizeVoiceModel`), and replaces any existing whisper.cpp model in that slot, mirroring
+     * what a fresh catalog re-download would do.
+     */
+    suspend fun importWhisperCppModel(
+        context: Context,
+        uri: Uri,
+        onProgress: (String) -> Unit = {}
+    ): TtsDownloadResult = withContext(Dispatchers.IO) {
+        val rawName = queryDisplayName(context, uri) ?: uri.lastPathSegment ?: "whisper-model.bin"
+        val safeName = rawName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifBlank { "whisper-model.bin" }
+        if (!safeName.endsWith(".bin", ignoreCase = true) && !safeName.endsWith(".gguf", ignoreCase = true)) {
+            return@withContext TtsDownloadResult.Failed("whisper.cpp models must be a .bin (ggml) or .gguf file.")
+        }
+        if (!ModelFileSniffer.looksLikeWhisperContainer(context, uri)) {
+            return@withContext TtsDownloadResult.Failed("This doesn't look like a valid whisper.cpp model file (missing ggml/GGUF header).")
+        }
+        if (safeName.endsWith(".gguf", ignoreCase = true)) {
+            // GGUF is also llama.cpp's language-model container — architecture disambiguates a
+            // whisper GGUF from, say, a chat model someone picked here by mistake. A null
+            // (unparseable/absent architecture key) is let through rather than rejected, since
+            // that's a parser-coverage gap, not evidence the file is wrong.
+            val architecture = ModelFileSniffer.ggufArchitecture(context, uri)
+            if (architecture != null && architecture != "whisper") {
+                return@withContext TtsDownloadResult.Failed(
+                    "This GGUF file is a \"$architecture\" model, not whisper — import it from the matching option instead."
+                )
+            }
+        }
+
+        val job = JobRecord(type = JobType.TTS_MODEL_DOWNLOAD, label = "Whisper (imported)", state = JobState.RUNNING)
+        jobDao.upsert(job)
+        onProgress("Copying ${safeName}…")
+        val voiceDir = File(context.filesDir, "stt_models/${WhisperCppSttEngine.ENGINE.lowercase()}_${WhisperCppSttEngine.MODEL_LANGUAGE_KEY}").apply { mkdirs() }
+        val dest = File(voiceDir, safeName)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            var bytesCopied = 0L
+            val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Could not open selected file")
+            input.use { src ->
+                dest.outputStream().use { output ->
+                    val buffer = ByteArray(1 shl 20)
+                    while (true) {
+                        val read = src.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        bytesCopied += read
+                        onProgress("Copying… ${bytesCopied / (1024 * 1024)} MB")
+                        jobDao.upsert(job.copy(detail = "Copying… ${bytesCopied / (1024 * 1024)} MB", updatedAt = System.currentTimeMillis()))
+                    }
+                }
+            }
+            if (bytesCopied == 0L) throw IOException("Selected file is empty")
+            // Only one whisper.cpp model is ever "the" model for this language slot — drop any
+            // other file left in the directory (a previous local import or catalog download) now
+            // that the new one has copied successfully, so WhisperCppSttEngine's "largest file in
+            // the directory" lookup can't pick up a stale leftover.
+            voiceDir.listFiles()?.forEach { if (it != dest) it.delete() }
+            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            // Reuse the existing (engine, language) row's id, if one exists (a prior catalog
+            // download or import at this same slot), instead of always minting a fresh UUID —
+            // TtsVoiceModel.id-keyed upsert() only replaces an exact id match, so a new id here
+            // would leave the old row behind as a stale duplicate that other (engine, language)
+            // keyed lookups (installedVoiceUi, WhisperCppSttEngine.ensureLoadedLocked) could
+            // resolve to instead of this fresh import.
+            val existingId = voiceModelDao.getByEngine(WhisperCppSttEngine.ENGINE, WhisperCppSttEngine.MODEL_LANGUAGE_KEY)?.id
+            val model = TtsVoiceModel(
+                id = existingId ?: java.util.UUID.randomUUID().toString(),
+                engine = WhisperCppSttEngine.ENGINE,
+                language = WhisperCppSttEngine.MODEL_LANGUAGE_KEY,
+                filePath = voiceDir.absolutePath,
+                fileSizeBytes = bytesCopied,
+                sha256 = hash
+            )
+            voiceModelDao.upsert(model)
+            jobDao.upsert(job.copy(state = JobState.COMPLETED, progress = 100, updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Success(model)
+        } catch (cancelled: CancellationException) {
+            dest.delete()
+            jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped", updatedAt = System.currentTimeMillis()))
+            throw cancelled
+        } catch (t: Throwable) {
+            dest.delete()
+            jobDao.upsert(job.copy(state = JobState.FAILED, detail = t.message ?: "Import failed", updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Failed(t.message ?: "Import failed")
+        }
+    }
+
+    private fun queryDisplayName(context: Context, uri: Uri): String? {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) return cursor.getString(nameIndex)
+        }
+        return null
     }
 
     /** Extracts a `.tar.bz2` into [destDir], stripping the archive's single top-level directory

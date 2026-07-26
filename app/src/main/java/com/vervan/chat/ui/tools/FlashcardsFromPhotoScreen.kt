@@ -145,7 +145,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 ToolIntro(
                     icon = Icons.Filled.School,
                     title = "Turn notes into a study deck",
-                    body = "Snap or pick photos of textbook pages or handwritten notes. The text is read on-device and turned into review flashcards."
+        body = "Photograph pages or notes to create flashcards on-device."
                 )
                 Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f), enabled = !generating) {

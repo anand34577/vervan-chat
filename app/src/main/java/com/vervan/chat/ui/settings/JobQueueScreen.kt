@@ -100,7 +100,7 @@ fun JobQueueScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Job queue") },
+                title = { Text("Background jobs") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = { confirmClear = true }, enabled = history.isNotEmpty()) {

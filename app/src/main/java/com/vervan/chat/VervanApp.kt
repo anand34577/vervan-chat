@@ -207,16 +207,6 @@ class AppContainer(app: Application) {
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
     val appLockManager = AppLockManager(app)
-    // The model-initiated outbound-network tool (web_search). API key lives in the same
-    // Keystore-backed prefs pattern as hfTokenStore/apiServerAuth/appLockManager; the client
-    // is constructed eagerly because the tool's execute lambda reads it per call.
-    val knowledgeGraphStore = com.vervan.chat.search.KnowledgeGraphStore(app)
-    val knowledgeGraphClient = com.vervan.chat.search.KnowledgeGraphClient(
-        apiKeyProvider = { knowledgeGraphStore.get() },
-        // Same audit log the model downloader and store pipeline report to — a model-initiated
-        // outbound call is exactly what this dashboard exists to surface.
-        onNetworkCall = { reason -> networkAuditLog.record(reason) }
-    )
     // Reason-keyed set instead of a single boolean so app-wide lock and a per-chat
     // "screenshotBlocked" toggle (independent sources, see ChatScreen) don't fight over the
     // same window flag — MainActivity just sets FLAG_SECURE whenever this set is non-empty.

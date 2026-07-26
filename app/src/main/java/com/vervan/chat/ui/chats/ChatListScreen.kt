@@ -574,7 +574,9 @@ private fun ChatListRow(
                 }
                 // Preview line prefers the last actual message (chat-app convention); falls back
                 // to the draft (a Notes-style preview) only when the chat has no messages yet.
-                val previewText = lastMessage?.content?.takeIf { it.isNotBlank() }
+                val previewText = lastMessage?.let {
+                    com.vervan.chat.ui.chat.chatPreviewText(it.content, it.role == com.vervan.chat.data.db.entities.MessageRole.USER)
+                }?.takeIf { it.isNotBlank() }
                     ?: chat.draft.takeIf { it.isNotBlank() }
                 previewText?.let {
                     val prefix = if (lastMessage != null && lastMessage.role == com.vervan.chat.data.db.entities.MessageRole.USER) "You: " else ""

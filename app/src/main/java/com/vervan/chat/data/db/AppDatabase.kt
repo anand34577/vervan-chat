@@ -142,7 +142,7 @@ class Converters {
         DownloadPackage::class, DownloadFile::class,
         StoreInstallSession::class, StoreInstallArtifact::class
     ],
-    version = 45,
+    version = 47,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

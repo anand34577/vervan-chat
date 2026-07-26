@@ -92,6 +92,11 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
             return LlmEngine.LoadResult(activeBackend, fellBackToCpu = false)
         }
         close()
+        // Must happen before the first native backend touch — registers the CPU/Vulkan backend
+        // plugin .so's from this app's own native lib dir (see nativeInit's doc comment). No-op
+        // after the first call (native side gates on std::call_once), so it's cheap to call here
+        // on every load rather than threading a "did this run yet" flag through this class.
+        LlamaCppJni.nativeInit(context.applicationInfo.nativeLibraryDir)
         val flashAttnMode = when (options.flashAttention) { null -> -1; true -> 1; false -> 0 } // matches LLAMA_FLASH_ATTN_TYPE_* values
         val newHandle = LlamaCppJni.nativeLoadModel(
             // mmap OFF on Android: ggml's CPU repack pass (interleaving Q4_0 weights into a

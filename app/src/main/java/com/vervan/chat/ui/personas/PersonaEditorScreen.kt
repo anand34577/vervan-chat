@@ -177,7 +177,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             ContextGuideCard(
                 icon = Icons.Outlined.Person,
                 title = "What a persona changes",
-                body = "A persona controls how the assistant speaks and works. You can choose it for a space or a single chat.",
+            body = "A persona sets the assistant's voice and behavior for a space or chat.",
                 modifier = Modifier.padding(top = 12.dp),
                 accentIndex = 2,
             )

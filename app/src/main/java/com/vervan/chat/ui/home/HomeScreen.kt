@@ -542,7 +542,9 @@ private fun ContinueCarousel(
                         icon = Icons.AutoMirrored.Filled.Chat,
                         eyebrow = "Chat",
                         title = chat.title,
-                        preview = latestMessagesByChat[chat.id]?.content.orEmpty(),
+                        preview = latestMessagesByChat[chat.id]?.let {
+                            com.vervan.chat.ui.chat.chatPreviewText(it.content, it.role == com.vervan.chat.data.db.entities.MessageRole.USER)
+                        }.orEmpty(),
                         timeLabel = relativeTime(chat.updatedAt),
                         accent = vervanAccentFor(index),
                         onClick = { onOpenChat(chat.id) }

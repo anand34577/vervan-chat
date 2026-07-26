@@ -1,14 +1,7 @@
 package com.vervan.chat.ui.chat
 
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.speech.RecognizerIntent
-import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.animateContentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -83,12 +76,12 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.CallSplit
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.filled.Build
@@ -129,6 +122,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -267,6 +261,7 @@ fun ChatScreen(
     onOpenPassage: (String) -> Unit = {},
     onOpenFolders: () -> Unit = {},
     onOpenModels: () -> Unit = {},
+    onOpenVoiceSettings: () -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
     onForkChat: (String) -> Unit = {}
 ) {
@@ -298,14 +293,54 @@ fun ChatScreen(
     val persona by vm.persona.collectAsState()
     val personas by vm.personas.collectAsState()
     val activeModelName by vm.activeModelName.collectAsState()
+    val selectedGenerationModel by vm.selectedGenerationModel.collectAsState()
     val generationModels by vm.generationModels.collectAsState()
     val modelLoadState by vm.modelLoadState.collectAsState()
     val visionAvailable by vm.visionAvailable.collectAsState()
     val audioAvailable by vm.audioAvailable.collectAsState()
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val hapticsEnabled by app.container.settingsRepository.hapticsEnabled.collectAsState(initial = true)
+    val speechInputEnabled by app.container.settingsRepository.speechInputEnabled.collectAsState(initial = true)
+    val modelAudioSttEnabled by app.container.settingsRepository.modelAudioSttEnabled.collectAsState(initial = true)
+    val whisperSttEnabled by app.container.settingsRepository.inbuiltSttEnabled.collectAsState(initial = true)
+    val androidSttEnabled by app.container.settingsRepository.androidSttEnabled.collectAsState(initial = true)
+    val sttEnginePreference by app.container.settingsRepository.sttEnginePreference.collectAsState(initial = "AUTO")
+    val sttFallbackEnabled by app.container.settingsRepository.sttFallbackEnabled.collectAsState(initial = true)
+    val installedVoiceModels by app.container.db.ttsVoiceModelDao().observeAll().collectAsState(initial = emptyList())
+    val voiceReplyMode by app.container.settingsRepository.voiceReplyMode.collectAsState(initial = "MANUAL")
+    val transcriptReviewEnabled by app.container.settingsRepository.transcriptReviewEnabled.collectAsState(initial = true)
+    val whisperSttAvailable = com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE &&
+        com.vervan.chat.voice.WhisperCppSttEngine.findInstalledModelFile(
+            context,
+            installedVoiceModels.firstOrNull {
+                it.engine.equals(com.vervan.chat.voice.WhisperCppSttEngine.ENGINE, true) &&
+                    it.language.equals(com.vervan.chat.voice.WhisperCppSttEngine.MODEL_LANGUAGE_KEY, true) &&
+                    it.isReady
+            }?.filePath
+        ) != null
+    val androidSttAvailable = remember {
+        com.vervan.chat.voice.AndroidSystemSttRecognizer.isAvailable(context)
+    }
+    val sttResolution = com.vervan.chat.voice.SttEnginePolicy.resolve(
+        com.vervan.chat.voice.SttAvailability(
+            speechInputEnabled = speechInputEnabled,
+            preference = sttEnginePreference,
+            fallbackEnabled = sttFallbackEnabled,
+            modelEnabled = modelAudioSttEnabled,
+            // null means this selected model has not been loaded/tested yet. Let the action load
+            // it; the voice controller re-checks the runtime-confirmed capability before capture.
+            modelAvailable = selectedGenerationModel != null && audioAvailable != false,
+            whisperEnabled = whisperSttEnabled,
+            whisperAvailable = whisperSttAvailable,
+            androidEnabled = androidSttEnabled,
+            androidAvailable = androidSttAvailable
+        )
+    )
+    val speechInputAvailable = sttResolution.isAvailable
 
     var draft by remember { mutableStateOf("") }
+    var draftInputModality by rememberSaveable(chatId) { mutableStateOf("TEXT") }
+    var draftOriginalTranscript by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
     var draftLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(chatId) {
         draft = app.container.db.chatDao().getChat(chatId)?.draft.orEmpty()
@@ -435,6 +470,11 @@ fun ChatScreen(
     }
 
     var showModeSettings by remember { mutableStateOf(false) }
+    var handsFreeActive by rememberSaveable(chatId) { mutableStateOf(false) }
+    var voiceSessionKey by rememberSaveable(chatId) { mutableStateOf(0) }
+    var showVoiceOptions by remember { mutableStateOf(false) }
+    var showComposerVoiceMenu by remember { mutableStateOf(false) }
+    var immersiveVoiceActive by rememberSaveable(chatId) { mutableStateOf(false) }
     var showChatTools by remember { mutableStateOf(false) }
     var showSourcePicker by remember { mutableStateOf(false) }
     var showKbPicker by remember { mutableStateOf(false) }
@@ -454,6 +494,19 @@ fun ChatScreen(
     var isImportingAudio by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     var activeRecorder by remember { mutableStateOf<WavRecorder?>(null) }
+    var dictationRecording by remember { mutableStateOf(false) }
+    var dictationTranscribing by remember { mutableStateOf(false) }
+    var dictationTranscript by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
+    var dictationOriginalTranscript by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
+    var draftVoiceRecordingPath by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
+    var draftSttLabel by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
+    var dictationError by remember { mutableStateOf<String?>(null) }
+    var dictationLevels by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var dictationStartedAt by remember { mutableStateOf(0L) }
+    var dictationElapsedMs by remember { mutableStateOf(0L) }
+    var dictationRecorder by remember { mutableStateOf<WavRecorder?>(null) }
+    var dictationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var dictationBaseText by remember { mutableStateOf("") }
     var compareMessageId by remember { mutableStateOf<String?>(null) }
     // A fresh 👎 reaction prompts for why, so a weak model/preset leaves a trail (see
     // ChatViewModel.setFeedbackReason) — holds the message just reacted to, not a running dialog
@@ -468,6 +521,78 @@ fun ChatScreen(
     var isRunningOcr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val latestDraft = rememberUpdatedState(draft)
+    val latestPendingQuote = rememberUpdatedState(pendingQuote)
+    val latestVoiceReplyMode = rememberUpdatedState(voiceReplyMode)
+    val voiceBridge = remember(vm) {
+        object : com.vervan.chat.voice.VoiceConversationBridge {
+            override suspend fun respond(
+                input: com.vervan.chat.voice.VoiceInputTurn,
+                onAssistantUpdate: (String) -> Unit
+            ): String {
+                val typedPrefix = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                    val value = latestDraft.value.trim()
+                    draft = ""
+                    vm.saveDraft("")
+                    value
+                }
+                val quotePrefix = latestPendingQuote.value?.let { quoted ->
+                    quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
+                }.orEmpty()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                    pendingQuote = null
+                }
+                val attached = vm.consumeAttachments()
+                val document = vm.pendingDocument.value as? ChatViewModel.DocumentAttachState.Ready
+                vm.clearPendingDocument()
+                val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+                val mergedSpeech = listOf(typedPrefix, input.text.trim()).filter { it.isNotBlank() }.joinToString(" ")
+                val bodyBase = mergedSpeech.ifBlank {
+                    when {
+                        document != null -> "Describe this document."
+                        attached.imagePath != null -> "Describe this image."
+                        else -> ""
+                    }
+                }
+                val body = if (ocrText != null) {
+                    "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
+                } else bodyBase
+                return vm.sendVoiceAndAwait(
+                    text = quotePrefix + body,
+                    imagePath = attached.imagePath,
+                    audioPath = attached.audioPath,
+                    documentId = document?.documentId,
+                    inputModality = if (typedPrefix.isBlank()) "HANDS_FREE" else "MIXED",
+                    outputModalities = if (latestVoiceReplyMode.value == "NEVER") "TEXT" else "TEXT,SPEECH",
+                    voiceRecordingPath = input.recordingPath,
+                    sttLabel = input.sttLabel,
+                    durationMs = input.durationMs,
+                    onAssistantUpdate = onAssistantUpdate
+                )
+            }
+
+            override fun cancelResponse() {
+                vm.cancelGeneration()
+            }
+        }
+    }
+    val voiceController = remember(chatId, voiceSessionKey, voiceBridge, selectedGenerationModel?.id) {
+        com.vervan.chat.voice.RealtimeVoiceController(app, voiceBridge, selectedGenerationModel?.id)
+    }
+    val voiceState by voiceController.state.collectAsState()
+    val voiceTurns by voiceController.turns.collectAsState()
+    val voiceWaveform by voiceController.liveWaveform.collectAsState()
+    val voiceElapsedMs by voiceController.liveElapsedMs.collectAsState()
+    val voiceLiveTranscript by voiceController.liveTranscript.collectAsState()
+    val voiceSttLabel by voiceController.sttLabel.collectAsState()
+    val voiceTtsLabel by voiceController.ttsLabel.collectAsState()
+    val voiceHasEchoCancellation by voiceController.hasEchoCancellation.collectAsState()
+    val voicePlaybackPaused by voiceController.playbackPaused.collectAsState()
+    val voiceMicrophoneMuted by voiceController.microphoneMuted.collectAsState()
+    val voiceSpeechOutputEnabled by voiceController.speechOutputEnabled.collectAsState()
+    val voiceModelLoadError by voiceController.modelLoadError.collectAsState()
+    val voiceSttUnavailable by voiceController.sttUnavailable.collectAsState()
+    val voiceLoadingModelName by voiceController.loadingModelName.collectAsState()
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             val copied = vm.copyImage(uri)
@@ -493,7 +618,7 @@ fun ChatScreen(
             pendingCameraFile = file
             takePicture.launch(uri)
         } else {
-                attachmentError = "Camera access is off. Choose a photo or allow it in Settings."
+                attachmentError = "Camera access is off. Choose a photo, or allow it in Android Settings → Apps → Vervan → Permissions."
         }
     }
     // "Document" attach — any standard document type, run through extract/chunk/embed and
@@ -505,12 +630,40 @@ fun ChatScreen(
     val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             isImportingAudio = true
+            var importedPath: String? = null
             vm.importAudio(uri)
-                .onSuccess { path ->
-                    vm.setPendingAudio(path)
-                    showPendingAudioPreview = true
+                .mapCatching { path ->
+                    importedPath = path
+                    val file = java.io.File(path)
+                    val transcription = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.vervan.chat.voice.OfflineDictationTranscriber.transcribe(
+                            app, file, selectedGenerationModel?.id
+                        ).getOrThrow()
+                    }
+                    path to transcription
+                }
+                .onSuccess { (path, transcription) ->
+                    draftVoiceRecordingPath?.let { old ->
+                        if (old != path) java.io.File(old).delete()
+                    }
+                    draftVoiceRecordingPath = path
+                    draftSttLabel = transcription.engineLabel
+                    val hadTypedText = draft.isNotBlank()
+                    val combined = listOf(draft.trim(), transcription.text)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    draftInputModality = if (hadTypedText) "MIXED" else "AUDIO_FILE"
+                    draftOriginalTranscript = transcription.text
+                    if (transcriptReviewEnabled) {
+                        dictationTranscript = combined
+                        dictationOriginalTranscript = transcription.text
+                    } else {
+                        draft = combined
+                        vm.saveDraft(draft)
+                    }
                 }
                 .onFailure {
+                    importedPath?.let { path -> java.io.File(path).delete() }
                     attachmentError = it.toUserMessage()
                 }
             isImportingAudio = false
@@ -559,7 +712,7 @@ fun ChatScreen(
             pendingOcrCameraFile = file
             takeOcrPicture.launch(uri)
         } else {
-                attachmentError = "Camera access is off. Choose an image or allow it in Settings."
+                attachmentError = "Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions."
         }
     }
 
@@ -576,47 +729,211 @@ fun ChatScreen(
                 attachmentError = it.toUserMessage()
             }
     }
-    val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val text = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-            if (!text.isNullOrBlank()) {
-                draft = if (draft.isBlank()) text else "$draft $text"
-                vm.saveDraft(draft)
+
+    fun startInlineDictation() {
+        dictationJob?.cancel()
+        dictationError = null
+        dictationBaseText = dictationTranscript.orEmpty()
+        dictationTranscript = null
+        dictationLevels = emptyList()
+        if (!sttResolution.isAvailable) {
+            dictationError = sttResolution.unavailableReason ?: "Speech input is unavailable"
+            return
+        }
+        if (sttResolution.candidates.first() == com.vervan.chat.voice.SttEngineChoice.ANDROID) {
+            dictationStartedAt = android.os.SystemClock.elapsedRealtime()
+            dictationElapsedMs = 0L
+            dictationRecording = true
+            dictationJob = scope.launch {
+                val language = app.container.settingsRepository.voiceInputLanguage.first()
+                val maxSeconds = app.container.settingsRepository.maxUtteranceSeconds.first()
+                val result = com.vervan.chat.voice.AndroidSystemSttRecognizer.recognizeOnce(
+                    app,
+                    language,
+                    maxSeconds
+                )
+                dictationRecording = false
+                result.onSuccess { text ->
+                    draftSttLabel = com.vervan.chat.voice.SttEngineChoice.ANDROID.label
+                    draftVoiceRecordingPath = null
+                    val combined = listOf(dictationBaseText, text).filter { it.isNotBlank() }.joinToString(" ")
+                    val original = listOf(dictationOriginalTranscript.orEmpty(), text)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    if (transcriptReviewEnabled) {
+                        dictationTranscript = combined
+                        dictationOriginalTranscript = original
+                    } else {
+                        val hadTypedText = draft.isNotBlank()
+                        draft = listOf(draft.trim(), combined).filter { it.isNotBlank() }.joinToString(" ")
+                        draftInputModality = if (hadTypedText) "MIXED" else "VOICE_DICTATION"
+                        draftOriginalTranscript = original
+                        vm.saveDraft(draft)
+                    }
+                    dictationBaseText = ""
+                }.onFailure {
+                    dictationError = it.toUserMessage()
+                    dictationTranscript = dictationBaseText.takeIf { it.isNotBlank() }
+                    dictationBaseText = ""
+                }
+                dictationJob = null
             }
+            return
+        }
+        val recorder = WavRecorder(vm.newAudioFile()) { level ->
+            scope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                dictationLevels = (dictationLevels + level).takeLast(32)
+            }
+        }
+        runCatching { recorder.start() }
+            .onSuccess {
+                dictationRecorder = recorder
+                dictationStartedAt = android.os.SystemClock.elapsedRealtime()
+                dictationElapsedMs = 0L
+                dictationRecording = true
+            }
+            .onFailure {
+                recorder.cancel()
+                dictationError = it.toUserMessage()
+            }
+    }
+
+    fun cancelInlineDictation() {
+        dictationJob?.cancel()
+        dictationJob = null
+        dictationRecorder?.cancel()
+        dictationRecorder = null
+        dictationRecording = false
+        dictationTranscribing = false
+        dictationLevels = emptyList()
+    }
+
+    fun finishInlineDictation() {
+        val recorder = dictationRecorder ?: return
+        dictationRecorder = null
+        dictationRecording = false
+        dictationTranscribing = true
+        dictationJob = scope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                recorder.stop()
+                val failure = recorder.failureReason
+                if (failure != null) Result.failure(IllegalStateException(failure))
+                else com.vervan.chat.voice.OfflineDictationTranscriber.transcribe(
+                    app, recorder.outputFile, selectedGenerationModel?.id
+                )
+            }
+            dictationTranscribing = false
+            result.onSuccess { transcription ->
+                val text = transcription.text
+                val keepRecording = app.container.settingsRepository.storeVoiceRecordings.first()
+                if (keepRecording) {
+                    draftVoiceRecordingPath?.let { old ->
+                        if (old != recorder.outputFile.absolutePath) java.io.File(old).delete()
+                    }
+                    draftVoiceRecordingPath = recorder.outputFile.absolutePath
+                } else {
+                    recorder.outputFile.delete()
+                    draftVoiceRecordingPath = null
+                }
+                draftSttLabel = transcription.engineLabel
+                val combined = listOf(dictationBaseText, text).filter { it.isNotBlank() }.joinToString(" ")
+                val original = listOf(dictationOriginalTranscript.orEmpty(), text)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                if (transcriptReviewEnabled) {
+                    dictationTranscript = combined
+                    dictationOriginalTranscript = original
+                } else {
+                    val hadTypedText = draft.isNotBlank()
+                    draft = listOf(draft.trim(), combined).filter { it.isNotBlank() }.joinToString(" ")
+                    draftInputModality = if (hadTypedText) "MIXED" else "VOICE_DICTATION"
+                    draftOriginalTranscript = original
+                    vm.saveDraft(draft)
+                    dictationTranscript = null
+                    dictationOriginalTranscript = null
+                }
+                dictationBaseText = ""
+            }.onFailure {
+                recorder.outputFile.delete()
+                dictationError = it.toUserMessage()
+                dictationTranscript = dictationBaseText.takeIf { it.isNotBlank() }
+                dictationBaseText = ""
+            }
+            dictationJob = null
+        }
+    }
+    LaunchedEffect(dictationRecording) {
+        while (dictationRecording) {
+            dictationElapsedMs = android.os.SystemClock.elapsedRealtime() - dictationStartedAt
+            kotlinx.coroutines.delay(200)
         }
     }
     val requestMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            if (audioAvailable == true) {
-                startVoiceMessageRecording()
-            } else {
-                dictate.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                })
-            }
+        if (!speechInputAvailable) {
+            dictationError = sttResolution.unavailableReason ?: "Speech input is unavailable."
+        } else if (granted) {
+            startInlineDictation()
         } else {
-                attachmentError = "Microphone access is off. Allow it in Settings to record or dictate."
+            dictationError = "Microphone access is off. Allow it in Android Settings → Apps → Vervan → Permissions."
+        }
+    }
+    val requestHandsFreePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            handsFreeActive = true
+        } else {
+            attachmentError = "Microphone access is off. Allow it in Android Settings → Apps → Vervan → Permissions."
         }
     }
     val requestRecordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startVoiceMessageRecording()
-                else attachmentError = "Microphone access is off. Allow it in Settings to record audio."
+        if (!speechInputAvailable) {
+            attachmentError = sttResolution.unavailableReason ?: "Speech input is unavailable."
+        } else if (granted) startVoiceMessageRecording()
+                else attachmentError = "Microphone access is off. Allow it in Android Settings → Apps → Vervan → Permissions."
     }
     var initialActionHandled by rememberSaveable(chatId, initialAction) { mutableStateOf(false) }
-    LaunchedEffect(chatId, initialAction, initialActionHandled, modelLoadState) {
+    LaunchedEffect(handsFreeActive, voiceController, voiceReplyMode) {
+        if (handsFreeActive) {
+            voiceController.setSpeechOutputEnabled(voiceReplyMode != "NEVER")
+            voiceController.start(scope)
+        }
+    }
+    LaunchedEffect(speechInputAvailable) {
+        if (!speechInputAvailable && handsFreeActive) {
+            immersiveVoiceActive = false
+            voiceController.stop()
+            handsFreeActive = false
+        }
+    }
+    DisposableEffect(voiceController) {
+        onDispose { voiceController.stop() }
+    }
+    LaunchedEffect(
+        chatId, initialAction, initialActionHandled, modelLoadState,
+        selectedGenerationModel?.id
+    ) {
         if (!initialActionHandled) {
             if (initialAction == "voice" && (
                     modelLoadState is ChatViewModel.ModelLoadState.NotLoaded ||
                         modelLoadState is ChatViewModel.ModelLoadState.Loading
                 )
             ) return@LaunchedEffect
+            if (initialAction == "handsfree") {
+                val selected = selectedGenerationModel ?: return@LaunchedEffect
+                val startupResolution = com.vervan.chat.voice.SttEnginePolicy.resolve(
+                    app,
+                    modelSupportsAudio = selected.supportsAudio != false
+                )
+                if (!startupResolution.isAvailable) {
+                    initialActionHandled = true
+                    attachmentError = startupResolution.unavailableReason ?: "Speech input is unavailable."
+                    return@LaunchedEffect
+                }
+            }
             initialActionHandled = true
             when (initialAction) {
                 "image" -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                "voice" -> requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                "voice" -> requestRecordPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                "handsfree" -> requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO)
             }
         }
     }
@@ -640,53 +957,43 @@ fun ChatScreen(
         }
     }
     val latestRecorder by rememberUpdatedState(activeRecorder)
+    val latestDictationRecorder by rememberUpdatedState(dictationRecorder)
+    val latestDictationJob by rememberUpdatedState(dictationJob)
     // Only the in-progress recorder is screen-scoped. Generation cancellation, empty/incognito
     // chat purge, and attachment-file cleanup all live in ChatViewModel.onCleared(), which fires
     // when the chat's back-stack entry is actually popped — composition dispose also happens on
     // *forward* navigation (Chat Info, branch tree, a document), where cancelling the stream or
     // deleting unsent attachments was wrong.
     DisposableEffect(chatId) {
-        onDispose { latestRecorder?.cancel() }
+        onDispose {
+            latestRecorder?.cancel()
+            latestDictationRecorder?.cancel()
+            latestDictationJob?.cancel()
+        }
     }
-    val ttsRateSetting by app.container.settingsRepository.ttsRate.collectAsState(initial = 1.0f)
     val autoReadAloud by app.container.settingsRepository.autoReadAloud.collectAsState(initial = false)
-    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
-    var ttsReady by remember { mutableStateOf(false) }
-    DisposableEffect(Unit) {
-        val instance = TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
-        tts = instance
-        onDispose { instance.shutdown() }
+    // Auto-read-aloud speaks via the same Piper/Kokoro engine chain as realtime voice chat —
+    // Android's system TTS is deliberately never used anywhere in this app. If no offline voice
+    // is downloaded yet, TtsEngineSelector.resolve() returns null and TtsPlaybackQueue silently
+    // skips synthesis rather than falling back to a device voice.
+    val ttsEngineSelector = remember {
+        com.vervan.chat.voice.TtsEngineSelector(
+            app.container.settingsRepository,
+            com.vervan.chat.voice.PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
+            com.vervan.chat.voice.KokoroTtsEngine(app.container.db.ttsVoiceModelDao())
+        )
     }
-    // : pause/stop TTS on audio-focus loss instead of talking over a call or other
-    // app's playback. Recording's own interruption handling (call/headset) is out of scope
-    // here — AudioRecord has no focus API; that would need TelephonyManager call-state
-    // observation, which needs its own permission story.
-    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val focusListener = remember {
-        AudioManager.OnAudioFocusChangeListener { change ->
-            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                tts?.stop()
-            }
+    val autoReadQueue = remember { com.vervan.chat.voice.TtsPlaybackQueue(app, ttsEngineSelector, scope) }
+    DisposableEffect(Unit) { onDispose { autoReadQueue.release() } }
+    fun speakAloud(text: String) {
+        autoReadQueue.startTurn()
+        val chunker = com.vervan.chat.voice.SentenceChunker { sentence ->
+            autoReadQueue.enqueue(com.vervan.chat.voice.markdownToSpeechText(sentence))
         }
+        chunker.append(text)
+        chunker.flush()
+        autoReadQueue.endTurn()
     }
-    val focusRequest = remember {
-        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setOnAudioFocusChangeListener(focusListener)
-            .build()
-    }
-    fun speakWithFocus(text: String, utteranceId: String) {
-        if (audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-        }
-    }
-    DisposableEffect(Unit) { onDispose { audioManager.abandonAudioFocusRequest(focusRequest) } }
-    LaunchedEffect(ttsRateSetting, tts) { tts?.setSpeechRate(ttsRateSetting) }
     var autoReadBaselineReady by remember(chatId) { mutableStateOf(false) }
     var lastAutoReadId by remember(chatId) { mutableStateOf<String?>(null) }
     LaunchedEffect(chatId) {
@@ -697,13 +1004,13 @@ fun ChatScreen(
             ?.id
         autoReadBaselineReady = true
     }
-    LaunchedEffect(autoReadAloud, messages, ttsReady, autoReadBaselineReady) {
+    LaunchedEffect(autoReadAloud, messages, autoReadBaselineReady) {
         val last = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
         if (!autoReadBaselineReady || last == null || last.state != MessageState.COMPLETE) return@LaunchedEffect
         if (!autoReadAloud) {
             lastAutoReadId = last.id
-        } else if (ttsReady && last.id != lastAutoReadId) {
-            speakWithFocus(assistantSpokenText(last.content), last.id)
+        } else if (last.id != lastAutoReadId) {
+            speakAloud(assistantSpokenText(last.content))
             lastAutoReadId = last.id
         }
     }
@@ -735,7 +1042,28 @@ fun ChatScreen(
         pendingQuote = null
         vm.clearPendingDocument()
         stickToBottom = true
-        vm.send(quotePrefix + body, attached.imagePath, attached.audioPath, documentId)
+        val transcriptMetadata = draftOriginalTranscript?.let { original ->
+            org.json.JSONObject()
+                .put("originalTranscript", original)
+                .put("submittedText", body)
+                .put("edited", original.trim() != body.trim())
+                .put("sttModel", draftSttLabel)
+                .put("audioReference", draftVoiceRecordingPath)
+                .toString()
+        }
+        vm.send(
+            quotePrefix + body,
+            attached.imagePath,
+            attached.audioPath,
+            documentId,
+            inputModality = draftInputModality,
+            transcriptMetadataJson = transcriptMetadata,
+            voiceRecordingPath = draftVoiceRecordingPath
+        )
+        draftInputModality = "TEXT"
+        draftOriginalTranscript = null
+        draftVoiceRecordingPath = null
+        draftSttLabel = null
         return true
     }
 
@@ -1064,8 +1392,9 @@ fun ChatScreen(
                                     vm.setFeedbackReason(message.id, null)
                                 }
                             },
-                            onReadAloud = ::speakWithFocus,
+                            onReadAloud = { text, _ -> speakAloud(text) },
                             isGenerating = isGenerating,
+                            showStreamingStatus = !handsFreeActive,
                             siblingPosition = com.vervan.chat.data.branch.BranchUtil.siblingPosition(allMessages, message.id),
                             onConfirmTool = { approve -> vm.confirmToolCall(message.id, approve) },
                             onEditAndResend = { newText -> vm.editAndResend(message.id, newText) },
@@ -1320,6 +1649,62 @@ fun ChatScreen(
                 }
             }
             val composerEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived
+            if (handsFreeActive) {
+                IntegratedVoicePanel(
+                    state = voiceState,
+                    waveform = voiceWaveform,
+                    elapsedMs = voiceElapsedMs,
+                    liveTranscript = voiceLiveTranscript,
+                    modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                    sttLabel = voiceSttLabel,
+                    ttsLabel = voiceTtsLabel,
+                    microphoneMuted = voiceMicrophoneMuted,
+                    speechOutputEnabled = voiceSpeechOutputEnabled,
+                    playbackPaused = voicePlaybackPaused,
+                    hasEchoCancellation = voiceHasEchoCancellation,
+                    attachmentLabel = when {
+                        pendingDocument is ChatViewModel.DocumentAttachState.Importing ->
+                            (pendingDocument as ChatViewModel.DocumentAttachState.Importing).name + " · preparing"
+                        pendingDocument is ChatViewModel.DocumentAttachState.Ready ->
+                            (pendingDocument as ChatViewModel.DocumentAttachState.Ready).name
+                        pendingDocument is ChatViewModel.DocumentAttachState.Failed ->
+                            (pendingDocument as ChatViewModel.DocumentAttachState.Failed).name + " · failed"
+                        pendingImagePath != null -> "Photo ready"
+                        pendingAudioPath != null -> "Audio file ready"
+                        pendingOcrImagePath != null -> "Scanned text ready"
+                        else -> null
+                    },
+                    errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
+                        "No offline speech-input model is available. Download one or use the keyboard."
+                    } else null,
+                    onStart = { requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                    onFinishUtterance = voiceController::finishListening,
+                    onCancelUtterance = voiceController::cancelCurrentUtterance,
+                    onInterrupt = voiceController::manualInterrupt,
+                    onTogglePlayback = voiceController::togglePlaybackPause,
+                    onToggleMute = voiceController::toggleMicrophoneMute,
+                    onToggleSpeechOutput = voiceController::toggleSpeechOutput,
+                    onAttach = { showAttachmentSheet = true },
+                    onKeyboard = {
+                        voiceController.stop()
+                        handsFreeActive = false
+                        immersiveVoiceActive = false
+                        voiceSessionKey += 1
+                    },
+                    onMore = { showVoiceOptions = true },
+                    onRetry = {
+                        voiceController.stop()
+                        voiceSessionKey += 1
+                    },
+                    onEnd = {
+                        voiceController.stop()
+                        handsFreeActive = false
+                        immersiveVoiceActive = false
+                        voiceSessionKey += 1
+                    },
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = Space.lg, vertical = Space.sm)
+                )
+            } else {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1337,7 +1722,80 @@ fun ChatScreen(
                 border = vervanBorder(com.vervan.chat.ui.theme.VervanBorderProminence.Emphasized)
             ) {
                 Column(Modifier.fillMaxWidth().padding(Space.sm)) {
-                    if (isRecording) {
+                    when {
+                    dictationRecording -> {
+                        InlineDictationRecording(
+                            levels = dictationLevels,
+                            elapsedMs = dictationElapsedMs,
+                            onCancel = {
+                                cancelInlineDictation()
+                                dictationTranscript = dictationBaseText.takeIf { it.isNotBlank() }
+                                dictationBaseText = ""
+                            },
+                            onStop = ::finishInlineDictation
+                        )
+                    }
+                    dictationTranscribing -> {
+                        InlineDictationTranscribing(onCancel = {
+                            cancelInlineDictation()
+                            dictationTranscript = dictationBaseText.takeIf { it.isNotBlank() }
+                            dictationBaseText = ""
+                        })
+                    }
+                    dictationError != null -> {
+                        InlineDictationError(
+                            message = dictationError.orEmpty(),
+                            onRetry = {
+                                dictationError = null
+                                requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                            },
+                            onKeyboard = { dictationError = null }
+                        )
+                    }
+                    dictationTranscript != null -> {
+                        InlineDictationReview(
+                            transcript = dictationTranscript.orEmpty(),
+                            onTranscriptChange = { dictationTranscript = it },
+                            onRecordMore = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                            onRetry = {
+                                draftVoiceRecordingPath?.let { java.io.File(it).delete() }
+                                draftVoiceRecordingPath = null
+                                draftSttLabel = null
+                                dictationTranscript = null
+                                dictationOriginalTranscript = null
+                                requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                            },
+                            onCancel = {
+                                draftVoiceRecordingPath?.let { java.io.File(it).delete() }
+                                draftVoiceRecordingPath = null
+                                draftSttLabel = null
+                                dictationTranscript = null
+                                dictationOriginalTranscript = null
+                            },
+                            onUseInComposer = {
+                                val transcript = dictationTranscript.orEmpty().trim()
+                                val hadTypedText = draft.isNotBlank()
+                                draft = listOf(draft.trim(), transcript).filter { it.isNotBlank() }.joinToString(" ")
+                                draftInputModality = if (hadTypedText) "MIXED" else "VOICE_DICTATION"
+                                draftOriginalTranscript = dictationOriginalTranscript ?: transcript
+                                vm.saveDraft(draft)
+                                dictationTranscript = null
+                                dictationOriginalTranscript = null
+                            },
+                            onSend = {
+                                val transcript = dictationTranscript.orEmpty().trim()
+                                val hadTypedText = draft.isNotBlank()
+                                draft = listOf(draft.trim(), transcript).filter { it.isNotBlank() }.joinToString(" ")
+                                draftInputModality = if (hadTypedText) "MIXED" else "VOICE_DICTATION"
+                                draftOriginalTranscript = dictationOriginalTranscript ?: transcript
+                                vm.saveDraft(draft)
+                                dictationTranscript = null
+                                dictationOriginalTranscript = null
+                                sendPendingMessage()
+                            }
+                        )
+                    }
+                    isRecording -> {
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1353,8 +1811,8 @@ fun ChatScreen(
                                 }
                             }
                             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                Text("Recording voice message", style = MaterialTheme.typography.labelLarge)
-                                Text("Kept locally until sent", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Recording for transcription", style = MaterialTheme.typography.labelLarge)
+                                Text("Your selected STT engine will convert this to text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(onClick = { activeRecorder?.cancel(); activeRecorder = null; isRecording = false }) { Text("Cancel") }
                             TextButton(onClick = {
@@ -1363,14 +1821,39 @@ fun ChatScreen(
                                 isRecording = false
                                 scope.launch {
                                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { recorder?.stop() }
-                                    recorder?.outputFile?.absolutePath?.let {
-                                        vm.setPendingAudio(it)
-                                        showPendingAudioPreview = true
+                                    recorder?.outputFile?.let { file ->
+                                        isImportingAudio = true
+                                        com.vervan.chat.voice.OfflineDictationTranscriber.transcribe(
+                                            app, file, selectedGenerationModel?.id
+                                        ).onSuccess { transcription ->
+                                            draftVoiceRecordingPath?.let { old ->
+                                                if (old != file.absolutePath) java.io.File(old).delete()
+                                            }
+                                            draftVoiceRecordingPath = file.absolutePath
+                                            draftSttLabel = transcription.engineLabel
+                                            val hadTypedText = draft.isNotBlank()
+                                            val combined = listOf(draft.trim(), transcription.text)
+                                                .filter { it.isNotBlank() }.joinToString(" ")
+                                            draftInputModality = if (hadTypedText) "MIXED" else "VOICE_FILE"
+                                            draftOriginalTranscript = transcription.text
+                                            if (transcriptReviewEnabled) {
+                                                dictationTranscript = combined
+                                                dictationOriginalTranscript = transcription.text
+                                            } else {
+                                                draft = combined
+                                                vm.saveDraft(draft)
+                                            }
+                                        }.onFailure {
+                                            file.delete()
+                                            attachmentError = it.toUserMessage()
+                                        }
+                                        isImportingAudio = false
                                     }
                                 }
                             }) { Text("Use") }
                         }
-                    } else {
+                    }
+                    else -> {
                         // Modern single-row composer: [attach] [field] [/ commands] [mic] [send],
                         // icons anchored to the bottom as the field grows — the WhatsApp/Telegram
                         // layout, replacing the previous two-row field-above-toolbar design that
@@ -1445,27 +1928,81 @@ fun ChatScreen(
                                     }
                                 }
                             )
-                            if (draft.isBlank()) {
-                                IconButton(
-                                    onClick = {
-                                        if (!draft.startsWith("/")) {
-                                            draft = "/$draft"
-                                            if (draftLoaded) vm.saveDraft(draft)
-                                        }
-                                    },
-                                    enabled = composerEnabled
-                                ) {
-                                    Icon(Icons.Filled.Bolt, contentDescription = "Open commands")
+                            if (speechInputAvailable) {
+                                Box {
+                                    IconButton(
+                                        onClick = { showComposerVoiceMenu = true },
+                                        enabled = composerEnabled && !isGenerating
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.KeyboardVoice,
+                                            contentDescription = "Voice input options",
+                                            tint = if (voiceReplyMode == "AUTOMATIC") {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showComposerVoiceMenu,
+                                        onDismissRequest = { showComposerVoiceMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Dictate message") },
+                                            leadingIcon = { Icon(Icons.Filled.KeyboardVoice, contentDescription = null) },
+                                            onClick = {
+                                                showComposerVoiceMenu = false
+                                                requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Start hands-free") },
+                                            leadingIcon = { Icon(Icons.Filled.RecordVoiceOver, contentDescription = null) },
+                                            onClick = {
+                                                showComposerVoiceMenu = false
+                                                requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "Voice replies: " + when (voiceReplyMode) {
+                                                        "AUTOMATIC" -> "Automatic"
+                                                        "NEVER" -> "Off"
+                                                        else -> "Manual"
+                                                    }
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (voiceReplyMode == "NEVER") Icons.AutoMirrored.Filled.VolumeOff
+                                                    else Icons.AutoMirrored.Filled.VolumeUp,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                val next = when (voiceReplyMode) {
+                                                    "NEVER" -> "MANUAL"
+                                                    "MANUAL" -> "AUTOMATIC"
+                                                    else -> "NEVER"
+                                                }
+                                                scope.launch {
+                                                    app.container.settingsRepository.setVoiceReplyMode(next)
+                                                    app.container.settingsRepository.setAutoReadAloud(next == "AUTOMATIC")
+                                                }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Voice settings") },
+                                            leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
+                                            onClick = {
+                                                showComposerVoiceMenu = false
+                                                onOpenVoiceSettings()
+                                            }
+                                        )
+                                    }
                                 }
-                            }
-                            IconButton(
-                                onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
-                                enabled = composerEnabled
-                            ) {
-                                Icon(
-                                    if (audioAvailable == true) Icons.Filled.GraphicEq else Icons.Filled.KeyboardVoice,
-                                    contentDescription = if (audioAvailable == true) "Record audio for model" else "Dictate with Android speech recognition"
-                                )
                             }
                             val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
                             val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) &&
@@ -1502,7 +2039,9 @@ fun ChatScreen(
                             }
                         }
                     }
+                    }
                 }
+            }
             }
         }
     }
@@ -1510,7 +2049,7 @@ fun ChatScreen(
     if (showAttachmentSheet) {
         ModernChatAttachmentSheet(
             visionAvailable = visionAvailable,
-            audioAvailable = audioAvailable,
+            audioAvailable = speechInputAvailable,
             isImportingAudio = isImportingAudio,
             isRunningOcr = isRunningOcr,
             onDismiss = { showAttachmentSheet = false },
@@ -1551,6 +2090,90 @@ fun ChatScreen(
                 )
             }
         )
+    }
+
+    if (handsFreeActive && immersiveVoiceActive) {
+        ImmersiveVoiceDialog(
+            conversationTitle = chat?.title?.takeIf { it.isNotBlank() } ?: "Voice conversation",
+            modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+            turns = voiceTurns,
+            liveTranscript = voiceLiveTranscript,
+            onExitImmersive = { immersiveVoiceActive = false }
+        ) {
+            IntegratedVoicePanel(
+                state = voiceState,
+                waveform = voiceWaveform,
+                elapsedMs = voiceElapsedMs,
+                liveTranscript = voiceLiveTranscript,
+                modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                sttLabel = voiceSttLabel,
+                ttsLabel = voiceTtsLabel,
+                microphoneMuted = voiceMicrophoneMuted,
+                speechOutputEnabled = voiceSpeechOutputEnabled,
+                playbackPaused = voicePlaybackPaused,
+                hasEchoCancellation = voiceHasEchoCancellation,
+                attachmentLabel = when {
+                    pendingDocument is ChatViewModel.DocumentAttachState.Importing ->
+                        (pendingDocument as ChatViewModel.DocumentAttachState.Importing).name + " · preparing"
+                    pendingDocument is ChatViewModel.DocumentAttachState.Ready ->
+                        (pendingDocument as ChatViewModel.DocumentAttachState.Ready).name
+                    pendingImagePath != null -> "Photo ready"
+                    pendingAudioPath != null -> "Audio file ready"
+                    pendingOcrImagePath != null -> "Scanned text ready"
+                    else -> null
+                },
+                errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
+                    "No offline speech-input model is available. Download one or use the keyboard."
+                } else null,
+                onStart = { requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                onFinishUtterance = voiceController::finishListening,
+                onCancelUtterance = voiceController::cancelCurrentUtterance,
+                onInterrupt = voiceController::manualInterrupt,
+                onTogglePlayback = voiceController::togglePlaybackPause,
+                onToggleMute = voiceController::toggleMicrophoneMute,
+                onToggleSpeechOutput = voiceController::toggleSpeechOutput,
+                onAttach = { showAttachmentSheet = true },
+                onKeyboard = {
+                    immersiveVoiceActive = false
+                    voiceController.stop()
+                    handsFreeActive = false
+                    voiceSessionKey += 1
+                },
+                onMore = { showVoiceOptions = true },
+                onRetry = {
+                    voiceController.stop()
+                    voiceSessionKey += 1
+                },
+                onEnd = {
+                    immersiveVoiceActive = false
+                    voiceController.stop()
+                    handsFreeActive = false
+                    voiceSessionKey += 1
+                }
+            )
+        }
+    }
+
+    if (showVoiceOptions) {
+        ModalBottomSheet(onDismissRequest = { showVoiceOptions = false }) {
+            VoiceSessionOptionsSheet(
+                speechOutputEnabled = voiceSpeechOutputEnabled,
+                microphoneMuted = voiceMicrophoneMuted,
+                immersiveEnabled = immersiveVoiceActive,
+                onToggleSpeechOutput = voiceController::toggleSpeechOutput,
+                onToggleMute = voiceController::toggleMicrophoneMute,
+                onToggleImmersive = { immersiveVoiceActive = !immersiveVoiceActive },
+                onSwitchModel = {
+                    showVoiceOptions = false
+                    showModelPicker = true
+                },
+                onOpenSettings = {
+                    showVoiceOptions = false
+                    onOpenVoiceSettings()
+                },
+                onDismiss = { showVoiceOptions = false }
+            )
+        }
     }
 
     selectedDocument?.let { selection ->
@@ -1764,6 +2387,8 @@ fun ChatScreen(
     if (showChatTools) {
         val globallyDisabled by app.container.settingsRepository.disabledToolIds.collectAsState(initial = emptySet())
         ChatToolsDialog(
+            toolsEnabled = chat?.toolsEnabled == true,
+            onSetToolsEnabled = { vm.setToolsEnabled(it) },
             overrides = chat?.toolOverrideMap() ?: emptyMap(),
             globallyDisabled = globallyDisabled,
             onSetOverride = { toolId, state -> vm.setToolOverride(toolId, state) },

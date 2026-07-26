@@ -74,7 +74,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Generation & retrieval") },
+                title = { Text("Responses & search") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 }
@@ -82,7 +82,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
         }
     ) { padding ->
         ScrollablePage(padding) {
-            SectionLabel("Chat & retrieval")
+            SectionLabel("Search & context")
             Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text("Default retrieval mode", style = MaterialTheme.typography.bodyMedium)
@@ -100,7 +100,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         }
                     }
                     Text(
-                        "Uses semantic search when an embedding model is available; otherwise uses keywords.",
+                        "Semantic search needs an embedding model. Without one, Vervan uses keywords.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -121,9 +121,9 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Summarize long chats automatically", style = MaterialTheme.typography.titleSmall)
+                            Text("Summarize long chats", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "When a conversation is about to outgrow the model's context, fold older turns into a running summary instead of silently dropping them. Uses one extra background reply on the model already loaded.",
+                                "Keeps older context in a running summary when a chat gets too long. Uses one extra background response.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -283,7 +283,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
                     Text(
-                        "Global model loading and engine defaults. Per-model engine choices take priority.",
+                        "Default loading options. Per-model choices take priority.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
@@ -293,7 +293,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         Column(Modifier.weight(1f)) {
                             Text("Allow low-memory model loads", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "Try loading even when the estimate exceeds available memory. Android swap may help, but the app can become unstable or be stopped.",
+                                "Load models that may exceed available memory. This can slow or stop the app.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

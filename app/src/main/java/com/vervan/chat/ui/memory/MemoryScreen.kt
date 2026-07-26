@@ -93,7 +93,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 FeatureHero(
                     eyebrow = "Private and approved",
                     title = "What the assistant remembers",
-                    body = "Review, disable, or delete details saved for future chats. Relevant memories are recalled semantically when an embedding model is available.",
+            body = "Review details saved for future chats. Vervan uses relevant memories when available.",
                     icon = Icons.Filled.Lightbulb,
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
                 )
@@ -160,7 +160,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         placeholder = "Key (optional, e.g. \"tone\")",
                         singleLine = true,
                         maxLength = ValidationLimits.MEMORY_KEY,
-                        supportingText = "Saving with the same key replaces the old value instead of adding a duplicate",
+                supportingText = "Using the same key replaces its current value",
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }

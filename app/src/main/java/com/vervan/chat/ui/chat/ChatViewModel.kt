@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -111,12 +112,15 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         personaList.find { it.id == effectiveId }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val activeModelName: StateFlow<String?> = combine(
+    val selectedGenerationModel: StateFlow<ModelInfo?> = combine(
         chat, folder, db.modelDao().observeModels(), app.container.modelLoadCoordinator.observeState(ModelRole.GENERATION)
     ) { chatRow, folderRow, models, loadInfo ->
-        val model = resolveGenerationModel(chatRow, folderRow, models, loadInfo.currentModelId)
-        model?.let { "${it.displayName} · ${it.lastWorkingBackend.displayName()}" }
+        resolveGenerationModel(chatRow, folderRow, models, loadInfo.currentModelId)
     }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val activeModelName: StateFlow<String?> = selectedGenerationModel
+        .map { model -> model?.let { "${it.displayName} · ${it.lastWorkingBackend.displayName()}" } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val generationModels = db.modelDao().observeModels()
@@ -317,6 +321,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     val activeEngine = activeEngineFor(model)
                     _visionAvailable.value = model.supportsVision ?: activeEngine.visionEnabled
                     _audioAvailable.value = model.supportsAudio ?: activeEngine.audioEnabled
+                } else {
+                    _visionAvailable.value = model?.supportsVision
+                    _audioAvailable.value = model?.supportsAudio
                 }
             }
         }
@@ -1159,7 +1166,15 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    fun send(text: String, imagePath: String? = null, audioPath: String? = null, documentId: String? = null) {
+    fun send(
+        text: String,
+        imagePath: String? = null,
+        audioPath: String? = null,
+        documentId: String? = null,
+        inputModality: String = "TEXT",
+        transcriptMetadataJson: String? = null,
+        voiceRecordingPath: String? = null
+    ) {
         if (text.isBlank() && imagePath == null && audioPath == null && documentId == null) return
         Log.i(TAG, "[$chatId] send() textLen=${text.length}, hasImage=${imagePath != null}, hasAudio=${audioPath != null}")
         draftSaveJob?.cancel()
@@ -1182,7 +1197,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 content = expandedText,
                 imagePath = imagePath,
                 documentId = documentId,
-                audioPath = audioPath
+                audioPath = audioPath,
+                voiceRecordingPath = voiceRecordingPath,
+                inputModality = inputModality,
+                transcriptMetadataJson = transcriptMetadataJson
             )
             db.messageDao().upsert(userMessage)
             setActiveLeaf(userMessage.id)
@@ -1191,6 +1209,75 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
             GenerationRequest(expandedText, imagePath, audioPath)
         }
+    }
+
+    /**
+     * Hands-free voice entry point. It deliberately reuses [send], so a spoken turn has the
+     * same parent/branch, context, attachments, retrieval, tools, model and persistence behavior
+     * as a typed turn. Updates are forwarded from the Room-backed message stream so TTS can begin
+     * sentence-by-sentence while the ordinary assistant bubble is still streaming.
+     */
+    suspend fun sendVoiceAndAwait(
+        text: String,
+        imagePath: String? = null,
+        audioPath: String? = null,
+        documentId: String? = null,
+        inputModality: String = "HANDS_FREE",
+        outputModalities: String = "TEXT,SPEECH",
+        voiceRecordingPath: String? = null,
+        sttLabel: String? = null,
+        durationMs: Int? = null,
+        onAssistantUpdate: (String) -> Unit
+    ): String {
+        if (_isGenerating.value) return ""
+        val assistantIdsBefore = messages.value.asSequence()
+            .filter { it.role == MessageRole.ASSISTANT }
+            .map { it.id }
+            .toSet()
+        send(
+            text = text,
+            imagePath = imagePath,
+            audioPath = audioPath,
+            documentId = documentId,
+            inputModality = inputModality,
+            transcriptMetadataJson = org.json.JSONObject()
+                .put("originalTranscript", text)
+                .put("submittedText", text)
+                .put("edited", false)
+                .put("sttModel", sttLabel)
+                .put("durationMs", durationMs)
+                .put("audioReference", voiceRecordingPath)
+                .toString(),
+            voiceRecordingPath = voiceRecordingPath
+        )
+        if (!_isGenerating.value) return ""
+
+        val completed = combine(messages, isGenerating) { current, generating ->
+            val response = current.lastOrNull {
+                it.role == MessageRole.ASSISTANT && it.id !in assistantIdsBefore
+            }
+            response to generating
+        }
+            .map { snapshot ->
+                snapshot.first?.content?.let(onAssistantUpdate)
+                snapshot
+            }
+            .filter { (response, generating) ->
+                !generating || response?.state in setOf(
+                    MessageState.COMPLETE,
+                    MessageState.CANCELLED,
+                    MessageState.INTERRUPTED,
+                    MessageState.FAILED
+                )
+            }
+            .first()
+
+        completed.first?.let { response ->
+            if (response.outputModalities != outputModalities) {
+                db.messageDao().update(response.copy(outputModalities = outputModalities))
+            }
+        }
+        return completed.first?.content.orEmpty()
     }
 
     /**
@@ -1204,7 +1291,18 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val original = getAllMessages().find { it.id == messageId && it.role == MessageRole.USER }
                 ?: return@launchGeneration null
             val expandedText = expandSlashCommand(newText)
-            val branchMessage = Message(chatId = chatId, parentId = original.parentId, role = MessageRole.USER, content = expandedText, imagePath = original.imagePath, documentId = original.documentId, audioPath = original.audioPath)
+            val branchMessage = Message(
+                chatId = chatId,
+                parentId = original.parentId,
+                role = MessageRole.USER,
+                content = expandedText,
+                imagePath = original.imagePath,
+                documentId = original.documentId,
+                audioPath = original.audioPath,
+                voiceRecordingPath = original.voiceRecordingPath,
+                inputModality = if (expandedText == original.content) original.inputModality else "MIXED",
+                transcriptMetadataJson = original.transcriptMetadataJson
+            )
             db.messageDao().upsert(branchMessage)
             setActiveLeaf(branchMessage.id)
 
@@ -1253,6 +1351,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 imagePath = message.imagePath,
                 documentId = message.documentId,
                 audioPath = message.audioPath,
+                voiceRecordingPath = message.voiceRecordingPath,
+                inputModality = message.inputModality,
+                transcriptMetadataJson = message.transcriptMetadataJson,
+                outputModalities = message.outputModalities,
+                playbackMetadataJson = message.playbackMetadataJson,
                 sourcesJson = message.sourcesJson,
                 memoryActivityJson = message.memoryActivityJson,
                 toolResultJson = message.toolResultJson,
@@ -1331,6 +1434,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         summaryJob?.cancel()
         generationJob = viewModelScope.launch {
             val startedAt = System.currentTimeMillis()
+            var responseCompleted = false
             // B16: foreground service keeps the process alive if the app is backgrounded
             // mid-generation, instead of the OS being free to kill it outright.
             com.vervan.chat.system.GenerationService.start(app)
@@ -1339,6 +1443,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 val request = prepare() ?: return@launch
                 Log.i(TAG, "[$chatId] generation start: triggerLen=${request.triggerText.length}, hasImage=${request.imagePath != null}, hasAudio=${request.audioPath != null}")
                 beginGeneration(request.triggerText, request.imagePath, request.audioPath, request.forceGrounding, request.profileOverride)
+                responseCompleted = true
                 Log.i(TAG, "[$chatId] generation finished in ${System.currentTimeMillis() - startedAt}ms")
             // Runs after the response completes, on its own coroutine (never
                 // interrupts interactive generation).
@@ -1359,6 +1464,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 Log.e(TAG, "[$chatId] generation FAILED after ${System.currentTimeMillis() - startedAt}ms: ${t::class.simpleName}: ${t.message}", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             } finally {
+                if (responseCompleted) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        db.messageDao().completeStreamingForChat(chatId)
+                    }
+                }
                 _isGenerating.value = false
                 _liveGenStats.value = null
                 com.vervan.chat.system.GenerationService.stop(app)
@@ -1397,7 +1507,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val model = resolveGenerationModelForTurn(chatRow, imagePath, audioPath)
         if (model == null) {
             Log.w(TAG, "[$chatId] beginGeneration() no generation model resolved (chatRow.modelId=${chatRow.modelId})")
-            _error.value = "No model selected. Import or activate one in Models."
+            _error.value = "No model selected. Open Settings → AI models, then import or activate one."
             return
         }
         val activeEngine = activeEngineFor(model)
@@ -1917,6 +2027,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     fun cancelGeneration() {
         Log.i(TAG, "[$chatId] cancelGeneration() requested")
+        app.container.modelLoadCoordinator.cancelActiveGeneration()
         generationJob?.cancel()
     }
 
@@ -1956,19 +2067,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Tool ids this chat can actually call right now: the global Settings → Tools disable
      * list, with this chat's own per-tool overrides (Chat.toolOverrideMap()) taking priority —
      * lets a chat turn on a globally-disabled tool, or off a globally-enabled one, just for
-     * itself. web_search gets one extra check on top: unlike the plain on/off tools above, it's
-     * useless without both its Settings → Security toggle AND a configured API key, so it's
-     * dropped from the catalog rather than advertised and then rejected at call time — the model
-     * would otherwise call it, the user would tap through an EXTERNAL_ACTION confirmation, and
-     * only then find out it was never going to work. */
+     * itself. */
     private suspend fun effectiveToolIds(chatRow: Chat): Set<String> {
         val disabledGlobally = app.container.settingsRepository.disabledToolIds.first()
         val overrides = chatRow.toolOverrideMap()
-        val webSearchReady = app.container.settingsRepository.webSearchToolEnabled.first() &&
-            app.container.knowledgeGraphStore.get()?.isNotBlank() == true
         return ToolRegistry.tools.map { it.name }
             .filter { overrides[it] ?: (it !in disabledGlobally) }
-            .filter { it != "web_search" || webSearchReady }
             .toSet()
     }
 

@@ -103,7 +103,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/translate", "Translate · $targetLang", sourceText),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Load one from Models, then translate again."
+                    errorText = "No model is ready. Open Settings → AI models, load one, then translate again."
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L

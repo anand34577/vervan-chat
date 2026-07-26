@@ -1017,6 +1017,8 @@ internal fun SourcePickerDialog(
  */
 @Composable
 internal fun ChatToolsDialog(
+    toolsEnabled: Boolean,
+    onSetToolsEnabled: (Boolean) -> Unit,
     overrides: Map<String, Boolean>,
     globallyDisabled: Set<String>,
     onSetOverride: (String, Boolean?) -> Unit,
@@ -1027,6 +1029,22 @@ internal fun ChatToolsDialog(
         title = { Text("Chat tools") },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                // The per-tool overrides below only take effect once tools are actually turned
+                // on for this chat — without this switch there was no way to flip that master
+                // flag on at all, so every chat silently stayed toolless regardless of overrides.
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tools for this chat", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "The model discovers tools itself (list_tools, then tool_details) instead of " +
+                                "getting every description up front — see the tools below.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = toolsEnabled, onCheckedChange = onSetToolsEnabled)
+                }
+                HorizontalDivider(Modifier.padding(bottom = 8.dp))
                 Text(
                 "Choose which tools this chat can use.",
                     style = MaterialTheme.typography.bodySmall,

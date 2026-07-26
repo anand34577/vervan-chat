@@ -149,7 +149,7 @@ fun StorageDataSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Storage & data") },
+                title = { Text("Storage & backup") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
@@ -177,11 +177,11 @@ fun StorageDataSettingsScreen(
                 }
             }
 
-            Text("Manage", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
-            SettingsRow(Icons.Filled.ImportExport, "Import & export", "Back up your saved app data", onOpenBackup)
-            SettingsRow(Icons.Filled.DeleteOutline, "Recycle bin", "Restore or permanently remove deleted items", onOpenRecycleBin)
-            SettingsRow(Icons.AutoMirrored.Filled.ListAlt, "Job queue", "View, stop, and clear background work", onOpenJobs)
-            SettingsRow(Icons.Filled.Build, "Index maintenance", "Repair or rebuild document search", onOpenIndexMaintenance)
+            Text("Data tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+            SettingsRow(Icons.Filled.ImportExport, "Backup & restore", "Export or restore your data", onOpenBackup)
+            SettingsRow(Icons.Filled.DeleteOutline, "Recycle bin", "Restore items or delete them forever", onOpenRecycleBin)
+            SettingsRow(Icons.AutoMirrored.Filled.ListAlt, "Background jobs", "View, stop, or clear work", onOpenJobs)
+            SettingsRow(Icons.Filled.Build, "Search index", "Repair or rebuild document search", onOpenIndexMaintenance)
             SettingsRow(Icons.Filled.SmartToy, "Model calculator", "Find model sizes that fit this device", onOpenModelCalculator)
             SettingsRow(Icons.Filled.MonitorHeart, "Diagnostics", "Inspect runtime and device health", onOpenDiagnostics)
         }

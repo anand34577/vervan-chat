@@ -19,6 +19,9 @@ interface MessageDao : BaseDao<Message> {
     @Query("UPDATE messages SET state = 'CANCELLED' WHERE chatId = :chatId AND state = 'STREAMING'")
     suspend fun cancelStreamingForChat(chatId: String)
 
+    @Query("UPDATE messages SET state = 'COMPLETE' WHERE chatId = :chatId AND state = 'STREAMING'")
+    suspend fun completeStreamingForChat(chatId: String)
+
     @Query("UPDATE messages SET reaction = :reaction WHERE id = :messageId")
     suspend fun setReaction(messageId: String, reaction: String?)
 
@@ -58,6 +61,9 @@ interface MessageDao : BaseDao<Message> {
     @Query("SELECT DISTINCT chatId FROM messages WHERE state IN (:states)")
     suspend fun getChatIdsWithState(states: List<String>): List<String>
 
-    @Query("SELECT DISTINCT chatId FROM messages WHERE imagePath IS NOT NULL OR audioPath IS NOT NULL")
+    @Query(
+        "SELECT DISTINCT chatId FROM messages WHERE imagePath IS NOT NULL " +
+            "OR audioPath IS NOT NULL OR voiceRecordingPath IS NOT NULL"
+    )
     suspend fun getChatIdsWithAttachments(): List<String>
 }

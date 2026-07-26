@@ -16,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -26,8 +25,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,9 +45,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
 
     val themeMode by vm.themeMode.collectAsState()
     val accentTheme by vm.accentTheme.collectAsState()
-    val fontScale by vm.fontScale.collectAsState()
     val oledTrueBlack by vm.oledTrueBlack.collectAsState()
-    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val dynamicColor by vm.dynamicColor.collectAsState()
 
     Scaffold(
@@ -113,24 +108,6 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     ) {
                         Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
                         Switch(checked = oledTrueBlack, onCheckedChange = { vm.setOledTrueBlack(it) })
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Haptic feedback", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
-                        Switch(checked = hapticsEnabled, onCheckedChange = { vm.setHapticsEnabled(it) })
-                    }
-                    Text("Font size", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Slider(
-                            value = fontScale, onValueChange = { vm.setFontScale(it) },
-                            valueRange = 0.85f..1.5f,
-                            modifier = Modifier.weight(1f).semantics {
-                                contentDescription = "Font size, ${(fontScale * 100).toInt()} percent"
-                            }
-                        )
-                        Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }

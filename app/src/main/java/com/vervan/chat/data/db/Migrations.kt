@@ -527,5 +527,18 @@ val MIGRATIONS = arrayOf(
             // dimension-only check" rather than as a hard mismatch.
             db.execSQL("ALTER TABLE chunks ADD COLUMN embeddingModelId TEXT")
         }
+    },
+    object : Migration(45, 46) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN inputModality TEXT NOT NULL DEFAULT 'TEXT'")
+            db.execSQL("ALTER TABLE messages ADD COLUMN transcriptMetadataJson TEXT")
+            db.execSQL("ALTER TABLE messages ADD COLUMN outputModalities TEXT NOT NULL DEFAULT 'TEXT'")
+            db.execSQL("ALTER TABLE messages ADD COLUMN playbackMetadataJson TEXT")
+        }
+    },
+    object : Migration(46, 47) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN voiceRecordingPath TEXT")
+        }
     }
 )

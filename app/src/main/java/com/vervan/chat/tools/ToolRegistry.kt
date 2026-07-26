@@ -1,8 +1,6 @@
 package com.vervan.chat.tools
 
 import android.Manifest
-import android.app.AppOpsManager
-import android.app.usage.UsageStatsManager
 import android.content.Intent
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -10,11 +8,9 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
-import android.os.Process
 import android.os.StatFs
 import android.provider.AlarmClock
 import android.provider.CalendarContract
-import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import com.vervan.chat.data.db.entities.Expense
 import com.vervan.chat.data.db.entities.Memory
@@ -26,13 +22,69 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
+/**
+ * Every tool the model can call is 100% on-device — nothing here makes a network request or
+ * sends anything off the phone (the app's only network paths are all user-initiated: model
+ * downloads, the local API server, the Model Store). [list_tools]/[tool_details] are the entry
+ * point: [catalogDescription] never dumps the full name+params+description for every tool into
+ * the prompt (that cost was paid on every single turn whether or not a tool was ever called) —
+ * instead the model calls `list_tools` to see names + one-line summaries grouped by
+ * [ToolCategory], then `tool_details(name)` for one tool's exact parameters right before using
+ * it.
+ */
 object ToolRegistry {
+    /** Always available once tools are enabled at all — the entry point into everything else,
+     * so [runGenerationLoop] never has to special-case them: they're gateable/disableable the
+     * same as any other tool via [ChatToolsDialog], they're just also how the model finds out
+     * what else it can call. */
+    val META_TOOL_NAMES = setOf("list_tools", "tool_details")
+
     val tools: List<ToolDefinition> = listOf(
+        ToolDefinition(
+            name = "list_tools",
+            description = "List the tools currently available, grouped by category, with a one-line summary each.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DISCOVERY,
+            execute = { app, _ ->
+                val disabled = app.container.settingsRepository.disabledToolIds.first()
+                val visible = tools.filter { it.name !in disabled && it.name !in META_TOOL_NAMES }
+                if (visible.isEmpty()) {
+                    ToolResult(true, "No other tools are currently available.")
+                } else {
+                    val body = visible.groupBy { it.category }
+                        .toSortedMap(compareBy { it.ordinal })
+                        .entries.joinToString("\n") { (category, group) ->
+                            "${category.label}:\n" + group.joinToString("\n") { "- ${it.name}: ${it.description.take(80)}" }
+                        }
+                    ToolResult(true, body)
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "tool_details",
+            description = "Get a tool's full description and parameter names before calling it.",
+            paramNames = listOf("name"),
+            risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DISCOVERY,
+            execute = { app, params ->
+                val name = params.optString("name")
+                if (name.isBlank()) return@ToolDefinition ToolResult(false, "tool_details needs a non-empty 'name'")
+                val disabled = app.container.settingsRepository.disabledToolIds.first()
+                val tool = tools.find { it.name == name && it.name !in META_TOOL_NAMES }
+                when {
+                    tool == null -> ToolResult(false, "No tool named \"$name\". Call list_tools to see what's available.")
+                    name in disabled -> ToolResult(false, "\"$name\" is disabled in Settings.")
+                    else -> ToolResult(true, "${tool.name}(${tool.paramNames.joinToString()}): ${tool.description}")
+                }
+            }
+        ),
         ToolDefinition(
             name = "search_notes",
             description = "Search the user's notes by title or content.",
             paramNames = listOf("query"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_notes needs a non-empty 'query'")
@@ -46,6 +98,7 @@ object ToolRegistry {
             description = "Search the user's chat titles.",
             paramNames = listOf("query"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_chats needs a non-empty 'query'")
@@ -59,6 +112,7 @@ object ToolRegistry {
             description = "Create a new note with a title and content.",
             paramNames = listOf("title", "content"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val title = params.optString("title").ifBlank { "Untitled note" }
                 val content = params.optString("content")
@@ -71,6 +125,7 @@ object ToolRegistry {
             description = "Save a fact about the user as a persistent global memory.",
             paramNames = listOf("text"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val text = params.optString("text")
                 if (text.isBlank()) return@ToolDefinition ToolResult(false, "remember needs a non-empty 'text'")
@@ -83,6 +138,7 @@ object ToolRegistry {
             description = "Search passages across the user's local knowledge bases.",
             paramNames = listOf("query"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_knowledge needs a non-empty 'query'")
@@ -91,45 +147,12 @@ object ToolRegistry {
                 ToolResult(true, passages.joinToString("\n") { "- ${it.documentName}: ${it.excerpt.take(180)}" }.ifBlank { "No local passage matched \"$query\"." })
             }
         ),
-        // The one outbound-network tool in the catalog (the only other intentional network
-        // call paths in the app are model downloads, the local API server, and the model
-        // store — all user-initiated, none model-initiated). Knowledge Graph returns entity
-        // facts (people/places/things) — strong for "who/what is X" the local model's
-        // training data is weak on, useless for "find recent news about Y" or arbitrary web
-        // pages, and the description below tells the model exactly that so it doesn't reach
-        // for this when the user actually wants a web page. EXTERNAL_ACTION because the
-        // request leaves the device, same risk tier as draft_email/open_map. Gated on its
-        // own Settings toggle (Settings → Security → Web search) plus a configured API key;
-        // a model call against an unconfigured/off web search gets a graceful no.
-        ToolDefinition(
-            name = "web_search",
-            description = "Look up entity facts (people, places, organizations, things) from Google's " +
-                "Knowledge Graph over the network. Best for \"who/what is X\" the model is unsure of; " +
-                "not for finding web pages, recent news, prices, or current events.",
-            paramNames = listOf("query"),
-            risk = ToolRisk.EXTERNAL_ACTION,
-            execute = { app, params ->
-                val query = params.optString("query")
-                if (query.isBlank()) return@ToolDefinition ToolResult(false, "web_search needs a non-empty 'query'")
-                if (!app.container.settingsRepository.webSearchToolEnabled.first()) {
-                    return@ToolDefinition ToolResult(false, "Web search is disabled in Settings → Security.")
-                }
-                val client = app.container.knowledgeGraphClient
-                try {
-                    val entities = withContext(Dispatchers.IO) { client.search(query) }
-                    ToolResult(true, client.formatResult(query, entities))
-                } catch (e: IllegalArgumentException) {
-                    ToolResult(false, "Web search isn't configured: ${e.message}")
-                } catch (e: java.io.IOException) {
-                    ToolResult(false, "Web search failed (network or API error): ${e.message ?: e.javaClass.simpleName}")
-                }
-            }
-        ),
         ToolDefinition(
             name = "project_details",
             description = "Read a project's instructions and contents by project name.",
             paramNames = listOf("name"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, params ->
                 val name = params.optString("name")
                 val project = app.container.db.projectDao().observeAll().first().firstOrNull { it.name.equals(name, true) }
@@ -142,6 +165,7 @@ object ToolRegistry {
             description = "Save text to the user's output library.",
             paramNames = listOf("label", "content"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val content = params.optString("content")
                 if (content.isBlank()) return@ToolDefinition ToolResult(false, "save_output needs non-empty 'content'")
@@ -154,6 +178,7 @@ object ToolRegistry {
             description = "Open the email app with a recipient, subject, and body prefilled. Does not send.",
             paramNames = listOf("to", "subject", "body"),
             risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
             execute = { app, params ->
                 launch(app, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${Uri.encode(params.optString("to"))}")).apply {
                     putExtra(Intent.EXTRA_SUBJECT, params.optString("subject"))
@@ -166,6 +191,7 @@ object ToolRegistry {
             description = "Open a location or search query in the user's map app.",
             paramNames = listOf("query"),
             risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "open_map needs a non-empty 'query'")
@@ -177,6 +203,7 @@ object ToolRegistry {
             description = "Open the Android clock app with a timer configured.",
             paramNames = listOf("seconds", "label"),
             risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
             execute = { app, params ->
                 val seconds = params.optInt("seconds")
                 if (seconds <= 0) return@ToolDefinition ToolResult(false, "set_timer needs positive 'seconds'")
@@ -192,6 +219,7 @@ object ToolRegistry {
             description = "Open the calendar app with an event prefilled. Does not save without user confirmation there.",
             paramNames = listOf("title", "startMillis", "endMillis", "location"),
             risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
             execute = { app, params ->
                 val start = params.optLong("startMillis")
                 if (start <= 0) return@ToolDefinition ToolResult(false, "create_calendar_event needs epoch-millisecond 'startMillis'")
@@ -212,6 +240,7 @@ object ToolRegistry {
             description = "Search the user's on-device calendar events by title, from now onward.",
             paramNames = listOf("query"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_calendar needs a non-empty 'query'")
@@ -241,6 +270,7 @@ object ToolRegistry {
             description = "Evaluate an arithmetic expression (+ - * / parentheses, decimals) and return the result.",
             paramNames = listOf("expression"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { _, params ->
                 val expr = params.optString("expression")
                 if (expr.isBlank()) return@ToolDefinition ToolResult(false, "calculate needs a non-empty 'expression'")
@@ -256,6 +286,7 @@ object ToolRegistry {
             description = "List the models installed on-device, which one is active, and their capabilities.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, _ ->
                 val models = app.container.db.modelDao().observeModels().first()
                 if (models.isEmpty()) ToolResult(true, "No models installed.")
@@ -269,6 +300,7 @@ object ToolRegistry {
             description = "Search facts previously remembered about the user.",
             paramNames = listOf("query"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DATA,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_memories needs a non-empty 'query'")
@@ -285,9 +317,10 @@ object ToolRegistry {
             description = "Read live device status: battery, storage free, memory, and network connectivity.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { app, _ ->
                 if (!app.container.settingsRepository.deviceStatusToolEnabled.first()) {
-                    return@ToolDefinition ToolResult(false, "Device status is disabled in Settings → Security.")
+                    return@ToolDefinition ToolResult(false, "Device status is off. Enable it in Settings → Privacy & security.")
                 }
                 withContext(Dispatchers.IO) {
                     val battery = (app.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager)
@@ -325,6 +358,7 @@ object ToolRegistry {
             description = "Get the current on-device date and time.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { _, _ ->
                 val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.FULL, java.text.DateFormat.SHORT)
                 ToolResult(true, fmt.format(java.util.Date()))
@@ -336,6 +370,7 @@ object ToolRegistry {
                 "(m, km, mi, ft, in, cm, kg, g, lb, oz, c, f, k).",
             paramNames = listOf("value", "from", "to"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { _, params ->
                 val value = params.optDouble("value", Double.NaN)
                 val from = params.optString("from")
@@ -356,6 +391,7 @@ object ToolRegistry {
             description = "Generate a random integer between min and max (inclusive), e.g. for a dice roll or a coin flip.",
             paramNames = listOf("min", "max"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { _, params ->
                 val min = params.optInt("min", 1)
                 val max = params.optInt("max", 100)
@@ -368,6 +404,7 @@ object ToolRegistry {
             description = "Read the current text on the device clipboard.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { app, _ ->
                 val clip = (app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)
                     ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
@@ -379,6 +416,7 @@ object ToolRegistry {
             description = "Copy text to the device clipboard.",
             paramNames = listOf("text"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.DEVICE,
             execute = { app, params ->
                 val text = params.optString("text")
                 if (text.isBlank()) return@ToolDefinition ToolResult(false, "write_clipboard needs non-empty 'text'")
@@ -388,46 +426,11 @@ object ToolRegistry {
             }
         ),
         ToolDefinition(
-            name = "search_files",
-            description = "Search filenames in the user's Downloads folder.",
-            paramNames = listOf("query"),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, params ->
-                val query = params.optString("query")
-                if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_files needs a non-empty 'query'")
-                if (!app.container.settingsRepository.filesToolEnabled.first()) {
-                    return@ToolDefinition ToolResult(false, "Files access is disabled in Settings → Security.")
-                }
-                // Downloads is a shared MediaStore collection every app can query by filename
-                // without READ_EXTERNAL_STORAGE on Android 13+ (that permission isn't even
-                // requestable there — see the manifest's maxSdkVersion note); below 13, the
-                // Settings toggle above already required granting it.
-                if (android.os.Build.VERSION.SDK_INT <= 32 &&
-                    ContextCompat.checkSelfPermission(app, Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    return@ToolDefinition ToolResult(false, "Files permission hasn't been granted.")
-                }
-                withContext(Dispatchers.IO) {
-                    val results = mutableListOf<String>()
-                    runCatching {
-                        app.contentResolver.query(
-                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                            arrayOf(MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.DATE_MODIFIED),
-                            "${MediaStore.Downloads.DISPLAY_NAME} LIKE ?", arrayOf("%$query%"),
-                            "${MediaStore.Downloads.DATE_MODIFIED} DESC"
-                        )?.use { cursor ->
-                            while (cursor.moveToNext() && results.size < 10) results += cursor.getString(0)
-                        }
-                    }
-                    ToolResult(true, if (results.isEmpty()) "No files in Downloads matched \"$query\"." else results.joinToString("\n") { "- $it" })
-                }
-            }
-        ),
-        ToolDefinition(
             name = "current_location",
             description = "Get the device's last known approximate location (latitude/longitude only, no address).",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
             execute = { app, _ ->
                 gatedResult(app, app.container.settingsRepository.locationToolEnabled, Manifest.permission.ACCESS_COARSE_LOCATION, "Location") {
                     withContext(Dispatchers.IO) {
@@ -459,6 +462,7 @@ object ToolRegistry {
             description = "Create a to-do task.",
             paramNames = listOf("text"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val text = params.optString("text")
                 if (text.isBlank()) return@ToolDefinition ToolResult(false, "create_task needs non-empty 'text'")
@@ -471,6 +475,7 @@ object ToolRegistry {
             description = "List open (not yet completed) to-do tasks.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, _ ->
                 val tasks = app.container.db.noteDao().getTaskNotes()
                     .filter { "task" in it.tags.split(",") }
@@ -483,6 +488,7 @@ object ToolRegistry {
             description = "Mark a to-do task as completed, by matching its text.",
             paramNames = listOf("query"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val query = params.optString("query")
                 if (query.isBlank()) return@ToolDefinition ToolResult(false, "complete_task needs a non-empty 'query'")
@@ -498,6 +504,7 @@ object ToolRegistry {
             description = "Launch another installed app by name.",
             paramNames = listOf("name"),
             risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
             execute = { app, params ->
                 val name = params.optString("name")
                 if (name.isBlank()) return@ToolDefinition ToolResult(false, "open_app needs a non-empty 'name'")
@@ -512,40 +519,11 @@ object ToolRegistry {
             }
         ),
         ToolDefinition(
-            name = "screen_time_summary",
-            description = "Summarize today's on-device screen time by app.",
-            paramNames = emptyList(),
-            risk = ToolRisk.READ_ONLY,
-            execute = { app, _ ->
-                if (!app.container.settingsRepository.screenTimeToolEnabled.first()) {
-                    return@ToolDefinition ToolResult(false, "Screen time is disabled in Settings → Security.")
-                }
-                val appOps = app.getSystemService(android.content.Context.APP_OPS_SERVICE) as AppOpsManager
-                val hasAccess = appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), app.packageName) == AppOpsManager.MODE_ALLOWED
-                if (!hasAccess) return@ToolDefinition ToolResult(false, "Usage-access permission hasn't been granted.")
-                withContext(Dispatchers.IO) {
-                    val usm = app.getSystemService(android.content.Context.USAGE_STATS_SERVICE) as UsageStatsManager
-                    val cal = java.util.Calendar.getInstance().apply {
-                        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0)
-                    }
-                    val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
-                    val pm = app.packageManager
-                    val top = stats.filter { it.totalTimeInForeground > 0 }
-                        .sortedByDescending { it.totalTimeInForeground }
-                        .take(8)
-                        .map { stat ->
-                            val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(stat.packageName, 0)).toString() }.getOrDefault(stat.packageName)
-                            "$label: ${stat.totalTimeInForeground / 60_000} min"
-                        }
-                    ToolResult(true, if (top.isEmpty()) "No usage recorded yet today." else top.joinToString("\n") { "- $it" })
-                }
-            }
-        ),
-        ToolDefinition(
             name = "log_expense",
             description = "Log an expense to the running expense ledger.",
             paramNames = listOf("merchant", "amount", "currency", "category", "paymentMethod"),
             risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val merchant = params.optString("merchant")
                 val amount = params.optDouble("amount", Double.NaN)
@@ -565,6 +543,7 @@ object ToolRegistry {
             description = "List recent logged expenses, optionally filtered by category, with a running total.",
             paramNames = listOf("category"),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, params ->
                 val category = params.optString("category")
                 val expenses = if (category.isBlank()) app.container.db.expenseDao().observeAll().first().take(20)
@@ -583,6 +562,7 @@ object ToolRegistry {
             description = "A morning briefing combining today's calendar events, open tasks, and device status.",
             paramNames = emptyList(),
             risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.PRODUCTIVITY,
             execute = { app, _ ->
                 val sections = mutableListOf<String>()
                 val settings = app.container.settingsRepository
@@ -624,7 +604,7 @@ object ToolRegistry {
         label: String,
         query: suspend () -> String
     ): ToolResult {
-        if (!enabledFlow.first()) return ToolResult(false, "$label access is disabled in Settings → Security.")
+        if (!enabledFlow.first()) return ToolResult(false, "$label access is off. Enable it in Settings → Privacy & security.")
         if (ContextCompat.checkSelfPermission(app, permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return ToolResult(false, "$label permission hasn't been granted.")
         }
@@ -636,17 +616,20 @@ object ToolRegistry {
     /** [enabledIds] filters which tools are advertised to the model — the global Settings →
      * Tools disable list plus any per-chat override (see Chat.toolOverrideMap()), resolved by
      * the caller. Defaults to every tool for callers (like [com.vervan.chat.ui.chat.ChatViewModel.inspectContext])
-     * that just want the full catalog's footprint. */
+     * that just want the full catalog's footprint.
+     *
+     * Always the discovery pointer, never a full per-tool dump — see this file's top doc
+     * comment. A prompt that describes every tool's params on every turn doesn't scale past a
+     * handful of tools, especially for a small on-device model paying that cost whether or not
+     * it ever calls one.
+     */
     fun catalogDescription(enabledIds: Set<String> = tools.map { it.name }.toSet()): String {
         val visible = tools.filter { it.name in enabledIds }
         if (visible.isEmpty()) return ""
-        return buildString {
-            appendLine("You can call tools by emitting a block like this on its own, when it helps answer the request:")
-            appendLine("<tool_call>{\"tool\": \"tool_name\", \"params\": {\"param\": \"value\"}}</tool_call>")
-            appendLine("Available tools:")
-            visible.forEach { t -> appendLine("- ${t.name}(${t.paramNames.joinToString()}): ${t.description}") }
-            appendLine("Only emit a tool call when you actually need one. Otherwise answer normally.")
-        }
+        return "You have access to tools, called by emitting a block like this on its own: " +
+            "<tool_call>{\"tool\": \"tool_name\", \"params\": {\"param\": \"value\"}}</tool_call>\n" +
+            "Call list_tools first to see what's available, then tool_details(name) for a specific " +
+            "tool's parameters before calling it. Only reach for a tool when you actually need one.\n"
     }
 
     private fun launch(app: com.vervan.chat.VervanApp, intent: Intent, label: String): ToolResult = try {

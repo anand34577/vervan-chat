@@ -391,14 +391,14 @@ class ModelDownloadRepository(
                 validator.validateTflite(File(modelFile.tempPath))
                 files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
             }
-            ModelFormat.ONNX_TTS, ModelFormat.ONNX_STT, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
+            ModelFormat.ONNX_TTS, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
         }
 
         setStatus(pkgId, ModelStatus.IMPORTING)
         if (isVoiceLikeCategory(catalog.category)) {
             // Neither a TTS voice nor an STT model is a loadable chat model — skip
             // ModelImportManager/ModelInfo entirely and write it where
-            // PiperTtsEngine/KokoroTtsEngine/WhisperSttEngine already look (TtsVoiceModelDao),
+            // PiperTtsEngine/KokoroTtsEngine/WhisperCppSttEngine already look (TtsVoiceModelDao),
             // same as a voice downloaded through the older TtsModelDownloadManager path.
             ttsVoiceModelDao.upsert(finalizeVoiceModel(catalog, files))
         } else {
@@ -445,12 +445,12 @@ class ModelDownloadRepository(
      * [DownloadFile.tempPath] at this point — this catalog/format never goes through the
      * LITERTLM/TFLITE rename-to-finalPath step) into the canonical `<root>/<engine>_<language>/`
      * directory [com.vervan.chat.voice.PiperTtsEngine]/[com.vervan.chat.voice.KokoroTtsEngine]/
-     * [com.vervan.chat.voice.WhisperSttEngine] already read via [TtsVoiceModelDao] — same layout
+     * [com.vervan.chat.voice.WhisperCppSttEngine] already read via [TtsVoiceModelDao] — same layout
      * the older [com.vervan.chat.voice.TtsModelDownloadManager] path writes for TTS voices, so
      * both sources are interchangeable to the engines. TTS voices land under `tts_voices/`, STT
      * models under `stt_models/` — purely a filesystem-tidiness split, both write the same
      * [TtsVoiceModel] row shape. */
-    private fun finalizeVoiceModel(catalog: CatalogModel, files: List<DownloadFile>): TtsVoiceModel {
+    private suspend fun finalizeVoiceModel(catalog: CatalogModel, files: List<DownloadFile>): TtsVoiceModel {
         val engine = catalog.ttsEngine ?: throw ModelDownloadException(ModelErrorCode.UNKNOWN, "Catalog entry missing engine identifier: ${catalog.modelId}")
         val language = catalog.ttsLanguage ?: throw ModelDownloadException(ModelErrorCode.UNKNOWN, "Catalog entry missing language identifier: ${catalog.modelId}")
         val rootDirName = if (catalog.category == ModelRole.STT_MODEL) "stt_models" else "tts_voices"
@@ -469,7 +469,16 @@ class ModelDownloadRepository(
         // model is ggml-tiny.bin, so the old constant always produced an empty hash for it.
         val modelFile = files.firstOrNull { it.role == ModelFileRole.MODEL }?.let { File(voiceDir, it.fileName) }
         val hash = if (modelFile?.isFile == true) sha256Of(modelFile) else ""
-        return TtsVoiceModel(engine = engine, language = language, filePath = voiceDir.absolutePath, fileSizeBytes = totalBytes, sha256 = hash)
+        // Reuse the existing (engine, language) row's id, if one exists, instead of always
+        // inserting a fresh row: TtsVoiceModel.id is a random UUID per construction, and
+        // upsert() only replaces by primary key — a re-download that always minted a new id would
+        // leave a stale duplicate row behind (a previous import/download at the same slot), which
+        // observeAll()/associateBy-keyed lookups could then resolve to instead of this fresh one.
+        val existingId = ttsVoiceModelDao.getByEngine(engine, language)?.id
+        return TtsVoiceModel(
+            id = existingId ?: java.util.UUID.randomUUID().toString(),
+            engine = engine, language = language, filePath = voiceDir.absolutePath, fileSizeBytes = totalBytes, sha256 = hash
+        )
     }
 
     /** [TtsVoiceModel.sha256] is informational only (support/debugging, not verified against a

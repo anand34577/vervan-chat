@@ -47,7 +47,7 @@ class PersonaTestBenchViewModel(private val app: VervanApp, private val personaI
             try {
                 val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
                 if (model == null) {
-                    _error.value = "No active generation model."
+                    _error.value = "No model is ready. Open Settings → AI models and load one."
                     return@launch
                 }
                 val prompt = "${p.systemInstruction}\n\nUser: ${_samplePrompt.value}\nAssistant:"

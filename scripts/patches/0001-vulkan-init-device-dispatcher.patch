@@ -75,11 +75,16 @@ also cover any other device advertising a feature without providing the function
 
 Upstream as of 178a6c4 (2026-07-19) does none of these.
 
+Rebased against 67b9b0e (2026-07-22): ggml_vk_create_queue's call site changed from an
+out-param style to a plain assignment a few lines below the insertion point, which shifted
+hunk 1's context enough that `git apply` no longer matched it (the other four hunks kept
+applying cleanly, just at a 61-line offset). No functional changes versus the original patch.
+
 diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-index c3fd436..0f46b5c 100644
+index 5dcf450..be73de9 100644
 --- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
 +++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-@@ -6591,6 +6591,28 @@ static vk_device ggml_vk_get_device(size_t idx) {
+@@ -6676,6 +6676,28 @@ static vk_device ggml_vk_get_device(size_t idx) {
          device_create_info.setPNext(&device_features2);
          device->device = device->physical_device.createDevice(device_create_info);
  
@@ -106,9 +111,9 @@ index c3fd436..0f46b5c 100644
 +        }
 +
          // Queues
-         ggml_vk_create_queue(device, device->compute_queue, compute_queue_family_index, 0, { vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer }, false);
+         device->compute_queue = ggml_vk_create_queue(device, compute_queue_family_index, 0, { vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer }, false);
  
-@@ -8400,6 +8422,27 @@ static uint32_t ggml_vk_guess_split_k(ggml_backend_vk_context * ctx, uint32_t m,
+@@ -8483,6 +8505,27 @@ static uint32_t ggml_vk_guess_split_k(ggml_backend_vk_context * ctx, uint32_t m,
      return split_k;
  }
  
@@ -136,7 +141,7 @@ index c3fd436..0f46b5c 100644
  static vk_pipeline ggml_vk_guess_matmul_pipeline(ggml_backend_vk_context * ctx, vk_matmul_pipeline& mmp, uint32_t m, uint32_t n, bool aligned, ggml_type src0_type, ggml_type src1_type) {
      VK_LOG_DEBUG("ggml_vk_guess_matmul_pipeline(" << m << ", " << n << ", " << aligned << ", " << ggml_type_name(src0_type) << ", " << ggml_type_name(src1_type) << ")");
  
-@@ -8869,7 +8912,12 @@ static void ggml_vk_mul_mat_q_f16(ggml_backend_vk_context * ctx, vk_context& sub
+@@ -8952,7 +8995,12 @@ static void ggml_vk_mul_mat_q_f16(ggml_backend_vk_context * ctx, vk_context& sub
      const ggml_type effective_src1_type = quantize_y ? GGML_TYPE_Q8_1 : (y_f32_kernel ? GGML_TYPE_F32 : src1->type);
  
      const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_pipeline_align(ctx, mmp, ne01, ne11, qx_needs_dequant ? f16_type : src0->type, effective_src1_type));
@@ -150,7 +155,7 @@ index c3fd436..0f46b5c 100644
  
      vk_pipeline pipeline = ggml_vk_guess_matmul_pipeline(ctx, mmp, ne01, ne11, aligned, qx_needs_dequant ? f16_type : src0->type, effective_src1_type);
  
-@@ -9805,7 +9853,9 @@ static void ggml_vk_mul_mat_id_q_f16(ggml_backend_vk_context * ctx, vk_context&
+@@ -9888,7 +9936,9 @@ static void ggml_vk_mul_mat_id_q_f16(ggml_backend_vk_context * ctx, vk_context&
      const ggml_type effective_src1_type = quantize_y ? GGML_TYPE_Q8_1 : (y_f32_kernel ? GGML_TYPE_F32 : src1->type);
  
      const uint32_t kpad = quantize_y ? 0 : ggml_vk_align_size(ne10, ggml_vk_guess_matmul_id_pipeline_align(ctx, mmp, ne01, nei1, qx_needs_dequant ? f16_type : src0->type, effective_src1_type));
@@ -161,7 +166,7 @@ index c3fd436..0f46b5c 100644
  
      vk_pipeline pipeline = ggml_vk_guess_matmul_id_pipeline(ctx, mmp, ne01, nei1, aligned, qx_needs_dequant ? f16_type : src0->type, effective_src1_type);
  
-@@ -17359,11 +17409,22 @@ static void ggml_backend_vk_device_get_props(ggml_backend_dev_t dev, struct ggml
+@@ -17442,11 +17492,22 @@ static void ggml_backend_vk_device_get_props(ggml_backend_dev_t dev, struct ggml
      props->type        = ggml_backend_vk_device_get_type(dev);
      props->device_id   = ctx->pci_bus_id.empty() ? nullptr : ctx->pci_bus_id.c_str();
      ggml_backend_vk_device_get_memory(dev, &props->memory_free, &props->memory_total);

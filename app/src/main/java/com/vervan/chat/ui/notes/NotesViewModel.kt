@@ -119,7 +119,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
             _error.value = null
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No chat model selected. Import or activate one in Models."
+                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
                 _running.value = false
                 return@launch
             }
