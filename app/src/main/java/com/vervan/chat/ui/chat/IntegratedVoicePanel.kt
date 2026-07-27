@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanExtraShapes
@@ -164,11 +165,7 @@ internal fun IntegratedVoicePanel(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            ResponsiveActions(modifier = Modifier.padding(top = Space.sm)) {
                 VoicePanelAction(
                     icon = if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
                     label = if (microphoneMuted) "Unmute" else "Mute",

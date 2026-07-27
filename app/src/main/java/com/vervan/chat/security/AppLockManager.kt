@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -37,7 +38,6 @@ class AppLockManager(context: Context) {
     val isLocked: StateFlow<Boolean> = _isLocked
 
     @Volatile private var backgroundedAt: Long? = null
-
     fun hasPin(): Boolean = prefs.contains(KEY_HASH)
 
     fun setPin(pin: String) {
@@ -45,21 +45,45 @@ class AppLockManager(context: Context) {
         prefs.edit()
             .putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
             .putString(KEY_HASH, Base64.encodeToString(hash(pin, salt), Base64.NO_WRAP))
+            .remove(KEY_FAILED_ATTEMPTS)
+            .remove(KEY_LOCKED_UNTIL)
             .apply()
     }
 
-    fun clearPin() { prefs.edit().remove(KEY_SALT).remove(KEY_HASH).apply() }
+    fun clearPin() {
+        prefs.edit()
+            .remove(KEY_SALT)
+            .remove(KEY_HASH)
+            .remove(KEY_FAILED_ATTEMPTS)
+            .remove(KEY_LOCKED_UNTIL)
+            .apply()
+    }
 
     fun verifyPin(pin: String): Boolean {
+        if (pinLockoutRemainingMs() > 0) return false
         val saltB64 = prefs.getString(KEY_SALT, null) ?: return false
         val hashB64 = prefs.getString(KEY_HASH, null) ?: return false
         val salt = Base64.decode(saltB64, Base64.NO_WRAP)
-        val candidate = Base64.encodeToString(hash(pin, salt), Base64.NO_WRAP)
-        // Constant-time-ish compare isn't critical here — this gates local UI access behind a
-        // 4+ digit PIN with device-level rate limiting via the lock screen itself, not a
-        // network-facing auth endpoint where timing attacks are a real concern.
-        return candidate == hashB64
+        val expected = Base64.decode(hashB64, Base64.NO_WRAP)
+        val correct = MessageDigest.isEqual(hash(pin, salt), expected)
+        if (correct) {
+            prefs.edit().remove(KEY_FAILED_ATTEMPTS).remove(KEY_LOCKED_UNTIL).apply()
+        } else {
+            val failedAttempts = prefs.getInt(KEY_FAILED_ATTEMPTS, 0) + 1
+            if (failedAttempts >= MAX_PIN_ATTEMPTS) {
+                prefs.edit()
+                    .remove(KEY_FAILED_ATTEMPTS)
+                    .putLong(KEY_LOCKED_UNTIL, System.currentTimeMillis() + PIN_LOCKOUT_MS)
+                    .apply()
+            } else {
+                prefs.edit().putInt(KEY_FAILED_ATTEMPTS, failedAttempts).apply()
+            }
+        }
+        return correct
     }
+
+    fun pinLockoutRemainingMs(): Long =
+        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - System.currentTimeMillis()).coerceAtLeast(0)
 
     /** Locks immediately — cold start with lock enabled, or a manual "Lock now" action. */
     fun lockNow() { _isLocked.value = true }
@@ -86,6 +110,10 @@ class AppLockManager(context: Context) {
     companion object {
         private const val KEY_SALT = "pin_salt"
         private const val KEY_HASH = "pin_hash"
+        private const val KEY_FAILED_ATTEMPTS = "pin_failed_attempts"
+        private const val KEY_LOCKED_UNTIL = "pin_locked_until"
         private const val PBKDF2_ITERATIONS = 120_000
+        private const val MAX_PIN_ATTEMPTS = 5
+        private const val PIN_LOCKOUT_MS = 30_000L
     }
 }

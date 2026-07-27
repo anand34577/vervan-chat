@@ -5,10 +5,18 @@ import androidx.room.Query
 import com.vervan.chat.data.db.entities.Chat
 import kotlinx.coroutines.flow.Flow
 
+data class WorkspaceChatCount(
+    val workspaceId: String,
+    val count: Int
+)
+
 @Dao
 interface ChatDao : BaseDao<Chat> {
     @Query("SELECT * FROM chats WHERE archived = 0 AND deletedAt IS NULL AND (draft != '' OR EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)) ORDER BY pinned DESC, updatedAt DESC")
     fun observeChats(): Flow<List<Chat>>
+
+    @Query("SELECT * FROM chats WHERE archived = 0 AND deletedAt IS NULL AND isTemporary = 0 AND (draft != '' OR EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)) ORDER BY updatedAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<Chat>>
 
     @Query("SELECT * FROM chats WHERE deletedAt IS NULL AND (draft != '' OR EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)) ORDER BY pinned DESC, updatedAt DESC")
     fun observeListableChats(): Flow<List<Chat>>
@@ -33,6 +41,16 @@ interface ChatDao : BaseDao<Chat> {
 
     @Query("SELECT COUNT(*) FROM chats WHERE workspaceId = :workspaceId AND deletedAt IS NULL AND archived = 0")
     fun observeActiveCountForWorkspace(workspaceId: String): Flow<Int>
+
+    @Query(
+        """
+        SELECT workspaceId, COUNT(*) AS count
+        FROM chats
+        WHERE deletedAt IS NULL AND archived = 0
+        GROUP BY workspaceId
+        """
+    )
+    fun observeActiveCountsByWorkspace(): Flow<List<WorkspaceChatCount>>
 
     @Query("SELECT COUNT(*) FROM chats WHERE workspaceId = :workspaceId AND deletedAt IS NULL AND archived = 1")
     fun observeArchivedCountForWorkspace(workspaceId: String): Flow<Int>

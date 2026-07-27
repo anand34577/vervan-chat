@@ -35,7 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,8 +52,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -87,7 +89,7 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
         )
     }) { padding ->
         PageContainer(Modifier.padding(padding)) {
-            Column(Modifier.fillMaxSize().padding(Space.lg)) {
+            Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -127,6 +129,14 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                 Slider(value = pauseMs.toFloat(), onValueChange = { pauseMs = it.toInt() }, valueRange = 0f..1000f)
 
                 when (val p = phase) {
+                    TextToSpeechViewModel.Phase.LoadingEngine -> {
+                        Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
+                            Text("Loading voice engine… this can take a moment the first time", style = MaterialTheme.typography.bodyMedium)
+                            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                            OutlinedButton(onClick = vm::cancel) { Text("Cancel") }
+                        }
+                    }
                     is TextToSpeechViewModel.Phase.Generating -> {
                         Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
@@ -201,12 +211,13 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                                     engine = p.engine
                                     if (p.engine == "SUPERTONIC") supertonicVoice = p.voiceVariant
                                 },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                                colors = SurfaceRole.Card.cardColors(),
+                                border = SurfaceRole.Card.border(),
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(Space.md), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(p.title, style = MaterialTheme.typography.bodyMedium)
+                                        OverflowTooltipText(p.title, style = MaterialTheme.typography.bodyMedium)
                                         Text(
                                             "${p.engine} · ${(p.durationMs / 1000)}s",
                                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant

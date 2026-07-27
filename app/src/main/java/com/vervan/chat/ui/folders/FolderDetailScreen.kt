@@ -14,8 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -45,8 +46,14 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.SectionCard
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -63,23 +70,35 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showActions by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(folder?.name ?: "Folder") },
+                title = { OverflowTooltipText(folder?.name ?: "Folder") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
-                    TextButton(onClick = { renaming = true }, enabled = folder != null) { Text("Rename") }
-                    TextButton(onClick = { showDeleteConfirm = true }, enabled = folder != null) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    IconButton(onClick = { showActions = true }, enabled = folder != null) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Folder actions")
+                    }
+                    DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Rename") },
+                            onClick = { showActions = false; renaming = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showActions = false; showDeleteConfirm = true }
+                        )
+                    }
                 }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.fillMaxWidth()) {
             Text("Folder defaults", style = MaterialTheme.typography.titleSmall)
-            Text("Applied to new chats in this folder.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+            Text("Applied to new chats in this folder.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
 
             Text("Default persona", style = MaterialTheme.typography.labelMedium)
             Text(
@@ -92,38 +111,46 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                 onSelect = { vm.setDefaultPersona(it) }
             )
 
-            Text("Default model", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+            Text("Default model", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
             FlowChips(
                 options = listOf("None" to null) + models.filter { it.role == ModelRole.GENERATION }.map { it.displayName to it.id },
                 selected = folder?.defaultModelId,
                 onSelect = { vm.setDefaultModel(it) }
             )
 
-            Text("Default sources", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+            Text("Default sources", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
             MultiSelectChips(
                 options = knowledgeBases.map { it.name to it.id },
                 selected = folder?.kbIdList() ?: emptyList(),
                 onToggle = { ids -> vm.setDefaultKbs(ids) }
             )
 
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
                 OutlinedButton(onClick = { scope.launch { onOpenChat(vm.createChat()) } }) { Text("New chat here") }
                 OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text("New note here") }
             }
 
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(Modifier.padding(vertical = Space.md))
 
-            Text("Chats (${chats.size})", style = MaterialTheme.typography.titleSmall)
-            chats.forEach { chat ->
-                Card(onClick = { onOpenChat(chat.id) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(chat.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
+            VervanSectionHeader("Chats", count = chats.size, topPadding = Space.xs)
+            if (chats.isNotEmpty()) {
+                SectionCard(
+                    items = chats.map { chat ->
+                        {
+                            SectionRow(title = chat.title, onClick = { onOpenChat(chat.id) })
+                        }
+                    }
+                )
             }
-            Text("Notes (${notes.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-            notes.forEach { note ->
-                Card(onClick = { onOpenNote(note.id) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(note.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                }
+            VervanSectionHeader("Notes", count = notes.size)
+            if (notes.isNotEmpty()) {
+                SectionCard(
+                    items = notes.map { note ->
+                        {
+                            SectionRow(title = note.title, onClick = { onOpenNote(note.id) })
+                        }
+                    }
+                )
             }
         }
         }
@@ -157,9 +184,9 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
 @Composable
 private fun FlowChips(options: List<Pair<String, String?>>, selected: String?, onSelect: (String?) -> Unit) {
     FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        verticalArrangement = Arrangement.spacedBy(Space.xs)
     ) {
         options.forEach { (label, id) ->
             VervanFilterChip(selected = selected == id, onClick = { onSelect(id) }, label = { Text(label, maxLines = 1) })
@@ -171,9 +198,9 @@ private fun FlowChips(options: List<Pair<String, String?>>, selected: String?, o
 @Composable
 private fun MultiSelectChips(options: List<Pair<String, String>>, selected: List<String>, onToggle: (List<String>) -> Unit) {
     FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        verticalArrangement = Arrangement.spacedBy(Space.xs)
     ) {
         options.forEach { (label, id) ->
             val isSelected = id in selected

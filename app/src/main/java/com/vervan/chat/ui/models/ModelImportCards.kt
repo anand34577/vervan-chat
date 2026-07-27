@@ -108,6 +108,7 @@ import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionLabel
@@ -674,7 +675,10 @@ internal fun ModelCard(
                         Checkbox(checked = selected, onCheckedChange = { onToggleSelect() }, modifier = Modifier.padding(end = 4.dp))
                     }
                     Column(Modifier.padding(end = 8.dp)) {
-                        Text(model.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        OverflowTooltipText(
+                            text = model.displayName,
+                            style = MaterialTheme.typography.titleSmall
+                        )
                         Text(
                             formatModelSize(model.fileSizeBytes),
                             style = MaterialTheme.typography.labelSmall,

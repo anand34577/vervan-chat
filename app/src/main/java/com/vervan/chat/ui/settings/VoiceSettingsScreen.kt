@@ -22,11 +22,12 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ContentCard
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -199,9 +200,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     val kokoroDownloaded = downloadedVoiceModels.any { it.engine == "KOKORO" && it.language == "multi" && it.isReady }
                     val supertonicDownloaded = downloadedVoiceModels.any { it.engine == "SUPERTONIC" && it.language == "multi" && it.isReady }
                     androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(top = Space.sm),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
                     ) {
                         FilterChip(
                             selected = ttsEnginePreference == "AUTO",
@@ -222,7 +223,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         )
                     }
                     if (!supertonicDownloaded) {
-                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = 4.dp)) {
+                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
                             Text("Open Model Manager to download Supertonic", style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
@@ -234,12 +235,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         Text(
                             "Supertonic voice",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 12.dp)
+                            modifier = Modifier.padding(top = Space.md)
                         )
                         androidx.compose.foundation.layout.FlowRow(
-                            modifier = Modifier.padding(top = 8.dp),
-                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                            modifier = Modifier.padding(top = Space.sm),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
                         ) {
                             installedVoices.forEach { voice ->
                                 val label = com.vervan.chat.modeldownload.ModelCatalog.all
@@ -252,7 +253,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                 )
                             }
                         }
-                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = 4.dp)) {
+                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
                             Text("Download more Supertonic voices in Model Manager", style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -348,7 +349,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         Text(
                             "whisper.cpp is unavailable in this build. Use another speech engine.",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp)
+                            modifier = Modifier.padding(top = Space.sm)
                         )
                     } else {
                         val whisperFile = com.vervan.chat.voice.WhisperCppSttEngine
@@ -361,7 +362,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                 else -> "whisper.cpp model: ready"
                             },
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp)
+                            modifier = Modifier.padding(top = Space.sm)
                         )
                         val installedWhisperModels = downloadedVoiceModels.filter {
                             it.engine.equals("WHISPER_CPP", ignoreCase = true) && it.isReady
@@ -370,16 +371,16 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             Text(
                                 "Model size",
                                 style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(top = 12.dp)
+                                modifier = Modifier.padding(top = Space.md)
                             )
                             Text(
                                 "Tiny/Base: fastest, least accurate. Small: balanced. Larger models are slower and use more memory.",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             androidx.compose.foundation.layout.FlowRow(
-                                modifier = Modifier.padding(top = 8.dp),
-                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.padding(top = Space.sm),
+                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
                             ) {
                                 installedWhisperModels.forEach { model ->
                                     val label = com.vervan.chat.modeldownload.ModelCatalog.all
@@ -396,12 +397,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     }
                     androidx.compose.material3.TextButton(
                         onClick = onOpenModelManager,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = Space.xs)
                     ) { Text("Download or import in Model Manager") }
 
                     if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         val gpuDisabledAfterCrash = remember { vm.whisperGpuDisabledAfterCrash() }
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("Try GPU for whisper.cpp (experimental)", style = MaterialTheme.typography.bodyMedium)
                                 Text(
@@ -432,7 +433,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     )
                     androidx.compose.material3.TextButton(
                         onClick = onOpenModelManager,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = Space.sm)
                     ) { Text("Open Model Manager") }
                 }
             }
@@ -448,7 +449,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         val downloaded = downloadedVoiceModels.any { it.engine == entry.engine && it.language == entry.language && it.isReady }
                         val activeJob = activeVoiceDownloadJobs.firstOrNull { it.label == entry.label }
                         Row(
-                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            Modifier.fillMaxWidth().padding(top = Space.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -541,8 +542,19 @@ private fun VoiceSliderRow(
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(valueLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            OverflowTooltipText(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = valueLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(start = Space.sm),
+            )
         }
         Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onValueChange, valueRange = range)
     }

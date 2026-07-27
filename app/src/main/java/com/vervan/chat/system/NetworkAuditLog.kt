@@ -11,11 +11,8 @@ data class NetworkAuditEntry(val timestamp: Long, val reason: String)
  * meant to call [record] first, so "no silent networking" is something the user can verify in
  * Diagnostics instead of just a claim in a settings screen nobody can check.
  *
- * As of this app's current feature set there are no such call sites at all — no model
- * downloader, no update checker, no external-link opener, no analytics. [entries] is expected
- * to stay permanently empty until one of those genuinely ships; this class exists so the first
- * one that does has somewhere to report to, rather than that being an ad-hoc decision made
- * later per call site.
+ * Current call sites include model and voice downloads, Model Store catalogue/artifact access,
+ * and local API-server lifecycle events. Conversation inference itself remains on-device.
  */
 class NetworkAuditLog {
     private val _entries = MutableStateFlow<List<NetworkAuditEntry>>(emptyList())

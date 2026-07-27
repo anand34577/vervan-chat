@@ -3,13 +3,10 @@ package com.vervan.chat.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,7 +33,6 @@ import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.ui.common.ConfirmDialog
-import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.SystemStatusStrip
@@ -126,10 +122,11 @@ fun BackupScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Export backup", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Includes app data, but not model files or imported documents.",
+                        "Includes your saved conversations, notes, workspaces, library content, tool history, and project metadata. " +
+                            "Model files, imported documents, media attachments, app settings, and tool favourites are not included.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                        modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
                     )
                     Button(onClick = { exportLauncher.launch(fileName) }, enabled = !busy) { Text("Export to file") }
                 }
@@ -138,10 +135,11 @@ fun BackupScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Restore backup", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Adds backup data and replaces matching items.",
+                        "Adds saved content and replaces matching items. Attachments and links to model or document files " +
+                            "work only when those original files are still available on this device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                        modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
                     )
                     OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }, enabled = !busy) { Text("Choose backup file") }
                 }
@@ -150,7 +148,7 @@ fun BackupScreen(onBack: () -> Unit) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Processing backup",
                     body = "Keep this screen open until the work finishes.",
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             resultMessage?.let {
@@ -159,7 +157,7 @@ fun BackupScreen(onBack: () -> Unit) {
                         title = "Backup operation failed",
                         message = it,
                         recovery = "Your data is safe. Check the file and free storage, then try again.",
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
                 } else {
                     SystemStatusStrip(
@@ -176,7 +174,8 @@ fun BackupScreen(onBack: () -> Unit) {
     pendingImportUri?.let { uri ->
         ConfirmDialog(
             title = "Restore this backup?",
-            body = "Matching items will be replaced. Other local data stays unchanged.",
+            body = "Matching saved content will be replaced. App settings and other local data stay unchanged. " +
+                "Backups do not contain model, document, or media files.",
             confirmLabel = "Restore",
             destructive = true,
             onConfirm = { pendingImportUri = null; runImport(uri) },

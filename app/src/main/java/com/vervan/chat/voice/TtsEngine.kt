@@ -10,8 +10,7 @@ data class TtsAudio(val samples: ShortArray, val sampleRateHz: Int)
  * implementation is active; [com.vervan.chat.voice.RealtimeVoiceController] only ever talks to
  * this interface, never a concrete engine. */
 interface TtsEngine {
-    /** Shown in the UI badge (e.g. "TTS: Supertonic") — same pattern as the existing
-     * "STT: ..." badge in [com.vervan.chat.ui.tools.VoiceChatScreen]. */
+    /** Shown in the "TTS: ..." UI badge (e.g. "TTS: Supertonic"). */
     val engineName: String
 
     /** Whether this engine's model files are downloaded/loaded and it can synthesize right

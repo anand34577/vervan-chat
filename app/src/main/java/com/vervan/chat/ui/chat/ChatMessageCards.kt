@@ -32,7 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,17 +69,17 @@ internal fun ClarificationCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("One detail before I continue", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+                Text("One detail before I continue", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
             }
-            Text(request.question, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            Text(request.question, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.sm))
             if (request.options.isNotEmpty()) {
                 androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     request.options.forEach { option ->
                         AssistChip(onClick = { onReply(option) }, enabled = enabled, label = { Text(option) })
@@ -90,7 +90,7 @@ internal fun ClarificationCard(
                 if (enabled) "Choose an answer or type your own below." else "Answered in the conversation.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp)
+                modifier = Modifier.padding(top = Space.sm)
             )
         }
     }
@@ -170,7 +170,7 @@ internal fun SourceCards(
     val app = LocalContext.current.applicationContext as VervanApp
     val expertMode by app.container.settingsRepository.expertMode.collectAsState(initial = false)
     if (array.length() == 0) {
-        Column(Modifier.padding(top = 8.dp)) {
+        Column(Modifier.padding(top = Space.sm)) {
             Text(
                 "Not grounded — no matching sources found in the selected knowledge bases",
                 style = MaterialTheme.typography.labelSmall,
@@ -194,12 +194,12 @@ internal fun SourceCards(
         kind = com.vervan.chat.ui.common.SubCardKind.Sources,
         title = "Sources (${array.length()})",
         collapsible = false,
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth()
+        modifier = Modifier.padding(top = Space.sm).fillMaxWidth()
     ) {
         androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
             for (i in 0 until array.length()) {
                 if (i in hiddenIndices) continue
@@ -227,7 +227,7 @@ internal fun SourceCards(
                     source.optString("sectionPath").takeIf { it.isNotBlank() }?.let {
                         Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text(source.optString("excerpt"), modifier = Modifier.padding(top = 8.dp))
+                    Text(source.optString("excerpt"), modifier = Modifier.padding(top = Space.sm))
                     Text(
                         if (expertMode) {
                             "Retrieval score ${String.format("%.2f", source.optDouble("score"))} · rank ${index + 1} · ranking signal, not confidence"
@@ -236,9 +236,9 @@ internal fun SourceCards(
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 12.dp)
+                        modifier = Modifier.padding(top = Space.md)
                     )
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                         TextButton(onClick = { clipboard.setText(source.optString("excerpt"), scope) }) {
                             Text("Copy excerpt", style = MaterialTheme.typography.labelSmall)
                         }
@@ -345,10 +345,10 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
     }
     var expanded by remember { mutableStateOf(false) }
     Card(
-        Modifier.fillMaxWidth().padding(top = 8.dp).clickable { expanded = !expanded },
+        Modifier.fillMaxWidth().padding(top = Space.sm).clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(10.dp)) {
+        Column(Modifier.padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (success) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
@@ -361,7 +361,9 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
                     style = MaterialTheme.typography.labelMedium,
                     fontFamily = com.vervan.chat.ui.theme.VervanMono,
                     color = if (success) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 6.dp)
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = Space.xs).weight(1f, fill = false)
                 )
                 Spacer(Modifier.weight(1f))
                 Icon(
@@ -370,26 +372,26 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
                     modifier = Modifier.size(18.dp)
                 )
             }
-            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
             // Full request (tool + params) and raw response JSON — collapsed by default so the
             // normal chat flow stays uncluttered, but always available per tool call, including
             // when scrolling back through history later (this is the persisted message, not a
             // transient in-session view).
             if (expanded) {
-                HorizontalDivider(Modifier.padding(top = 8.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(Modifier.padding(top = Space.sm, bottom = Space.sm), color = MaterialTheme.colorScheme.outlineVariant)
                 Text("Request", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     callObj?.optJSONObject("params")?.toString(2) ?: "(no parameters)",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = com.vervan.chat.ui.theme.VervanMono,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
                 )
                 Text("Response", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     obj.toString(2),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = com.vervan.chat.ui.theme.VervanMono,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = Space.xs)
                 )
             }
         }
@@ -406,11 +408,11 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
     val isExternal = obj.optString("risk") == "EXTERNAL_ACTION"
     var acknowledged by remember(toolCallJson) { mutableStateOf(!isExternal) }
     Card(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
+        Modifier.fillMaxWidth().padding(top = Space.sm),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.vervanWarning.copy(alpha = 0.5f))
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.vervanWarning)
                 Text(
@@ -422,20 +424,20 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
             if (params != null) {
                 Text(
                     params.toString(), style = MaterialTheme.typography.bodySmall,
-                    fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = 6.dp)
+                    fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = Space.sm)
                 )
             }
             if (isExternal) {
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = acknowledged, onCheckedChange = { acknowledged = it })
                     Text(
                         "This leaves the app and can't be undone from here",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 4.dp)
+                        modifier = Modifier.padding(start = Space.xs)
                     )
                 }
             }
-            Row(Modifier.padding(top = 8.dp)) {
+            Row(Modifier.padding(top = Space.sm)) {
                 TextButton(onClick = { onConfirm(true) }, enabled = acknowledged) { Text("Allow") }
                 TextButton(onClick = { onConfirm(false) }) { Text("Deny") }
             }

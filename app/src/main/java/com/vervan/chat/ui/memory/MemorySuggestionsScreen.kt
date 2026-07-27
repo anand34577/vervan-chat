@@ -28,7 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,19 +77,19 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                 items(pending, key = { it.id }) { suggestion ->
                     val conflict = vm.conflictFor(suggestion)
                     Card(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
-                        Column(Modifier.padding(12.dp)) {
+                        Column(Modifier.padding(Space.md)) {
                             Text(suggestion.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                                 Text(suggestion.scope.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (suggestion.key != null) Text("· key: ${suggestion.key}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                             if (conflict != null) {
-                                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                                     Text("Conflicts with existing: \"${conflict.text.take(60)}\"", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                                 }
                             }
-                            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                                 IconButton(onClick = {
                                     if (conflict != null) conflictDialog = suggestion to conflict
                                     else vm.accept(suggestion, overwriteConflict = false)
@@ -120,9 +120,9 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
             text = {
                 Column {
                     Text("A memory with key \"${suggestion.key}\" already exists:")
-                    Text("\"${conflict.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+                    Text("\"${conflict.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
                     Text("Suggested new value:")
-                    Text("\"${suggestion.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+                    Text("\"${suggestion.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
                     Text("Replace the existing one, or keep both?")
                 }
             },
@@ -153,7 +153,7 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                     BoundedTextField(
                         value = key, onValueChange = { key = it }, singleLine = true,
                         placeholder = "Key (optional)", maxLength = ValidationLimits.MEMORY_KEY,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = Space.sm)
                     )
                 }
             },

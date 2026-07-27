@@ -55,6 +55,15 @@ interface MessageDao : BaseDao<Message> {
     )
     fun observeLatestPerChat(): Flow<List<Message>>
 
+    @Query(
+        "SELECT m.* FROM messages m INNER JOIN (" +
+            "SELECT chatId, MAX(createdAt) AS maxCreated FROM messages " +
+            "WHERE role != 'SYSTEM' AND chatId IN (:chatIds) GROUP BY chatId" +
+            ") latest ON m.chatId = latest.chatId AND m.createdAt = latest.maxCreated " +
+            "WHERE m.chatId IN (:chatIds)"
+    )
+    fun observeLatestForChats(chatIds: List<String>): Flow<List<Message>>
+
     // Smart collections — single round-trip replacements for the previous
     // chats.forEach { getMessages(c.id) } N+1 in SmartCollectionsViewModel, which loaded every
     // message of every chat into memory on each recompute. DISTINCT chatId rides the chatId index.

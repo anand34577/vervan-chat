@@ -4,13 +4,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -18,7 +14,6 @@ import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,7 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -139,11 +134,11 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(
-            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Space.md)
-        ) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(Space.md)
+            ) {
             ToolIntro(
                 icon = Icons.AutoMirrored.Filled.CompareArrows,
                 title = "See exactly what changed",
@@ -182,12 +177,12 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                     recovery = "Check both versions or shorten large sections, then try again.",
                     actionLabel = "Try again",
                     onAction = { compare() },
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             if (comparedOnce && results.isEmpty() && errorText == null) {
-                Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Text("No meaningful differences found.", Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+                Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Text("No meaningful differences found.", Modifier.padding(Space.md), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (results.isNotEmpty()) {
@@ -197,14 +192,14 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                 )
             }
             results.forEach { (section, explanation) ->
-                Card(Modifier.fillMaxWidth().padding(top = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                    Column(Modifier.padding(12.dp)) {
+                Card(Modifier.fillMaxWidth().padding(top = Space.md), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                    Column(Modifier.padding(Space.md)) {
                         Text("Section $section", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text(explanation, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                        Text(explanation, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
                     }
                 }
             }
-        }
+            }
         }
     }
 }

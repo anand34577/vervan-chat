@@ -1,9 +1,7 @@
 package com.vervan.chat.ui.common
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -62,7 +60,7 @@ fun DiffViewer(
             )
         }
         if (onReplace != null || onInsertBelow != null || onCopy != null || onCancel != null) {
-            Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.End) {
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
                 onCancel?.let { TextButton(onClick = it) { Text("Cancel") } }
                 onCopy?.let { TextButton(onClick = it) { Text("Copy") } }
                 onInsertBelow?.let { TextButton(onClick = it) { Text("Insert below") } }

@@ -3,12 +3,8 @@ package com.vervan.chat.ui.tools
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Quiz
@@ -29,7 +25,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -135,9 +132,9 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
         Column(
-            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             ToolIntro(
@@ -150,14 +147,14 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(), minLines = 4,
                 placeholder = { Text("Paste study material to generate a quiz from") }
             )
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ResponsiveActions {
                 Box {
                     OutlinedButton(onClick = { difficultyMenuOpen = true }) { Text(difficulty) }
                     DropdownMenu(expanded = difficultyMenuOpen, onDismissRequest = { difficultyMenuOpen = false }) {
                         DIFFICULTIES.forEach { d -> DropdownMenuItem(text = { Text(d) }, onClick = { difficulty = d; difficultyMenuOpen = false }) }
                     }
                 }
-                Button(onClick = ::generate, enabled = sourceText.isNotBlank() && !isGenerating, modifier = Modifier.padding(start = 8.dp)) { Text("Generate quiz") }
+                Button(onClick = ::generate, enabled = sourceText.isNotBlank() && !isGenerating) { Text("Generate quiz") }
             }
             if (isGenerating) {
                 com.vervan.chat.ui.common.OperationProgressCard(
@@ -172,7 +169,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                     recovery = "Shorten the material or load a model, then try again.",
                     actionLabel = "Try again",
                     onAction = { generate() },
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             if (submitted) {
@@ -181,20 +178,20 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                     supportingText = "You answered $score of ${questions.size} correctly."
                 )
                 Card(
-                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    Modifier.fillMaxWidth().padding(top = Space.lg),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) { Text("Score: $score / ${questions.size}", Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium) }
+                ) { Text("Score: $score / ${questions.size}", Modifier.padding(Space.md), style = MaterialTheme.typography.titleMedium) }
             }
             questions.forEachIndexed { i, q ->
-                Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                    Column(Modifier.padding(12.dp)) {
+                Card(Modifier.fillMaxWidth().padding(top = Space.md)) {
+                    Column(Modifier.padding(Space.md)) {
                         Text("${i + 1}. ${q.question}", style = MaterialTheme.typography.bodyMedium)
                         when (q.type) {
                             "multiple_choice", "true_false" -> {
                                 val opts = q.options.ifEmpty { listOf("True", "False") }
                                 opts.forEach { opt ->
                                     Row(
-                                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                                        Modifier.fillMaxWidth().padding(top = Space.xs),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         RadioButton(
@@ -211,11 +208,11 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                                 onValueChange = { answers = answers + (i to it) },
                                 enabled = !submitted,
                                 placeholder = { Text("Your answer") },
-                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                             )
                         }
                         if (submitted) {
-                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            HorizontalDivider(Modifier.padding(vertical = Space.sm))
                             Text("Correct answer: ${q.correctAnswer}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             Text(q.explanation, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -223,7 +220,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                 }
             }
             if (questions.isNotEmpty() && !submitted) {
-                Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("Submit answers") }
+                Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) { Text("Submit answers") }
             }
         }
         }

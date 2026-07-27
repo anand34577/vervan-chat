@@ -35,7 +35,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
@@ -199,8 +201,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             ToolIntro(
                 icon = Icons.Filled.PhotoCamera,
                 title = "Scan a complete document",
@@ -209,17 +210,18 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             Text(
                 "Capture pages, then export or add them to Knowledge.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.sm)
             )
             OutlinedButton(
                 onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
             ) {
                 Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                Text(" Capture page ${pages.size + 1}")
+                Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
             }
             if (pages.isNotEmpty()) {
-                LazyRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(pages, key = { it }) { path ->
                         Box(Modifier.size(100.dp)) {
                             val bitmap = remember(path, thumbVersion) { ImageUtils.decodeThumbnail(path, 200)?.asImageBitmap() }
@@ -238,32 +240,31 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Processing ${pages.size} ${if (pages.size == 1) "page" else "pages"}",
                         body = "Reading and preparing captured pages. Keep this screen open.",
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
                 } else {
-                    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = ::exportPdf, modifier = Modifier.weight(1f)) {
+                    ResponsiveActions(Modifier.padding(top = Space.lg)) {
+                        OutlinedButton(onClick = ::exportPdf) {
                             Icon(Icons.Filled.PictureAsPdf, null, Modifier.size(18.dp))
-                            Text(" PDF")
+                            Text("PDF", modifier = Modifier.padding(start = Space.sm))
                         }
-                        OutlinedButton(onClick = ::exportImages, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = ::exportImages) {
                             Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
-                            Text(" Images")
+                            Text("Images", modifier = Modifier.padding(start = Space.sm))
                         }
                     }
-                    Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text(" Save as document (RAG)")
+                        Text("Save as document (RAG)", modifier = Modifier.padding(start = Space.sm))
                     }
-                    OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
                         Text("Create study material")
                     }
                 }
                 statusMessage?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                 }
             }
-        }
         }
     }
 }
@@ -333,7 +334,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
         androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = Color.Black) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, "Cancel crop", tint = Color.White) }
@@ -349,7 +350,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     }) { Text("Full page") }
                 }
 
-                Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)) {
+                Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = Space.lg)) {
                     // The displayed image rect inside this Box (ContentScale.Fit letterboxing) —
                     // needed to map normalized corners <-> screen px and back.
                     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -422,14 +423,14 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    Modifier.fillMaxWidth().padding(Space.lg),
+                    horizontalArrangement = Arrangement.spacedBy(Space.md)
                 ) {
                     OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving) { Text("Cancel") }
                     Button(onClick = ::confirmCrop, modifier = Modifier.weight(1f), enabled = !isSaving) {
                         if (isSaving) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text(" Saving…")
+                            Text("Saving…", modifier = Modifier.padding(start = Space.sm))
                         } else Text("Use this crop")
                     }
                 }

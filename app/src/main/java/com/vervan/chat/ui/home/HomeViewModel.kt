@@ -8,11 +8,14 @@ import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Message
+import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.Project
+import com.vervan.chat.data.db.entities.ToolRun
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -20,18 +23,26 @@ import kotlinx.coroutines.flow.stateIn
 class HomeViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
-    // "recent" = full list ordered pinned-then-recent; callers slice further if they only
-    // want a preview (see HomeScreen). Incognito mode excludes temporary chats,
-    // same as the main chat list and search.
-    val recentChats: StateFlow<List<Chat>> = db.chatDao().observeChats()
-        .map { it.filterNot { c -> c.isTemporary } }
+    // Home only renders a small continuation preview, so keep Room's observed result bounded
+    // instead of waking the screen with every row from growing chat/note/project tables.
+    val recentChats: StateFlow<List<Chat>> = db.chatDao().observeRecent(HOME_CHAT_LIMIT)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val latestMessagesByChat: StateFlow<Map<String, Message>> = db.messageDao().observeLatestPerChat()
-        .map { messages -> messages.associateBy { it.chatId } }
+    val latestMessagesByChat: StateFlow<Map<String, Message>> = recentChats
+        .flatMapLatest { chats ->
+            if (chats.isEmpty()) flowOf(emptyList())
+            else db.messageDao().observeLatestForChats(chats.map { it.id })
+        }
+        .map { messages: List<Message> -> messages.associateBy { it.chatId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val projects: StateFlow<List<Project>> = db.projectDao().observeAll()
+    val projects: StateFlow<List<Project>> = db.projectDao().observeRecent(HOME_SINGLE_ITEM_LIMIT)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentNotes: StateFlow<List<Note>> = db.noteDao().observeRecent(HOME_SINGLE_ITEM_LIMIT)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentToolRuns: StateFlow<List<ToolRun>> = db.toolRunDao().observeRecent(HOME_SINGLE_ITEM_LIMIT)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeModel: StateFlow<ModelInfo?> = db.modelDao().observeActiveModel(ModelRole.GENERATION)
@@ -64,5 +75,10 @@ class HomeViewModel(private val app: VervanApp) : ViewModel() {
         val chatId = createChat()
         com.vervan.chat.model.PendingChatSend.stash(chatId, text.trim())
         return chatId
+    }
+
+    private companion object {
+        const val HOME_CHAT_LIMIT = 3
+        const val HOME_SINGLE_ITEM_LIMIT = 1
     }
 }

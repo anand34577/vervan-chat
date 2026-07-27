@@ -23,8 +23,9 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +52,7 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         if (models.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(12.dp)) {
+            Column(Modifier.fillMaxSize().padding(Space.md)) {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
                     title = "Know what each model can do",
@@ -64,25 +65,25 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                 )
             }
         } else {
-        LazyColumn(Modifier.fillMaxSize().padding(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(Space.md)) {
             item {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
                     title = "Know what each model can do",
                     body = "Compare model features, context, and compatible runtimes.",
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = Space.md)
                 )
             }
             items(models, key = { it.id }) { model ->
-                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Column(Modifier.padding(12.dp)) {
+                Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
+                    Column(Modifier.padding(Space.md)) {
                         Text(model.displayName, style = MaterialTheme.typography.titleSmall)
                         Text(
                             "${model.fileSizeBytes / (1024 * 1024)} MB on disk · context ${model.contextTokens ?: "—"} tokens" +
                                 (if (model.isActive) " · Active" else ""),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        FlowRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             CapBadge("Text", true)
                             CapBadge("Vision", model.supportsVision)
                             CapBadge("Audio", model.supportsAudio)
@@ -114,6 +115,6 @@ private fun CapBadge(label: String, supported: Boolean?, neutral: Boolean = fals
         else -> "$label ?"
     }
     Surface(shape = MaterialTheme.shapes.small, color = color) {
-        Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+        Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs))
     }
 }

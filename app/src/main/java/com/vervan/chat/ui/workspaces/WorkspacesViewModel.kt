@@ -5,10 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.Workspace
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -35,7 +35,9 @@ class WorkspacesViewModel(app: VervanApp) : ViewModel() {
     val personas: StateFlow<List<Persona>> = db.personaDao().observePersonas()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun chatCount(workspaceId: String): Flow<Int> = db.chatDao().observeActiveCountForWorkspace(workspaceId)
+    val chatCounts: StateFlow<Map<String, Int>> = db.chatDao().observeActiveCountsByWorkspace()
+        .map { counts -> counts.associate { it.workspaceId to it.count } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     fun create(name: String, description: String, personaId: String) {
         if (name.isBlank()) return

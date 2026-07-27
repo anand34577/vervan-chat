@@ -123,7 +123,7 @@ fun VervanTopAppBar(
 ) {
     Column(modifier) {
         TopAppBar(
-            title = title,
+            title = { Box(Modifier.semantics { heading() }) { title() } },
             navigationIcon = navigationIcon,
             actions = actions,
             windowInsets = windowInsets,
@@ -249,11 +249,14 @@ fun VervanSectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                title,
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OverflowTooltipText(
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.semantics { heading() }
+                modifier = Modifier.weight(1f, fill = false).semantics { heading() }
             )
             count?.let {
                 Text(
@@ -265,7 +268,10 @@ fun VervanSectionHeader(
             }
         }
         if (actionLabel != null && onAction != null) {
-            TextButton(onClick = onAction) { Text(actionLabel) }
+            TextButton(
+                onClick = onAction,
+                modifier = Modifier.padding(start = Space.sm)
+            ) { Text(actionLabel, maxLines = 1) }
         }
     }
 }
@@ -304,7 +310,7 @@ fun SystemStatusStrip(
 ) {
     val color = tone.color()
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
         colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
         border = BorderStroke(1.dp, color.copy(alpha = 0.28f))
     ) {
@@ -352,11 +358,9 @@ fun ActionTile(
                 containerColor = iconContainerColor
             )
             Column(Modifier.weight(1f).padding(start = Space.md)) {
-                Text(
-                    title,
+                OverflowTooltipText(
+                    text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     body,

@@ -6,12 +6,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -31,7 +28,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +45,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.study.StudyWorkspaceViewModel
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
@@ -140,27 +138,26 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 780.dp) {
-            Column(Modifier.fillMaxSize().padding(Space.lg).verticalScroll(rememberScrollState())) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 780.dp) {
                 ToolIntro(
                     icon = Icons.Filled.School,
                     title = "Turn notes into a study deck",
-        body = "Photograph pages or notes to create flashcards on-device."
+                    body = "Photograph pages or notes to create flashcards on-device."
                 )
-                Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f), enabled = !generating) {
+                ResponsiveActions(Modifier.padding(top = Space.lg)) {
+                    OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                        Text("  Camera")
+                        Text("Camera", modifier = Modifier.padding(start = Space.sm))
                     }
-                    OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f), enabled = !generating) {
+                    OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                        Text("  Gallery")
+                        Text("Gallery", modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 if (ocrRunning) {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("  Reading the image…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Reading the image…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 OutlinedTextField(
@@ -200,13 +197,12 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         enabled = sourceText.isNotBlank() && deckName.isNotBlank() && !ocrRunning
                     ) {
                         Icon(Icons.Filled.School, null, Modifier.size(18.dp))
-                        Text("  Generate deck")
+                        Text("Generate deck", modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 error?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
                 }
-            }
         }
     }
 }

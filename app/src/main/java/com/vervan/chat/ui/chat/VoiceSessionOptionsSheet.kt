@@ -46,7 +46,7 @@ internal fun VoiceSessionOptionsSheet(
         )
         SessionOptionToggle(
             title = "Immersive presentation",
-        description = "Open hands-free mode in this conversation.",
+            description = "Open hands-free mode in this conversation.",
             checked = immersiveEnabled,
             onCheckedChange = { onToggleImmersive() }
         )

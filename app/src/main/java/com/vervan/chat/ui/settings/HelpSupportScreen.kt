@@ -1,20 +1,17 @@
 package com.vervan.chat.ui.settings
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PermDeviceInformation
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,7 +19,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.vervan.chat.ui.common.PageContainer
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.SectionRow
@@ -60,13 +59,7 @@ fun HelpSupportScreen(
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding)) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(vertical = Space.sm)
-            ) {
+        ScrollablePage(padding) {
                 SystemStatusStrip(
                     title = "Start with what you were trying to do",
                     body = "Each option opens the setting or status screen that can resolve it.",
@@ -98,6 +91,33 @@ fun HelpSupportScreen(
                                 subtitle = "Change response length, tone, and retrieval",
                                 icon = Icons.Filled.Tune,
                                 onClick = onOpenGeneration
+                            )
+                        }
+                    )
+                )
+
+                SectionLabel(stringResource(R.string.shortcut_section))
+                SectionCard(
+                    items = listOf(
+                        {
+                            SectionRow(
+                                title = stringResource(R.string.shortcut_new_chat),
+                                subtitle = stringResource(R.string.shortcut_new_chat_keys),
+                                icon = Icons.Filled.Keyboard
+                            )
+                        },
+                        {
+                            SectionRow(
+                                title = stringResource(R.string.shortcut_search),
+                                subtitle = stringResource(R.string.shortcut_search_keys),
+                                icon = Icons.Filled.Keyboard
+                            )
+                        },
+                        {
+                            SectionRow(
+                                title = stringResource(R.string.shortcut_settings),
+                                subtitle = stringResource(R.string.shortcut_settings_keys),
+                                icon = Icons.Filled.Keyboard
                             )
                         }
                     )
@@ -149,7 +169,6 @@ fun HelpSupportScreen(
                     ),
                     modifier = Modifier.padding(bottom = Space.xxl)
                 )
-            }
         }
     }
 }

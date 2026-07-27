@@ -1,9 +1,7 @@
 package com.vervan.chat.ui.writing
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,7 +23,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,12 +39,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.DiffViewer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -71,8 +69,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        ScrollablePage(contentPadding = padding, modifier = Modifier.imePadding(), maxContentWidth = 840.dp) {
             BoundedTextField(
                 value = original, onValueChange = { original = it },
                 label = "Your text", minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
@@ -81,11 +78,11 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
             OutlinedTextField(
                 value = targetLanguage, onValueChange = { targetLanguage = it },
                 label = { Text("Target language (for Translate)") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 WritingAction.entries.forEach { action ->
                     VervanFilterChip(selected = false, onClick = { vm.run(action, original, targetLanguage) }, label = { Text(action.label) }, enabled = !running)
@@ -95,7 +92,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Preparing the revision",
                     body = "Rewriting locally. Your original stays unchanged.",
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
@@ -103,23 +100,22 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                     title = "Couldn't complete the writing action",
                     message = it,
                     recovery = "Your text is safe. Shorten it or check the model, then try again.",
-                    modifier = Modifier.padding(top = 12.dp)
+                    modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (revision.isNotBlank()) {
-                Text("Revision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text("Revision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
                 DiffViewer(
                     original = original,
                     transformed = revision,
                     onReplace = { original = revision },
                     onCopy = { clipboard.setText(revision, scope) }
                 )
-                ResponsiveActions(Modifier.padding(top = 8.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     TextButton(onClick = { vm.saveAsNote(original.take(60)) }) { Text("Add to note") }
                     TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
                 }
             }
-        }
         }
     }
 }

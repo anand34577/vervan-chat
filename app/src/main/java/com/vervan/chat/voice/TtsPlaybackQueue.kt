@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -160,7 +161,9 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     private fun CoroutineScope.asyncSynthesize(text: String): Deferred<TtsAudio?> = async(Dispatchers.Default) {
         synthSemaphore.withPermit {
-            runCatching { engineSelector.resolve()?.synthesize(text, currentLang) }.getOrNull()
+            runCatching { engineSelector.resolve()?.synthesize(text, currentLang) }
+                .onFailure { Log.w(TAG, "Sentence synthesis failed, dropping this sentence", it) }
+                .getOrNull()
         }
     }
 
@@ -196,5 +199,9 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         trackSampleRate = sampleRateHz
+    }
+
+    companion object {
+        private const val TAG = "TtsPlaybackQueue"
     }
 }

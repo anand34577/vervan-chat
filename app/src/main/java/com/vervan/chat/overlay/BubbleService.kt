@@ -45,6 +45,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.vervan.chat.ui.common.setSensitiveText
 
 /**
  * draws the persistent draggable quick-action bubble via [WindowManager]. Runs as a
@@ -465,7 +466,7 @@ class BubbleService : Service() {
         val text = resultTextState.value.takeIf { it.isNotBlank() } ?: return
         runCatching {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                .setPrimaryClip(android.content.ClipData.newPlainText("Screen explanation", text))
+                .setSensitiveText(text, serviceScope, "Screen explanation")
         }
     }
 

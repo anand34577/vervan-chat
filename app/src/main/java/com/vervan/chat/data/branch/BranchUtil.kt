@@ -12,6 +12,9 @@ object BranchUtil {
     private fun childrenOf(all: List<Message>, parentId: String?): List<Message> =
         all.filter { it.parentId == parentId }.sortedBy { it.createdAt }
 
+    private fun childrenByParent(all: List<Message>): Map<String?, List<Message>> =
+        all.groupBy { it.parentId }.mapValues { (_, children) -> children.sortedBy { it.createdAt } }
+
     /** Root-to-[leafId] path, in order. Empty if [leafId] isn't found. */
     fun pathTo(all: List<Message>, leafId: String?): List<Message> {
         if (leafId == null) return emptyList()
@@ -28,10 +31,11 @@ object BranchUtil {
 
     /** Walks down from [startId], following the most-recently-created child at each step. */
     fun deepestTip(all: List<Message>, startId: String): String {
+        val childrenIndex = childrenByParent(all)
         var current = startId
         val visited = mutableSetOf<String>()
         while (visited.add(current)) {
-            val children = childrenOf(all, current)
+            val children = childrenIndex[current].orEmpty()
             if (children.isEmpty()) return current
             current = children.maxBy { it.createdAt }.id
         }
@@ -53,10 +57,11 @@ object BranchUtil {
 
     /** Every message paired with its depth (0 = root), in depth-first order — a tree view's data source. */
     fun flattenTree(all: List<Message>): List<Pair<Message, Int>> {
+        val childrenIndex = childrenByParent(all)
         val result = mutableListOf<Pair<Message, Int>>()
         val visited = mutableSetOf<String>()
         fun visit(parentId: String?, depth: Int) {
-            for (child in childrenOf(all, parentId)) {
+            for (child in childrenIndex[parentId].orEmpty()) {
                 if (!visited.add(child.id)) continue
                 result += child to depth
                 visit(child.id, depth + 1)

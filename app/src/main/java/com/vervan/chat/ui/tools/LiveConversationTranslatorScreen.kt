@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -174,20 +175,20 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                 icon = Icons.Filled.Translate,
                 title = "Two people, one private translator",
                 body = "Choose two languages and take turns speaking. Translation stays local.",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
             )
-            Row(Modifier.fillMaxWidth().padding(12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(Space.md).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Badge("STT: Android Offline")
                 Badge("Translation: $modelName")
                 Badge("TTS: Android System")
             }
             if (isBusy) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Text("Translating…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                    Text("Translating…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.sm))
                 }
             }
-            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 items(turns) { turn ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (turn.fromA) Arrangement.Start else Arrangement.End) {
                         Card(
@@ -195,7 +196,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                                 containerColor = if (turn.fromA) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.primaryContainer
                             )
                         ) {
-                            Column(Modifier.padding(10.dp)) {
+                            Column(Modifier.padding(Space.sm)) {
                                 Text(turn.original, style = MaterialTheme.typography.bodyMedium)
                                 Text(turn.translated, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -203,7 +204,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box { OutlinedButton(onClick = { menuAOpen = true }) { Text(langA) }
                         DropdownMenu(expanded = menuAOpen, onDismissRequest = { menuAOpen = false }) {
@@ -211,7 +212,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                         }
                     }
                     IconButton(
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = Space.sm),
                         enabled = !isBusy,
                         onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }
                     ) { Icon(Icons.Filled.Mic, "Person A speaks") }
@@ -223,7 +224,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                         }
                     }
                     IconButton(
-                        modifier = Modifier.padding(top = 8.dp),
+                        modifier = Modifier.padding(top = Space.sm),
                         enabled = !isBusy,
                         onClick = { requestMicPermissionB.launch(android.Manifest.permission.RECORD_AUDIO) }
                     ) { Icon(Icons.Filled.Mic, "Person B speaks") }
@@ -237,6 +238,6 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
 @Composable
 private fun Badge(text: String) {
     Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+        Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs))
     }
 }

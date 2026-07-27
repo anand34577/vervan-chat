@@ -18,9 +18,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,13 +90,13 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(Space.sm)) {
             items(neighbors, key = { it.id }) { c ->
                 val isTarget = c.id == chunk?.id
                 Card(
-                    Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    Modifier.fillMaxWidth().padding(vertical = Space.xs)
                 ) {
-                    Column(Modifier.padding(10.dp)) {
+                    Column(Modifier.padding(Space.md)) {
                         if (c.sectionPath.isNotBlank()) {
                             Text(c.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         }

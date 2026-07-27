@@ -23,7 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,7 +35,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionLabel
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,47 +85,53 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
             }
 
             SectionLabel("Contrast")
-            androidx.compose.material3.Card {
-                ListItem(
-                    headlineContent = { Text("High contrast") },
-                    supportingContent = { Text("Makes muted text and borders easier to see.") },
-                    leadingContent = { Icon(Icons.Filled.Contrast, contentDescription = null) },
-                    trailingContent = {
-                        Switch(checked = highContrast, onCheckedChange = vm::setHighContrast)
+            SectionCard(
+                items = listOf(
+                    {
+                        SectionRow(
+                            title = "High contrast",
+                            subtitle = "Makes muted text and borders easier to see.",
+                            icon = Icons.Filled.Contrast,
+                            trailing = { Switch(checked = highContrast, onCheckedChange = vm::setHighContrast) }
+                        )
                     }
                 )
-            }
+            )
 
             SectionLabel("Interaction")
-            androidx.compose.material3.Card {
-                ListItem(
-                    headlineContent = { Text("Large touch targets") },
-                    supportingContent = { Text("Use larger controls and roomier rows.") },
-                    leadingContent = { Icon(Icons.Filled.TouchApp, contentDescription = null) },
-                    trailingContent = {
-                        Switch(checked = largeTouchTargets, onCheckedChange = vm::setLargeTouchTargets)
+            SectionCard(
+                items = listOf(
+                    {
+                        SectionRow(
+                            title = "Large touch targets",
+                            subtitle = "Use larger controls and roomier rows.",
+                            icon = Icons.Filled.TouchApp,
+                            trailing = { Switch(checked = largeTouchTargets, onCheckedChange = vm::setLargeTouchTargets) }
+                        )
+                    },
+                    {
+                        SectionRow(
+                            title = "Haptic feedback",
+                            subtitle = "Vibrate briefly for key actions.",
+                            icon = Icons.Filled.Vibration,
+                            trailing = { Switch(checked = hapticsEnabled, onCheckedChange = vm::setHapticsEnabled) }
+                        )
                     }
                 )
-            }
-            androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
-                ListItem(
-                    headlineContent = { Text("Haptic feedback") },
-                    supportingContent = { Text("Vibrate briefly for key actions.") },
-                    leadingContent = { Icon(Icons.Filled.Vibration, contentDescription = null) },
-                    trailingContent = {
-                        Switch(checked = hapticsEnabled, onCheckedChange = vm::setHapticsEnabled)
-                    }
-                )
-            }
+            )
 
             SectionLabel("Motion")
-            androidx.compose.material3.Card {
-                ListItem(
-                    headlineContent = { Text(if (reducedMotion) "Reduced motion is on" else "Reduced motion is off") },
-                    supportingContent = { Text("Uses your Android animation setting and simpler transitions.") },
-                    leadingContent = { Icon(Icons.Filled.Animation, contentDescription = null) }
+            SectionCard(
+                items = listOf(
+                    {
+                        SectionRow(
+                            title = if (reducedMotion) "Reduced motion is on" else "Reduced motion is off",
+                            subtitle = "Uses your Android animation setting and simpler transitions.",
+                            icon = Icons.Filled.Animation
+                        )
+                    }
                 )
-            }
+            )
             Text(
                 "Vervan uses TalkBack labels, large touch targets, and text-based status cues.",
                 style = MaterialTheme.typography.bodySmall,

@@ -28,7 +28,7 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -122,34 +122,34 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
                         ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original document") }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
                     Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text("${chunks.size} sections", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             error?.let {
-                com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = Space.md, vertical = Space.xs))
             }
             VervanSectionHeader(
                 title = "Searchable text",
                 count = chunks.size,
                 modifier = Modifier.padding(horizontal = Space.md)
             )
-            LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
+            LazyColumn(Modifier.fillMaxSize().padding(Space.sm)) {
                 items(chunks, key = { it.id }) { chunk ->
-                    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                        Column(Modifier.padding(10.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
+                        Column(Modifier.padding(Space.md)) {
                             if (chunk.sectionPath.isNotBlank()) {
                                 Text(chunk.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, fontFamily = VervanMono)
                             }
                             Text(chunk.text, style = MaterialTheme.typography.bodySmall)
-                            Text("~${chunk.tokenCount} tokens", style = MaterialTheme.typography.labelSmall, fontFamily = VervanMono, modifier = Modifier.padding(top = 2.dp))
+                            Text("~${chunk.tokenCount} tokens", style = MaterialTheme.typography.labelSmall, fontFamily = VervanMono, modifier = Modifier.padding(top = Space.xs))
                         }
                     }
                 }
                 if (chunks.isEmpty()) {
                     item {
-                        Text("No searchable text. Re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+                        Text("No searchable text. Re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
                     }
                 }
             }

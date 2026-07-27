@@ -6,13 +6,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -31,7 +28,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.system.toUserMessage
 import androidx.compose.runtime.Composable
@@ -134,9 +133,9 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
         Column(
-            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             ToolIntro(
@@ -149,14 +148,14 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
+                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(" Camera")
+                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
                 }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { pickImage.launch("image/*") }) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text(" From files")
+                    Text("From files", modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
@@ -164,7 +163,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 bitmap?.let {
                     Image(
                         it, contentDescription = "Scanned image",
-                        modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = Space.md),
                         contentScale = ContentScale.Fit
                     )
                 }
@@ -190,22 +189,21 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 OutlinedTextField(
                     value = extractedText,
                     onValueChange = { extractedText = it },
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                     minLines = 6,
                     label = { Text("Recognized text") },
                     placeholder = { Text("No text found") }
                 )
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     OutlinedButton(
                         onClick = {
                             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("OCR text", extractedText))
+                            clipboard.setSensitiveText(extractedText, scope, "OCR text")
                         },
-                        enabled = extractedText.isNotBlank(),
-                        modifier = Modifier.weight(1f)
+                        enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
-                        Text(" Copy")
+                        Text("Copy", modifier = Modifier.padding(start = Space.sm))
                     }
                     Button(
                         onClick = {
@@ -218,15 +216,14 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                                 onOpenDocument(document.id)
                             }
                         },
-                        enabled = extractedText.isNotBlank(),
-                        modifier = Modifier.weight(1f)
+                        enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text(" Save as document")
+                        Text("Save as document", modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 savedMessage?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                 }
             }
         }

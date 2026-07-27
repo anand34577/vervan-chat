@@ -26,17 +26,21 @@ class WorkspaceManager(
         settingsRepository.setActiveWorkspaceId(workspace.id)
     }
 
-    /** fills a brand-new chat's model profile / knowledge bases from its workspace's
-     * configured defaults. Callers must apply this immediately after constructing the [Chat]
+    /** Fills a brand-new chat's profile and knowledge bases from configured defaults.
+     * Callers must apply this immediately after constructing the [Chat]
      * (all current call sites do) — it unconditionally prefers the workspace's default over
      * whatever the [Chat] constructor's own defaults left in place, so it isn't safe to call
      * against a chat that already has real, user-set state. No-op if the workspace has neither
-     * default configured, or doesn't exist. */
+     * default configured, or doesn't exist. The app-wide profile is used when the workspace
+     * has no profile override. */
     suspend fun applyDefaults(chat: Chat): Chat {
-        val workspace = db.workspaceDao().get(chat.workspaceId) ?: return chat
+        val workspace = db.workspaceDao().get(chat.workspaceId)
+        val globalProfile = settingsRepository.defaultProfile.first()
         return chat.copy(
-            profile = workspace.defaultProfile?.takeIf { it.isNotBlank() } ?: chat.profile,
-            knowledgeBaseIds = chat.knowledgeBaseIds.ifBlank { workspace.defaultKnowledgeBaseIds }
+            profile = workspace?.defaultProfile?.takeIf { it.isNotBlank() }
+                ?: globalProfile.takeIf { it.isNotBlank() }
+                ?: chat.profile,
+            knowledgeBaseIds = chat.knowledgeBaseIds.ifBlank { workspace?.defaultKnowledgeBaseIds.orEmpty() }
         )
     }
 

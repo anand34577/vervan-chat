@@ -4,15 +4,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -53,7 +48,8 @@ import com.vervan.chat.model.OcrExtractor
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -164,11 +160,7 @@ fun TranslationScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-      PageContainer(Modifier.padding(padding)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-          Column(
-              Modifier.widthIn(max = 840.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)
-          ) {
+        ScrollablePage(padding) {
             FeatureHero(
                 icon = Icons.Filled.Translate,
                 eyebrow = "On-device translation",
@@ -220,11 +212,17 @@ fun TranslationScreen(onBack: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = !isOcrRunning, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(if (isOcrRunning) " Reading…" else " From photo", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (isOcrRunning) "Reading…" else "From photo",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = Space.xs)
+                    )
                 }
                 if (isTranslating) {
                     OutlinedButton(onClick = { genJob?.cancel(); isTranslating = false }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text(" Stop", maxLines = 1)
+                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
+                        Text("Stop", maxLines = 1, modifier = Modifier.padding(start = Space.xs))
                     }
                 } else {
                     Button(onClick = ::translate, enabled = sourceText.isNotBlank(), modifier = Modifier.weight(1f)) {
@@ -251,7 +249,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                         trailingIcon = {
                             IconButton(onClick = {
                                 context.getSystemService(android.content.ClipboardManager::class.java)
-                                    .setPrimaryClip(android.content.ClipData.newPlainText("Translation", translated))
+                                    .setSensitiveText(translated, scope, "Translation")
                                 scope.launch { snackbarHostState.showSnackbar("Copied") }
                             }) { Icon(Icons.Filled.ContentCopy, "Copy translation") }
                         }
@@ -268,8 +266,6 @@ fun TranslationScreen(onBack: () -> Unit) {
                     )
                 }
             }
-          }
         }
-      }
     }
 }

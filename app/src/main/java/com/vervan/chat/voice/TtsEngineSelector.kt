@@ -41,4 +41,13 @@ class TtsEngineSelector(
         lastResolvedEngineName = engine?.engineName ?: "None"
         return engine
     }
+
+    /** Releases every engine's native resources (ONNX/sherpa-onnx sessions), regardless of which
+     * one was actually resolved/used this session — each engine's own [release] is a no-op if it
+     * was never loaded. Callers must invoke this on teardown; nothing here does it implicitly. */
+    fun releaseAll() {
+        piper.release()
+        kokoro.release()
+        supertonic.release()
+    }
 }

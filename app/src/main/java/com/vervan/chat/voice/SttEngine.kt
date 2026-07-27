@@ -19,7 +19,7 @@ package com.vervan.chat.voice
  * uncatchable native fault.
  */
 interface SttEngine {
-    /** Short human label for the "STT: …" badge in [com.vervan.chat.ui.tools.VoiceChatScreen]. */
+    /** Short human label for the "STT: …" UI badge. */
     val label: String
 
     /** True once the model is downloaded, loaded, and a transcription can actually be attempted.

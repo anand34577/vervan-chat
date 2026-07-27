@@ -90,15 +90,24 @@ fun AssistantSubCard(
                 .padding(Space.md)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(kind.icon(), contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
-                    Text(title, style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.padding(start = Space.xs))
+                    OverflowTooltipText(
+                        text = title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = color,
+                        modifier = Modifier.weight(1f).padding(start = Space.xs),
+                    )
                 }
                 if (collapsible) {
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                         contentDescription = if (expanded) "Collapse" else "Expand",
-                        tint = color
+                        tint = color,
+                        modifier = Modifier.padding(start = Space.sm),
                     )
                 }
             }

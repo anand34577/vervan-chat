@@ -34,7 +34,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +62,7 @@ import androidx.compose.material3.CardDefaults
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 
@@ -140,7 +141,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             Button(
                 onClick = {
                     pickFile.launch(
@@ -155,14 +156,14 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                 },
                 enabled = !importing
             ) {
-                if (importing) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 6.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                if (importing) CircularProgressIndicator(Modifier.size(18.dp).padding(end = Space.xs), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                 Text(if (importing) "Importing…" else "Import document")
             }
-            error?.let { ErrorCard("Couldn't import this document", it, Modifier.padding(top = 8.dp)) }
+            error?.let { ErrorCard("Couldn't import this document", it, Modifier.padding(top = Space.sm)) }
 
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = Space.sm),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
             ) {
                 DocFilter.entries.forEach { f ->
                     VervanFilterChip(
@@ -180,7 +181,7 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                     body = if (documents.isEmpty()) "Import a file to make it searchable in chat." else "Try a different filter."
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+                LazyColumn(Modifier.fillMaxSize().padding(top = Space.sm)) {
                     items(visibleDocuments, key = { it.id }) { doc ->
                         DocumentRow(
                             document = doc,
@@ -275,12 +276,12 @@ private fun DocumentRow(
             title = document.displayName,
             stage = STAGE_LABELS[document.status.stageIndex()],
             progress = (document.status.stageIndex() + 1) / 5f,
-            modifier = Modifier.padding(vertical = 4.dp)
+            modifier = Modifier.padding(vertical = Space.xs)
         )
         return
     }
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
             .selectableItem(
                 selectionMode = selectionMode,
                 onClick = onOpen,
@@ -298,7 +299,10 @@ private fun DocumentRow(
                 androidx.compose.foundation.layout.Spacer(Modifier.padding(start = Space.md))
             }
             Column(Modifier.weight(1f)) {
-                Text(document.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                OverflowTooltipText(
+                    text = document.displayName,
+                    style = MaterialTheme.typography.titleSmall
+                )
                 val failed = document.status == DocumentStatus.FAILED || document.status == DocumentStatus.UNSUPPORTED
                 val statusText = when (document.status) {
                     DocumentStatus.READY -> document.failureReason
@@ -311,7 +315,9 @@ private fun DocumentRow(
                 Text(
                     statusText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 if (failed && !selectionMode) {
                     TextButton(onClick = onRetry, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Retry", style = MaterialTheme.typography.labelSmall) }

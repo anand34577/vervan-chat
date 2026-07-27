@@ -101,10 +101,11 @@ object ChatFormatting {
     /** Walks parent links up from [from] to the nearest USER message's text (for regenerate/fork,
      * which need the prompt that produced an assistant turn). Empty string if there is none. */
     fun nearestUserText(all: List<Message>, from: Message?): String {
+        val byId = all.associateBy { it.id }
         var current = from
         while (current != null) {
             if (current.role == MessageRole.USER) return current.content
-            current = current.parentId?.let { pid -> all.find { it.id == pid } }
+            current = current.parentId?.let(byId::get)
         }
         return ""
     }
