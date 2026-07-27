@@ -7,17 +7,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
@@ -62,12 +57,13 @@ import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -164,7 +160,7 @@ fun TextActionScreen(
 
     fun copy(text: String) {
         context.getSystemService(android.content.ClipboardManager::class.java)
-            .setPrimaryClip(android.content.ClipData.newPlainText(title, text))
+            .setSensitiveText(text, scope, title)
         scope.launch { snackbarHostState.showSnackbar("Copied") }
     }
 
@@ -224,15 +220,13 @@ fun TextActionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { OverflowTooltipText(title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-      PageContainer(Modifier.padding(padding)) {
-       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 840.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
+      ScrollablePage(contentPadding = padding) {
             FeatureHero(
                 icon = Icons.Filled.AutoAwesome,
                 eyebrow = "On-device assistant",
@@ -259,13 +253,13 @@ fun TextActionScreen(
                     if (allowVoice) {
                         OutlinedButton(onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.Mic, null, Modifier.size(18.dp))
-                            Text(" Voice", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Voice", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                     if (allowImageOcr) {
                         OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                            Text(" From photo", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("From photo", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                 }
@@ -310,7 +304,7 @@ fun TextActionScreen(
                             Text("Generating on this device…", modifier = Modifier.padding(start = Space.md).weight(1f))
                             OutlinedButton(onClick = { stop() }) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text(" Stop")
+                                Text("Stop", modifier = Modifier.padding(start = Space.sm))
                             }
                         }
                     }
@@ -336,22 +330,22 @@ fun TextActionScreen(
                         Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
                             Button(onClick = { stop() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text(" Stop")
+                                Text("Stop", modifier = Modifier.padding(start = Space.sm))
                             }
                         }
                     } else {
                         // Wrapping action bar (FlowRow) — never shrinks buttons on a narrow screen.
                         ResponsiveActions(Modifier.padding(top = Space.sm)) {
                             OutlinedButton(onClick = { copy(outputText) }) {
-                                Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" Copy")
+                                Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm))
                             }
                             lastAction?.let { action ->
                                 OutlinedButton(onClick = { runAction(action) }) {
-                                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Text(" Regenerate")
+                                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Text("Regenerate", modifier = Modifier.padding(start = Space.sm))
                                 }
                             }
                             OutlinedButton(onClick = { share(outputText) }) {
-                                Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Share")
+                                Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Share", modifier = Modifier.padding(start = Space.sm))
                             }
                             if (allowSaveAsNote) {
                                 OutlinedButton(onClick = {
@@ -364,7 +358,7 @@ fun TextActionScreen(
                                         snackbarHostState.showSnackbar("Saved to Notes")
                                     }
                                 }) {
-                                    Icon(Icons.AutoMirrored.Filled.NoteAdd, null, Modifier.size(18.dp)); Text(" Save as note")
+                                    Icon(Icons.AutoMirrored.Filled.NoteAdd, null, Modifier.size(18.dp)); Text("Save as note", modifier = Modifier.padding(start = Space.sm))
                                 }
                             }
                         }
@@ -391,7 +385,7 @@ fun TextActionScreen(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp),
                             )
-                            Column(Modifier.padding(start = Space.md)) {
+                            Column(Modifier.weight(1f).padding(start = Space.md)) {
                                 Text("Ready when you are", style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     "Your local result will appear here without replacing the original input.",
@@ -403,8 +397,6 @@ fun TextActionScreen(
                     }
                 }
             }
-        }
-       }
       }
     }
 }

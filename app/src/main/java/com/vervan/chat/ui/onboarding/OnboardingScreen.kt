@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -57,6 +56,7 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.modeldownload.CatalogModel
 import com.vervan.chat.modeldownload.ModelCatalog
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
@@ -130,8 +130,9 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
         contentAlignment = Alignment.TopCenter
     ) {
+        PageContainer(maxContentWidth = 680.dp) {
         Column(
-            Modifier.fillMaxSize().widthIn(max = 680.dp).padding(horizontal = Space.xxl, vertical = Space.lg)
+            Modifier.fillMaxSize().padding(vertical = Space.lg)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
@@ -195,8 +196,14 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 label = "onboardingPage"
             ) { targetPage ->
                 val p = pages[targetPage]
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Spacer(Modifier.height(Space.xxl))
+                // Centered rather than top-aligned: pages vary a lot in content height (the
+                // profile-picker step has far more below the note card than the intro step), so
+                // top-alignment left short pages with a large dead gap above the nav buttons.
+                // Arrangement.Center still scrolls correctly for the taller pages.
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     // Hero icon — tinted per-page so each step has its own visual identity instead
                     // of every page looking identical.
                     val (heroBg, heroFg) = accentColors(p.accentTone)
@@ -253,7 +260,6 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                             }
                         }
                     }
-                    Spacer(Modifier.height(Space.xxl))
                 }
             }
             Row(
@@ -273,6 +279,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                     Text(if (page == pages.lastIndex) "Get started" else "Continue")
                 }
             }
+        }
         }
     }
 }

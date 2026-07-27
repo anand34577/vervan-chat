@@ -26,7 +26,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +48,7 @@ import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -71,7 +72,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
             BoundedTextField(
                 value = code, onValueChange = { code = it },
                 label = "Paste code", minLines = 6, maxLength = ValidationLimits.DEVELOPER_INPUT,
@@ -79,8 +80,8 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 DevAction.entries.forEach { action ->
                     VervanFilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
@@ -90,7 +91,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Working on the code",
                     body = "Analyzing your input with the local model.",
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
@@ -98,15 +99,15 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                     title = "Couldn't complete the code action",
                     message = it,
                     recovery = "Your code is safe. Shorten it or load a compatible model, then try again.",
-                    modifier = Modifier.padding(top = 12.dp)
+                    modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (output.isNotBlank()) {
-                Text("Result", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+                Text("Result", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
                 Card(Modifier.fillMaxWidth()) {
-                    Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(12.dp))
+                    Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(Space.md))
                 }
-                ResponsiveActions(Modifier.padding(top = 8.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     TextButton(onClick = { clipboard.setText(output, scope) }) { Text("Copy") }
                     TextButton(onClick = { vm.saveAsNote(code.take(60)) }) { Text("Add to note") }
                     TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }

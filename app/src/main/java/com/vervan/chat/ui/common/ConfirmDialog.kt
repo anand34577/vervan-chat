@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
@@ -29,7 +31,7 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     destructive: Boolean = false,
-    dismissLabel: String = "Cancel"
+    dismissLabel: String? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -45,7 +47,11 @@ fun ConfirmDialog(
                 }
             ) { Text(confirmLabel) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(dismissLabel) } }
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(dismissLabel ?: stringResource(R.string.action_cancel))
+            }
+        }
     )
 }
 
@@ -53,7 +59,13 @@ fun ConfirmDialog(
 @Composable
 fun ArchiveMenuItem(archived: Boolean, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(if (archived) "Restore from archive" else "Archive") },
+        text = {
+            Text(
+                stringResource(
+                    if (archived) R.string.action_restore_archive else R.string.action_archive
+                )
+            )
+        },
         leadingIcon = {
             Icon(if (archived) Icons.Filled.Unarchive else Icons.Filled.Archive, contentDescription = null)
         },
@@ -67,7 +79,9 @@ fun DeleteMenuItem(permanent: Boolean = false, onClick: () -> Unit) {
     DropdownMenuItem(
         text = {
             Text(
-                if (permanent) "Delete forever" else "Move to recycle bin",
+                stringResource(
+                    if (permanent) R.string.action_delete_forever else R.string.action_recycle
+                ),
                 color = MaterialTheme.colorScheme.error
             )
         },

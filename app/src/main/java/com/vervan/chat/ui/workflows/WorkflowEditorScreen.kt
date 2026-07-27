@@ -26,7 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +45,7 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 /** [workflowId] null creates a new workflow; non-null edits (a built-in opened here is
@@ -72,7 +73,7 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Name",
                 maxLength = ValidationLimits.WORKFLOW_NAME, singleLine = true,
@@ -81,22 +82,22 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
             BoundedTextField(
                 value = description, onValueChange = vm::setDescription, label = "Description",
                 maxLength = ValidationLimits.WORKFLOW_DESCRIPTION,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             if (isBuiltIn) {
                 Text(
                 "Saving creates an editable copy. The built-in stays unchanged.",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             Text(
                 "Steps (${steps.size}/${ValidationLimits.WORKFLOW_STEP_COUNT})",
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                modifier = Modifier.padding(top = Space.lg, bottom = Space.xs)
             )
             steps.forEachIndexed { index, step ->
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
+                Row(Modifier.fillMaxWidth().padding(bottom = Space.sm), verticalAlignment = Alignment.Top) {
                     BoundedTextField(
                         value = step,
                         onValueChange = { vm.setStep(index, it) },
@@ -120,7 +121,7 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
             val withinLimits = name.length <= ValidationLimits.WORKFLOW_NAME &&
                 description.length <= ValidationLimits.WORKFLOW_DESCRIPTION &&
                 steps.all { it.length <= ValidationLimits.WORKFLOW_STEP }
-            ResponsiveActions(Modifier.padding(top = 16.dp)) {
+            ResponsiveActions(Modifier.padding(top = Space.lg)) {
                 Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save") }
                 if (workflowId != null && !isBuiltIn) {
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }

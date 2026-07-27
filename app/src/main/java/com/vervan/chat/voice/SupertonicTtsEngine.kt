@@ -3,9 +3,12 @@ package com.vervan.chat.voice
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import android.util.Log
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -60,6 +63,12 @@ class SupertonicTtsEngine(
     private var styleDp: OnnxTensor? = null
     private var config: Config? = null
     private var attemptedLoad = false
+    // Serializes ensureLoaded/ensureVoiceLoaded: TtsPlaybackQueue runs up to 2 synth coroutines
+    // concurrently (see Semaphore(2) there), and without this both could observe attemptedLoad/
+    // loadedVariant unchanged before either sets it, triggering loadGraphs()/loadVoiceStyle()
+    // twice in parallel — duplicate native ONNX sessions, or racing native calls. Not reentrant:
+    // release() must never be called while this is held (it isn't — release() doesn't lock).
+    private val loadMutex = Mutex()
     /** Which voice's tensors are currently in [styleTtl]/[styleDp], or null before the first
      * successful voice load. */
     private var loadedVariant: String? = null
@@ -75,10 +84,10 @@ class SupertonicTtsEngine(
 
     /** Loads the shared 4-graph acoustic model from the "multi" catalog package. Every voice —
      * including "multi"'s own M1 — needs this; it never depends on which voice is selected. */
-    private suspend fun ensureLoaded() {
-        if (attemptedLoad) return
+    private suspend fun ensureLoaded() = loadMutex.withLock {
+        if (attemptedLoad) return@withLock
         attemptedLoad = true
-        val row = voiceModelDao.getByEngine("SUPERTONIC", "multi") ?: return
+        val row = voiceModelDao.getByEngine("SUPERTONIC", "multi") ?: return@withLock
         runCatching { loadGraphs(row.filePath) }.onFailure { release() }
     }
 
@@ -86,15 +95,15 @@ class SupertonicTtsEngine(
      * [SettingsRepository.supertonicVoiceVariant] currently names — a no-op once that voice is
      * already loaded. MUST run after [ensureLoaded] has confirmed the graphs are present, since
      * "multi" doubles as both the graphs package and the M1 style file. */
-    private suspend fun ensureVoiceLoaded() {
-        val ortEnv = env ?: return
+    private suspend fun ensureVoiceLoaded() = loadMutex.withLock {
+        val ortEnv = env ?: return@withLock
         val variant = settingsRepository.supertonicVoiceVariant.first()
-        if (variant == loadedVariant) return
+        if (variant == loadedVariant) return@withLock
         val voiceDir = if (variant == "multi") {
             voiceModelDao.getByEngine("SUPERTONIC", "multi")
         } else {
             voiceModelDao.getByEngine("SUPERTONIC", variant)
-        }?.filePath ?: return
+        }?.filePath ?: return@withLock
         runCatching {
             val (ttl, dp) = loadVoiceStyle(File(voiceDir, "voice_style_default.json"), ortEnv)
             styleTtl?.close()
@@ -102,7 +111,7 @@ class SupertonicTtsEngine(
             styleTtl = ttl
             styleDp = dp
             loadedVariant = variant
-        }
+        }.onFailure { Log.w(TAG, "Failed to load Supertonic voice style for '$variant'", it) }
     }
 
     private fun loadGraphs(dir: String) {
@@ -380,6 +389,7 @@ class SupertonicTtsEngine(
     }
 
     companion object {
+        private const val TAG = "SupertonicTtsEngine"
         private const val TOTAL_STEP = 8
         private val SUPPORTED_LANGS = setOf(
             "en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hi",

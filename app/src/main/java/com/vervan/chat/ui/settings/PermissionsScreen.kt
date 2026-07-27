@@ -68,7 +68,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 "See why each permission is used. Vervan asks only when a feature needs it.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Space.sm)
             )
             PERMISSIONS.forEach { info ->
                 // SYSTEM_ALERT_WINDOW is a "special" permission granted via a system Settings

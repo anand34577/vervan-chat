@@ -50,7 +50,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -84,6 +84,8 @@ import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SemanticChip
@@ -91,6 +93,7 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.formatRelativeDay
+import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.ui.theme.vervanBorder
@@ -556,9 +559,10 @@ private fun ChatListRow(
             }
             Column(Modifier.weight(1f).padding(start = Space.md)) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        chat.title, style = MaterialTheme.typography.titleSmall, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                    OverflowTooltipText(
+                        text = chat.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
                     )
                     if (chat.pinned) {
                         Icon(
@@ -569,7 +573,11 @@ private fun ChatListRow(
                     }
                     Text(
                         relativeTime(chat.updatedAt), style = MaterialTheme.typography.labelSmall,
-                        fontFamily = VervanMono, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontFamily = VervanMono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = Space.sm),
                     )
                 }
                 // Preview line prefers the last actual message (chat-app convention); falls back
@@ -589,7 +597,7 @@ private fun ChatListRow(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-                Row(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                ResponsiveActions(Modifier.padding(top = Space.xs)) {
                     // Model badge — for a multi-engine offline LLM app this is the single most
                     // useful identity cue (chat-app users immediately want to know "which model
                     // did I use here?"). Suppressed when no model is set (the global default
@@ -622,18 +630,3 @@ private fun ChatListRow(
 
 internal fun clampedChatSwipeOffset(currentOffset: Float, dragDelta: Float, maxReveal: Float): Float =
     (currentOffset + dragDelta).coerceIn(-maxReveal, maxReveal)
-
-private fun relativeTime(epochMs: Long): String {
-    val diffMin = (System.currentTimeMillis() - epochMs) / 60000
-    return when {
-        diffMin < 1 -> "now"
-        diffMin < 60 -> "${diffMin}m"
-        diffMin < 60 * 24 -> "${diffMin / 60}h"
-        diffMin < 60 * 24 * 30 -> "${diffMin / (60 * 24)}d"
-        // Beyond 30 days, switch to a date so a 90-day-old chat stops reading "90d" forever.
-        else -> {
-            val fmt = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
-            fmt.format(java.util.Date(epochMs))
-        }
-    }
-}

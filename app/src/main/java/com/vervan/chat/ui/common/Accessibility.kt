@@ -3,7 +3,6 @@ package com.vervan.chat.ui.common
 import android.content.Context
 import android.provider.Settings
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -17,5 +16,6 @@ fun isReducedMotionEnabled(context: Context): Boolean =
 @Composable
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
-    return remember { isReducedMotionEnabled(context) }
+    val resumeTick = rememberOnResumeTick()
+    return androidx.compose.runtime.remember(context, resumeTick) { isReducedMotionEnabled(context) }
 }

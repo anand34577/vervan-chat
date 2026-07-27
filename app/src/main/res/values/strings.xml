@@ -15,4 +15,48 @@
     <string name="channel_import">Imports</string>
     <string name="widget_new_note">New note</string>
     <string name="widget_quick_ask">Quick ask</string>
+    <!-- Primary app shell. These are resource-backed first because they are visible on every screen. -->
+    <string name="nav_home">Home</string>
+    <string name="nav_chats">Chats</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_tools">Tools</string>
+    <string name="action_create">Create</string>
+    <string name="shortcut_section">Hardware keyboard</string>
+    <string name="shortcut_new_chat">New chat</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_settings">Open settings</string>
+    <string name="shortcut_new_chat_keys">Ctrl/Command + N</string>
+    <string name="shortcut_search_keys">Ctrl/Command + K</string>
+    <string name="shortcut_settings_keys">Ctrl/Command + comma</string>
+    <string name="startup_loading">Loading your local workspace</string>
+    <string name="startup_settings_error">Settings could not be read</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_archive">Archive</string>
+    <string name="action_restore_archive">Restore from archive</string>
+    <string name="action_recycle">Move to recycle bin</string>
+    <string name="action_delete_forever">Delete forever</string>
+    <string name="home_continue">Continue</string>
+    <string name="home_all_chats">All chats</string>
+    <string name="home_fresh_workspace">A fresh workspace</string>
+    <string name="home_recent_content_hint">Recent chats, notes, projects, and tool results will appear here.</string>
+    <string name="action_start">Start</string>
+    <string name="entity_chat">Chat</string>
+    <string name="entity_project">Project</string>
+    <string name="entity_note">Note</string>
+    <string name="entity_tool_result">Tool result</string>
+    <string name="home_ready_to_continue">%1$s ready to continue</string>
+    <string name="relative_just_now">Just now</string>
+    <plurals name="relative_minutes_ago">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="relative_hours_ago">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
+    <plurals name="relative_days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
 </resources>

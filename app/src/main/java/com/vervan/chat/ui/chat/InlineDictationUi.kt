@@ -72,7 +72,11 @@ internal fun InlineDictationRecording(
                 )
             }
         }
-        Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+        Row(
+            Modifier.padding(top = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             TextButton(onClick = onCancel) {
                 Icon(Icons.Filled.Close, contentDescription = null)
                 Text("Cancel", modifier = Modifier.padding(start = Space.xs))

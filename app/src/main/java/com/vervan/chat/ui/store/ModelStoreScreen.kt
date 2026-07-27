@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.store.eligibility.EligibilityVerdict
 import com.vervan.chat.store.model.ModelVariant
 import com.vervan.chat.ui.common.ContentCard
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.theme.Space
 
 /**
@@ -72,10 +75,10 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Model Store") },
+                title = { Text("Model store") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -90,10 +93,11 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = Space.lg),
+        PageContainer(Modifier.padding(padding)) {
+          LazyColumn(
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(Space.xs)
-        ) {
+          ) {
             // A sync failure is advisory: the previously accepted catalogue is still on screen
             // below, so this must not read as a dead end.
             syncError?.let { error ->
@@ -130,6 +134,7 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
             }
 
             item { Spacer(Modifier.height(Space.xl)) }
+          }
         }
     }
 
@@ -155,7 +160,10 @@ private fun StoreModelCard(
 ) {
     ContentCard {
         Column(Modifier.padding(Space.lg)) {
-            Text(entry.model.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            OverflowTooltipText(
+                text = entry.model.displayName,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
             Text(
                 entry.model.publisher,
                 style = MaterialTheme.typography.bodySmall,
@@ -201,10 +209,10 @@ private fun VariantRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    listOfNotNull(variant.runtime.wireName, variant.quantization).joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                OverflowTooltipText(
+                    text = listOfNotNull(variant.runtime.wireName, variant.quantization).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
                     formatBytes(variant.totalSizeBytes),
@@ -214,15 +222,23 @@ private fun VariantRow(
             }
 
             when {
-                variantUi.installed -> OutlinedButton(onClick = onUninstall) { Text("Remove") }
+                variantUi.installed -> OutlinedButton(
+                    onClick = onUninstall,
+                    modifier = Modifier.padding(start = Space.sm),
+                ) { Text("Remove") }
                 // The device check is enforced before the download, never after it —
                 !variantUi.eligibility.canInstall -> AssistChip(
                     onClick = {},
                     enabled = false,
                     label = { Text("Incompatible") },
-                    colors = AssistChipDefaults.assistChipColors()
+                    colors = AssistChipDefaults.assistChipColors(),
+                    modifier = Modifier.padding(start = Space.sm),
                 )
-                else -> Button(onClick = onInstall, enabled = !installBusy) { Text("Install") }
+                else -> Button(
+                    onClick = onInstall,
+                    enabled = !installBusy,
+                    modifier = Modifier.padding(start = Space.sm),
+                ) { Text("Install") }
             }
         }
 
@@ -255,7 +271,7 @@ private fun ActiveInstallCard(
 ) {
     ContentCard {
         Column(Modifier.padding(Space.lg)) {
-            Text(displayName, style = MaterialTheme.typography.titleSmall)
+            OverflowTooltipText(displayName, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(Space.sm))
             if (error != null) {
                 Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -340,7 +356,13 @@ private fun LicenseDialog(
                 Text("$modelName is provided under $licenseName.", style = MaterialTheme.typography.bodyMedium)
                 if (licenseUrl.isNotBlank()) {
                     Spacer(Modifier.height(Space.xs))
-                    Text(licenseUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        licenseUrl,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 if (restrictions.isNotEmpty()) {
                     Spacer(Modifier.height(Space.sm))

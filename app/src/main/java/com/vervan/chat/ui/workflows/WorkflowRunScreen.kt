@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -34,14 +33,13 @@ import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +50,7 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
@@ -83,7 +82,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(workflow?.name ?: "Workflow") },
+                title = { OverflowTooltipText(workflow?.name ?: "Workflow") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     IconButton(onClick = { showSourcePicker = true }) {
@@ -96,9 +95,8 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-      PageContainer(Modifier.padding(padding)) {
-       androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 840.dp).fillMaxSize().imePadding().padding(vertical = Space.lg)) {
+      PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -106,7 +104,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 maxLength = ValidationLimits.WORKFLOW_RUN_INPUT,
                 modifier = Modifier.fillMaxWidth().height(140.dp)
             )
-            ResponsiveActions(Modifier.padding(top = 8.dp)) {
+            ResponsiveActions(Modifier.padding(top = Space.sm)) {
                 OutlinedButton(onClick = { pickFile.launch(arrayOf("text/plain", "text/markdown", "application/pdf", "*/*")) }, enabled = !running) {
                     Text("Import file")
                 }
@@ -122,23 +120,23 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                     }
                 }
             }
-            error?.let { ErrorCard("Workflow couldn't continue", it, Modifier.padding(top = 8.dp)) }
+            error?.let { ErrorCard("Workflow couldn't continue", it, Modifier.padding(top = Space.sm)) }
 
             // vertical stepper — the current (or next-to-run) step stays expanded with its
             // live output; finished steps collapse to a one-line summary, and steps that
             // haven't started yet show as a dimmed pending row.
             val currentIndex = steps.indexOfFirst { !it.done }.let { if (it < 0) steps.lastIndex else it }
-            LazyColumn(Modifier.padding(top = 12.dp)) {
+            LazyColumn(Modifier.padding(top = Space.md)) {
                 items(steps.size) { index ->
                     val step = steps[index]
-                    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Column(Modifier.padding(12.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
+                        Column(Modifier.padding(Space.md)) {
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 if (step.done) {
                                     Icon(
                                         Icons.Filled.CheckCircle, contentDescription = "Done",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                                        modifier = Modifier.size(16.dp).padding(end = Space.xs)
                                     )
                                 }
                                 Text(
@@ -151,17 +149,17 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                                 if (step.output.isNotBlank()) {
                                     MarkdownLiteText(step.output, modifier = Modifier.padding(top = Space.xs))
                                 } else if (running && !step.done) {
-                                    CircularProgressIndicator(Modifier.padding(top = 8.dp).size(16.dp), strokeWidth = 2.dp)
+                                    CircularProgressIndicator(Modifier.padding(top = Space.sm).size(16.dp), strokeWidth = 2.dp)
                                 }
                             } else if (step.done) {
                                 Text(
                                     step.output.take(80).ifBlank { "(empty)" }, style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp)
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = Space.xs)
                                 )
                             }
                             if (step.done && index == steps.lastIndex) {
-                                ResponsiveActions(Modifier.padding(top = 8.dp)) {
+                                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                                     TextButton(onClick = { vm.saveAsLibraryOutput(step.output) }) { Text("Save to library") }
                                     TextButton(onClick = { vm.saveAsNote(step.output) }) { Text("Save as note") }
                                 }
@@ -171,7 +169,6 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 }
             }
         }
-       }
       }
     }
 
@@ -191,7 +188,10 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                                 checked = selected.contains(kb.id),
                                 onCheckedChange = { checked -> selected = if (checked) selected + kb.id else selected - kb.id }
                             )
-                            Text(kb.name)
+                            OverflowTooltipText(
+                                text = kb.name,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }

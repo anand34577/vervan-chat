@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +42,7 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ChipInputField
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -66,11 +67,13 @@ fun UserProfileScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().padding(16.dp).verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.lg)
+        ) {
             Text(
                 "Added to prompts only when a field is filled. Never inferred from your chats.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(bottom = 12.dp)
+                style = MaterialTheme.typography.bodySmall
             )
 
             ProfileField("Preferred name", name, maxLength = ValidationLimits.USER_PREFERRED_NAME, onChange = vm::setName)
@@ -81,29 +84,32 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 onItemsChange = { vm.setInterests(it.joinToString(",")) },
                 label = "Interests",
                 maxItemLength = ValidationLimits.USER_INTEREST_ITEM,
-                maxItemCount = ValidationLimits.USER_INTEREST_COUNT,
-                modifier = Modifier.padding(top = 8.dp)
+                maxItemCount = ValidationLimits.USER_INTEREST_COUNT
             )
 
-            Text("Languages", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                LanguageOptions.common.forEach { lang ->
-                    VervanFilterChip(
-                        selected = lang in languages,
-                        onClick = { vm.toggleLanguage(lang, languages) },
-                        label = { Text(lang) }
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text("Languages", style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    LanguageOptions.common.forEach { lang ->
+                        VervanFilterChip(
+                            selected = lang in languages,
+                            onClick = { vm.toggleLanguage(lang, languages) },
+                            label = { Text(lang) }
+                        )
+                    }
                 }
             }
 
-            Text("Units", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
-            SingleChoiceSegmentedButtonRow {
-                listOf("metric" to "Metric", "imperial" to "Imperial").forEachIndexed { i, (id, label) ->
-                    SegmentedButton(
-                        selected = units == id,
-                        onClick = { vm.setUnits(id) },
-                        shape = SegmentedButtonDefaults.itemShape(i, 2)
-                    ) { Text(label) }
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text("Units", style = MaterialTheme.typography.labelMedium)
+                SingleChoiceSegmentedButtonRow {
+                    listOf("metric" to "Metric", "imperial" to "Imperial").forEachIndexed { i, (id, label) ->
+                        SegmentedButton(
+                            selected = units == id,
+                            onClick = { vm.setUnits(id) },
+                            shape = SegmentedButtonDefaults.itemShape(i, 2)
+                        ) { Text(label) }
+                    }
                 }
             }
 
@@ -112,8 +118,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 onItemsChange = { vm.setAvoid(it.joinToString(",")) },
                 label = "Topics to avoid",
                 maxItemLength = ValidationLimits.USER_AVOID_TOPIC_ITEM,
-                maxItemCount = ValidationLimits.USER_AVOID_TOPIC_COUNT,
-                modifier = Modifier.padding(top = 12.dp)
+                maxItemCount = ValidationLimits.USER_AVOID_TOPIC_COUNT
             )
             ProfileField("Current goals", goals, "what are you working toward?", maxLength = ValidationLimits.USER_GOALS, onChange = vm::setGoals)
         }
@@ -138,7 +143,7 @@ private fun ProfileField(label: String, value: String, placeholder: String = "",
         label = label,
         placeholder = placeholder.ifBlank { null },
         maxLength = maxLength,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth()
     )
 }
 

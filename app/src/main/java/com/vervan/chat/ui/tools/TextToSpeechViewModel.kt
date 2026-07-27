@@ -59,6 +59,11 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
 
     sealed interface Phase {
         data object Idle : Phase
+        /** The chosen engine's first-use native model load (e.g. Supertonic's 4 ONNX sessions +
+         * self-test) — distinct from [Generating] so a slow warm-up doesn't look identical to
+         * "generating sentence 0 of 0", which read as a frozen/stuck app rather than a one-time
+         * load in progress. */
+        data object LoadingEngine : Phase
         data class Generating(val sentenceIndex: Int, val total: Int) : Phase
         /** At least one sentence still needs [retrySentence] before [finishAnyway]/auto-merge —
          * see [sentenceResults] for which. */
@@ -100,7 +105,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
         if (text.isBlank()) return
         job?.cancel()
         job = viewModelScope.launch {
-            _phase.value = Phase.Generating(0, 0)
+            _phase.value = Phase.LoadingEngine
             _sentenceResults.value = emptyList()
             val previousVoice = settings.supertonicVoiceVariant.first()
             val overriding = engineName == "SUPERTONIC" && supertonicVoice != null && supertonicVoice != previousVoice
@@ -125,6 +130,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
                     restoreOverride()
                     return@launch
                 }
+                _phase.value = Phase.Generating(0, sentences.size)
                 val results = TtsFileGenerator.synthesizeSentences(sentences, engine, lang) { p ->
                     _phase.value = Phase.Generating(p.sentenceIndex, p.totalSentences)
                 }
@@ -209,6 +215,8 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     override fun onCleared() {
+        piper.release()
+        kokoro.release()
         supertonic.release()
     }
 }

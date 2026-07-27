@@ -258,7 +258,7 @@ fun ModelManagerScreen(
                     title = title,
                     body = body,
                     tone = tone,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = Space.lg)
                 )
             }
             // Persistent load-failure banners — the same ModelLoadCoordinator error Chat/Voice
@@ -269,7 +269,7 @@ fun ModelManagerScreen(
                     title = "Generation model load failed",
                     message = err.errorMessage.toUserMessage(),
                     recovery = "Retry from the model card, or use a smaller model or another runtime.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             embeddingLoadInfo.error?.let { err ->
@@ -277,7 +277,7 @@ fun ModelManagerScreen(
                     title = "Embedding model load failed",
                     message = err.errorMessage.toUserMessage(),
                     recovery = "Retry the model. Keyword search still works without it.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             val downloadingStates = downloadStates.filter {
@@ -350,7 +350,7 @@ fun ModelManagerScreen(
                     )
                 }
                 status?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.sm))
                 }
 
                 if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
@@ -387,7 +387,7 @@ fun ModelManagerScreen(
                             "Used automatically for semantic search.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            modifier = Modifier.padding(bottom = Space.sm)
                         )
                         embeddingModels.forEach { model ->
                             ModelCard(

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 /**
  * on/off, LAN exposure (with an explicit warning), port, auth requirement + token,
@@ -79,11 +82,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 "Let local apps use the active model through OpenAI-compatible endpoints.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Space.sm)
             )
 
-            Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.md)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Server", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         Switch(checked = enabled, onCheckedChange = { vm.setApiServerEnabled(it) })
@@ -97,8 +100,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.md)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Allow other devices on this Wi-Fi", style = MaterialTheme.typography.bodyMedium)
@@ -113,8 +116,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.md)) {
                     Text("Port", style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(
                         value = portText,
@@ -124,13 +127,13 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.xs)
                     )
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Column(Modifier.padding(12.dp)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.md)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Require an API key", style = MaterialTheme.typography.bodyMedium)
@@ -153,20 +156,20 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         )
                     }
                     if (requireAuth || lan) {
-                        Text(token, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-                        Row(Modifier.padding(top = 8.dp)) {
+                        Text(token, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.sm))
+                        Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                             OutlinedButton(onClick = { clipboard.setSensitiveText(token, scope) }) { Text("Copy") }
-                            OutlinedButton(onClick = { confirmRegenerate = true }, modifier = Modifier.padding(start = 8.dp)) { Text("Regenerate") }
+                            OutlinedButton(onClick = { confirmRegenerate = true }) { Text("Regenerate") }
                         }
                     }
                 }
             }
 
             Card(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(vertical = Space.xs),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
-                Column(Modifier.padding(12.dp)) {
+                Column(Modifier.padding(Space.md)) {
                     Text("Requests this session: $requestCount", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "View requests in Settings → Storage & backup → Diagnostics.",

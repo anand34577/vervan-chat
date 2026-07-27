@@ -73,8 +73,7 @@ data class VoiceInputTurn(
  * sustained speech interrupts playback and starts a new listening cycle.
  *
  * One controller instance = one voice session, started by [start] and torn down by [stop].
- * Not persisted to the Chat database — mirrors the existing [com.vervan.chat.ui.tools.VoiceChatScreen]
- * behavior of an ephemeral, in-memory transcript.
+ * Not persisted to the Chat database — the turn list is an ephemeral, in-memory transcript.
  */
 class RealtimeVoiceController(
     private val app: VervanApp,
@@ -110,8 +109,7 @@ class RealtimeVoiceController(
     private val _turns = MutableStateFlow<List<VoiceTurn>>(emptyList())
     val turns: StateFlow<List<VoiceTurn>> = _turns
 
-    /** Which STT/TTS path is active, for the UI badges — mirrors the existing
-     * "STT: ..." badge pattern in [com.vervan.chat.ui.tools.VoiceChatScreen]. */
+    /** Which STT/TTS path is active, for the "STT: ..."/"TTS: ..." UI badges. */
     private val _sttLabel = MutableStateFlow("whisper.cpp")
     val sttLabel: StateFlow<String> = _sttLabel
     private val _ttsLabel = MutableStateFlow("Piper")
@@ -213,6 +211,7 @@ class RealtimeVoiceController(
             audioCapture.stop()
             vad.release()
             whisperCppStt.release()
+            engineSelector.releaseAll()
             if (beforeStop.isNotEmpty()) {
                 persistHistory(_turns.value, if (interrupted) ToolRunState.INTERRUPTED else ToolRunState.COMPLETED)
             }

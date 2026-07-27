@@ -133,7 +133,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -191,6 +191,7 @@ import com.vervan.chat.ui.common.formatRelativeDay
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
@@ -1476,7 +1477,7 @@ fun ChatScreen(
                 visible = scrollRestored && !stickToBottom && messages.isNotEmpty(),
                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
                 exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
+                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md)
             ) {
                 androidx.compose.material3.SmallFloatingActionButton(
                     onClick = {
@@ -1502,7 +1503,7 @@ fun ChatScreen(
                 ErrorCard(
                     title = "Generation could not continue",
                     body = it,
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)
                         .semantics { liveRegion = LiveRegionMode.Polite }
                 )
             }
@@ -1511,7 +1512,7 @@ fun ChatScreen(
                     title = "Attachment could not be added",
                     message = it,
                     recovery = "Your message is safe. Check the file or permission, then try again.",
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
                     actionLabel = "Dismiss",
                     onAction = { attachmentError = null }
                 )
@@ -1524,8 +1525,8 @@ fun ChatScreen(
             if (matchingCommands.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().widthIn(max = 840.dp).align(Alignment.CenterHorizontally)
-                        .padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = Space.lg).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     matchingCommands.forEach { template ->
                         AssistChip(
@@ -1541,7 +1542,7 @@ fun ChatScreen(
             if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
                 Column(
                     Modifier.fillMaxWidth().widthIn(max = 840.dp).align(Alignment.CenterHorizontally)
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .padding(horizontal = Space.lg, vertical = Space.xs)
                         .clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     pendingDocument?.let { docState ->
@@ -1549,13 +1550,13 @@ fun ChatScreen(
                             Modifier.fillMaxWidth().clickable(
                                 enabled = docState is ChatViewModel.DocumentAttachState.Ready,
                                 onClick = { (docState as? ChatViewModel.DocumentAttachState.Ready)?.let { onOpenDocument(it.documentId) } }
-                            ).padding(10.dp),
+                            ).padding(Space.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             when (docState) {
                                 is ChatViewModel.DocumentAttachState.Importing -> {
                                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Column(Modifier.weight(1f).padding(start = Space.sm)) {
                                         Text("Preparing \"${docState.name}\"", style = MaterialTheme.typography.labelMedium)
                                         Text(
                                                 "Copying and indexing locally. Large files may take a few minutes.",
@@ -1566,7 +1567,7 @@ fun ChatScreen(
                                 }
                                 is ChatViewModel.DocumentAttachState.Ready -> {
                                     Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Column(Modifier.weight(1f).padding(start = Space.sm)) {
                                         Text(docState.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                         Text(
                                             if (docState.grounded) "Indexed — semantic search" else "Indexed — keyword search only",
@@ -1579,7 +1580,7 @@ fun ChatScreen(
                                 }
                                 is ChatViewModel.DocumentAttachState.Failed -> {
                                     Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Column(Modifier.weight(1f).padding(start = Space.sm)) {
                                         Text("Could not attach \"${docState.name}\"", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                                         Text(docState.reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                                         Text("Choose another file or try again.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1593,9 +1594,9 @@ fun ChatScreen(
                         if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null) HorizontalDivider()
                     }
                     pendingQuote?.let { quoted ->
-                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                            Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                            Column(Modifier.weight(1f).padding(start = Space.sm)) {
                                 Text("Replying to", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 Text(
                                     quoted, style = MaterialTheme.typography.bodySmall, maxLines = 1,
@@ -1611,7 +1612,7 @@ fun ChatScreen(
                         HorizontalDivider()
                     }
                     pendingOcrImagePath?.let { path ->
-                        Box(Modifier.fillMaxWidth().padding(8.dp).clickable { showOcrPreview = true }) {
+                        Box(Modifier.fillMaxWidth().padding(Space.sm).clickable { showOcrPreview = true }) {
                             val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
                             val bitmap = remember(path, thumbnailPx) {
                                 com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
@@ -1625,7 +1626,7 @@ fun ChatScreen(
                                 )
                             }
                             Surface(
-                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+                                modifier = Modifier.align(Alignment.BottomStart).padding(Space.sm),
                                 shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
@@ -1633,17 +1634,17 @@ fun ChatScreen(
                                 Text(
                                     if (pendingOcrText.isNullOrBlank()) "OCR · no text found · tap to view" else "OCR · tap to view extracted text",
                                     style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs)
                                 )
                             }
                             IconButton(
                                 onClick = { vm.setPendingOcr(null, null) },
-                                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
+                                modifier = Modifier.align(Alignment.TopEnd).padding(Space.xs).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
                             ) { Icon(Icons.Filled.Close, contentDescription = "Remove OCR attachment", tint = MaterialTheme.colorScheme.inverseOnSurface) }
                         }
                     }
                     pendingImagePath?.let { path ->
-                        Box(Modifier.fillMaxWidth().heightIn(min = 92.dp).padding(8.dp).clickable { showPendingImagePreview = true }) {
+                        Box(Modifier.fillMaxWidth().heightIn(min = 92.dp).padding(Space.sm).clickable { showPendingImagePreview = true }) {
                             val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
                             val bitmap = remember(path, thumbnailPx) {
                                 com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
@@ -1669,12 +1670,12 @@ fun ChatScreen(
                             }
                             IconButton(
                                 onClick = { vm.setPendingImage(null) },
-                                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
+                                modifier = Modifier.align(Alignment.TopEnd).padding(Space.xs).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), androidx.compose.foundation.shape.CircleShape)
                             ) { Icon(Icons.Filled.Close, contentDescription = "Remove image", tint = MaterialTheme.colorScheme.inverseOnSurface) }
                         }
                     }
                     pendingAudioPath?.let { path ->
-                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.weight(1f)) { VoiceMessageRow(path) }
                             TextButton(onClick = { vm.setPendingAudio(null) }) { Text("Remove") }
                         }
@@ -1843,7 +1844,7 @@ fun ChatScreen(
                                     Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.size(20.dp))
                                 }
                             }
-                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            Column(Modifier.weight(1f).padding(start = Space.md)) {
                                 Text("Recording for transcription", style = MaterialTheme.typography.labelLarge)
                                 Text("Your selected STT engine will convert this to text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -1898,12 +1899,12 @@ fun ChatScreen(
                                 if (draft.length > 12_000) "Message is over the 12,000 character limit" else "${draft.length} / 12,000 characters",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (draft.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.align(Alignment.End).padding(horizontal = 12.dp, vertical = 2.dp)
+                                modifier = Modifier.align(Alignment.End).padding(horizontal = Space.md, vertical = Space.xs)
                             )
                         }
                         if (isImportingAudio) {
                             Row(
-                                Modifier.padding(start = 12.dp, bottom = 4.dp),
+                                Modifier.padding(start = Space.md, bottom = Space.xs),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
@@ -1911,7 +1912,7 @@ fun ChatScreen(
                                     "Converting audio…",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(start = 6.dp)
+                                    modifier = Modifier.padding(start = Space.sm)
                                 )
                             }
                         }
@@ -2325,23 +2326,23 @@ fun ChatScreen(
                     Text("Open workspace", modifier = Modifier.fillMaxWidth().clickable {
                         showWorkspaceOptions = false
                         workspace?.let { onOpenWorkspace(it.id) }
-                    }.padding(vertical = 12.dp))
+                    }.padding(vertical = Space.md))
                     if (!isChatWorkspaceActive) {
                         Text(
                             "Set as active workspace",
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { vm.setChatWorkspaceActive(); showWorkspaceOptions = false }
-                                .padding(vertical = 12.dp)
+                                .padding(vertical = Space.md)
                         )
                     }
                     HorizontalDivider()
-                    Text("Move to another workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    Text("Move to another workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
                     otherWorkspaces.filter { it.id != workspace?.id }.forEach { ws ->
                         Text(
                             ws.name,
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { pendingMoveTarget = ws; showWorkspaceOptions = false }
-                                .padding(vertical = 12.dp)
+                                .padding(vertical = Space.md)
                         )
                     }
                 }
@@ -2379,7 +2380,7 @@ fun ChatScreen(
             text = {
                 Column {
                     Text("Resets AI, source, tool, and knowledge settings to workspace defaults.")
-                    Text("Messages, attachments, workspace, and folder stay unchanged.", modifier = Modifier.padding(top = 8.dp))
+                    Text("Messages, attachments, workspace, and folder stay unchanged.", modifier = Modifier.padding(top = Space.sm))
                 }
             },
             confirmButton = { TextButton(onClick = { vm.resetChatSettings(); showResetConfirm = false }) { Text("Reset") } },
@@ -2444,7 +2445,7 @@ fun ChatScreen(
                             kb.name,
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { vm.addToKnowledgeBase(kb.id); showKbPicker = false }
-                                .padding(vertical = 12.dp)
+                                .padding(vertical = Space.md)
                         )
                     }
                 }
@@ -2465,7 +2466,7 @@ fun ChatScreen(
                         showPersonaPicker = false
                     }) {
                         androidx.compose.material3.RadioButton(selected = chat?.personaId == null, onClick = null)
-                        Text("No persona", modifier = Modifier.padding(start = 8.dp))
+                        Text("No persona", modifier = Modifier.padding(start = Space.sm))
                     }
                     personas.forEach { option ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
@@ -2473,7 +2474,10 @@ fun ChatScreen(
                             showPersonaPicker = false
                         }) {
                             androidx.compose.material3.RadioButton(selected = chat?.personaId == option.id, onClick = null)
-                            Text(option.name, modifier = Modifier.padding(start = 8.dp))
+                            OverflowTooltipText(
+                                text = option.name,
+                                modifier = Modifier.weight(1f).padding(start = Space.sm)
+                            )
                         }
                     }
                 }
@@ -2493,7 +2497,7 @@ fun ChatScreen(
                         showModelPicker = false
                     }) {
                         androidx.compose.material3.RadioButton(selected = chat?.modelId == null, onClick = null)
-                        Text("Use active default", modifier = Modifier.padding(start = 8.dp))
+                        Text("Use active default", modifier = Modifier.padding(start = Space.sm))
                     }
                     generationModels.forEach { model ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
@@ -2501,7 +2505,10 @@ fun ChatScreen(
                             showModelPicker = false
                         }) {
                             androidx.compose.material3.RadioButton(selected = chat?.modelId == model.id, onClick = null)
-                            Text(model.displayName, modifier = Modifier.padding(start = 8.dp))
+                            OverflowTooltipText(
+                                text = model.displayName,
+                                modifier = Modifier.weight(1f).padding(start = Space.sm)
+                            )
                         }
                     }
                 }
@@ -2558,7 +2565,7 @@ fun ChatScreen(
                 "Over the recommended limit. Older context will be trimmed before sending.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp)
+                            modifier = Modifier.padding(top = Space.sm)
                         )
                     }
                 }

@@ -31,7 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,7 +52,12 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.rememberReducedMotion
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +66,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     val vm: StudyReviewViewModel = viewModel(factory = viewModelFactory { initializer { StudyReviewViewModel(app, setName) } })
     val cards by vm.cards.collectAsState()
     val missedOnly by vm.missedOnly.collectAsState()
+    val reducedMotion = rememberReducedMotion()
 
     var index by remember { mutableIntStateOf(0) }
     var revealed by remember { mutableStateOf(false) }
@@ -92,7 +98,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(setName)
+                        OverflowTooltipText(setName)
                         Text("Active recall review", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -100,8 +106,9 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
+            ResponsiveActions {
                 VervanFilterChip(
                     selected = missedOnly,
                     onClick = { vm.setMissedOnly(!missedOnly) },
@@ -133,13 +140,14 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                     seen = sessionSeen,
                     onAgain = ::resetSession,
                     onPracticeMissed = { vm.setMissedOnly(true); resetSession() },
+                    reducedMotion = reducedMotion,
                     modifier = Modifier.weight(1f)
                 )
                 return@Column
             }
 
             val progress = (index + 1f) / sessionCards.size
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.xs), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Card ${index + 1} of ${sessionCards.size}", style = MaterialTheme.typography.labelMedium)
                 Text("$sessionCorrect correct", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
@@ -151,11 +159,15 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             // the answer face isn't rendered as mirror text. Each card gets a stable categorical
             // accent so a deck reads as a colorful stack instead of forty identical grey cards.
             val accent = com.vervan.chat.ui.theme.vervanAccentFor(index)
-            val rotation by animateFloatAsState(if (revealed) 180f else 0f, tween(durationMillis = 380), label = "card-flip")
+            val rotation by animateFloatAsState(
+                if (revealed) 180f else 0f,
+                tween(durationMillis = if (reducedMotion) 1 else 380),
+                label = "card-flip"
+            )
             val showAnswer = rotation > 90f
             Card(
                 onClick = { revealed = !revealed },
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 20.dp)
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = Space.lg)
                     .graphicsLayer {
                         rotationY = rotation
                         cameraDistance = 14f * density
@@ -171,7 +183,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 Column(
                     Modifier.fillMaxSize()
                         .graphicsLayer { if (showAnswer) rotationY = 180f }
-                        .padding(28.dp),
+                        .padding(Space.xxl),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -185,19 +197,19 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                         style = MaterialTheme.typography.headlineSmall,
                         textAlign = TextAlign.Center,
                         color = if (showAnswer) accent.onContainer else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
                     Text(
                         if (showAnswer) "Tap to flip back" else "Think first, then tap to flip",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (showAnswer) accent.onContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 24.dp)
+                        modifier = Modifier.padding(top = Space.xxl)
                     )
                 }
             }
 
             if (revealed) {
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                     OutlinedButton(
                         onClick = {
                             vm.markResult(card, false)
@@ -214,8 +226,9 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                     ) { Text("Got it") }
                 }
             } else {
-                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text("Reveal answer") }
+                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text("Reveal answer") }
             }
+          }
         }
     }
 }
@@ -226,12 +239,17 @@ private fun SessionComplete(
     seen: Int,
     onAgain: () -> Unit,
     onPracticeMissed: () -> Unit,
+    reducedMotion: Boolean,
     modifier: Modifier = Modifier
 ) {
     val percent = if (seen == 0) 0 else correct * 100 / seen
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         // Animated score ring — sweeps up to the session score on entry.
-        val sweep by animateFloatAsState(percent / 100f, tween(durationMillis = 900), label = "score-ring")
+        val sweep by animateFloatAsState(
+            percent / 100f,
+            tween(durationMillis = if (reducedMotion) 1 else 900),
+            label = "score-ring"
+        )
         val ringColor = MaterialTheme.colorScheme.primary
         val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
@@ -248,15 +266,15 @@ private fun SessionComplete(
                 Text("$correct of $seen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text("Review complete", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 20.dp))
+        Text("Review complete", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.xl))
         Text(
             if (percent >= 80) "Strong recall. A short review later will help it stick." else "Review the cards you missed while they are still fresh.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = Space.sm)
         )
-        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) { Text("Review again") }
-        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Practice missed cards") }
+        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = Space.xxl)) { Text("Review again") }
+        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) { Text("Practice missed cards") }
     }
 }

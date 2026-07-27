@@ -102,8 +102,6 @@ class SettingsRepository(context: Context) {
         val KV_CACHE_TYPE = stringPreferencesKey("kv_cache_type")
         val VULKAN_DEVICE_INDEX = intPreferencesKey("vulkan_device_index")
         val DEFAULT_PROFILE = stringPreferencesKey("default_profile")
-        val DEFAULT_START_SCREEN = stringPreferencesKey("default_start_screen")
-        val CONFIRM_DESTRUCTIVE = booleanPreferencesKey("confirm_destructive")
         // Workspace System — the single active workspace, global to the app (not a
         // per-workspace field). Null until the first cold-start seed sets it to "default".
         val ACTIVE_WORKSPACE_ID = stringPreferencesKey("active_workspace_id")
@@ -145,6 +143,8 @@ class SettingsRepository(context: Context) {
         // instead of "what's on" means a newly added tool is enabled by default without needing
         // a migration or a new key every time one is added.
         val DISABLED_TOOL_IDS = stringSetPreferencesKey("disabled_tool_ids")
+        val TOOL_FAVORITES = stringSetPreferencesKey("tool_favorites")
+        val ONBOARDED = booleanPreferencesKey("onboarded")
         // Current date/time is injected into every prompt directly (not gated behind the
         // tool-calling loop at all) so the model always has it, even in chats with tools off —
         // this is the one thing "always enabled ... so it can refer to it for anything" needs.
@@ -428,14 +428,6 @@ class SettingsRepository(context: Context) {
     val defaultProfile: Flow<String> = store.data.map { it[Keys.DEFAULT_PROFILE] ?: "BALANCED" }
     suspend fun setDefaultProfile(value: String) { store.edit { it[Keys.DEFAULT_PROFILE] = value } }
 
-    /** Default start screen — "home"/"chats"/"knowledge"/"library". */
-    val defaultStartScreen: Flow<String> = store.data.map { it[Keys.DEFAULT_START_SCREEN] ?: "home" }
-    suspend fun setDefaultStartScreen(value: String) { store.edit { it[Keys.DEFAULT_START_SCREEN] = value } }
-
-    /** Whether destructive actions require an extra confirmation. */
-    val confirmDestructive: Flow<Boolean> = store.data.map { it[Keys.CONFIRM_DESTRUCTIVE] ?: true }
-    suspend fun setConfirmDestructive(value: Boolean) { store.edit { it[Keys.CONFIRM_DESTRUCTIVE] = value } }
-
     /** Falls back to the Default Workspace id (Workspace System) until the user
      * switches — new chats always have somewhere valid to land. */
     val activeWorkspaceId: Flow<String> = store.data.map {
@@ -519,6 +511,14 @@ class SettingsRepository(context: Context) {
             val current = prefs[Keys.DISABLED_TOOL_IDS] ?: emptySet()
             prefs[Keys.DISABLED_TOOL_IDS] = if (enabled) current - toolId else current + toolId
         }
+    }
+    val toolFavorites: Flow<Set<String>> = store.data.map { it[Keys.TOOL_FAVORITES] ?: emptySet() }
+    suspend fun setToolFavorites(routes: Set<String>) {
+        store.edit { it[Keys.TOOL_FAVORITES] = routes }
+    }
+    val onboarded: Flow<Boolean> = store.data.map { it[Keys.ONBOARDED] ?: false }
+    suspend fun setOnboarded(value: Boolean) {
+        store.edit { it[Keys.ONBOARDED] = value }
     }
     val alwaysIncludeDateTime: Flow<Boolean> = store.data.map { it[Keys.ALWAYS_INCLUDE_DATETIME] ?: true }
     suspend fun setAlwaysIncludeDateTime(v: Boolean) { store.edit { it[Keys.ALWAYS_INCLUDE_DATETIME] = v } }

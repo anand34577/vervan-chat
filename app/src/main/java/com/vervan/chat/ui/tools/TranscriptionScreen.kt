@@ -38,7 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,7 +55,10 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.TranscriptionProject
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
 
 private fun queryDisplayName(context: android.content.Context, uri: Uri): String {
@@ -104,15 +107,14 @@ fun TranscriptionScreen(onBack: () -> Unit) {
         val project = current
         if (project == null) {
             PageContainer(Modifier.padding(padding)) {
-                Column(Modifier.fillMaxSize().padding(Space.lg)) {
+                Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                     Text(
                         "Import an audio or video file, or record directly. Transcription runs fully offline with whisper.cpp.",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    ResponsiveActions(Modifier.padding(top = Space.md)) {
                         Button(
-                            onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) },
-                            modifier = Modifier.weight(1f)
+                            onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) }
                         ) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                             Text("Import file")
@@ -122,8 +124,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             onClick = {
                                 if (recording) vm.stopRecording()
                                 else requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                            },
-                            modifier = Modifier.weight(1f)
+                            }
                         ) {
                             Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                             Text(
@@ -153,12 +154,13 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             items(projects, key = { it.id }) { p ->
                                 Card(
                                     onClick = { vm.open(p.id) },
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                                    colors = SurfaceRole.Card.cardColors(),
+                                    border = SurfaceRole.Card.border(),
                                 ) {
                                     Row(Modifier.fillMaxWidth().padding(Space.md), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Column(Modifier.weight(1f)) {
-                                            Text(p.fileName, style = MaterialTheme.typography.bodyMedium)
+                                            OverflowTooltipText(p.fileName, style = MaterialTheme.typography.bodyMedium)
                                             Text(
                                                 statusLabel(p),
                                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -248,7 +250,7 @@ private fun TranscriptionDetail(
     val segments = remember(project.segmentsJson) { vm.parseSegments(project) }
 
     PageContainer(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(Space.lg)) {
+        Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             Text(project.fileName, style = MaterialTheme.typography.titleMedium)
             Text(statusLabel(project), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
@@ -345,10 +347,10 @@ private fun TranscriptionDetail(
                 ) { Text("Undo") }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedButton(onClick = { onExport("txt") }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("TXT") }
-                OutlinedButton(onClick = { onExport("md") }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Markdown") }
-                OutlinedButton(onClick = { onExport("pdf") }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f)) { Text("PDF") }
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
+                OutlinedButton(onClick = { onExport("txt") }, enabled = text.isNotBlank()) { Text("TXT") }
+                OutlinedButton(onClick = { onExport("md") }, enabled = text.isNotBlank()) { Text("Markdown") }
+                OutlinedButton(onClick = { onExport("pdf") }, enabled = text.isNotBlank()) { Text("PDF") }
                 IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
             }
 

@@ -10,6 +10,9 @@ interface NoteDao : BaseDao<Note> {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<Note>>
 
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY updatedAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<Note>>
+
     @Query("SELECT * FROM notes WHERE folderId = :folderId AND deletedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun observeForFolder(folderId: String): Flow<List<Note>>
 

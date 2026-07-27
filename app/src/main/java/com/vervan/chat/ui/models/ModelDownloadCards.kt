@@ -108,6 +108,7 @@ import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionLabel
@@ -473,7 +474,10 @@ internal fun DownloadPackageCard(
                                 modifier = Modifier.size(18.dp)
                             )
                             Column(Modifier.weight(1f).padding(start = Space.sm)) {
-                                Text(file.fileName, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                OverflowTooltipText(
+                                    text = file.fileName,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
                                 Text(
                                     fileStatusLabel(file),
                                     style = MaterialTheme.typography.labelSmall,

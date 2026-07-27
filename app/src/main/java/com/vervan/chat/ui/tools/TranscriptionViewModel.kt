@@ -326,6 +326,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
 
     suspend fun exportTxt(project: TranscriptionProject): File = withContext(Dispatchers.IO) {
         val dir = File(app.filesDir, "exports").apply { mkdirs() }
+        pruneOldExports(dir)
         val file = File(dir, "${safeName(project.fileName)}.txt")
         file.writeText(project.transcript)
         file
@@ -333,6 +334,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
 
     suspend fun exportMarkdown(project: TranscriptionProject): File = withContext(Dispatchers.IO) {
         val dir = File(app.filesDir, "exports").apply { mkdirs() }
+        pruneOldExports(dir)
         val file = File(dir, "${safeName(project.fileName)}.md")
         file.writeText(
             buildString {
@@ -348,6 +350,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
 
     suspend fun exportPdf(project: TranscriptionProject): File = withContext(Dispatchers.IO) {
         val dir = File(app.filesDir, "exports").apply { mkdirs() }
+        pruneOldExports(dir)
         val file = File(dir, "${safeName(project.fileName)}.pdf")
         val subtitle = "Transcribed with whisper.cpp (${project.modelVariant}) on " +
             java.text.DateFormat.getDateTimeInstance().format(java.util.Date(project.createdAt))
@@ -360,8 +363,20 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
 
     private fun safeName(name: String) = name.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 _.-]"), "").trim().ifEmpty { "transcript" }.take(60)
 
+    /** These exports are one-off share artifacts, not permanent storage — [dir] otherwise grows
+     * without bound since nothing else in the app ever deletes from it. Deletes files older than
+     * [EXPORT_RETENTION_MS] each time a new export is written. */
+    private fun pruneOldExports(dir: File) {
+        val cutoff = System.currentTimeMillis() - EXPORT_RETENTION_MS
+        dir.listFiles()?.forEach { file -> if (file.isFile && file.lastModified() < cutoff) file.delete() }
+    }
+
     override fun onCleared() {
         recorder?.cancel()
         whisperEngine.release()
+    }
+
+    companion object {
+        private const val EXPORT_RETENTION_MS = 7L * 24 * 60 * 60 * 1000
     }
 }

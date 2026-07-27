@@ -21,7 +21,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +62,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
-                    Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         ThemeMode.entries.forEach { mode ->
                             VervanFilterChip(
                                 selected = themeMode == mode,
@@ -73,10 +73,10 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     }
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         Row(
-                            Modifier.fillMaxWidth().padding(top = 16.dp),
+                            Modifier.fillMaxWidth().padding(top = Space.lg),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                             Switch(checked = dynamicColor, onCheckedChange = { vm.setDynamicColor(it) })
                         }
                     }
@@ -84,9 +84,9 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         "Accent color",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
-                    Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                         AccentTheme.entries.forEach { accent ->
                             AccentSwatch(
                                 accent = accent,
@@ -103,10 +103,10 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         )
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 16.dp),
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                         Switch(checked = oledTrueBlack, onCheckedChange = { vm.setOledTrueBlack(it) })
                     }
                 }

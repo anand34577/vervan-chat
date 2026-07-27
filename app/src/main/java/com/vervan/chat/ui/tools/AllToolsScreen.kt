@@ -38,12 +38,10 @@ import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,7 +55,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,6 +77,7 @@ import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private data class ToolEntry(
     val icon: ImageVector,
@@ -164,7 +162,6 @@ private val categories = listOf(
             ToolEntry(Icons.Filled.Insights, "Goal breakdown", "Convert a goal into milestones and actions.", "tools/goal-breakdown"),
             ToolEntry(Icons.AutoMirrored.Filled.CompareArrows, "Decision assistant", "Compare options using explicit criteria.", "tools/decision-assistant"),
             ToolEntry(Icons.AutoMirrored.Filled.Rule, "Smart checklist", "Generate a practical checklist from an outcome.", "tools/smart-checklist"),
-            ToolEntry(Icons.Filled.Tune, "Workflows", "Run reusable multi-step AI processes.", "workflows"),
         ),
     ),
     ToolCategory(
@@ -184,11 +181,7 @@ private val categories = listOf(
         Icons.Filled.Psychology,
         listOf(
             ToolEntry(Icons.Filled.History, "Run history", "Resume, save, share, or repeat recent tool results.", "tools/runs"),
-            ToolEntry(Icons.AutoMirrored.Filled.MenuBook, "Knowledge bases", "Ground answers in your own local documents.", "knowledge"),
             ToolEntry(Icons.Filled.AutoAwesome, "Model capabilities", "See what each installed model can use.", "tools/model-dashboard"),
-            ToolEntry(Icons.Filled.AutoAwesome, "Models", "Import, configure, load, and benchmark models.", "models"),
-            ToolEntry(Icons.Filled.Psychology, "Memory", "Review reusable facts saved for future chats.", "memory"),
-            ToolEntry(Icons.Filled.GridView, "Smart collections", "Browse dynamic groups such as pinned or attached chats.", "collections"),
         ),
     ),
 )
@@ -205,17 +198,23 @@ internal val searchableTools: List<SearchableTool> = categories.flatMap { catego
 fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val app = context.applicationContext as VervanApp
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
-    val recentRuns by app.container.db.toolRunDao().observeRecent(12).collectAsState(initial = emptyList())
-    val prefs = remember { context.getSharedPreferences("vervan", 0) }
-    // Favorites persist in the shared prefs the app already uses (no schema change): a set of
-    // tool routes. Held in state so toggling re-renders immediately; prefs is the durable source
-    // of truth and is reloaded on process restart.
-    var favorites by remember { mutableStateOf(prefs.getStringSet("tool_favorites", emptySet())!!.toSet()) }
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
+    val recentRuns by app.container.db.toolRunDao().observeRecent(12).collectAsStateWithLifecycle(initialValue = emptyList())
+    val legacyPrefs = remember { context.getSharedPreferences("vervan", 0) }
+    // Migrate the old raw-SharedPreferences set once, then keep DataStore as the single durable
+    // source alongside the rest of the app's user settings.
+    val legacyFavorites = remember { legacyPrefs.getStringSet("tool_favorites", emptySet()).orEmpty().toSet() }
+    val favorites by app.container.settingsRepository.toolFavorites.collectAsStateWithLifecycle(initialValue = legacyFavorites)
+    val persistenceScope = rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (legacyFavorites.isNotEmpty()) {
+            app.container.settingsRepository.setToolFavorites(legacyFavorites)
+        }
+        legacyPrefs.edit().remove("tool_favorites").apply()
+    }
     fun toggleFavorite(route: String) {
         val next = if (route in favorites) favorites - route else favorites + route
-        favorites = next
-        prefs.edit().putStringSet("tool_favorites", next).apply()
+        persistenceScope.launch { app.container.settingsRepository.setToolFavorites(next) }
     }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }

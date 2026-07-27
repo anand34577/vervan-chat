@@ -2,6 +2,7 @@ package com.vervan.chat
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,26 +14,29 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.update
 import com.vervan.chat.data.settings.ThemeMode
 import com.vervan.chat.security.AppLockMethod
 import com.vervan.chat.ui.lock.LockScreen
 import com.vervan.chat.ui.nav.VervanNavGraph
 import com.vervan.chat.ui.theme.VervanTheme
+import java.util.UUID
 
 class MainActivity : FragmentActivity() {
     private var intentVersion by mutableIntStateOf(0)
     private var incomingShare by mutableStateOf<IncomingShare?>(null)
+    private var hardwareShortcut by mutableStateOf<String?>(null)
     private var shareIntentConsumed = false
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -43,17 +47,17 @@ class MainActivity : FragmentActivity() {
         incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
         val app = application as VervanApp
         setContent {
-            val themeMode by app.container.settingsRepository.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
-            val fontScale by app.container.settingsRepository.fontScale.collectAsState(initial = 1.0f)
-            val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsState(initial = false)
-            val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsState(initial = false)
-            val highContrast by app.container.settingsRepository.highContrast.collectAsState(initial = false)
-            val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsState(initial = false)
-            val accentTheme by app.container.settingsRepository.accentTheme.collectAsState(initial = com.vervan.chat.data.settings.AccentTheme.AMBER)
-            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsState(initial = false)
-            val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsState(initial = "BIOMETRIC")
-            val isLocked by app.container.appLockManager.isLocked.collectAsState()
-            val screenshotBlockingEnabled by app.container.settingsRepository.screenshotBlockingEnabled.collectAsState(initial = false)
+            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+            val fontScale by app.container.settingsRepository.fontScale.collectAsStateWithLifecycle(initialValue = 1.0f)
+            val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsStateWithLifecycle(initialValue = false)
+            val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsStateWithLifecycle(initialValue = false)
+            val highContrast by app.container.settingsRepository.highContrast.collectAsStateWithLifecycle(initialValue = false)
+            val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
+            val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.AMBER)
+            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
+            val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
+            val screenshotBlockingEnabled by app.container.settingsRepository.screenshotBlockingEnabled.collectAsStateWithLifecycle(initialValue = false)
             // App lock and the app-wide screenshot block each contribute their own reason to the
             // shared set, independently, so neither clears a flag the other still needs.
             LaunchedEffect(appLockEnabled) {
@@ -62,7 +66,7 @@ class MainActivity : FragmentActivity() {
             LaunchedEffect(screenshotBlockingEnabled) {
                 app.container.secureWindowReasons.update { reasons -> if (screenshotBlockingEnabled) reasons + "screenshot_block" else reasons - "screenshot_block" }
             }
-            val secureReasons by app.container.secureWindowReasons.collectAsState()
+            val secureReasons by app.container.secureWindowReasons.collectAsStateWithLifecycle()
             // FLAG_SECURE blocks screenshots/screen recording, and blanks the recent-apps
             // thumbnail "for free" — Android does that automatically for a FLAG_SECURE window.
             LaunchedEffect(secureReasons) {
@@ -103,14 +107,23 @@ class MainActivity : FragmentActivity() {
                     LocalMinimumInteractiveComponentSize provides if (largeTouchTargets) 56.dp else 48.dp
                 ) {
                     Box(Modifier.fillMaxSize()) {
-                        VervanNavGraph(
-                            app = app,
-                            incomingShare = incomingShare.takeUnless { appLockEnabled && isLocked },
-                            onShareConsumed = ::consumeShare,
-                            shortcut = extractShortcut(intent),
-                            intentVersion = intentVersion,
-                            windowSizeClass = windowSizeClass
-                        )
+                        Box(
+                            if (appLockEnabled && isLocked) {
+                                Modifier.fillMaxSize().clearAndSetSemantics { }
+                            } else {
+                                Modifier.fillMaxSize()
+                            }
+                        ) {
+                            VervanNavGraph(
+                                app = app,
+                                incomingShare = incomingShare.takeUnless { appLockEnabled && isLocked },
+                                onShareConsumed = ::consumeShare,
+                                shortcut = (hardwareShortcut ?: extractShortcut(intent))
+                                    .takeUnless { appLockEnabled && isLocked },
+                                intentVersion = intentVersion,
+                                windowSizeClass = windowSizeClass
+                            )
+                        }
                         if (appLockEnabled && isLocked) {
                             LockScreen(
                                 activity = this@MainActivity,
@@ -127,9 +140,27 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        hardwareShortcut = null
         shareIntentConsumed = false
         incomingShare = intent.toIncomingShare(contentResolver)
         intentVersion++
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if ((event.isCtrlPressed || event.isMetaPressed) && event.repeatCount == 0) {
+            val shortcut = when (keyCode) {
+                KeyEvent.KEYCODE_N -> "new_chat"
+                KeyEvent.KEYCODE_K -> "search"
+                KeyEvent.KEYCODE_COMMA -> "settings"
+                else -> null
+            }
+            if (shortcut != null) {
+                hardwareShortcut = shortcut
+                intentVersion++
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -158,21 +189,21 @@ class MainActivity : FragmentActivity() {
      * value here at the trust boundary rather than letting an untrusted string reach
      * [VervanNavGraph], where it would be interpolated into a NavController route (an unparseable
      * route throws IllegalArgumentException and crashes the app from outside). Allowed shapes:
-     *  - the static keywords new_chat / voice / capture / search
-     *  - open_chat:<numeric chat id>  (chat ids are Room autogenerated Longs)
+     *  - the static keywords new_chat / voice / capture / search / settings
+     *  - open_chat:<UUID> (the shape used by Chat's generated primary key)
      */
     private fun extractShortcut(intent: Intent?): String? {
         val raw = intent?.getStringExtra("vervan_shortcut") ?: return null
         if (raw in STATIC_SHORTCUTS) return raw
         if (raw.startsWith("open_chat:")) {
             val id = raw.removePrefix("open_chat:")
-            if (id.all { it.isDigit() } && id.isNotEmpty()) return "open_chat:$id"
+            if (runCatching { UUID.fromString(id) }.isSuccess) return "open_chat:$id"
         }
         return null
     }
 
     private companion object {
         const val STATE_SHARE_CONSUMED = "share_intent_consumed"
-        val STATIC_SHORTCUTS = setOf("new_chat", "voice", "capture", "search")
+        val STATIC_SHORTCUTS = setOf("new_chat", "voice", "capture", "search", "settings")
     }
 }

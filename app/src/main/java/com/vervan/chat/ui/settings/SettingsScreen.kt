@@ -55,7 +55,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +69,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -81,6 +82,7 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.swatchColor
@@ -119,12 +121,12 @@ fun SettingsScreen(
     onOpenHelp: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val modelCount by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
-    val memoryCount by app.container.db.memoryDao().observeAll().collectAsState(initial = emptyList())
-    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsState(initial = 0)
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
-    val userName by app.container.settingsRepository.userName.collectAsState(initial = "")
-    val userOccupation by app.container.settingsRepository.userOccupation.collectAsState(initial = "")
+    val modelCount by app.container.db.modelDao().observeModels().collectAsStateWithLifecycle(initialValue = emptyList())
+    val memoryCount by app.container.db.memoryDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsStateWithLifecycle(initialValue = 0)
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
+    val userName by app.container.settingsRepository.userName.collectAsStateWithLifecycle(initialValue = "")
+    val userOccupation by app.container.settingsRepository.userOccupation.collectAsStateWithLifecycle(initialValue = "")
     // Live build label from PackageInfo — the footer used to hardcode "version 0.1", which drifted
     // from the actual release on every bump. Read once; it can't change during the session.
     val versionLabel = remember {
@@ -260,15 +262,16 @@ fun SettingsScreen(
                         }
                     }
                     Column(Modifier.weight(1f).padding(start = Space.lg)) {
-                        Text(
-                            userName.trim().ifBlank { "Set up your profile" },
-                            style = MaterialTheme.typography.titleMedium
+                        OverflowTooltipText(
+                            text = userName.trim().ifBlank { "Set up your profile" },
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
                             userOccupation.trim().ifBlank { "Add details for more relevant replies" },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     Icon(
@@ -389,7 +392,7 @@ private fun SettingsGroup(destinations: List<SettingsDestination>) {
             )
             if (index != destinations.lastIndex) {
                 HorizontalDivider(
-                    modifier = Modifier.padding(start = 68.dp),
+                    modifier = Modifier.padding(horizontal = Space.lg),
                     color = vervanSubtleDividerColor()
                 )
             }
@@ -406,7 +409,7 @@ fun GenerationSlider(
     steps: Int = 0,
     onChange: (Float) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Slider(
@@ -417,7 +420,7 @@ fun GenerationSlider(
             )
             Text(
                 String.format(format, value), style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = Space.sm)
             )
         }
     }
@@ -460,7 +463,7 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = Space.xs)
         )
     }
 }

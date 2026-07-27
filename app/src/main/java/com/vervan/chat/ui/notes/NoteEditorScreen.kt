@@ -29,7 +29,7 @@ import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,7 +47,9 @@ import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.DiffViewer
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.MarkdownLiteText
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +129,8 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(16.dp)) {
+        PageContainer(Modifier.padding(padding).imePadding(), maxContentWidth = 840.dp) {
+        Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = title,
                 onValueChange = { title = it; vm.scheduleSave(it, content, tags) },
@@ -137,8 +140,8 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 placeholder = "Title"
             )
             if (running) {
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp).padding(end = 8.dp), strokeWidth = 2.dp)
+                Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp).padding(end = Space.sm), strokeWidth = 2.dp)
                     Text("Updating the note on this device…")
                 }
             }
@@ -147,7 +150,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     title = "Couldn't complete the note action",
                     message = it,
                     recovery = "Your note is safe. Check the model or shorten the selection, then try again.",
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             ChipInputField(
@@ -160,12 +163,12 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 label = "Tags",
                 maxItemLength = ValidationLimits.NOTE_TAG,
                 maxItemCount = ValidationLimits.NOTE_TAG_COUNT,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             if (previewMode) {
                 MarkdownLiteText(
                     content.ifBlank { "(empty)" },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm).weight(1f)
                 )
             } else {
                 BoundedTextField(
@@ -173,7 +176,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     onValueChange = { content = it; vm.scheduleSave(title, it, tags) },
                     maxLength = ValidationLimits.NOTE_CONTENT,
                     maxLines = Int.MAX_VALUE,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).weight(1f),
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm).weight(1f),
                     placeholder = "Write here… Markdown is supported"
                 )
             }
@@ -181,11 +184,12 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 DiffViewer(
                     original = content,
                     transformed = result,
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = Space.sm),
                     onReplace = { content = result; vm.save(title, result, tags); pendingResult = null },
                     onCancel = { pendingResult = null }
                 )
             }
+        }
         }
     }
 
@@ -203,7 +207,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                             kb.name,
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { vm.addToKnowledgeBase(kb.id); showKbPicker = false }
-                                .padding(vertical = 10.dp)
+                                .padding(vertical = Space.md)
                         )
                     }
                 }

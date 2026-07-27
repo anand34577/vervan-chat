@@ -37,7 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +63,7 @@ import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanAccentFor
 import kotlinx.coroutines.launch
 
@@ -112,7 +113,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
                 val avatarAccent = vervanAccentFor((name.hashCode() and Int.MAX_VALUE) % 6)
                 val avatarBitmap = remember(avatarPath) {
@@ -150,19 +151,19 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 "Saving creates an editable copy. The built-in stays unchanged.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
+                    modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (!isBuiltIn) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
-                    TextButton(onClick = { showAvatarChooser = true }, modifier = Modifier.padding(top = 8.dp)) {
+                    TextButton(onClick = { showAvatarChooser = true }, modifier = Modifier.padding(top = Space.sm)) {
                         Icon(Icons.Filled.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(if (avatarPath != null) "Change icon" else "Choose icon", modifier = Modifier.padding(start = 6.dp))
+                        Text(if (avatarPath != null) "Change icon" else "Choose icon", modifier = Modifier.padding(start = Space.sm))
                     }
                     if (avatarPath != null) {
-                        TextButton(onClick = vm::clearAvatar, modifier = Modifier.padding(top = 8.dp)) {
+                        TextButton(onClick = vm::clearAvatar, modifier = Modifier.padding(top = Space.sm)) {
                             Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text("Remove", modifier = Modifier.padding(start = 6.dp))
+                            Text("Remove", modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                 }
@@ -171,14 +172,14 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.xs)
                 )
             }
             ContextGuideCard(
                 icon = Icons.Outlined.Person,
                 title = "What a persona changes",
             body = "A persona sets the assistant's voice and behavior for a space or chat.",
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier.padding(top = Space.md),
                 accentIndex = 2,
             )
             if (importError != null) {
@@ -193,33 +194,33 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Name",
                 maxLength = ValidationLimits.PERSONA_NAME, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             BoundedTextField(
                 value = description, onValueChange = vm::setDescription, label = "Role & expertise",
                 maxLength = ValidationLimits.PERSONA_ROLE,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
 
             SectionHeader("Behavior")
             BoundedTextField(
                 value = systemInstruction, onValueChange = vm::setSystemInstruction, label = "System instruction",
                 maxLength = ValidationLimits.PERSONA_SYSTEM_INSTRUCTION, minLines = 4,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
-            Text("Tone", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+            Text("Tone", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.lg))
             DialRow(listOf("NEUTRAL", "WARM", "DIRECT", "PLAYFUL"), tone, vm::setTone)
 
-            Text("Formality", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+            Text("Formality", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("NEUTRAL", "CASUAL", "FORMAL"), formality, vm::setFormality)
 
-            Text("Conciseness", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+            Text("Conciseness", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("NORMAL", "TERSE", "ELABORATE"), conciseness, vm::setConciseness)
 
-            Text("Response length", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+            Text("Response length", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("BALANCED", "SHORT", "LONG"), responseLength, vm::setResponseLength)
 
-            Text("Creativity: ${String.format("%.1f", creativity)}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
+            Text("Creativity: ${String.format("%.1f", creativity)}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
             Slider(
                 value = creativity, onValueChange = vm::setCreativity, valueRange = 0f..1f,
                 modifier = Modifier.semantics { contentDescription = "Creativity, ${String.format("%.1f", creativity)}" }
@@ -228,18 +229,18 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             SectionHeader("Defaults")
             OutlinedTextField(
                 value = language, onValueChange = vm::setLanguage, label = { Text("Preferred reply language (optional)") },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
 
             if (personaId != null && onTest != null) {
                 SectionHeader("Test")
-                OutlinedButton(onClick = { onTest(personaId) }, modifier = Modifier.padding(top = 8.dp)) { Text("Open test bench") }
+                OutlinedButton(onClick = { onTest(personaId) }, modifier = Modifier.padding(top = Space.sm)) { Text("Open test bench") }
             }
 
             val withinLimits = name.length <= ValidationLimits.PERSONA_NAME &&
                 description.length <= ValidationLimits.PERSONA_ROLE &&
                 systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
-            ResponsiveActions(Modifier.padding(top = 16.dp)) {
+            ResponsiveActions(Modifier.padding(top = Space.lg)) {
                 OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text("Duplicate") }
                 Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save changes") }
             }
@@ -255,9 +256,9 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 Column {
                     Text("Select an emoji or use a personal image.", style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
                         maxItemsInEachRow = 4,
                     ) {
                         emojis.forEach { emoji ->
@@ -266,7 +267,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.secondaryContainer,
                             ) {
-                                Text(emoji, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(12.dp))
+                                Text(emoji, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(Space.md))
                             }
                         }
                     }
@@ -282,7 +283,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                     )
                 }) {
                     Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Choose image", modifier = Modifier.padding(start = 6.dp))
+                    Text("Choose image", modifier = Modifier.padding(start = Space.sm))
                 }
             },
             dismissButton = {
@@ -304,15 +305,15 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
 
 @Composable
 private fun SectionHeader(title: String) {
-    HorizontalDivider(Modifier.padding(top = 20.dp, bottom = 4.dp))
+    HorizontalDivider(Modifier.padding(top = Space.xl, bottom = Space.xs))
     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 }
 
 @Composable
 private fun DialRow(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = Space.xs),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
     ) {
         options.forEach { option ->
             VervanFilterChip(

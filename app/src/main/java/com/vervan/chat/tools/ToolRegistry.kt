@@ -18,6 +18,7 @@ import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.retrieval.RetrievalMode
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.setSensitiveText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -421,7 +422,7 @@ object ToolRegistry {
                 val text = params.optString("text")
                 if (text.isBlank()) return@ToolDefinition ToolResult(false, "write_clipboard needs non-empty 'text'")
                 val manager = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                manager.setPrimaryClip(android.content.ClipData.newPlainText("Vervan Chat", text))
+                manager.setSensitiveText(text, "Vervan Chat")
                 ToolResult(true, "Copied to clipboard.")
             }
         ),
