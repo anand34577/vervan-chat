@@ -183,7 +183,7 @@ fun HomeScreen(
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val expanded = maxWidth >= 760.dp
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.xs, bottom = Space.md),
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.sm, bottom = Space.md),
                     verticalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     HomeHero(
@@ -472,7 +472,8 @@ private fun ContinueCarousel(
         VervanSectionHeader(
             stringResource(R.string.home_continue),
             actionLabel = stringResource(R.string.home_all_chats),
-            onAction = onOpenChats
+            onAction = onOpenChats,
+            topPadding = 0.dp
         )
         if (recentItems.isEmpty()) {
             SectionCard(items = listOf<@Composable () -> Unit>({
@@ -567,7 +568,10 @@ private fun ContinueRow(
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = accent.onContainer)
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     OverflowTooltipText(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
@@ -630,7 +634,7 @@ private fun WorkspaceStatusSection(
     val modelTone = if (model == null) StatusTone.Warning else StatusTone.Ready
     val indexTone = if (indexingCount > 0) StatusTone.Running else StatusTone.Info
     Column {
-        VervanSectionHeader("Local workspace")
+        VervanSectionHeader("Local workspace", topPadding = 0.dp)
         SectionCard(items = listOf<@Composable () -> Unit>(
             {
                 SectionRow(
@@ -699,7 +703,12 @@ private fun ToolsSection(
         ),
     )
     Column {
-        VervanSectionHeader("Choose a mode", actionLabel = "See all", onAction = onOpenAllTools)
+        VervanSectionHeader(
+            "Choose a mode",
+            actionLabel = "See all",
+            onAction = onOpenAllTools,
+            topPadding = 0.dp
+        )
         Text(
                     "Choose a task below, or browse the full toolkit in Tools.",
             style = MaterialTheme.typography.bodySmall,

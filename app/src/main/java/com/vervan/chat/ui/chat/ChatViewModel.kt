@@ -383,7 +383,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * fallback rung, with no risk of re-picking a different one mid-turn as memory/thermal state
      * shifts under a multi-hop tool call.
      */
-    private suspend fun resolveGenerationModelForTurn(chatRow: Chat, imagePath: String?, audioPath: String?): ModelInfo? {
+    private suspend fun resolveGenerationModelForTurn(chatRow: Chat, triggerText: String?, imagePath: String?, audioPath: String?): ModelInfo? {
         val folderRow = chatRow.folderId?.let { db.folderDao().get(it) }
         ChatDefaults.modelId(chatRow, folderRow)?.let { id ->
             db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
@@ -396,9 +396,19 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // A single installed model has nothing to choose between — skip straight to the
             // plain fallback chain below rather than spend an extra pass over it.
             if (installed.size > 1) {
-                val effectiveProfileType = com.vervan.chat.system.DeviceAwareProfile.resolve(app, ModelProfileType.fromId(chatRow.profile))
+                val rawProfile = ModelProfileType.fromId(chatRow.profile)
+                val effectiveProfileType = com.vervan.chat.system.DeviceAwareProfile.resolve(app, rawProfile)
+                // Complexity-based fast/capable routing is opt-in (default off — see
+                // SettingsRepository.fastCapableRoutingEnabled) and only kicks in for a chat left
+                // on BALANCED with no thermal/battery downgrade already in play — see
+                // AutoModelSelector.complexityProfileHint's doc comment.
+                val routedProfile = if (rawProfile == ModelProfileType.BALANCED && effectiveProfileType == ModelProfileType.BALANCED &&
+                    app.container.settingsRepository.fastCapableRoutingEnabled.first()
+                ) {
+                    com.vervan.chat.llm.AutoModelSelector.complexityProfileHint(triggerText.orEmpty()) ?: effectiveProfileType
+                } else effectiveProfileType
                 com.vervan.chat.llm.AutoModelSelector.select(
-                    installed, effectiveProfileType, needsVision = imagePath != null, needsAudio = audioPath != null
+                    installed, routedProfile, needsVision = imagePath != null, needsAudio = audioPath != null
                 )?.let { return it }
             }
         }
@@ -1504,7 +1514,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         profileOverride: com.vervan.chat.llm.ModelProfileType? = null
     ) {
         val chatRow = db.chatDao().getChat(chatId) ?: return
-        val model = resolveGenerationModelForTurn(chatRow, imagePath, audioPath)
+        val model = resolveGenerationModelForTurn(chatRow, triggerText, imagePath, audioPath)
         if (model == null) {
             Log.w(TAG, "[$chatId] beginGeneration() no generation model resolved (chatRow.modelId=${chatRow.modelId})")
             _error.value = "No model selected. Open Settings → AI models, then import or activate one."
@@ -1559,7 +1569,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         )
         val profile = ModelProfiles.resolve(effectiveProfileType)
         val groundingRequested = (forceGrounding || chatRow.sourceGrounded) && chatRow.kbIdList().isNotEmpty() && profile.retrievalTopK > 0
-        val passages = if (groundingRequested) retrieveSources(chatRow.kbIdList(), triggerText, profile.retrievalTopK) else emptyList()
+        val passages = if (groundingRequested) retrieveSources(chatRow.kbIdList(), triggerText, profile.retrievalTopK, queryModel = model) else emptyList()
         // Grounding was on but nothing matched — abstain/weak-evidence signal (B6)
         // instead of silently answering as if grounding were off.
         val noEvidenceFound = groundingRequested && passages.isEmpty()
@@ -1936,16 +1946,20 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return template.expand(rest)
     }
 
-    private suspend fun retrieveSources(kbIds: List<String>, query: String, topK: Int = 5): List<SourcePassage> {
+    /** [queryModel], when supplied, is the already-resident generation model for this turn — the
+     * only case query expansion (see [QueryExpander]) is worth attempting, since it reuses that
+     * model rather than loading a different one just to rewrite the query. Callers with no
+     * concrete resident model (e.g. the context-inspector preview) pass null and just skip it. */
+    private suspend fun retrieveSources(kbIds: List<String>, query: String, topK: Int = 5, queryModel: ModelInfo? = null): List<SourcePassage> {
         if (retrievingCount.getAndIncrement() == 0) _isRetrieving.value = true
         try {
-            return retrieveSourcesInner(kbIds, query, topK)
+            return retrieveSourcesInner(kbIds, query, topK, queryModel)
         } finally {
             if (retrievingCount.decrementAndGet() == 0) _isRetrieving.value = false
         }
     }
 
-    private suspend fun retrieveSourcesInner(kbIds: List<String>, query: String, topK: Int): List<SourcePassage> {
+    private suspend fun retrieveSourcesInner(kbIds: List<String>, query: String, topK: Int, queryModel: ModelInfo?): List<SourcePassage> {
         val embeddingModel = db.modelDao().getActiveModel(ModelRole.EMBEDDING)
         val mode = if (embeddingModel != null) {
             val result = app.container.modelLoadCoordinator.ensureLoaded(ModelRole.EMBEDDING, LoadTrigger.RAG_RETRIEVAL)
@@ -1961,7 +1975,25 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 runCatching { RetrievalMode.valueOf(preferred) }.getOrDefault(RetrievalMode.HYBRID)
             }
         } else RetrievalMode.KEYWORD
-        return app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
+
+        val queries = if (queryModel != null && app.container.settingsRepository.queryExpansionEnabled.first()) {
+            runCatching { com.vervan.chat.retrieval.QueryExpander.expand(app, queryModel, query) }.getOrDefault(listOf(query))
+        } else listOf(query)
+
+        if (queries.size == 1) {
+            return app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
+        }
+        // Merge each variant's results by chunk, keeping the best score any phrasing found for
+        // it — a chunk that only one reformulation surfaced is still real evidence, not noise.
+        val best = LinkedHashMap<String, SourcePassage>()
+        for (q in queries) {
+            val results = app.container.withEmbedding { retrievalEngine.retrieve(kbIds, q, mode, topK) }
+            for (passage in results) {
+                val existing = best[passage.chunkId]
+                if (existing == null || passage.score > existing.score) best[passage.chunkId] = passage
+            }
+        }
+        return best.values.sortedByDescending { it.score }.take(topK)
     }
 
     private suspend fun recallMemories(chatRow: Chat, query: String): com.vervan.chat.data.repo.MemoryRecall {

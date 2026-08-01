@@ -78,6 +78,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
     val transcriptRetentionEnabled by vm.transcriptRetentionEnabled.collectAsState()
     val recordingRetentionMode by vm.recordingRetentionMode.collectAsState()
     val activeGenerationModel by vm.activeGenerationModel.collectAsState()
+    val voiceQualityPreset by vm.voiceQualityPreset.collectAsState()
     val androidRecognizerAvailable = remember {
         com.vervan.chat.voice.AndroidSystemSttRecognizer.isAvailable(app)
     }
@@ -93,6 +94,28 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
         }
     ) { padding ->
         ScrollablePage(padding) {
+            VoiceSettingsHeading("Voice quality")
+            ContentCard {
+                Column(Modifier.padding(Space.lg)) {
+                    VoiceChoiceChips(
+                        title = "How should Vervan sound and listen?",
+                        value = voiceQualityPreset,
+                        choices = listOf("FAST" to "Fast", "BALANCED" to "Balanced", "BEST" to "Best"),
+                        onSelect = vm::setVoiceQualityPreset
+                    )
+                    Text(
+                        when (voiceQualityPreset) {
+                            "FAST" -> "Quickest replies. Skips the slower whisper.cpp transcriber; uses the default Piper voice."
+                            "BEST" -> "Highest quality voice (Kokoro or Supertonic, once downloaded) and drops the lower-accuracy Android fallback for speech input."
+                            else -> "The default balance of speed and accuracy for both listening and replying."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.xs)
+                    )
+                }
+            }
+
             VoiceSettingsHeading("Basic")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
@@ -189,7 +212,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 }
             }
 
-            VoiceSettingsHeading("Installed engines")
+            VoiceSettingsHeading("Advanced: engines")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)

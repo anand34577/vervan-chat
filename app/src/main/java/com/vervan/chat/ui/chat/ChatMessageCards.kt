@@ -207,8 +207,10 @@ internal fun SourceCards(
                 AssistChip(
                     onClick = { selected = obj },
                     label = {
+                        val page = obj.optInt("pageNumber", -1)
                         Text(
-                            "[${i + 1}] ${obj.optString("documentName")}${obj.optString("sectionPath").let { if (it.isNotBlank()) " — $it" else "" }}",
+                            "[${i + 1}] ${obj.optString("documentName")}${obj.optString("sectionPath").let { if (it.isNotBlank()) " — $it" else "" }}" +
+                                (if (page > 0) " (p. $page)" else ""),
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
@@ -224,8 +226,10 @@ internal fun SourceCards(
             title = { Text(source.optString("documentName")) },
             text = {
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                    source.optString("sectionPath").takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    val sectionLabel = source.optString("sectionPath").takeIf { it.isNotBlank() }
+                    val pageLabel = source.optInt("pageNumber", -1).takeIf { it > 0 }?.let { "Page $it" }
+                    listOfNotNull(sectionLabel, pageLabel).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                     Text(source.optString("excerpt"), modifier = Modifier.padding(top = Space.sm))
                     Text(

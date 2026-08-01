@@ -165,6 +165,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -201,6 +202,8 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
+import com.vervan.chat.ui.theme.VervanBreakpoints
+import com.vervan.chat.ui.theme.VervanContentWidth
 import com.vervan.chat.ui.theme.VervanMotion
 import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.ui.theme.vervanBorder
@@ -281,7 +284,7 @@ internal fun ModelReadinessPanel(
     if (state is ChatViewModel.ModelLoadState.Ready) return
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.fillMaxWidth().widthIn(max = 840.dp).padding(horizontal = Space.lg, vertical = Space.xs),
+            Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(
                 containerColor = when (state) {
                     is ChatViewModel.ModelLoadState.Failed -> MaterialTheme.colorScheme.errorContainer
@@ -320,15 +323,23 @@ internal fun ModelReadinessPanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    when (state) {
-                        ChatViewModel.ModelLoadState.NoModel -> TextButton(onClick = onOpenModels) { Text("Models") }
-                        is ChatViewModel.ModelLoadState.NotLoaded,
-                        is ChatViewModel.ModelLoadState.Failed -> TextButton(onClick = onLoad) { Text("Load") }
-                        else -> Unit
-                    }
                 }
                 if (state is ChatViewModel.ModelLoadState.Loading) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.sm))
+                }
+                when (state) {
+                    ChatViewModel.ModelLoadState.NoModel -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onOpenModels) { Text("Models") }
+                        }
+                    }
+                    is ChatViewModel.ModelLoadState.NotLoaded,
+                    is ChatViewModel.ModelLoadState.Failed -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onLoad) { Text("Load") }
+                        }
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -342,7 +353,7 @@ internal fun ModelReadinessPanel(
 internal fun ThermalNotice(severe: Boolean) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.fillMaxWidth().widthIn(max = 840.dp).padding(horizontal = Space.lg, vertical = Space.xs),
+            Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -365,7 +376,7 @@ internal fun ThermalNotice(severe: Boolean) {
 internal fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.widthIn(max = 840.dp).padding(horizontal = Space.lg, vertical = Space.xs),
+            Modifier.widthIn(max = VervanContentWidth.standard).padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
@@ -416,7 +427,7 @@ internal fun ChatMoreOptionsSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+            Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
@@ -711,7 +722,7 @@ internal fun ChatContextDetailsSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+            Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
             Text("Chat context", style = MaterialTheme.typography.headlineSmall)
@@ -815,15 +826,32 @@ internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit,
  * highlighting, just the raw outputs next to each other, "compare" not "diff". */
 @Composable
 internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse: (String) -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         // Adaptive layout (B5): stacked cards on a compact window, side-by-side on an
         // expanded one — measured locally via BoxWithConstraints rather than threading
         // WindowSizeClass down through ChatScreen's nav signature just for this dialog.
-        androidx.compose.foundation.layout.BoxWithConstraints {
-            val stacked = maxWidth < 600.dp
-            Card(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier
+                .padding(horizontal = Space.lg)
+                .widthIn(max = VervanContentWidth.standard)
+                .fillMaxWidth()
+        ) {
+            val stacked = maxWidth < VervanBreakpoints.medium
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = SurfaceRole.Overlay.cardColors(),
+                border = SurfaceRole.Overlay.border()
+            ) {
                 Column(Modifier.padding(Space.md)) {
-                    Text("Compare branches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = Space.sm))
+                    Text(
+                        "Compare branches",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = Space.sm).semantics { heading() }
+                    )
                     if (stacked) {
                         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                             siblings.forEachIndexed { index, sibling ->
@@ -837,7 +865,12 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
                             }
                         }
                     }
-                    TextButton(onClick = onDismiss, modifier = Modifier.padding(top = Space.xs)) { Text("Close") }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.xs),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("Close") }
+                    }
                 }
             }
         }

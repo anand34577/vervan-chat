@@ -2,7 +2,6 @@ package com.vervan.chat.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -38,16 +36,10 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import com.vervan.chat.ui.theme.vervanBorder
-import com.vervan.chat.ui.theme.vervanSubtleDividerColor
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -77,12 +69,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.settings.AccentTheme
-import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.SectionCard
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.swatchColor
@@ -352,52 +345,31 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsGroup(destinations: List<SettingsDestination>) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
-    ) {
-        destinations.forEachIndexed { index, destination ->
-            ListItem(
-                headlineContent = { Text(destination.title, style = MaterialTheme.typography.titleSmall) },
-                supportingContent = {
-                    Text(
-                        destination.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
-                    )
-                },
-                leadingContent = {
-                    // Stable categorical accent per destination (hashed from the title, so it
-                    // survives search filtering) — a wall of identical primary-tinted icons made
-                    // every row read the same; distinct hues make the hub scannable at a glance.
-                    val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
-                    IconAffordance(
-                        icon = destination.icon,
-                        size = IconAffordanceSize.Default,
-                        tint = accent.onContainer,
-                        containerColor = accent.container
-                    )
-                },
-                trailingContent = {
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable(onClick = destination.onClick)
-            )
-            if (index != destinations.lastIndex) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = Space.lg),
-                    color = vervanSubtleDividerColor()
+    SectionCard(
+        items = destinations.map { destination ->
+            {
+                // Stable categorical accent per destination (hashed from the title, so it
+                // survives search filtering; distinct hues make the hub scannable at a glance.
+                val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
+                SectionRow(
+                    title = destination.title,
+                    subtitle = destination.subtitle,
+                    icon = destination.icon,
+                    iconSize = IconAffordanceSize.Default,
+                    iconTint = accent.onContainer,
+                    iconContainerColor = accent.container,
+                    onClick = destination.onClick,
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -470,37 +442,27 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun SettingsRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(Space.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.md)
-        ) {
-            IconAffordance(
-                icon = icon,
-                size = IconAffordanceSize.Default,
-                tint = MaterialTheme.colorScheme.primary,
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
-            )
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2
+    SectionCard(
+        modifier = Modifier.padding(vertical = Space.xs),
+        items = listOf(
+            {
+                SectionRow(
+                    title = title,
+                    subtitle = subtitle,
+                    icon = icon,
+                    iconSize = IconAffordanceSize.Default,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+                    onClick = onClick,
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
             }
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+        )
+    )
 }

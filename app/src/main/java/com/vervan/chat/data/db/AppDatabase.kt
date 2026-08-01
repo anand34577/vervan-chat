@@ -35,6 +35,7 @@ import com.vervan.chat.data.db.dao.WorkflowDao
 import com.vervan.chat.data.db.dao.WorkspaceDao
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Chunk
+import com.vervan.chat.data.db.entities.ChunkFts
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.DownloadFile
@@ -139,7 +140,7 @@ class Converters {
 @Database(
     entities = [
         Chat::class, Message::class, Persona::class, ModelInfo::class,
-        KnowledgeBase::class, Document::class, Chunk::class, Note::class, Project::class,
+        KnowledgeBase::class, Document::class, Chunk::class, ChunkFts::class, Note::class, Project::class,
         PromptTemplate::class, SavedOutput::class, Memory::class, Workflow::class, StudyCard::class,
         Folder::class, FlashcardSet::class, MemorySuggestion::class, ToolAudit::class, JobRecord::class,
         Workspace::class, Expense::class, TtsVoiceModel::class, ToolRun::class,
@@ -147,8 +148,8 @@ class Converters {
         StoreInstallSession::class, StoreInstallArtifact::class, TranscriptionProject::class,
         TtsProject::class
     ],
-    version = 50,
-    exportSchema = false
+    version = 1,
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {

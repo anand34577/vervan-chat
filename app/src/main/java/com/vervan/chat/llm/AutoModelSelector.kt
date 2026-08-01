@@ -60,4 +60,35 @@ object AutoModelSelector {
 
     private fun sizeBytes(model: ModelInfo): Long =
         File(model.filePath).takeIf { it.isFile }?.length()?.takeIf { it > 0 } ?: model.fileSizeBytes
+
+    /**
+     * Per-turn "fast vs capable" routing signal for a BALANCED-profile chat — the practical
+     * version of "pre-load a small model for quick turns, only pay the big-model cost for
+     * genuinely long/complex ones." A phone can't usefully keep two LLMs resident at once (see
+     * [com.vervan.chat.modelload.ModelLoadCoordinator]'s single-resident-generation-model
+     * invariant, which exists for memory-budget reasons), so this doesn't pre-load a second
+     * model in the background — it picks *which already-installed* model this specific turn
+     * loads, same swap cost as switching chat profiles manually, just automatic. Only meant to
+     * apply when the chat's own profile is BALANCED ("let the app decide") — an explicit
+     * FAST/QUALITY pin is the user's own choice and must never be silently overridden by a
+     * per-turn heuristic.
+     *
+     * ponytail: prompt length is a proxy for complexity, not a real classifier — a short prompt
+     * asking for a hard multi-step derivation still routes FAST. Upgrade path: reuse the same
+     * generation model to classify complexity before routing (mirrors the query-rewriting LLM
+     * call already used for retrieval), if the length heuristic proves too coarse in practice.
+     *
+     * @return null when the turn is unclear enough to just defer to the chat's normal profile.
+     */
+    fun complexityProfileHint(triggerText: String): ModelProfileType? {
+        val tokens = estimateTokens(triggerText)
+        return when {
+            tokens <= FAST_TURN_TOKEN_THRESHOLD -> ModelProfileType.FAST
+            tokens >= QUALITY_TURN_TOKEN_THRESHOLD -> ModelProfileType.QUALITY
+            else -> null
+        }
+    }
+
+    private const val FAST_TURN_TOKEN_THRESHOLD = 12
+    private const val QUALITY_TURN_TOKEN_THRESHOLD = 120
 }

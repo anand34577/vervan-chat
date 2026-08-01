@@ -92,6 +92,7 @@ fun SearchScreen(
     onOpenKnowledge: (String) -> Unit,
     onOpenPersona: (String) -> Unit,
     onOpenDocument: (String) -> Unit = onOpenKnowledge,
+    onOpenPassage: (String) -> Unit = {},
     onOpenMemory: (String) -> Unit = {},
     onOpenMessage: (String, String) -> Unit = { chatId, _ -> onOpenChat(chatId) },
     onOpenProject: (String) -> Unit = {},
@@ -172,6 +173,13 @@ fun SearchScreen(
                             item { GroupLabel("Documents") }
                             items(results.documents, key = { "d_" + it.id }) { ResultRow(Icons.Filled.Description, it.displayName, "Local document", query) { onOpenDocument(it.id) } }
                         }
+                        if (results.passages.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Content)) {
+                            item { GroupLabel("In documents") }
+                            items(results.passages, key = { "pg_" + it.chunkId }) {
+                                val subtitle = it.documentName + (it.pageNumber?.let { p -> " · p.$p" } ?: "")
+                                ResultRow(Icons.Filled.Description, it.excerpt.take(100), subtitle, query) { onOpenPassage(it.chunkId) }
+                            }
+                        }
                         if (results.personas.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Reusable)) {
                             item { GroupLabel("Personas") }
                             items(results.personas, key = { "p_" + it.id }) { ResultRow(Icons.Outlined.Person, it.name, it.description, query) { onOpenPersona(it.id) } }
@@ -227,7 +235,7 @@ fun SearchScreen(
                             when (scope) {
                                 SearchScope.Chats -> results.chats.isEmpty()
                                 SearchScope.Messages -> results.messages.isEmpty()
-                                SearchScope.Content -> results.notes.isEmpty() && results.documents.isEmpty() && results.knowledgeBases.isEmpty()
+                                SearchScope.Content -> results.notes.isEmpty() && results.documents.isEmpty() && results.knowledgeBases.isEmpty() && results.passages.isEmpty()
                                 SearchScope.Organize -> results.workspaces.isEmpty() && results.projects.isEmpty() && results.folders.isEmpty()
                                 SearchScope.Reusable -> results.personas.isEmpty() && results.memories.isEmpty() && results.templates.isEmpty() && results.workflows.isEmpty() && results.savedOutputs.isEmpty()
                                 SearchScope.Tools -> results.tools.isEmpty() && results.toolRuns.isEmpty()

@@ -71,6 +71,7 @@ object ChatFormatting {
                     .put("sectionPath", p.sectionPath)
                     .put("excerpt", p.excerpt.take(500))
                     .put("score", p.score)
+                    .apply { p.pageNumber?.let { put("pageNumber", it) } }
             )
         }
         return arr.toString()

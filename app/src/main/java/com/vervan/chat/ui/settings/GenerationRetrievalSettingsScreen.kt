@@ -49,6 +49,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
     val retrievalMode by vm.defaultRetrievalMode.collectAsState()
+    val queryExpansionEnabled by vm.queryExpansionEnabled.collectAsState()
     val contextLimit by vm.contextTokenLimit.collectAsState()
     val responseLength by vm.responseLength.collectAsState()
     val responseTone by vm.responseTone.collectAsState()
@@ -105,6 +106,22 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs)
                     )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Rewrite search queries", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Asks the model for a couple of alternate phrasings before searching, to catch " +
+                                    "passages that use different words than your question. Costs an extra response " +
+                                    "before every grounded reply.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = queryExpansionEnabled, onCheckedChange = vm::setQueryExpansionEnabled)
+                    }
                     Text("Context budget", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.lg))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(

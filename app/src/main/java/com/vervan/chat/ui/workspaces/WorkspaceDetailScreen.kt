@@ -522,7 +522,10 @@ private fun WorkspaceChatCard(
                 )
             }
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     OverflowTooltipText(
                         text = chat.title,
                         style = MaterialTheme.typography.titleSmall,

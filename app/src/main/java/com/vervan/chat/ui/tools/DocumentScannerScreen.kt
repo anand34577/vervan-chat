@@ -1,9 +1,16 @@
 package com.vervan.chat.ui.tools
 
+import android.app.Activity
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,11 +80,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Multi-page camera capture -> corner-adjust crop with perspective correction -> export as
- * PDF/images (share sheet, all local) or import as a Knowledge document via OCR.
- * manual draggable corners, no auto edge-detection — that needs a CV library (OpenCV/
- * MLKit) this offline app doesn't bundle. The perspective warp itself is Matrix.setPolyToPoly,
- * pure platform API. Add auto boundary detection if manual corners prove too slow in practice.
+ * Capture via Google ML Kit's own full-screen Document Scanner UI ([GmsDocumentScanning], see
+ * [DocumentScannerScreen.startScan]) -> export as PDF/images (share sheet, all local) or import as
+ * a Knowledge document via OCR. ML Kit's capture/crop/deskew is trained specifically for this job
+ * and returns already-finished page images directly into `pages`, skipping any manual crop step —
+ * [PageCropDialog] only comes up if the user taps an already-imported page to re-adjust it.
+ *
+ * Requires Google Play Services (it dynamically downloads the scanner module/UI on first use);
+ * the capture button is disabled with an explanation when that's unavailable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,33 +100,66 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
     var isWorking by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    fun newImageFile(): Pair<File, android.net.Uri> {
-        val dir = File(app.filesDir, "scans").apply { mkdirs() }
-        val file = File(dir, "page-${System.currentTimeMillis()}.jpg")
-        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
-        return file to uri
-    }
-
-    var pendingFile by remember { mutableStateOf<File?>(null) }
-    // Path currently open in the crop editor: a fresh capture (not yet in `pages`) or an existing
-    // page being re-adjusted. thumbVersion invalidates remembered thumbnails after an in-place
-    // re-crop, since the path itself doesn't change.
+    // Path currently open in the crop editor, for re-adjusting an already-imported page.
+    // thumbVersion invalidates remembered thumbnails after an in-place re-crop, since the path
+    // itself doesn't change.
     var cropTarget by remember { mutableStateOf<String?>(null) }
     var thumbVersion by remember { mutableIntStateOf(0) }
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = pendingFile
-        pendingFile = null
-        if (success && file != null) {
-            ImageUtils.fixOrientation(file)
-            cropTarget = file.absolutePath
+    var isImportingScan by remember { mutableStateOf(false) }
+
+    // ML Kit's own scanner already crops/deskews each page, so its results land straight in
+    // `pages`, skipping [PageCropDialog] entirely.
+    fun importGmsScanResult(scanResult: GmsDocumentScanningResult) {
+        val uris = scanResult.pages?.map { it.imageUri } ?: return
+        if (uris.isEmpty()) return
+        isImportingScan = true
+        scope.launch {
+            val imported = withContext(Dispatchers.IO) {
+                val dir = File(context.filesDir, "scans").apply { mkdirs() }
+                uris.mapNotNull { uri ->
+                    val file = File(dir, "page-${System.currentTimeMillis()}-${uri.hashCode()}.jpg")
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            file.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    file.takeIf { it.exists() }?.absolutePath
+                }
+            }
+            isImportingScan = false
+            pages = pages + imported
         }
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            val (file, uri) = newImageFile()
-            pendingFile = file
-            takePicture.launch(uri)
+
+    val gmsScanLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.let(::importGmsScanResult)
         }
+    }
+
+    // Google Play services is required for GmsDocumentScanning (it dynamically downloads the
+    // scanner module/UI from Play services on first use) — absent on GMS-less devices/ROMs, the
+    // capture button below is disabled with an explanation instead of silently failing.
+    val gmsAvailable = remember {
+        GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+    }
+
+    fun startScan() {
+        val activity = context as? Activity ?: return
+        val options = GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(false)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+            .addOnSuccessListener { intentSender ->
+                gmsScanLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            }
+            .addOnFailureListener {
+                // Play services reported available but the scanner module itself failed to start
+                // (e.g. first-run module download failed offline).
+                statusMessage = "Couldn't start the scanner — check your connection and try again."
+            }
     }
 
     cropTarget?.let { target ->
@@ -214,11 +257,25 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 modifier = Modifier.padding(top = Space.sm)
             )
             OutlinedButton(
-                onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
+                onClick = ::startScan,
+                enabled = gmsAvailable && !isImportingScan,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
             ) {
-                Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
+                if (isImportingScan) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Importing…", modifier = Modifier.padding(start = Space.sm))
+                } else {
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                    Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
+                }
+            }
+            if (!gmsAvailable) {
+                Text(
+                    "Document scanning needs Google Play services, which isn't available on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = Space.sm)
+                )
             }
             if (pages.isNotEmpty()) {
                 LazyRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -272,9 +329,11 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
 /**
  * Corner-adjust crop editor with perspective correction, like dedicated scanner apps: drag the
  * four handles onto the document's corners and the page is de-skewed to a flat rectangle via
- * [android.graphics.Matrix.setPolyToPoly] (no CV dependency). Corners live in normalized [0,1]
+ * [android.graphics.Matrix.setPolyToPoly] (pure platform API). Corners live in normalized [0,1]
  * image coordinates so screen size/rotation never invalidates them; the warp itself runs on the
- * full-resolution bitmap at confirm time and overwrites [imagePath] in place.
+ * full-resolution bitmap at confirm time and overwrites [imagePath] in place. Only reachable by
+ * tapping an already-imported page to re-adjust it — ML Kit itself already crops/deskews on
+ * capture, so this always starts from a fixed inset rather than a detected outline.
  */
 @Composable
 private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -> Unit) {
@@ -288,12 +347,10 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
         while (bounds.outWidth / (sample * 2) > 1600 || bounds.outHeight / (sample * 2) > 1600) sample *= 2
         BitmapFactory.decodeFile(imagePath, BitmapFactory.Options().apply { inSampleSize = sample })
     }
-    // Default corners at an 8% inset — visibly "a crop" so the affordance is obvious, and close
-    // enough to full-page that Full page/small adjustments are both one gesture away.
+    // An 8% inset — visibly "a crop" so the affordance is obvious, and close enough to full-page
+    // that Full page/small adjustments are both one gesture away.
     val corners = remember(imagePath) {
-        mutableStateListOf(
-            Offset(0.08f, 0.08f), Offset(0.92f, 0.08f), Offset(0.92f, 0.92f), Offset(0.08f, 0.92f),
-        )
+        mutableStateListOf(Offset(0.08f, 0.08f), Offset(0.92f, 0.08f), Offset(0.92f, 0.92f), Offset(0.08f, 0.92f))
     }
 
     fun confirmCrop() {

@@ -61,7 +61,12 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Unit = {}, onOpenApiServer: () -> Unit = {}) {
+fun SecuritySettingsScreen(
+    onBack: () -> Unit = {},
+    onOpenPermissions: () -> Unit = {},
+    onOpenApiServer: () -> Unit = {},
+    onOpenPrivacyDashboard: () -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
@@ -84,6 +89,18 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
         }
     ) { padding ->
         ScrollablePage(padding) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
+                    Text("Privacy dashboard", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "See what's stored, what's indexed, and what has ever left this device.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = Space.sm)
+                    )
+                    OutlinedButton(onClick = onOpenPrivacyDashboard) { Text("Open") }
+                }
+            }
             Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

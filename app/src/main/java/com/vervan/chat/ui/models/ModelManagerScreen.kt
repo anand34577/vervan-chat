@@ -287,7 +287,11 @@ fun ModelManagerScreen(
                 it.status == ModelStatus.READY && it.category in setOf(ModelRole.TTS_VOICE, ModelRole.STT_MODEL)
             }
             val catalogStates = downloadStates.filter { it.status == com.vervan.chat.data.db.entities.ModelStatus.NOT_DOWNLOADED }
-            var showingDiscover by rememberSaveable { mutableStateOf(browseBudgetBytes != null) }
+            // A first-time user with nothing installed yet should land on the unified picker
+            // (recommended setup + Model Store + catalog) instead of an empty Library list —
+            // that picker IS the single "one entry point" this screen already provides, it just
+            // wasn't the default tab.
+            var showingDiscover by rememberSaveable { mutableStateOf(browseBudgetBytes != null || generationModels.isEmpty()) }
 
             if (downloadingStates.isNotEmpty()) {
                 SectionHeader("Active downloads", Icons.Filled.CloudDownload)

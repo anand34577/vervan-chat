@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -76,6 +77,7 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.VervanGridMinWidth
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -182,6 +184,7 @@ private val categories = listOf(
         listOf(
             ToolEntry(Icons.Filled.History, "Run history", "Resume, save, share, or repeat recent tool results.", "tools/runs"),
             ToolEntry(Icons.Filled.AutoAwesome, "Model capabilities", "See what each installed model can use.", "tools/model-dashboard"),
+            ToolEntry(Icons.Filled.AccountTree, "Knowledge graph", "See how your chats, notes, documents, and memories connect.", "graph"),
         ),
     ),
 )
@@ -285,7 +288,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 260.dp),
+                columns = GridCells.Adaptive(minSize = VervanGridMinWidth.standardCard),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = Space.lg, bottom = Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.md),

@@ -28,11 +28,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,12 +46,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.dao.ModelSpeedStat
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.collectAsState
 import com.vervan.chat.ui.settings.formatBytes
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
 data class ModelMemoryEstimate(val weightsGb: Float, val kvCacheGb: Float, val runtimeGb: Float) {
@@ -73,6 +83,11 @@ private enum class FitLevel(val title: String, val body: String) {
 @Composable
 fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
     val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val installedModels by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
+    val speedStats by app.container.db.messageDao().observeModelSpeedStats().collectAsState(initial = emptyList())
     val memory = remember {
         ActivityManager.MemoryInfo().also(context.getSystemService(ActivityManager::class.java)::getMemoryInfo)
     }
@@ -92,6 +107,18 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
         else -> FitLevel.TOO_LARGE
     }
     val suggested = suggestedParameters(safeBudgetGb, quantBits, contexts[contextIndex])
+    val statsByModelId = speedStats.associateBy { it.modelId }
+    val safeBudgetBytes = (safeBudgetGb * 1_073_741_824f).toLong()
+    // "Fastest installed GENERATION model that has actually been used and comfortably fits" —
+    // real measured tok/s beats a synthetic benchmark pass at answering "what should I use",
+    // and it's already sitting in every assistant reply's own generationMs/tokenCount (see
+    // MessageDao.observeModelSpeedStats). A model never measured yet simply can't be recommended
+    // this way — no cold-start guess substitutes for it, this card just stays empty until then.
+    val bestMeasuredModel = installedModels
+        .filter { it.role == ModelRole.GENERATION }
+        .mapNotNull { model -> statsByModelId[model.id]?.let { model to it } }
+        .filter { (model, _) -> model.fileSizeBytes <= safeBudgetBytes }
+        .maxByOrNull { (_, stat) -> stat.tokensPerSecond }
 
     Scaffold(
         topBar = {
@@ -99,7 +126,8 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
                 title = { Text("Model calculator") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(padding) {
             Text("What can this device run?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -111,6 +139,15 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
             )
 
             DeviceCard(memory.totalMem, memory.availMem, safeBudgetGb)
+            if (bestMeasuredModel != null) {
+                val (model, stat) = bestMeasuredModel
+                BestMeasuredModelCard(model, stat) {
+                    scope.launch {
+                        app.container.modelLoadCoordinator.setDefault(model)
+                        snackbarHostState.showSnackbar("${model.displayName} set as default")
+                    }
+                }
+            }
             FitCard(fit, ratio, estimate.totalGb, safeBudgetGb)
 
             CalculatorCard("Model size", "${formatParameterCount(parametersB)} parameters") {
@@ -182,6 +219,39 @@ private fun DeviceCard(totalBytes: Long, availableBytes: Long, budgetGb: Float) 
                 MiniStat(formatBytes(totalBytes), "Total RAM", Modifier.weight(1f))
                 MiniStat(formatBytes(availableBytes), "Available now", Modifier.weight(1f))
                 MiniStat(String.format("%.1f GB", budgetGb), "Safe model budget", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BestMeasuredModelCard(model: ModelInfo, stat: ModelSpeedStat, onSetDefault: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(top = Space.md),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.Top) {
+            Icon(Icons.Filled.Speed, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text("Best measured on this device", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(
+                    model.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+                Text(
+                    "${String.format("%.1f", stat.tokensPerSecond)} tok/s average over ${stat.samples} " +
+                        (if (stat.samples == 1) "reply" else "replies"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+                if (!model.isActive) {
+                    OutlinedButton(onClick = onSetDefault, modifier = Modifier.padding(top = Space.sm)) {
+                        Text("Set as default")
+                    }
+                }
             }
         }
     }

@@ -19,6 +19,11 @@ sealed class ExtractResult {
     data class Tabular(val sheets: List<TableSheet>) : ExtractResult()
     /** Slide deck content (PPTX) — chunked via [Chunker.chunkSlides], one chunk per slide. */
     data class Slides(val slides: List<SlideText>) : ExtractResult()
+    /** A PDF with a real text layer, one entry per page (index 0 = page 1) — chunked via
+     * [Chunker.chunkPaginated] so every chunk carries the page it came from, letting a citation
+     * jump straight to that page. Scanned PDFs still go through [NeedsOcr] instead: OCR has no
+     * per-page boundary to preserve here. */
+    data class Paginated(val pages: List<String>) : ExtractResult()
     object NeedsOcr : ExtractResult()
     data class Unsupported(val reason: String) : ExtractResult()
 }
@@ -54,11 +59,21 @@ object TextExtractor {
         }
     }
 
+    /** Per-page extraction (not one [PDFTextStripper] pass over the whole document) so every
+     * page's text can be chunked with [Chunker.chunkPaginated] and cited back to a real page
+     * number — see [ExtractResult.Paginated]. A scanned PDF (no text layer at all) still
+     * produces only blank/near-blank pages here and falls through to [ExtractResult.NeedsOcr],
+     * same as before this page-aware rewrite. */
     private fun extractPdf(file: File): ExtractResult {
         return try {
             PDDocument.load(file).use { doc ->
-                val text = PDFTextStripper().getText(doc)
-                if (text.isBlank()) ExtractResult.NeedsOcr else ExtractResult.Text(text)
+                val stripper = PDFTextStripper()
+                val pages = (1..doc.numberOfPages).map { pageNumber ->
+                    stripper.startPage = pageNumber
+                    stripper.endPage = pageNumber
+                    stripper.getText(doc)
+                }
+                if (pages.all { it.isBlank() }) ExtractResult.NeedsOcr else ExtractResult.Paginated(pages)
             }
         } catch (e: Exception) {
             ExtractResult.Unsupported("Could not read PDF: ${e.message}")

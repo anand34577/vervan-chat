@@ -10,6 +10,9 @@ interface MemoryDao : BaseDao<Memory> {
     @Query("SELECT * FROM memories WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<Memory>>
 
+    @Query("SELECT * FROM memories WHERE id = :id")
+    suspend fun get(id: String): Memory?
+
     // Recall is universal (see MemoryRepository.recall) — every enabled memory is a candidate
     // regardless of persona/project, so there's no scope-filtered query here anymore.
     @Query("SELECT * FROM memories WHERE deletedAt IS NULL AND enabled = 1 ORDER BY createdAt DESC")

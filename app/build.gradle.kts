@@ -232,6 +232,12 @@ kotlin {
     }
 }
 
+// Room schema history — lets MigrationTestHelper/CI catch a bad schema change instead of a user
+// discovering it at runtime. Safe to check the emitted JSON under app/schemas/ into git.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.02.00"))
     implementation("androidx.compose.ui:ui")
@@ -348,6 +354,11 @@ dependencies {
     // EXIF orientation correction for attached photos (Phase 7, spec §13) — many cameras
     // store images "sideways" with an orientation tag rather than actually rotating pixels.
     implementation("androidx.exifinterface:exifinterface:1.3.2")
+
+    // Document Scanner's capture engine — Google ML Kit's own full-screen Document Scanner UI.
+    // Its capture/crop/deskew model is trained specifically for this job. Requires Google Play
+    // Services (dynamically downloads the scanner module/UI on first use, per Google's docs).
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 
     testImplementation("junit:junit:4.13.2")
     // Android's android.jar ships org.json as a throwing stub (real parsing is stripped out),

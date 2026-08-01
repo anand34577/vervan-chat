@@ -38,9 +38,11 @@ class SettingsRepository(context: Context) {
         val SHOW_GENERATION_STATS = booleanPreferencesKey("show_generation_stats")
         val DEVICE_AWARE_PERFORMANCE = booleanPreferencesKey("device_aware_performance")
         val AUTO_MODEL_SELECTION = booleanPreferencesKey("auto_model_selection")
+        val FAST_CAPABLE_ROUTING = booleanPreferencesKey("fast_capable_routing")
         val EXPERT_MODE = booleanPreferencesKey("expert_mode")
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
+        val QUERY_EXPANSION_ENABLED = booleanPreferencesKey("query_expansion_enabled")
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
@@ -48,6 +50,7 @@ class SettingsRepository(context: Context) {
         val MODEL_AUDIO_STT_ENABLED = booleanPreferencesKey("model_audio_stt_enabled")
         val ANDROID_STT_ENABLED = booleanPreferencesKey("android_stt_enabled")
         val STT_ENGINE_PREFERENCE = stringPreferencesKey("stt_engine_preference")
+        val VOICE_QUALITY_PRESET = stringPreferencesKey("voice_quality_preset")
         val STT_FALLBACK_ENABLED = booleanPreferencesKey("stt_fallback_enabled")
         val WHISPER_GPU_ENABLED = booleanPreferencesKey("whisper_gpu_enabled")
         val SUPERTONIC_VOICE_VARIANT = stringPreferencesKey("supertonic_voice_variant")
@@ -202,6 +205,14 @@ class SettingsRepository(context: Context) {
     val autoModelSelectionEnabled: Flow<Boolean> = store.data.map { it[Keys.AUTO_MODEL_SELECTION] ?: true }
     suspend fun setAutoModelSelectionEnabled(enabled: Boolean) { store.edit { it[Keys.AUTO_MODEL_SELECTION] = enabled } }
 
+    // Off by default — a per-turn switch between installed models (see
+    // AutoModelSelector.complexityProfileHint) still costs a full unload+reload swap whenever it
+    // picks differently than what's already resident, which is a real latency hit a user didn't
+    // necessarily choose to pay just by leaving auto model selection on. Only takes effect when
+    // autoModelSelectionEnabled is also on and a chat is left on BALANCED.
+    val fastCapableRoutingEnabled: Flow<Boolean> = store.data.map { it[Keys.FAST_CAPABLE_ROUTING] ?: false }
+    suspend fun setFastCapableRoutingEnabled(enabled: Boolean) { store.edit { it[Keys.FAST_CAPABLE_ROUTING] = enabled } }
+
     val expertMode: Flow<Boolean> = store.data.map { it[Keys.EXPERT_MODE] ?: false }
     suspend fun setExpertMode(enabled: Boolean) { store.edit { it[Keys.EXPERT_MODE] = enabled } }
 
@@ -212,6 +223,12 @@ class SettingsRepository(context: Context) {
      * so this module doesn't need to depend on the retrieval package. */
     val defaultRetrievalMode: Flow<String> = store.data.map { it[Keys.DEFAULT_RETRIEVAL_MODE] ?: "HYBRID" }
     suspend fun setDefaultRetrievalMode(mode: String) { store.edit { it[Keys.DEFAULT_RETRIEVAL_MODE] = mode } }
+
+    // Off by default — rewriting the query first costs a whole extra generation round-trip
+    // before retrieval even starts, real latency on a phone-class model. Users who want the
+    // recall improvement enough to pay for it turn it on explicitly.
+    val queryExpansionEnabled: Flow<Boolean> = store.data.map { it[Keys.QUERY_EXPANSION_ENABLED] ?: false }
+    suspend fun setQueryExpansionEnabled(enabled: Boolean) { store.edit { it[Keys.QUERY_EXPANSION_ENABLED] = enabled } }
 
     val autoReadAloud: Flow<Boolean> = store.data.map { it[Keys.AUTO_READ_ALOUD] ?: false }
     suspend fun setAutoReadAloud(enabled: Boolean) { store.edit { it[Keys.AUTO_READ_ALOUD] = enabled } }
@@ -251,6 +268,14 @@ class SettingsRepository(context: Context) {
     suspend fun setSttEnginePreference(v: String) { store.edit { it[Keys.STT_ENGINE_PREFERENCE] = v } }
     val sttFallbackEnabled: Flow<Boolean> = store.data.map { it[Keys.STT_FALLBACK_ENABLED] ?: true }
     suspend fun setSttFallbackEnabled(v: Boolean) { store.edit { it[Keys.STT_FALLBACK_ENABLED] = v } }
+
+    /** One-dial voice quality ("FAST"/"BALANCED"/"BEST") shown as the primary control in Voice
+     * settings — see [com.vervan.chat.ui.settings.SettingsViewModel.setVoiceQualityPreset] for
+     * what each level actually applies to the granular engine settings above. Applying a preset
+     * is one-way: it writes sensible values into those settings, which the Advanced section below
+     * can still override individually without changing this label back. */
+    val voiceQualityPreset: Flow<String> = store.data.map { it[Keys.VOICE_QUALITY_PRESET] ?: "BALANCED" }
+    suspend fun setVoiceQualityPreset(v: String) { store.edit { it[Keys.VOICE_QUALITY_PRESET] = v } }
 
     /** Whether [com.vervan.chat.voice.WhisperCppSttEngine] is allowed to try its Vulkan GPU
      * backend. OFF by default: GPU init has been observed to crash the whole process with a

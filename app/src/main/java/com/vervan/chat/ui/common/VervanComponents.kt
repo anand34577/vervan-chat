@@ -61,7 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanBreakpoints
 import com.vervan.chat.ui.theme.VervanBorderProminence
+import com.vervan.chat.ui.theme.VervanContentWidth
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanDividerColor
 import com.vervan.chat.ui.theme.vervanSuccess
@@ -73,13 +75,16 @@ enum class StatusTone { Ready, Running, Warning, Error, Info }
 @Composable
 fun PageContainer(
     modifier: Modifier = Modifier,
-    maxContentWidth: Dp = 1040.dp,
+    maxContentWidth: Dp = VervanContentWidth.wide,
     content: @Composable () -> Unit
 ) {
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        val horizontalPadding = if (maxWidth < 600.dp) Space.lg else Space.xxl
+        val horizontalPadding = if (maxWidth < VervanBreakpoints.medium) Space.lg else Space.xxl
         Column(
-            Modifier.fillMaxWidth().widthIn(max = maxContentWidth).padding(horizontal = horizontalPadding),
+            Modifier
+                .widthIn(max = maxContentWidth)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
         ) { content() }
     }
 }
@@ -91,7 +96,7 @@ fun PageContainer(
 fun ScrollablePage(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
-    maxContentWidth: Dp = 840.dp,
+    maxContentWidth: Dp = VervanContentWidth.standard,
     content: @Composable ColumnScope.() -> Unit
 ) {
     PageContainer(
@@ -146,7 +151,7 @@ fun VervanSearchField(
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp).semantics {
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
             contentDescription = placeholder
         },
         enabled = enabled,
@@ -209,7 +214,7 @@ fun FeatureHero(
                     body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -314,14 +319,18 @@ fun SystemStatusStrip(
         colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
         border = BorderStroke(1.dp, color.copy(alpha = 0.28f))
     ) {
-        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(tone.icon(), contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
-            Column(Modifier.weight(1f).padding(start = Space.md)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Icon(tone.icon(), contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                    Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             if (actionLabel != null && onAction != null) {
-                TextButton(onClick = onAction) { Text(actionLabel) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onAction) { Text(actionLabel) }
+                }
             }
         }
     }
@@ -342,7 +351,7 @@ fun ActionTile(
     Card(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 72.dp),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = vervanBorder(VervanBorderProminence.Standard)
@@ -366,7 +375,7 @@ fun ActionTile(
                     body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -408,13 +417,12 @@ fun OperationProgressCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
                     Text(title, style = MaterialTheme.typography.labelLarge)
                     Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel) }
             }
             progress?.let {
                 LinearProgressIndicator(
@@ -427,6 +435,11 @@ fun OperationProgressCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.xs)
                 )
+            }
+            if (actionLabel != null && onAction != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onAction) { Text(actionLabel) }
+                }
             }
         }
     }

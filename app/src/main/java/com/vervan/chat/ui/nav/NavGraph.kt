@@ -1,20 +1,12 @@
 package com.vervan.chat.ui.nav
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -38,8 +30,11 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -58,16 +53,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -113,9 +103,7 @@ import com.vervan.chat.ui.onboarding.OnboardingScreen
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
-import com.vervan.chat.ui.theme.vervanBrandGradient
 import com.vervan.chat.ui.personas.PersonaEditorScreen
 import com.vervan.chat.ui.personas.PersonaTestBenchScreen
 import com.vervan.chat.ui.profile.UserProfileScreen
@@ -312,17 +300,11 @@ fun VervanNavGraph(
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                Box(
-                    Modifier
-                        .padding(vertical = 12.dp)
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(vervanBrandGradient())
-                        .clickable(role = Role.Button) { showCreateSheet = true }
-                        .semantics { contentDescription = createLabel },
-                    contentAlignment = Alignment.Center
+                FloatingActionButton(
+                    onClick = { showCreateSheet = true },
+                    modifier = Modifier.padding(vertical = Space.md)
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                    Icon(Icons.Filled.Add, contentDescription = createLabel)
                 }
                 tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
                 Spacer(Modifier.weight(1f))
@@ -339,7 +321,7 @@ fun VervanNavGraph(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (!useRail && showBottomBar) {
-                    VervanNavDock(
+                    VervanNavigationBar(
                         leading = tabs,
                         trailing = trailingTabs,
                         currentRoute = currentRoute,
@@ -357,12 +339,17 @@ fun VervanNavGraph(
         ) {
             composable(AppRoutes.ONBOARDING) {
                 OnboardingScreen(
-                    onDone = {
+                    onDone = { intent ->
                         scope.launch {
                             app.container.settingsRepository.setOnboarded(true)
+                            intent.route?.let { route ->
+                                val current = app.container.settingsRepository.toolFavorites.first()
+                                app.container.settingsRepository.setToolFavorites(current + route)
+                            }
                             navController.navigate(AppRoutes.HOME) {
                                 popUpTo(AppRoutes.ONBOARDING) { inclusive = true }
                             }
+                            intent.route?.let { navController.navigate(it) }
                         }
                     },
                     onImportModel = { navController.navigate("models") }
@@ -520,6 +507,7 @@ fun VervanNavGraph(
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") },
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
+                    onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenMemory = { memoryId -> navController.navigate("memory?highlightId=$memoryId") },
                     onOpenMessage = { chatId, messageId ->
                         pendingMessageJump = chatId to messageId
@@ -533,6 +521,25 @@ fun VervanNavGraph(
                     onOpenSavedOutput = { _ -> navController.navigate("library") },
                     onOpenTool = { route -> navController.navigate(route) },
                     onOpenToolRun = { id -> navController.navigate("tools/runs?highlightId=$id") },
+                )
+            }
+            composable("graph") {
+                com.vervan.chat.ui.graph.KnowledgeGraphScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenEntity = { node ->
+                        val route = when (node.type) {
+                            com.vervan.chat.ui.graph.GraphNodeType.WORKSPACE -> "workspace/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.PROJECT -> "project/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.FOLDER -> "folder/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.CHAT -> "chat/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.NOTE -> "note/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.KNOWLEDGE_BASE -> "knowledge/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.DOCUMENT -> "document/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.MEMORY -> "memory?highlightId=${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.PERSONA -> "persona/${node.id}/edit"
+                        }
+                        navController.navigate(route)
+                    }
                 )
             }
             composable("writing") { WritingWorkspaceScreen(onBack = { navController.popBackStack() }) }
@@ -780,7 +787,16 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.settings.SecuritySettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenPermissions = { navController.navigate("settings/permissions") },
-                    onOpenApiServer = { navController.navigate("settings/api-server") }
+                    onOpenApiServer = { navController.navigate("settings/api-server") },
+                    onOpenPrivacyDashboard = { navController.navigate("settings/privacy-dashboard") }
+                )
+            }
+            composable("settings/privacy-dashboard") {
+                com.vervan.chat.ui.settings.PrivacyDashboardScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSecurity = { navController.popBackStack() },
+                    onOpenApiServer = { navController.navigate("settings/api-server") },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") }
                 )
             }
             composable("settings/permissions") { com.vervan.chat.ui.settings.PermissionsScreen(onBack = { navController.popBackStack() }) }
@@ -846,11 +862,24 @@ fun VervanNavGraph(
             }
             composable("document/{documentId}") { entry ->
                 val documentId = entry.arguments?.getString("documentId") ?: return@composable
-                DocumentViewerScreen(documentId = documentId, onBack = { navController.popBackStack() })
+                DocumentViewerScreen(
+                    documentId = documentId,
+                    onBack = { navController.popBackStack() },
+                    onOpenPdfPage = { docId, page -> navController.navigate("document/$docId/page/$page") }
+                )
             }
             composable("passage/{chunkId}") { entry ->
                 val chunkId = entry.arguments?.getString("chunkId") ?: return@composable
-                SourcePassageScreen(chunkId = chunkId, onBack = { navController.popBackStack() })
+                SourcePassageScreen(
+                    chunkId = chunkId,
+                    onBack = { navController.popBackStack() },
+                    onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") }
+                )
+            }
+            composable("document/{documentId}/page/{page}") { entry ->
+                val documentId = entry.arguments?.getString("documentId") ?: return@composable
+                val page = entry.arguments?.getString("page")?.toIntOrNull() ?: 1
+                com.vervan.chat.ui.knowledge.PdfPageViewerScreen(documentId = documentId, initialPage = page, onBack = { navController.popBackStack() })
             }
         }
         if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
@@ -933,14 +962,8 @@ fun VervanNavGraph(
     }
 }
 
-/**
- * The Aurora navigation dock: a floating pill that replaces the full-width Material
- * NavigationBar + separate Create FAB. Two destinations sit either side of an integrated
- * brand-gradient Create button, content scrolls underneath the dock's inset margins, and
- * selection is an animated tonal pill rather than the stock indicator.
- */
 @Composable
-private fun VervanNavDock(
+private fun VervanNavigationBar(
     leading: List<Tab>,
     trailing: List<Tab>,
     currentRoute: NavDestination?,
@@ -948,87 +971,41 @@ private fun VervanNavDock(
     onCreate: () -> Unit
 ) {
     val createLabel = stringResource(R.string.action_create)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            // The shell already reserves this bottom bar's full height for the NavHost.
-            // Keeping another top inset here created a visible empty strip between every
-            // primary screen and the dock. Only the safe-area breathing room belongs below it.
-            .padding(start = Space.lg, end = Space.lg, bottom = Space.sm)
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp
     ) {
-        androidx.compose.material3.Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = VervanExtraShapes.pill,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = SurfaceRole.Floating.border(),
-            shadowElevation = SurfaceRole.Floating.shadowElevation
-        ) {
-            Row(
-                Modifier.padding(horizontal = Space.sm, vertical = Space.sm),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                leading.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
-                Box(
-                    Modifier
-                        .padding(horizontal = Space.sm)
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(vervanBrandGradient())
-                        .clickable(onClick = onCreate, role = Role.Button)
-                        .semantics { contentDescription = createLabel },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                trailing.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
-            }
-        }
+        leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
+        NavigationBarItem(
+            selected = false,
+            onClick = onCreate,
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            label = { Text(createLabel) },
+            alwaysShowLabel = true
+        )
+        trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
     }
 }
 
 @Composable
-private fun DockItem(
+private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController,
-    modifier: Modifier = Modifier
+    navController: NavHostController
 ) {
-    val isSelected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    val tint by animateColorAsState(
-        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "dockTint"
+    val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
+    NavigationBarItem(
+        selected = selected,
+        onClick = { navController.navigatePrimaryRoot(tab.route) },
+        icon = {
+            Icon(
+                if (selected) tab.selectedIcon else tab.icon,
+                contentDescription = null
+            )
+        },
+        label = { Text(stringResource(tab.labelRes)) },
+        alwaysShowLabel = true
     )
-    val pill by animateColorAsState(
-        if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-        label = "dockPill"
-    )
-    Column(
-        modifier
-            .clip(VervanExtraShapes.pill)
-            .clickable(role = Role.Tab) { navController.navigatePrimaryRoot(tab.route) }
-            .padding(vertical = Space.xs)
-            .semantics { selected = isSelected },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            Modifier
-                .background(pill, VervanExtraShapes.pill)
-                .padding(horizontal = Space.lg, vertical = Space.xs),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint)
-        }
-        Text(
-            stringResource(tab.labelRes),
-            style = MaterialTheme.typography.labelSmall,
-            color = tint
-        )
-    }
 }
 
 @Composable
