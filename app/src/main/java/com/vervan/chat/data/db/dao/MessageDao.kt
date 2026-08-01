@@ -70,9 +70,35 @@ interface MessageDao : BaseDao<Message> {
     @Query("SELECT DISTINCT chatId FROM messages WHERE state IN (:states)")
     suspend fun getChatIdsWithState(states: List<String>): List<String>
 
+    // Knowledge graph — sourcesJson/memoryActivityJson are display-only provenance blobs (see
+    // their doc comments on Message), not a real FK table, but a LIKE scan is enough to answer
+    // "which chats cited this document / touched this memory" at personal-library scale.
+    @Query("SELECT DISTINCT chatId FROM messages WHERE sourcesJson LIKE '%' || :documentId || '%'")
+    suspend fun chatIdsReferencingDocument(documentId: String): List<String>
+
+    @Query("SELECT DISTINCT chatId FROM messages WHERE memoryActivityJson LIKE '%' || :memoryId || '%'")
+    suspend fun chatIdsReferencingMemory(memoryId: String): List<String>
+
     @Query(
         "SELECT DISTINCT chatId FROM messages WHERE imagePath IS NOT NULL " +
             "OR audioPath IS NOT NULL OR voiceRecordingPath IS NOT NULL"
     )
     suspend fun getChatIdsWithAttachments(): List<String>
+
+    // Model Calculator's "recommended for this device" card — real measured throughput per
+    // model instead of a synthetic benchmark pass, built from the generationMs/tokenCount every
+    // assistant reply already records. Only rows with both fields present and a positive
+    // duration count (guards the tokens-per-second division downstream against a zero/negative
+    // denominator from a clock anomaly or a pre-migration row).
+    @Query(
+        "SELECT modelId, SUM(tokenCount) AS totalTokens, SUM(generationMs) AS totalMs, COUNT(*) AS samples " +
+            "FROM messages " +
+            "WHERE modelId IS NOT NULL AND tokenCount IS NOT NULL AND generationMs IS NOT NULL AND generationMs > 0 " +
+            "GROUP BY modelId"
+    )
+    fun observeModelSpeedStats(): Flow<List<ModelSpeedStat>>
+}
+
+data class ModelSpeedStat(val modelId: String, val totalTokens: Long, val totalMs: Long, val samples: Int) {
+    val tokensPerSecond: Float get() = if (totalMs <= 0) 0f else totalTokens * 1000f / totalMs
 }

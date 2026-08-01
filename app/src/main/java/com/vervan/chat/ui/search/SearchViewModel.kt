@@ -17,6 +17,7 @@ import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.ui.tools.SearchableTool
 import com.vervan.chat.ui.tools.searchableTools
 import kotlinx.coroutines.Job
@@ -30,6 +31,7 @@ data class SearchResults(
     val chats: List<Chat> = emptyList(),
     val notes: List<Note> = emptyList(),
     val documents: List<Document> = emptyList(),
+    val passages: List<SourcePassage> = emptyList(),
     val personas: List<Persona> = emptyList(),
     val messages: List<Message> = emptyList(),
     val memories: List<Memory> = emptyList(),
@@ -43,7 +45,7 @@ data class SearchResults(
     val tools: List<SearchableTool> = emptyList(),
     val toolRuns: List<ToolRun> = emptyList(),
 ) {
-    val isEmpty get() = chats.isEmpty() && notes.isEmpty() && documents.isEmpty() &&
+    val isEmpty get() = chats.isEmpty() && notes.isEmpty() && documents.isEmpty() && passages.isEmpty() &&
         personas.isEmpty() && messages.isEmpty() && memories.isEmpty() && projects.isEmpty() &&
         workspaces.isEmpty() && folders.isEmpty() && knowledgeBases.isEmpty() && templates.isEmpty() &&
         workflows.isEmpty() && savedOutputs.isEmpty() && tools.isEmpty() && toolRuns.isEmpty()
@@ -86,6 +88,7 @@ class SearchViewModel(private val app: VervanApp) : ViewModel() {
                 chats = chats,
                 notes = db.noteDao().search(text),
                 documents = db.documentDao().search(text),
+                passages = searchPassages(text),
                 personas = db.personaDao().search(text),
                 messages = db.messageDao().search(text).filterNot { it.chatId in temporaryChatIds },
                 memories = db.memoryDao().search(text),
@@ -100,6 +103,24 @@ class SearchViewModel(private val app: VervanApp) : ViewModel() {
                 toolRuns = ranked(db.toolRunDao().observeAll().first(), text) { listOf(it.toolName, it.input, it.output) },
             )
             _searching.value = false
+        }
+    }
+
+    /** Global keyword search over indexed document text (across every knowledge base), not just
+     * document titles — [DocumentDao.search] only matches [Document.displayName]. Reuses the same
+     * [ChunkFts][com.vervan.chat.data.db.entities.ChunkFts] index [RetrievalEngine][com.vervan.chat.retrieval.RetrievalEngine]
+     * queries for chat retrieval. */
+    private suspend fun searchPassages(query: String): List<SourcePassage> {
+        val terms = query.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+        if (terms.isEmpty()) return emptyList()
+        val matchQuery = terms.joinToString(" OR ") { "\"$it\"" }
+        val chunkIds = db.chunkDao().matchFtsAll(matchQuery, 20)
+        if (chunkIds.isEmpty()) return emptyList()
+        val chunks = db.chunkDao().getByIds(chunkIds)
+        val docNames = mutableMapOf<String, String>()
+        return chunks.map { chunk ->
+            val docName = docNames.getOrPut(chunk.documentId) { db.documentDao().get(chunk.documentId)?.displayName ?: "Unknown" }
+            SourcePassage(chunk.id, chunk.documentId, docName, chunk.sectionPath, chunk.text, 1f, chunk.pageNumber)
         }
     }
 

@@ -71,14 +71,24 @@ import kotlinx.coroutines.launch
  * Three decisions only: understand the privacy promise, prepare a suitable local model, and
  * choose a starting response profile. Runtime and file-format detail belongs in Model Manager.
  */
+/** What a new user is here for — routes straight to the matching workspace instead of the
+ * full 45-tool grid, and seeds it as a favorite so it's still one tap away from All Tools later. */
+enum class OnboardIntent(val label: String, val route: String?) {
+    CHAT("Just chat", null),
+    WRITE("Write", "writing"),
+    STUDY("Study documents", "study"),
+    CODE("Code", "dev")
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
+fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     var page by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfile by rememberSaveable { mutableStateOf("BALANCED") }
+    var selectedIntent by rememberSaveable { mutableStateOf(OnboardIntent.CHAT) }
     val reducedMotion = rememberReducedMotion()
 
     val activityManager = context.getSystemService(ActivityManager::class.java)
@@ -123,6 +133,14 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
             note = "Balanced suits most devices. You can change this later in Settings.",
             accentTone = OnboardAccentTone.Primary,
             profilePicker = true
+        ),
+        OnboardPage(
+            icon = Icons.Filled.AutoAwesome,
+            title = "What brings you here?",
+            body = "Jump straight into the workspace you'll use most. You can open any tool from All Tools any time.",
+            note = "This just picks your starting screen — nothing else changes.",
+            accentTone = OnboardAccentTone.Secondary,
+            intentPicker = true
         )
     )
 
@@ -155,7 +173,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 // profile the user had already tapped.
                 TextButton(onClick = {
                     scope.launch { app.container.settingsRepository.setDefaultProfile(selectedProfile) }
-                    onDone()
+                    onDone(selectedIntent)
                 }) { Text("Skip") }
             }
             Row(
@@ -260,6 +278,21 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                             }
                         }
                     }
+                    if (p.intentPicker) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            verticalArrangement = Arrangement.spacedBy(Space.sm)
+                        ) {
+                            OnboardIntent.entries.forEach { intent ->
+                                VervanFilterChip(
+                                    selected = selectedIntent == intent,
+                                    onClick = { selectedIntent = intent },
+                                    label = { Text(intent.label) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
             Row(
@@ -271,7 +304,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 Button(onClick = {
                     if (page == pages.lastIndex) {
                         scope.launch { app.container.settingsRepository.setDefaultProfile(selectedProfile) }
-                        onDone()
+                        onDone(selectedIntent)
                     } else {
                         page++
                     }
@@ -301,7 +334,8 @@ private data class OnboardPage(
     val note: String,
     val accentTone: OnboardAccentTone = OnboardAccentTone.Primary,
     val importButton: Boolean = false,
-    val profilePicker: Boolean = false
+    val profilePicker: Boolean = false,
+    val intentPicker: Boolean = false
 )
 
 /** A starting generation model chosen for a device, plus whether it comfortably fits. */

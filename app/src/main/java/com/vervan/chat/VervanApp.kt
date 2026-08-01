@@ -41,10 +41,12 @@ import kotlinx.coroutines.withContext
 
 /** Simple hand-rolled DI container — no framework needed for this many dependencies. */
 class AppContainer(app: Application) {
-    // Real Migration objects are wired below via MIGRATIONS — Room only falls back to a
-    // destructive rebuild if a version bump has no matching Migration.
+    // Pre-release: no shipped installs to preserve, so a schema mismatch (someone upgrading from
+    // an old dev build with the old 50-version schema) destructively rebuilds instead of crashing
+    // on a missing Migration. MIGRATIONS starts real again once this app ships — see Migrations.kt.
     val db: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "vervan.db")
         .addMigrations(*MIGRATIONS)
+        .fallbackToDestructiveMigration(true)
         .build()
     val llmEngine = LlmEngine(app)
     val llamaCppEngine = LlamaCppEngine(app)

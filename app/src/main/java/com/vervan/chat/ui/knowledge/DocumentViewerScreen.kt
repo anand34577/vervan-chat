@@ -42,7 +42,7 @@ import com.vervan.chat.ui.theme.VervanMono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
+fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> }) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: DocumentViewerViewModel = viewModel(factory = viewModelFactory { initializer { DocumentViewerViewModel(app, documentId) } })
     val document by vm.document.collectAsState()
@@ -143,7 +143,22 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit) {
                                 Text(chunk.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, fontFamily = VervanMono)
                             }
                             Text(chunk.text, style = MaterialTheme.typography.bodySmall)
-                            Text("~${chunk.tokenCount} tokens", style = MaterialTheme.typography.labelSmall, fontFamily = VervanMono, modifier = Modifier.padding(top = Space.xs))
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = Space.xs),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "~${chunk.tokenCount} tokens",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = VervanMono,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                chunk.pageNumber?.let { page ->
+                                    androidx.compose.material3.TextButton(onClick = { onOpenPdfPage(documentId, page) }) {
+                                        Text("Page $page")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

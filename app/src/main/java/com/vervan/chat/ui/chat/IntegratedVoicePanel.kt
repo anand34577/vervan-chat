@@ -110,7 +110,8 @@ internal fun IntegratedVoicePanel(
                 state = state,
                 modelName = modelName,
                 microphoneMuted = microphoneMuted,
-                speechOutputEnabled = speechOutputEnabled
+                speechOutputEnabled = speechOutputEnabled,
+                playbackPaused = playbackPaused
             )
 
             attachmentLabel?.let {
@@ -209,7 +210,8 @@ private fun VoicePanelHeader(
     state: VoiceControllerState,
     modelName: String?,
     microphoneMuted: Boolean,
-    speechOutputEnabled: Boolean
+    speechOutputEnabled: Boolean,
+    playbackPaused: Boolean
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Surface(
@@ -227,7 +229,7 @@ private fun VoicePanelHeader(
                 liveRegion = LiveRegionMode.Polite
             }
         ) {
-            Text(voicePanelStateLabel(state, microphoneMuted), style = MaterialTheme.typography.titleMedium)
+            Text(voicePanelStateLabel(state, microphoneMuted, playbackPaused), style = MaterialTheme.typography.titleMedium)
             Text(
                 modelName ?: "Local model",
                 style = MaterialTheme.typography.bodySmall,
@@ -505,13 +507,14 @@ private fun VoicePanelAction(
     }
 }
 
-private fun voicePanelStateLabel(state: VoiceControllerState, muted: Boolean): String = when {
+private fun voicePanelStateLabel(state: VoiceControllerState, muted: Boolean, paused: Boolean): String = when {
     muted -> "Microphone muted"
     state == VoiceControllerState.IDLE -> "Voice session ready"
     state == VoiceControllerState.LOADING_MODEL -> "Preparing local model"
     state == VoiceControllerState.LISTENING -> "Listening"
     state == VoiceControllerState.TRANSCRIBING -> "Transcribing speech"
     state == VoiceControllerState.THINKING -> "Generating response"
+    state == VoiceControllerState.SPEAKING && paused -> "Response paused"
     else -> "Speaking response"
 }
 

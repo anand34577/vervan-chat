@@ -22,6 +22,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
     val defaultRetrievalMode: StateFlow<String> = settings.defaultRetrievalMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "HYBRID")
+    val queryExpansionEnabled: StateFlow<Boolean> = settings.queryExpansionEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val autoReadAloud: StateFlow<Boolean> = settings.autoReadAloud
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val ttsEnginePreference: StateFlow<String> = settings.ttsEnginePreference
@@ -38,6 +40,48 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
     val sttFallbackEnabled = settings.sttFallbackEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val voiceQualityPreset: StateFlow<String> = settings.voiceQualityPreset
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "BALANCED")
+
+    /** Collapses the six TTS/STT engines behind one dial. FAST skips whisper.cpp's heavier compute;
+     * BALANCED is today's engine defaults; BEST prefers the highest-quality downloaded TTS voice
+     * (Kokoro, else Supertonic, else Piper) and drops the lower-accuracy Android STT fallback. Each
+     * underlying toggle stays visible and overridable in the Advanced section below. */
+    fun setVoiceQualityPreset(preset: String) = viewModelScope.launch {
+        settings.setVoiceQualityPreset(preset)
+        val voices = downloadedVoiceModels.value
+        val bestTts = when {
+            voices.any { it.engine == "KOKORO" && it.isReady } -> "KOKORO"
+            voices.any { it.engine == "SUPERTONIC" && it.isReady } -> "SUPERTONIC"
+            else -> "AUTO"
+        }
+        when (preset) {
+            "FAST" -> {
+                settings.setTtsEnginePreference("AUTO")
+                settings.setInbuiltSttEnabled(false)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(true)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+            "BALANCED" -> {
+                settings.setTtsEnginePreference("AUTO")
+                settings.setInbuiltSttEnabled(true)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(true)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+            "BEST" -> {
+                settings.setTtsEnginePreference(bestTts)
+                settings.setInbuiltSttEnabled(true)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(false)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+        }
+    }
     val whisperGpuEnabled: StateFlow<Boolean> = settings.whisperGpuEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val supertonicVoiceVariant: StateFlow<String> = settings.supertonicVoiceVariant
@@ -162,6 +206,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val autoModelSelectionEnabled: StateFlow<Boolean> = settings.autoModelSelectionEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val fastCapableRoutingEnabled: StateFlow<Boolean> = settings.fastCapableRoutingEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceAwarePerformance: StateFlow<Boolean> = settings.deviceAwarePerformance
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val largeTouchTargets: StateFlow<Boolean> = settings.largeTouchTargets
@@ -289,6 +335,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
 
     fun setThemeMode(mode: ThemeMode) { viewModelScope.launch { settings.setThemeMode(mode) } }
     fun setDefaultRetrievalMode(mode: String) { viewModelScope.launch { settings.setDefaultRetrievalMode(mode) } }
+    fun setQueryExpansionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setQueryExpansionEnabled(enabled) } }
     fun setAutoReadAloud(enabled: Boolean) { viewModelScope.launch { settings.setAutoReadAloud(enabled) } }
     fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
@@ -309,6 +356,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setExpertMode(enabled: Boolean) { viewModelScope.launch { settings.setExpertMode(enabled) } }
     fun setDeviceAwarePerformance(enabled: Boolean) { viewModelScope.launch { settings.setDeviceAwarePerformance(enabled) } }
     fun setAutoModelSelectionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setAutoModelSelectionEnabled(enabled) } }
+    fun setFastCapableRoutingEnabled(enabled: Boolean) { viewModelScope.launch { settings.setFastCapableRoutingEnabled(enabled) } }
     fun setLargeTouchTargets(enabled: Boolean) { viewModelScope.launch { settings.setLargeTouchTargets(enabled) } }
     fun setDynamicColor(enabled: Boolean) { viewModelScope.launch { settings.setDynamicColor(enabled) } }
     fun setHighContrast(enabled: Boolean) { viewModelScope.launch { settings.setHighContrast(enabled) } }

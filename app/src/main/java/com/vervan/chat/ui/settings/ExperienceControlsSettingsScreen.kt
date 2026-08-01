@@ -55,6 +55,7 @@ fun ExperienceControlsSettingsScreen(
     val preferredBackend by vm.preferredBackend.collectAsState()
     val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsState()
     val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsState()
+    val fastCapableRoutingEnabled by vm.fastCapableRoutingEnabled.collectAsState()
     var confirmExpert by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -106,6 +107,23 @@ fun ExperienceControlsSettingsScreen(
                         Switch(checked = autoModelSelectionEnabled, onCheckedChange = vm::setAutoModelSelectionEnabled)
                     }
                 )
+                if (autoModelSelectionEnabled) {
+                    androidx.compose.material3.HorizontalDivider()
+                    ListItem(
+                        headlineContent = { Text("Route short/long messages differently") },
+                        supportingContent = {
+                            Text(
+                                "For a chat left on Balanced, uses a smaller installed model for short messages " +
+                                    "and a larger one for long/complex ones. Switching models mid-conversation " +
+                                    "costs a brief reload."
+                            )
+                        },
+                        leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
+                        trailingContent = {
+                            Switch(checked = fastCapableRoutingEnabled, onCheckedChange = vm::setFastCapableRoutingEnabled)
+                        }
+                    )
+                }
             }
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {

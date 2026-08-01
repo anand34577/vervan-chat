@@ -13,23 +13,31 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -43,8 +51,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
+import com.vervan.chat.VervanApp
+import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
 import io.noties.markwon.Markwon
@@ -54,6 +66,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 
@@ -239,28 +252,75 @@ private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {
     }
 }
 
+/** Sent to the model when a diagram fails to parse — %s slots are the WebView's error message
+ * and the current source. Kept to a strict "fix syntax only" instruction so a small on-device
+ * model doesn't rewrite the diagram's actual content while correcting it. */
+private const val MERMAID_FIX_PROMPT = "The following Mermaid diagram failed to render with this error: %s\n\n" +
+    "Fix ONLY the syntax so it renders correctly. Keep the same diagram type, structure, and content. " +
+    "Respond with ONLY the corrected Mermaid source — no explanation, no code fences.\n\nDiagram:\n%s"
+
+/** Strips a ```mermaid fence the model may wrap its fix in, despite the prompt asking it not to
+ * — cheaper than reprompting, and matches how the rest of the app tolerates minor instruction
+ * drift from small local models. */
+private fun stripCodeFence(text: String): String {
+    val trimmed = text.trim()
+    val match = Regex("^```(?:mermaid)?\\s*\\r?\\n([\\s\\S]*?)\\r?\\n?```\\s*$", RegexOption.IGNORE_CASE).find(trimmed)
+    return match?.groupValues?.get(1)?.trim() ?: trimmed
+}
+
 @Composable
 private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val density = LocalDensity.current
+    val app = LocalContext.current.applicationContext as VervanApp
+    val scope = rememberCoroutineScope()
     var heightPx by remember { mutableIntStateOf(with(density) { 160.dp.roundToPx() }) }
     val currentHeightCallback by rememberUpdatedState<(Int) -> Unit>(newValue = { measured ->
         heightPx = measured.coerceAtLeast(with(density) { 80.dp.roundToPx() })
     })
+    // An AI-corrected source overrides the model's original text once a fix succeeds. Keyed on
+    // `source` so it resets when the underlying message content actually changes (streaming,
+    // branch switch, regenerate) rather than sticking to a stale fix forever.
+    var fixedSource by remember(source) { mutableStateOf<String?>(null) }
+    var renderError by remember(source) { mutableStateOf<String?>(null) }
+    var fixing by remember(source) { mutableStateOf(false) }
+    var showFullscreen by remember { mutableStateOf(false) }
+    val effectiveSource = fixedSource ?: source
+    val currentErrorCallback by rememberUpdatedState<(String?) -> Unit>(newValue = { renderError = it })
+
+    fun fixWithAi() {
+        val error = renderError ?: return
+        fixing = true
+        scope.launch {
+            val fixed = runCatching {
+                OneShotLlm.run(app, MERMAID_FIX_PROMPT.format(error, effectiveSource), maxOutputTokensOverride = 800)
+            }.getOrNull()
+            fixing = false
+            if (!fixed.isNullOrBlank()) fixedSource = stripCodeFence(fixed)
+        }
+    }
+
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column {
-            RendererHeader(label = "Mermaid · offline", onCopy = onCopy, showDiagramIcon = true)
+            RendererHeader(
+                label = "Mermaid · offline",
+                onCopy = onCopy,
+                showDiagramIcon = true,
+                onExpand = { showFullscreen = true }
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AndroidView(
                 modifier = Modifier.fillMaxWidth().height(with(density) { heightPx.toDp() }),
-                factory = { context -> OfflineMermaidView(context) { currentHeightCallback(it) } },
+                factory = { context ->
+                    OfflineMermaidView(context, zoomable = false, onHeightChanged = { currentHeightCallback(it) }, onError = { currentErrorCallback(it) })
+                },
                 onRelease = WebView::destroy,
                 update = { view ->
                     view.render(
-                        source = source,
+                        source = effectiveSource,
                         background = scheme.surfaceContainerLow.cssHex(),
                         foreground = scheme.onSurface.cssHex(),
                         primary = scheme.primaryContainer.cssHex(),
@@ -270,12 +330,86 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
                     )
                 }
             )
+            // mermaid.parse() failing isn't rare with a small on-device model — surfacing why
+            // (instead of only silently falling back to raw source, as before) turns a dead end
+            // into a one-tap recovery.
+            if (renderError != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Couldn't render this diagram — showing raw source below.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = ::fixWithAi, enabled = !fixing) {
+                        if (fixing) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Fix with AI")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showFullscreen) {
+        MermaidFullscreenDialog(source = effectiveSource, onDismiss = { showFullscreen = false })
+    }
+}
+
+/** Full-screen pinch-zoom/pan viewer. Renders in a second, natural-size (`fullscreen = true`)
+ * WebView instance rather than rasterizing the compact card's SVG to a bitmap, so zooming in on
+ * a dense diagram reveals real vector detail/crisp text instead of a magnified raster of the
+ * same shrunk layout. */
+@Composable
+private fun MermaidFullscreenDialog(source: String, onDismiss: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = scheme.surface) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(Space.md),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Diagram", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close") }
+                }
+                HorizontalDivider(color = scheme.outlineVariant)
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    factory = { context -> OfflineMermaidView(context, zoomable = true, onHeightChanged = {}, onError = {}) },
+                    onRelease = WebView::destroy,
+                    update = { view ->
+                        view.render(
+                            source = source,
+                            background = scheme.surface.cssHex(),
+                            foreground = scheme.onSurface.cssHex(),
+                            primary = scheme.primaryContainer.cssHex(),
+                            primaryText = scheme.onPrimaryContainer.cssHex(),
+                            secondary = scheme.secondaryContainer.cssHex(),
+                            outline = scheme.outline.cssHex(),
+                            fullscreen = true
+                        )
+                    }
+                )
+            }
         }
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
-private class OfflineMermaidView(context: Context, private val onHeightChanged: (Int) -> Unit) : WebView(context) {
+private class OfflineMermaidView(
+    context: Context,
+    private val zoomable: Boolean,
+    private val onHeightChanged: (Int) -> Unit,
+    private val onError: (String?) -> Unit
+) : WebView(context) {
     private var ready = false
     private var pendingScript: String? = null
     private var renderedKey: String? = null
@@ -292,8 +426,16 @@ private class OfflineMermaidView(context: Context, private val onHeightChanged: 
             blockNetworkLoads = true
             domStorageEnabled = false
             javaScriptCanOpenWindowsAutomatically = false
+            // Only the fullscreen viewer needs pinch-zoom/pan — the compact inline card stays a
+            // fixed, non-interactive preview so it doesn't fight the chat list's own scrolling.
+            if (zoomable) {
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+                useWideViewPort = true
+            }
         }
-        addJavascriptInterface(HeightBridge(this, onHeightChanged), "AndroidBridge")
+        addJavascriptInterface(MermaidBridge(this, onHeightChanged, onError), "AndroidBridge")
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .build()
@@ -320,18 +462,32 @@ private class OfflineMermaidView(context: Context, private val onHeightChanged: 
         loadUrl(MERMAID_PAGE)
     }
 
-    fun render(source: String, background: String, foreground: String, primary: String, primaryText: String, secondary: String, outline: String) {
-        val key = listOf(source, background, foreground, primary, primaryText, secondary, outline).joinToString("\u0000")
+    fun render(
+        source: String, background: String, foreground: String, primary: String, primaryText: String,
+        secondary: String, outline: String, fullscreen: Boolean = false
+    ) {
+        val key = listOf(source, background, foreground, primary, primaryText, secondary, outline, fullscreen).joinToString(" ")
         if (key == renderedKey) return
         renderedKey = key
-        val script = "window.renderDiagram(${listOf(source, background, foreground, primary, primaryText, secondary, outline).joinToString(",") { JSONObject.quote(it) }})"
+        val args = listOf(source, background, foreground, primary, primaryText, secondary, outline)
+            .joinToString(",") { JSONObject.quote(it) }
+        val script = "window.renderDiagram($args,$fullscreen)"
         if (ready) evaluateJavascript(script, null) else pendingScript = script
     }
 
-    private class HeightBridge(private val view: WebView, private val callback: (Int) -> Unit) {
+    private class MermaidBridge(
+        private val view: WebView,
+        private val onHeight: (Int) -> Unit,
+        private val onError: (String?) -> Unit
+    ) {
         @JavascriptInterface
         fun setHeight(heightPx: Int) {
-            view.post { callback(heightPx) }
+            view.post { onHeight(heightPx) }
+        }
+
+        @JavascriptInterface
+        fun onError(message: String?) {
+            view.post { onError(message) }
         }
     }
 
@@ -344,7 +500,7 @@ private fun androidx.compose.ui.graphics.Color.cssHex(): String =
     String.format("#%06X", 0xFFFFFF and toArgb())
 
 @Composable
-private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: Boolean = false) {
+private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: Boolean = false, onExpand: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.sm, top = Space.xs, bottom = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
@@ -359,6 +515,9 @@ private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: B
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, "Copy") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onExpand != null) IconButton(onClick = onExpand) { Icon(Icons.Filled.Fullscreen, "Expand diagram") }
+            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, "Copy") }
+        }
     }
 }

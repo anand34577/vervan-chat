@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
         #diagram { box-sizing: border-box; width: 100%; padding: 12px; overflow-x: auto; }
@@ -45,6 +45,9 @@
     }
 
     async function draw(request) {
+        // Fullscreen renders at true size (no forced fit-to-container) so pinch-zoom reveals
+        // real vector detail instead of the same shrunk layout at a bigger scale.
+        const natural = !!request.fullscreen;
         const config = {
             startOnLoad: false,
             securityLevel: 'strict',
@@ -66,8 +69,8 @@
                 noteBkgColor: request.secondary,
                 noteTextColor: request.foreground
             },
-            flowchart: { useMaxWidth: true, htmlLabels: false },
-            sequence: { useMaxWidth: true },
+            flowchart: { useMaxWidth: !natural, htmlLabels: false },
+            sequence: { useMaxWidth: !natural },
             suppressErrorRendering: true
         };
         mermaid.initialize(config);
@@ -80,8 +83,12 @@
             sourcePreview.hidden = true;
             result.bindFunctions?.(diagram);
             reportHeight();
-        } catch (_) {
-            if (request.id === latestRequest) showSource(request.source, request.foreground);
+            AndroidBridge.onError(null);
+        } catch (err) {
+            if (request.id !== latestRequest) return;
+            showSource(request.source, request.foreground);
+            const message = (err && err.message ? err.message : String(err)).slice(0, 300);
+            AndroidBridge.onError(message);
         }
     }
 
@@ -96,8 +103,8 @@
         drawing = false;
     }
 
-    window.renderDiagram = function(source, background, foreground, primary, primaryText, secondary, outline) {
-        pending = { id: ++latestRequest, source, background, foreground, primary, primaryText, secondary, outline };
+    window.renderDiagram = function(source, background, foreground, primary, primaryText, secondary, outline, fullscreen) {
+        pending = { id: ++latestRequest, source, background, foreground, primary, primaryText, secondary, outline, fullscreen };
         drain();
     };
 

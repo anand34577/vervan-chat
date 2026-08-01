@@ -65,6 +65,7 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.VervanGridMinWidth
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.SnackbarHost
@@ -238,7 +239,11 @@ private fun PersonasTab(
         )
         return
     }
-    LazyVerticalGrid(columns = GridCells.Adaptive(220.dp), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(VervanGridMinWidth.compactCard),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)
+    ) {
         items(personas, key = { it.id }) { persona ->
             PersonaCard(
                 persona = persona,

@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,9 @@ fun SectionRow(
     title: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    iconSize: IconAffordanceSize = IconAffordanceSize.Compact,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     eyebrow: String? = null,
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
@@ -80,7 +84,12 @@ fun SectionRow(
         .padding(Space.lg)
     Row(base, verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
-            IconAffordance(icon = icon, size = IconAffordanceSize.Compact)
+            IconAffordance(
+                icon = icon,
+                size = iconSize,
+                tint = iconTint,
+                containerColor = iconContainerColor
+            )
         }
         Column(
             Modifier
