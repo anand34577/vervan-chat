@@ -153,7 +153,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -198,6 +197,7 @@ import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -501,9 +501,7 @@ internal fun MessageBubble(
                 message.imagePath?.let { path ->
                     // Media-first bubble preview; tap opens the zoomable full-screen viewer.
                     val previewPx = with(LocalDensity.current) { 560.dp.roundToPx() }
-                    val bitmap = remember(path, previewPx) {
-                        com.vervan.chat.model.ImageUtils.decodeThumbnail(path, previewPx)?.asImageBitmap()
-                    }
+                    val bitmap = rememberThumbnail(path, previewPx)
                     bitmap?.let {
                         Image(
                             it, contentDescription = "Attached image — tap to view",

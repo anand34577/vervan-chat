@@ -203,11 +203,17 @@ fun TextActionScreen(
             isOcrRunning = true
             scope.launch {
                 ImageUtils.fixOrientation(file)
-                val text = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("") }
+                // Only the extracted text is kept — the copied JPEG has no further use once OCR
+                // has read it, and this screen never displays it, so it's deleted immediately
+                // instead of leaking into filesDir/images (same pattern as
+                // FlashcardsFromPhotoScreen.runOcr).
+                val text = withContext(Dispatchers.IO) {
+                    runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("").also { file.delete() }
+                }
                 inputText = if (inputText.isBlank()) text else "$inputText\n$text"
                 isOcrRunning = false
             }
-        }
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {

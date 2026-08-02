@@ -153,6 +153,28 @@ class RealtimeVoiceController(
     private val _speechOutputEnabled = MutableStateFlow(true)
     val speechOutputEnabled: StateFlow<Boolean> = _speechOutputEnabled
 
+    /** True while the UI's push-to-talk button is physically held down. Only consulted by
+     * [captureUntilSilence] when [SettingsRepository.voicePushToTalkEnabled] is on for the
+     * current utterance — see [pushToTalkPress]/[pushToTalkRelease]. */
+    private val _pushToTalkHeld = MutableStateFlow(false)
+    val pushToTalkHeld: StateFlow<Boolean> = _pushToTalkHeld
+
+    /** Call from the UI's press gesture on the mic button. A no-op outside push-to-talk mode or
+     * outside [VoiceControllerState.LISTENING] — harmless if a stray press lands during another
+     * state (e.g. the tail end of a gesture after the turn already finished). */
+    fun pushToTalkPress() {
+        if (_state.value == VoiceControllerState.LISTENING) _pushToTalkHeld.value = true
+    }
+
+    /** Call from the UI's release gesture. Ends the held utterance immediately — release IS the
+     * endpoint signal in push-to-talk mode, same role [finishListening] plays for the tap-based
+     * flow. Safe to call even if nothing was actually captured yet (a tap-and-immediately-release
+     * before any audio came in): [captureUntilSilence] already handles an empty capture as a
+     * silent no-op that just re-enters LISTENING. */
+    fun pushToTalkRelease() {
+        _pushToTalkHeld.value = false
+    }
+
     fun start(scope: CoroutineScope) {
         if (sessionJob?.isActive == true) return
         _modelLoadError.value = null
@@ -174,6 +196,14 @@ class RealtimeVoiceController(
     }
 
     fun stop() {
+        // A controller that never had start() called (e.g. one that's remembered anew and torn
+        // down before hands-free was ever toggled on — see ChatScreen's
+        // DisposableEffect(voiceController)/onDispose) has nothing of its own to tear down. Doing
+        // the full teardown anyway used to call conversationBridge?.cancelResponse() unconditionally,
+        // which cancels whatever the chat is currently generating (voice or plain text) even though
+        // this controller instance was never the one generating it — e.g. it fired mid-send right
+        // after Home's "Ask anything" quick-ask, cancelling the reply before it started.
+        if (sessionJob == null && _state.value == VoiceControllerState.IDLE) return
         val beforeStop = _turns.value
         val interrupted = beforeStop.any { it.isStreaming } || _state.value in setOf(
             VoiceControllerState.THINKING,
@@ -199,6 +229,7 @@ class RealtimeVoiceController(
         _playbackPaused.value = false
         _microphoneMuted.value = false
         _sttUnavailable.value = false
+        _pushToTalkHeld.value = false
         finishListeningRequested = false
         cancelListeningRequested = false
         responseInterrupted = true
@@ -430,7 +461,8 @@ class RealtimeVoiceController(
                 } else {
                     configuredMax
                 }
-                val captured = captureUntilSilence(maxDurationMs)
+                val pushToTalk = app.container.settingsRepository.voicePushToTalkEnabled.first()
+                val captured = captureUntilSilence(maxDurationMs, pushToTalk)
                 if (cancelListeningRequested) {
                     cancelListeningRequested = false
                     continue
@@ -673,7 +705,18 @@ class RealtimeVoiceController(
 
     private data class CapturedUtterance(val pcm: ShortArray, val durationMs: Int)
 
-    private suspend fun captureUntilSilence(maxDurationMs: Int): CapturedUtterance {
+    /** Endpoints one utterance two different ways depending on [pushToTalk]:
+     *  - off (default, hands-free): VAD decides both when speech starts and — via
+     *    [TRAILING_SILENCE_MS] of quiet after it — when it ends. This is the original behavior,
+     *    unchanged for anyone who never turns push-to-talk on.
+     *  - on: the UI's hold gesture ([pushToTalkPress]/[pushToTalkRelease], reflected in
+     *    [_pushToTalkHeld]) decides both edges instead of the VAD — recording only accumulates
+     *    while held, and release ends the utterance immediately rather than waiting out a
+     *    trailing-silence timer. The VAD is not consulted at all in this mode; a deliberately
+     *    held-then-silent button press should still count as intentional speech, not get
+     *    endpointed early just because the room is quiet.
+     */
+    private suspend fun captureUntilSilence(maxDurationMs: Int, pushToTalk: Boolean = false): CapturedUtterance {
         // Clear any VAD state left over from the previous turn (or the barge-in watcher) before
         // endpointing a fresh utterance. This also bounds the detector's internal speech-segment
         // buffer, which this pipeline polls via isSpeechDetected() but never drains, so it would
@@ -685,7 +728,9 @@ class RealtimeVoiceController(
         // otherwise be dropped entirely, cutting off the attack of the first word (exactly what
         // was reported as "misses my first word"). Keep a short rolling pre-roll of frames seen
         // while not-yet-speaking and splice it in the instant speech actually triggers, so the
-        // true onset survives even though the VAD only recognized it a few frames late.
+        // true onset survives even though the VAD only recognized it a few frames late. Push-to-
+        // talk uses the same pre-roll for the same reason: the button press event and the audio
+        // frame that actually contains the attack of the first word are not perfectly aligned.
         val preRoll = ArrayDeque<ShortArray>()
         val preRollMaxFrames = PRE_SPEECH_BUFFER_MS / CAPTURE_FRAME_MS
         var sawSpeech = false
@@ -693,6 +738,7 @@ class RealtimeVoiceController(
         var elapsedMs = 0
         _liveWaveform.value = emptyList()
         _liveElapsedMs.value = 0
+        if (pushToTalk) _pushToTalkHeld.value = false
         audioCapture.frames.takeWhile { frame ->
             if (finishListeningRequested) return@takeWhile false
             if (_microphoneMuted.value) {
@@ -700,7 +746,18 @@ class RealtimeVoiceController(
                 delay(CAPTURE_FRAME_MS.toLong())
                 return@takeWhile true
             }
-            val speaking = vad.isSpeech(frame)
+            val held = _pushToTalkHeld.value
+            if (pushToTalk && !held && !sawSpeech) {
+                // Waiting for the button to be pressed — don't accumulate audio or touch the VAD
+                // yet, just keep the pre-roll warm so the moment press lands doesn't clip.
+                preRoll.addLast(frame)
+                if (preRoll.size > preRollMaxFrames) preRoll.removeFirst()
+                elapsedMs += CAPTURE_FRAME_MS
+                _liveWaveform.value = emptyList()
+                _liveElapsedMs.value = elapsedMs
+                return@takeWhile elapsedMs < maxDurationMs
+            }
+            val speaking = if (pushToTalk) held else vad.isSpeech(frame)
             if (speaking) {
                 if (!sawSpeech) {
                     preRoll.forEach { collected.addAll(it.toList()) }
@@ -720,11 +777,13 @@ class RealtimeVoiceController(
             _liveWaveform.value = (_liveWaveform.value + frameLevel(frame)).takeLast(LIVE_WAVEFORM_BARS)
             _liveElapsedMs.value = elapsedMs
             val done = finishListeningRequested ||
-                (sawSpeech && silenceMs >= TRAILING_SILENCE_MS) ||
+                (!pushToTalk && sawSpeech && silenceMs >= TRAILING_SILENCE_MS) ||
+                (pushToTalk && sawSpeech && !held) ||
                 elapsedMs >= maxDurationMs
             !done
         }.collect { }
         finishListeningRequested = false
+        _pushToTalkHeld.value = false
         _liveWaveform.value = emptyList()
         return CapturedUtterance(collected.toShortArray(), elapsedMs)
     }

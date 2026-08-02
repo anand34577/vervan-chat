@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.PlainTooltip
@@ -25,6 +27,18 @@ import androidx.compose.ui.text.style.TextOverflow
  * Material tooltips support pointer hover and touch-and-hold, while the explicit semantics value
  * ensures accessibility services receive the complete label rather than only its visible prefix.
  * Keeping the tooltip conditional avoids adding a redundant long-press target for short labels.
+ *
+ * [modifier] (typically `Modifier.weight(1f)` from a caller's `Row`, e.g. a chat-list row's
+ * title next to its timestamp) is applied to a plain [Box], not to [TooltipBox] directly.
+ * [TooltipBox] doesn't reliably honor a `weight` modifier applied to itself — a Row measuring a
+ * weighted [TooltipBox] next to an unweighted trailing sibling (a timestamp, in every caller of
+ * this composable) could end up granting it the *unconstrained* intrinsic width of the full,
+ * untruncated [text] instead of its fair share, squeezing that trailing sibling out of the row
+ * entirely rather than letting the title ellipsize — exactly the "long chat title hides the
+ * timestamp" bug this fixes. A plain [Box] is a well-behaved `Row`/`Column` weight participant,
+ * so resolving the modifier there and only then handing [TooltipBox] a hard `fillMaxWidth()`
+ * (bounded by whatever width the Box was actually given) forces the inner [Text] to truncate
+ * within that bound instead of expanding past it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,21 +52,23 @@ fun OverflowTooltipText(
     var hasVisualOverflow by remember(text, maxLines) { mutableStateOf(false) }
     val tooltipState = rememberTooltipState()
 
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(text) } },
-        state = tooltipState,
-        modifier = modifier,
-        enableUserInput = hasVisualOverflow
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.clearAndSetSemantics { contentDescription = text },
-            style = style,
-            color = color,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { hasVisualOverflow = it.hasVisualOverflow }
-        )
+    Box(modifier) {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text(text) } },
+            state = tooltipState,
+            modifier = Modifier.fillMaxWidth(),
+            enableUserInput = hasVisualOverflow
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.clearAndSetSemantics { contentDescription = text },
+                style = style,
+                color = color,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { hasVisualOverflow = it.hasVisualOverflow }
+            )
+        }
     }
 }

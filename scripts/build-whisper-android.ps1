@@ -14,9 +14,10 @@
 
     Vulkan (arm64-v8a only — same 64-bit-only constraint as build-llama-android-vulkan.ps1, see
     that script's comment) needs the same host toolchain that script already requires: a Vulkan
-    SDK (headers, glslc, the SPIRV-Headers CMake package) and an x64 MSVC compiler, because ggml's
-    Vulkan backend generates its SPIR-V shader headers with a host-side tool
-    (vulkan-shaders-gen). If either is missing, this script does NOT fail the build — it logs a
+    SDK (headers, glslc, the SPIRV-Headers CMake package) and a host C/C++ compiler (GCC/MinGW —
+    TDM-GCC-64 on this dev machine — tried first, MSVC as fallback), because ggml's Vulkan
+    backend generates its SPIR-V shader headers with a host-side tool (vulkan-shaders-gen). If
+    either is missing, this script does NOT fail the build — it logs a
     warning and falls back to a CPU-only libwhisper.so for that ABI, mirroring the exact runtime
     fallback whisper.cpp's own whisper_backend_init() already does (try the GPU device, fall back
     to CPU if none is compiled in or none is found at runtime). armeabi-v7a is always CPU-only.
@@ -41,8 +42,13 @@ param(
     [string] $VulkanSdk,
     [string] $MsvcDir,
 
+    # GCC/MinGW install directory (folder containing gcc.exe/g++.exe, or its parent). Tried
+    # BEFORE MSVC. Defaults to `mingw.dir` in local.properties, then %MINGW_DIR%, then this dev
+    # machine's TDM-GCC-64 install.
+    [string] $GccDir,
+
     # Try to compile the Vulkan backend in on arm64-v8a. On by default; falls back to a CPU-only
-    # build (with a warning, not a failure) if the Vulkan SDK or an x64 MSVC toolchain isn't
+    # build (with a warning, not a failure) if the Vulkan SDK or a host compiler isn't
     # found. Pass -Vulkan:$false to skip the attempt entirely (e.g. for a faster CPU-only
     # rebuild loop).
     [bool] $Vulkan = $true,
@@ -220,53 +226,84 @@ if ($Vulkan) {
         } else {
             Write-Ok "Vulkan SDK: $VulkanSdk"
 
-            # Importing the MSVC host environment (for vulkan-shaders-gen) is best-effort too: an
-            # exception here just disables Vulkan for this run instead of throwing, so a machine
-            # without "Desktop development with C++" installed still gets a working CPU build.
+            # Importing a host compiler environment (for vulkan-shaders-gen) is best-effort too:
+            # an exception here just disables Vulkan for this run instead of throwing, so a
+            # machine without a working host toolchain still gets a working CPU build.
             try {
-                $existing = Get-Command cl.exe -ErrorAction SilentlyContinue
-                if ($existing -and $existing.Source -match "Hostx64[\\/]+x64[\\/]+cl\.exe$") {
-                    Write-Ok "MSVC already on PATH: $($existing.Source)"
+                $gccFound = $false
+                $existingGcc = Get-Command gcc.exe -ErrorAction SilentlyContinue
+                if ($existingGcc -and (Get-Command "g++.exe" -ErrorAction SilentlyContinue)) {
+                    Write-Ok "GCC already on PATH: $($existingGcc.Source)"
+                    $gccFound = $true
                 } else {
-                    $vcvars = $null
-                    if ($MsvcDir) {
-                        $candidate = $MsvcDir
-                        while ($candidate -and -not (Test-Path (Join-Path $candidate "Auxiliary/Build/vcvars64.bat"))) {
-                            $parent = Split-Path -Parent $candidate
-                            if ($parent -eq $candidate) { $candidate = $null; break }
-                            $candidate = $parent
-                        }
-                        if ($candidate) { $vcvars = Join-Path $candidate "Auxiliary/Build/vcvars64.bat" }
-                    }
-                    if (-not $vcvars) {
-                        $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-                        if (Test-Path $vswhere) {
-                            $installPath = & $vswhere -latest -products * `
-                                -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-                                -property installationPath 2>$null | Select-Object -First 1
-                            if ($installPath) {
-                                $candidate = Join-Path $installPath "VC/Auxiliary/Build/vcvars64.bat"
-                                if (Test-Path $candidate) { $vcvars = $candidate }
+                    $gccCandidates = New-Object System.Collections.Generic.List[string]
+                    if ($GccDir) { $gccCandidates.Add($GccDir); $gccCandidates.Add((Join-Path $GccDir "bin")) }
+                    $fromProps = Get-LocalProperty "mingw.dir"
+                    if ($fromProps) { $gccCandidates.Add($fromProps); $gccCandidates.Add((Join-Path $fromProps "bin")) }
+                    $fromEnv = [Environment]::GetEnvironmentVariable("MINGW_DIR")
+                    if ($fromEnv) { $gccCandidates.Add($fromEnv); $gccCandidates.Add((Join-Path $fromEnv "bin")) }
+                    # This dev machine's current install — Visual Studio was removed in favor of TDM-GCC-64.
+                    $gccCandidates.Add("C:/TDM-GCC-64/bin")
+
+                    foreach ($dir in $gccCandidates) {
+                        if ((Test-Path (Join-Path $dir "gcc.exe")) -and (Test-Path (Join-Path $dir "g++.exe"))) {
+                            $env:PATH = "$dir;$env:PATH"
+                            $resolved = Get-Command gcc.exe -ErrorAction SilentlyContinue
+                            if ($resolved) {
+                                Write-Ok "Using GCC toolchain: $dir"
+                                Write-Ok "Host compiler: $($resolved.Source)"
+                                $gccFound = $true
+                                break
                             }
                         }
                     }
-                    if (-not $vcvars -or -not (Test-Path $vcvars)) {
-                        throw "No x64 MSVC toolset found (install 'Desktop development with C++', or pass -MsvcDir)."
-                    }
+                }
 
-                    Write-Ok "Importing MSVC environment: $vcvars"
-                    $output = & "$env:ComSpec" /s /c "`"$vcvars`" >nul 2>&1 && set"
-                    if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed (exit $LASTEXITCODE)." }
-                    foreach ($line in $output) {
-                        if ($line -match "^([^=]+)=(.*)$") {
-                            Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] -ErrorAction SilentlyContinue
+                if (-not $gccFound) {
+                    $existing = Get-Command cl.exe -ErrorAction SilentlyContinue
+                    if ($existing -and $existing.Source -match "Hostx64[\\/]+x64[\\/]+cl\.exe$") {
+                        Write-Ok "MSVC already on PATH: $($existing.Source)"
+                    } else {
+                        $vcvars = $null
+                        if ($MsvcDir) {
+                            $candidate = $MsvcDir
+                            while ($candidate -and -not (Test-Path (Join-Path $candidate "Auxiliary/Build/vcvars64.bat"))) {
+                                $parent = Split-Path -Parent $candidate
+                                if ($parent -eq $candidate) { $candidate = $null; break }
+                                $candidate = $parent
+                            }
+                            if ($candidate) { $vcvars = Join-Path $candidate "Auxiliary/Build/vcvars64.bat" }
                         }
+                        if (-not $vcvars) {
+                            $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+                            if (Test-Path $vswhere) {
+                                $installPath = & $vswhere -latest -products * `
+                                    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                                    -property installationPath 2>$null | Select-Object -First 1
+                                if ($installPath) {
+                                    $candidate = Join-Path $installPath "VC/Auxiliary/Build/vcvars64.bat"
+                                    if (Test-Path $candidate) { $vcvars = $candidate }
+                                }
+                            }
+                        }
+                        if (-not $vcvars -or -not (Test-Path $vcvars)) {
+                            throw "No GCC (checked -GccDir/mingw.dir/%MINGW_DIR%/C:\TDM-GCC-64\bin) and no x64 MSVC toolset found (install TDM-GCC-64, or 'Desktop development with C++', or pass -GccDir/-MsvcDir)."
+                        }
+
+                        Write-Ok "Importing MSVC environment: $vcvars"
+                        $output = & "$env:ComSpec" /s /c "`"$vcvars`" >nul 2>&1 && set"
+                        if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed (exit $LASTEXITCODE)." }
+                        foreach ($line in $output) {
+                            if ($line -match "^([^=]+)=(.*)$") {
+                                Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] -ErrorAction SilentlyContinue
+                            }
+                        }
+                        $resolved = Get-Command cl.exe -ErrorAction SilentlyContinue
+                        if (-not $resolved -or $resolved.Source -notmatch "Hostx64[\\/]+x64[\\/]+cl\.exe$") {
+                            throw "vcvars64.bat ran but the x64 host compiler (Hostx64\x64\cl.exe) is still not on PATH."
+                        }
+                        Write-Ok "Host compiler: $($resolved.Source)"
                     }
-                    $resolved = Get-Command cl.exe -ErrorAction SilentlyContinue
-                    if (-not $resolved -or $resolved.Source -notmatch "Hostx64[\\/]+x64[\\/]+cl\.exe$") {
-                        throw "vcvars64.bat ran but the x64 host compiler (Hostx64\x64\cl.exe) is still not on PATH."
-                    }
-                    Write-Ok "Host compiler: $($resolved.Source)"
                 }
 
                 $env:VULKAN_SDK  = $VulkanSdk
@@ -274,7 +311,7 @@ if ($Vulkan) {
                 $env:PATH        = "$(Split-Path $CMake);$VulkanSdk/Bin;$env:PATH"
                 $VulkanReady = $true
             } catch {
-                Write-Warn2 "MSVC host toolchain unavailable ($($_.Exception.Message)) — building CPU-only."
+                Write-Warn2 "Host compiler toolchain unavailable ($($_.Exception.Message)) — building CPU-only."
             }
         }
     }

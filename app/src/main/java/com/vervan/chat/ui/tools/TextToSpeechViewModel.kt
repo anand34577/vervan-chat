@@ -7,6 +7,7 @@ import com.vervan.chat.data.db.entities.TtsProject
 import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.voice.KokoroTtsEngine
 import com.vervan.chat.voice.Mp4aEncoder
+import com.vervan.chat.system.pruneOldExports
 import com.vervan.chat.voice.PiperTtsEngine
 import com.vervan.chat.voice.SupertonicTtsEngine
 import com.vervan.chat.voice.TtsEngine
@@ -199,10 +200,17 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
         _sentenceResults.value = emptyList()
     }
 
+    // A share-only byproduct, not tracked by any TtsProject row the way the source .wav is (see
+    // deleteProject below) — writing it into the same tts_output directory as the tracked .wav
+    // files with no owner responsible for cleanup left one orphaned .m4a per share forever. Kept
+    // in its own subdirectory and self-pruned by age on every write instead, same pattern as
+    // TranscriptionViewModel.pruneOldExports uses for its own one-off export artifacts.
     suspend fun exportM4a(wavFile: File): File = withContext(Dispatchers.IO) {
         val audio = WavPcmDecoder.decode(wavFile.readBytes())
-        val outFile = File(wavFile.parentFile, wavFile.nameWithoutExtension + ".m4a")
+        val dir = File(app.filesDir, "tts_output/exports").apply { mkdirs() }
+        val outFile = File(dir, wavFile.nameWithoutExtension + ".m4a")
         Mp4aEncoder.encode(audio.samples, audio.sampleRateHz, outFile)
+        pruneOldExports(dir)
         outFile
     }
 

@@ -46,6 +46,7 @@ class SettingsRepository(context: Context) {
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
+        val VOICE_PUSH_TO_TALK_ENABLED = booleanPreferencesKey("voice_push_to_talk_enabled")
         val INBUILT_STT_ENABLED = booleanPreferencesKey("inbuilt_stt_enabled")
         val MODEL_AUDIO_STT_ENABLED = booleanPreferencesKey("model_audio_stt_enabled")
         val ANDROID_STT_ENABLED = booleanPreferencesKey("android_stt_enabled")
@@ -245,6 +246,12 @@ class SettingsRepository(context: Context) {
     val bargeInEnabled: Flow<Boolean> = store.data.map { it[Keys.BARGE_IN_ENABLED] ?: true }
     suspend fun setBargeInEnabled(v: Boolean) { store.edit { it[Keys.BARGE_IN_ENABLED] = v } }
 
+    // Off by default — the existing continuous-listening/VAD-endpointed behavior is unchanged
+    // for anyone who never opens this toggle. When on, RealtimeVoiceController.captureUntilSilence
+    // gates recording on an explicit hold instead of auto-ending on trailing silence.
+    val voicePushToTalkEnabled: Flow<Boolean> = store.data.map { it[Keys.VOICE_PUSH_TO_TALK_ENABLED] ?: false }
+    suspend fun setVoicePushToTalkEnabled(v: Boolean) { store.edit { it[Keys.VOICE_PUSH_TO_TALK_ENABLED] = v } }
+
     /** Realtime voice pipeline's speech-to-text policy (see
      * [com.vervan.chat.voice.RealtimeVoiceController]): the active generation model is tried
      * first when it supports audio input; this toggle only controls whether the downloaded
@@ -328,7 +335,11 @@ class SettingsRepository(context: Context) {
     suspend fun setVoiceSilenceDurationMs(v: Int) { store.edit { it[Keys.VOICE_SILENCE_DURATION_MS] = v.coerceIn(300, 3000) } }
     val maxUtteranceSeconds: Flow<Int> = store.data.map { it[Keys.MAX_UTTERANCE_SECONDS] ?: 30 }
     suspend fun setMaxUtteranceSeconds(v: Int) { store.edit { it[Keys.MAX_UTTERANCE_SECONDS] = v.coerceIn(10, 180) } }
-    val storeVoiceRecordings: Flow<Boolean> = store.data.map { it[Keys.STORE_VOICE_RECORDINGS] ?: false }
+    // On by default — voice chat is a normal chat with speech input/output, and a normal chat
+    // keeps what you sent. A voice message's recording is what MessageBubble renders via
+    // VoiceMessageRow(message.voiceRecordingPath), same as any other attached audio; without
+    // this on, the .wav is deleted right after transcription and that row never appears.
+    val storeVoiceRecordings: Flow<Boolean> = store.data.map { it[Keys.STORE_VOICE_RECORDINGS] ?: true }
     suspend fun setStoreVoiceRecordings(v: Boolean) { store.edit { it[Keys.STORE_VOICE_RECORDINGS] = v } }
     val voiceSpeechRate: Flow<Float> = store.data.map { it[Keys.VOICE_SPEECH_RATE] ?: 1f }
     suspend fun setVoiceSpeechRate(v: Float) { store.edit { it[Keys.VOICE_SPEECH_RATE] = v.coerceIn(0.6f, 1.6f) } }

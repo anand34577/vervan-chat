@@ -46,7 +46,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +62,7 @@ import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanGridMinWidth
@@ -291,10 +291,9 @@ private fun PersonaCard(
     ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
-            val avatar = remember(persona.avatarPath) {
-                persona.avatarPath?.takeUnless { it.startsWith("emoji:") }
-                    ?.let { com.vervan.chat.model.ImageUtils.decodeThumbnail(it, 128) }
-            }
+            val avatar = rememberThumbnail(
+                persona.avatarPath?.takeUnless { it.startsWith("emoji:") }, 128
+            )
             val emoji = persona.avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
             val accent = com.vervan.chat.ui.theme.vervanAccentFor((persona.name.hashCode() and Int.MAX_VALUE) % 6)
             Box(
@@ -303,7 +302,7 @@ private fun PersonaCard(
             ) {
                 if (avatar != null) {
                     androidx.compose.foundation.Image(
-                        bitmap = avatar.asImageBitmap(),
+                        bitmap = avatar,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.medium)

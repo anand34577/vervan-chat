@@ -172,6 +172,23 @@ object ImageUtils {
         return result
     }
 
+    /** Drops every cached thumbnail for [path] (all sizes) — call after overwriting the file at
+     * that path in place (e.g. [PageCropDialog]'s re-crop-and-save-over-the-original-path flow),
+     * otherwise [decodeThumbnail]'s cache (keyed on path+size, with no mtime/content awareness)
+     * keeps serving the pre-edit bitmap for that path indefinitely. */
+    fun invalidateThumbnail(path: String) {
+        val prefix = "$path@"
+        thumbnailCache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { thumbnailCache.remove(it) }
+    }
+
+    /** Cache-only lookup for [decodeThumbnail] — returns an already-decoded bitmap without
+     * touching disk, so a Composable can render a warm thumbnail synchronously (no first-frame
+     * flash/placeholder flicker on scroll-back) while routing an actual decode (a cache miss)
+     * through a background dispatcher instead of the caller's thread. See
+     * `ui/common/ImageThumbnail.kt`'s `rememberThumbnail`, the only intended caller. */
+    fun peekThumbnailCache(path: String, sizePx: Int): Bitmap? =
+        if (sizePx <= 0) null else thumbnailCache.get("$path@$sizePx")
+
     private val thumbnailCache: android.util.LruCache<String, Bitmap> =
         // Cap at ~12MB — enough for a handful of 200–1200px ARGB_8888 previews without
         // pressuring a low-end device. Bitmap.getByteCount() drives eviction.
