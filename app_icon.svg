@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Vervan Chat — master app icon source (1024x1024).
+
+  Same design as the Android adaptive icon (app/src/main/res/drawable/ic_launcher_*.xml):
+  a chevron ("V") monogram plus an AI "spark" node, in the app's default AMBER accent pair
+  (#F6B24E -> #7C9AFF, see ui/theme/Theme.kt DarkAccents). Use this file to export PNGs for
+  anywhere Android's adaptive-icon system doesn't apply: Play Store listing (512x512), website,
+  README, favicon, etc.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg" cx="38%" cy="32%" r="85%">
+      <stop offset="0%" stop-color="#2A2A33"/>
+      <stop offset="100%" stop-color="#131318"/>
+    </radialGradient>
+    <linearGradient id="chevron" x1="340" y1="360" x2="684" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F6B24E"/>
+      <stop offset="100%" stop-color="#7C9AFF"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="574" y1="564" x2="659" y2="649" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE1B0"/>
+      <stop offset="100%" stop-color="#F6B24E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Backdrop: rounded square (App Store / generic use). Android ignores this shape entirely
+       and re-masks the background layer itself; kept here only for non-Android exports. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="190" fill="url(#bg)"/>
+
+  <!-- Chevron monogram -->
+  <path d="M341,360 L512,663 L683,360"
+        fill="none" stroke="url(#chevron)" stroke-width="104"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- AI spark node -->
+  <circle cx="616" cy="607" r="43" fill="url(#spark)"/>
+
+  <!-- Twinkle accent -->
+  <path d="M701,256 L748,303 L701,350 L654,303 Z" fill="#FFE1B0" opacity="0.92"/>
+</svg>
