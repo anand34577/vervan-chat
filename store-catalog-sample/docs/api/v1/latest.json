@@ -1,0 +1,6 @@
+{
+  "catalogVersion": 1,
+  "catalogUrl": "https://YOUR_GH_USERNAME.github.io/YOUR_REPO_NAME/api/v1/catalog.json",
+  "signatureUrl": "https://YOUR_GH_USERNAME.github.io/YOUR_REPO_NAME/api/v1/catalog.json.sig",
+  "minimumAppVersion": 0
+}
