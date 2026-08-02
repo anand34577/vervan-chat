@@ -4,13 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -49,11 +45,11 @@ import android.content.Intent
 import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -107,7 +103,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/email-composer", "Email composer", listOf(originalMessage, keyPoints).filter { it.isNotBlank() }.joinToString("\n\n")),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Load one from Models, then draft again."
+                    errorText = "No model is ready. Open Settings → AI models, load one, then draft again."
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L
@@ -138,11 +134,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-      PageContainer(Modifier.padding(padding)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-          Column(
-              Modifier.widthIn(max = 840.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)
-          ) {
+      ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             FeatureHero(
                 icon = Icons.Filled.Mail,
                 eyebrow = "On-device assistant",
@@ -187,7 +179,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
             }
             if (isGenerating) {
                 OutlinedButton(onClick = { genJob?.cancel(); isGenerating = false }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) {
-                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text(" Stop")
+                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text("Stop", modifier = Modifier.padding(start = Space.sm))
                 }
             } else {
                 Button(
@@ -212,13 +204,13 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                                 ResponsiveActions(Modifier.padding(top = Space.md)) {
                                     OutlinedButton(onClick = {
                                         context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .setPrimaryClip(android.content.ClipData.newPlainText("Draft", output))
+                                            .setSensitiveText(output, scope, "Draft")
                                         scope.launch { snackbarHostState.showSnackbar("Copied") }
-                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" Copy") }
+                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
                                     OutlinedButton(onClick = {
                                         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, output) }
                                         context.startActivity(Intent.createChooser(send, "Share draft"))
-                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Share") }
+                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Share", modifier = Modifier.padding(start = Space.sm)) }
                                 }
                             }
                         }
@@ -235,8 +227,6 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                     )
                 }
             }
-          }
-        }
       }
     }
 }

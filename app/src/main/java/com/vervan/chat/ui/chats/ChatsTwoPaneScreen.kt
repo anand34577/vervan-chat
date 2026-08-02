@@ -2,32 +2,23 @@ package com.vervan.chat.ui.chats
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.chat.ChatScreen
 import com.vervan.chat.ui.common.EmptyState
-import com.vervan.chat.ui.common.IconAffordance
-import com.vervan.chat.ui.common.IconAffordanceSize
-import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.vervanDividerColor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 
@@ -71,7 +62,10 @@ fun ChatsTwoPaneScreen(
         ) {
             ChatListScreen(onOpenChat = { chatId -> selectedChatId = chatId })
         }
-        Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
+        VerticalDivider(
+            modifier = Modifier.fillMaxHeight(),
+            color = vervanDividerColor()
+        )
         Box(Modifier.fillMaxHeight().weight(1f)) {
             val chatId = selectedChatId
             if (chatId != null) {
@@ -89,7 +83,7 @@ fun ChatsTwoPaneScreen(
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Chat,
                     title = "Pick a conversation",
-                    body = "Select a chat on the left to continue it here. New chats open in this pane too.",
+                    body = "Choose a chat on the left. New chats also open here.",
                     modifier = Modifier.fillMaxSize()
                 )
             }

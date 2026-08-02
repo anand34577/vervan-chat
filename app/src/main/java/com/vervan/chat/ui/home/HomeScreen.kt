@@ -16,9 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -34,25 +31,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DocumentScanner
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,8 +66,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,16 +78,21 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.ModelBackend
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.Message
+import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.Project
+import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.system.ThermalLevel
 import com.vervan.chat.ui.common.ActionTile
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.StatusChip
@@ -107,16 +110,16 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onOpenChat: (String) -> Unit,
     onOpenModels: () -> Unit,
-    onOpenNotes: () -> Unit,
-    onOpenProjects: () -> Unit,
-    onOpenLibrary: () -> Unit,
     onOpenChats: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onOpenProject: (String) -> Unit = { onOpenProjects() },
+    onOpenProject: (String) -> Unit = {},
+    onOpenNote: (String) -> Unit = {},
+    onOpenToolRun: (String) -> Unit = {},
     onOpenKnowledge: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
-    onOpenProfile: () -> Unit = {},
     onOpenWorkspaces: () -> Unit = {},
+    onOpenProjects: () -> Unit = {},
+    onOpenFolders: () -> Unit = {},
     onOpenDocScanner: () -> Unit = {},
     onOpenVoiceChat: () -> Unit = {},
     onOpenTranslate: () -> Unit = {},
@@ -128,6 +131,8 @@ fun HomeScreen(
     val recentChats by vm.recentChats.collectAsState()
     val latestMessagesByChat by vm.latestMessagesByChat.collectAsState()
     val projects by vm.projects.collectAsState()
+    val recentNotes by vm.recentNotes.collectAsState()
+    val recentToolRuns by vm.recentToolRuns.collectAsState()
     val activeModel by vm.activeModel.collectAsState()
     val indexingDocuments by vm.indexingDocuments.collectAsState()
     val activeWorkspaceName by vm.activeWorkspaceName.collectAsState()
@@ -169,7 +174,6 @@ fun HomeScreen(
                 },
                 actions = {
                     IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search workspace") }
-                    IconButton(onClick = onOpenProfile) { Icon(Icons.Outlined.Person, "Profile") }
                     IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, "Settings") }
                 }
             )
@@ -179,8 +183,8 @@ fun HomeScreen(
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val expanded = maxWidth >= 760.dp
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.xs, bottom = Space.md),
-                    verticalArrangement = Arrangement.spacedBy(Space.md)
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.sm, bottom = Space.md),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     HomeHero(
                         workspaceName = activeWorkspaceName,
@@ -197,77 +201,49 @@ fun HomeScreen(
                         onOpenKnowledge = onOpenKnowledge
                     )
 
-                    HomeNavigationHub(
-                        onOpenChats = onOpenChats,
-                        onOpenWorkspaces = onOpenWorkspaces,
-                        onOpenKnowledge = onOpenKnowledge,
-                        onOpenLibrary = onOpenLibrary,
-                    )
-
-                    WorkspaceStatusSection(
-                        model = activeModel,
-                        workspaceName = activeWorkspaceName,
-                        indexingCount = indexingDocuments.size,
-                        onOpenModels = onOpenModels,
-                        onOpenWorkspaces = onOpenWorkspaces,
-                    )
-
                     if (expanded) {
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(Space.xxl),
                             verticalAlignment = Alignment.Top
                         ) {
-                            Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-                                ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                                QuickStartSection(onOpenNotes, onOpenProjects, onOpenModels)
+                            Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                                ContinueCarousel(
+                                    recentChats, latestMessagesByChat, projects, recentNotes, recentToolRuns,
+                                    onOpenChat, onOpenProject, onOpenNote, onOpenToolRun, ::startNewChat, onOpenChats
+                                )
                             }
-                            Column(Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-                                ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
+                            Column(Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                                WorkspaceStatusSection(
+                                    model = activeModel,
+                                    workspaceName = activeWorkspaceName,
+                                    indexingCount = indexingDocuments.size,
+                                    onOpenModels = onOpenModels,
+                                    onOpenWorkspaces = onOpenWorkspaces,
+                                    onOpenProjects = onOpenProjects,
+                                    onOpenFolders = onOpenFolders,
+                                )
                             }
                         }
-                    } else {
-                        ContinueCarousel(recentChats, latestMessagesByChat, projects, onOpenChat, onOpenProject, ::startNewChat, onOpenChats)
-                        QuickStartSection(onOpenNotes, onOpenProjects, onOpenModels)
                         ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
+                    } else {
+                        ContinueCarousel(
+                            recentChats, latestMessagesByChat, projects, recentNotes, recentToolRuns,
+                            onOpenChat, onOpenProject, onOpenNote, onOpenToolRun, ::startNewChat, onOpenChats
+                        )
+                        ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
+                        WorkspaceStatusSection(
+                            model = activeModel,
+                            workspaceName = activeWorkspaceName,
+                            indexingCount = indexingDocuments.size,
+                            onOpenModels = onOpenModels,
+                            onOpenWorkspaces = onOpenWorkspaces,
+                            onOpenProjects = onOpenProjects,
+                            onOpenFolders = onOpenFolders,
+                        )
                     }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun HomeNavigationHub(
-    onOpenChats: () -> Unit,
-    onOpenWorkspaces: () -> Unit,
-    onOpenKnowledge: () -> Unit,
-    onOpenLibrary: () -> Unit,
-) {
-    Column {
-        VervanSectionHeader("Find your way")
-        Text(
-            "Everything you use most is one tap away.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = Space.sm),
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-            maxItemsInEachRow = 2,
-        ) {
-            val tile = Modifier.weight(1f).heightIn(min = 96.dp)
-            val chats = vervanAccentFor(1)
-            val spaces = vervanAccentFor(2)
-            val knowledge = vervanAccentFor(3)
-            val library = vervanAccentFor(4)
-            ActionTile(Icons.AutoMirrored.Filled.Chat, "Chats", "Continue or start a conversation", onOpenChats, tile, iconContainerColor = chats.container, iconTint = chats.onContainer)
-            ActionTile(Icons.Filled.Dashboard, "Spaces", "Switch work, study, and personal context", onOpenWorkspaces, tile, iconContainerColor = spaces.container, iconTint = spaces.onContainer)
-            ActionTile(Icons.AutoMirrored.Filled.MenuBook, "Knowledge", "Manage documents used for cited answers", onOpenKnowledge, tile, iconContainerColor = knowledge.container, iconTint = knowledge.onContainer)
-            ActionTile(Icons.AutoMirrored.Filled.LibraryBooks, "Library", "Personas, templates, workflows, and saved items", onOpenLibrary, tile, iconContainerColor = library.container, iconTint = library.onContainer)
         }
     }
 }
@@ -314,7 +290,8 @@ private fun HomeHero(
                         color = heroFg,
                     )
                     Text(
-                        workspaceName?.let { "$it · fully offline" } ?: "Private · everything stays on this device",
+                        workspaceName?.let { "$it · conversations stay on this device" }
+                            ?: "Private · conversations stay on this device",
                         style = MaterialTheme.typography.bodyMedium,
                         color = heroFg.copy(alpha = 0.85f),
                         maxLines = 1,
@@ -327,15 +304,15 @@ private fun HomeHero(
                     Modifier.size(40.dp).background(heroFg.copy(alpha = 0.18f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.Lock, contentDescription = "Offline and private", tint = heroFg, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Lock, contentDescription = "Conversations stay on this device", tint = heroFg, modifier = Modifier.size(18.dp))
                 }
             }
             Spacer(Modifier.height(if (compact) Space.sm else Space.md))
             if (model != null) {
                 QuickAskField(fg = heroFg, onAsk = onAsk)
                 Spacer(Modifier.height(Space.md))
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    HeroChip(Icons.Outlined.Memory, model.displayName, heroFg, onOpenModels, Modifier.weight(1f, fill = false))
+                ResponsiveActions {
+                    HeroChip(Icons.Outlined.Memory, model.displayName, heroFg, onOpenModels)
                     HeroChip(Icons.Filled.Description, "Ask documents", heroFg, onOpenKnowledge)
                 }
             } else {
@@ -355,7 +332,7 @@ private fun HomeHero(
                     }
                 }
                 Text(
-                    "Pick a model once — chat, tools, and documents all unlock, fully offline.",
+                    "Import a model or download one when connected. Conversations and inference stay on this device.",
                     style = MaterialTheme.typography.labelSmall,
                     color = heroFg.copy(alpha = 0.85f),
                     modifier = Modifier.padding(top = Space.sm)
@@ -405,7 +382,7 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
                     .size(48.dp)
                     .clip(CircleShape)
                     .background(fg)
-                    .clickable(onClick = ::submit),
+                    .clickable(onClick = ::submit, role = Role.Button),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -461,103 +438,104 @@ private fun HomeAlert(thermalLevel: ThermalLevel, indexingCount: Int, onOpenKnow
     }
 }
 
-@Composable
-private fun WorkspaceSnapshot(
-    chatCount: Int,
-    projectCount: Int,
-    indexingCount: Int,
-    onOpenChats: () -> Unit,
-    onOpenProjects: () -> Unit,
-    onOpenKnowledge: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        SnapshotCard("Chats", chatCount.toString(), Icons.AutoMirrored.Filled.Chat, vervanAccentFor(1), onOpenChats, Modifier.weight(1f))
-        SnapshotCard("Projects", projectCount.toString(), Icons.AutoMirrored.Filled.MenuBook, vervanAccentFor(2), onOpenProjects, Modifier.weight(1f))
-        SnapshotCard(
-            "Index",
-            if (indexingCount == 0) "Ready" else "$indexingCount active",
-            Icons.Filled.Description,
-            vervanAccentFor(0),
-            onOpenKnowledge,
-            Modifier.weight(1f)
-        )
-    }
+/** Chronological continuation items across chats, projects, notes, and durable tool results. */
+private sealed interface HomeRecentItem {
+    val timestamp: Long
+    data class ChatItem(val value: Chat) : HomeRecentItem { override val timestamp = value.updatedAt }
+    data class ProjectItem(val value: Project) : HomeRecentItem { override val timestamp = value.createdAt }
+    data class NoteItem(val value: Note) : HomeRecentItem { override val timestamp = value.updatedAt }
+    data class ToolRunItem(val value: ToolRun) : HomeRecentItem { override val timestamp = value.updatedAt }
 }
 
-@Composable
-private fun SnapshotCard(label: String, value: String, icon: ImageVector, accent: com.vervan.chat.ui.theme.VervanAccent, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 92.dp),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border()
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Space.md)) {
-            Box(
-                Modifier.size(32.dp).background(accent.container, androidx.compose.foundation.shape.CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, null, modifier = Modifier.size(18.dp), tint = accent.onContainer)
-            }
-            Text(value, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Space.sm))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/**
- * Horizontally-scrolling "Continue" cards — recent chats plus the most recent project, each with
- * a relative timestamp. A carousel keeps five recents one flick away without costing the vertical
- * space five stacked rows did.
- */
 @Composable
 private fun ContinueCarousel(
     chats: List<Chat>,
     latestMessagesByChat: Map<String, Message>,
     projects: List<Project>,
+    notes: List<Note>,
+    toolRuns: List<ToolRun>,
     onOpenChat: (String) -> Unit,
     onOpenProject: (String) -> Unit,
+    onOpenNote: (String) -> Unit,
+    onOpenToolRun: (String) -> Unit,
     onStartChat: () -> Unit,
     onOpenChats: () -> Unit
 ) {
+    val recentItems = buildList<HomeRecentItem> {
+        chats.forEach { add(HomeRecentItem.ChatItem(it)) }
+        projects.forEach { add(HomeRecentItem.ProjectItem(it)) }
+        notes.forEach { add(HomeRecentItem.NoteItem(it)) }
+        toolRuns.forEach { add(HomeRecentItem.ToolRunItem(it)) }
+    }.sortedByDescending { it.timestamp }
+
     Column {
-        VervanSectionHeader("Continue", actionLabel = "All chats", onAction = onOpenChats)
-        val recentChats = chats.take(3)
-        val recentProjects = projects.take(1)
-        if (recentChats.isEmpty() && recentProjects.isEmpty()) {
+        VervanSectionHeader(
+            stringResource(R.string.home_continue),
+            actionLabel = stringResource(R.string.home_all_chats),
+            onAction = onOpenChats,
+            topPadding = 0.dp
+        )
+        if (recentItems.isEmpty()) {
             SectionCard(items = listOf<@Composable () -> Unit>({
                 Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     IconAffordance(Icons.AutoMirrored.Filled.Chat, size = IconAffordanceSize.Default)
                     Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                        Text("A fresh workspace", style = MaterialTheme.typography.titleSmall)
-                        Text("Recent chats and projects will appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.home_fresh_workspace), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.home_recent_content_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    TextButton(onClick = onStartChat) { Text("Start") }
+                    TextButton(onClick = onStartChat) { Text(stringResource(R.string.action_start)) }
                 }
             }))
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                recentChats.forEachIndexed { index, chat ->
-                    ContinueRow(
-                        icon = Icons.AutoMirrored.Filled.Chat,
-                        eyebrow = "Chat",
-                        title = chat.title,
-                        preview = latestMessagesByChat[chat.id]?.content.orEmpty(),
-                        timeLabel = relativeTime(chat.updatedAt),
-                        accent = vervanAccentFor(index),
-                        onClick = { onOpenChat(chat.id) }
-                    )
-                }
-                recentProjects.forEachIndexed { index, project ->
-                    ContinueRow(
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        eyebrow = "Project",
-                        title = project.name,
-                        preview = project.instructions,
-                        timeLabel = "Workspace",
-                        accent = vervanAccentFor(index + 5),
-                        onClick = { onOpenProject(project.id) }
-                    )
+                recentItems.forEachIndexed { index, item ->
+                    when (item) {
+                        is HomeRecentItem.ChatItem -> ContinueRow(
+                            icon = Icons.AutoMirrored.Filled.Chat,
+                            eyebrow = stringResource(R.string.entity_chat),
+                            title = item.value.title,
+                            preview = latestMessagesByChat[item.value.id]?.let {
+                                com.vervan.chat.ui.chat.chatPreviewText(
+                                    it.content,
+                                    it.role == com.vervan.chat.data.db.entities.MessageRole.USER
+                                )
+                            }.orEmpty(),
+                            timeLabel = relativeTime(item.timestamp),
+                            accent = vervanAccentFor(index),
+                            onClick = { onOpenChat(item.value.id) }
+                        )
+                        is HomeRecentItem.ProjectItem -> ContinueRow(
+                            icon = Icons.AutoMirrored.Filled.MenuBook,
+                            eyebrow = stringResource(R.string.entity_project),
+                            title = item.value.name,
+                            preview = item.value.instructions,
+                            timeLabel = relativeTime(item.timestamp),
+                            accent = vervanAccentFor(index),
+                            onClick = { onOpenProject(item.value.id) }
+                        )
+                        is HomeRecentItem.NoteItem -> ContinueRow(
+                            icon = Icons.Filled.NoteAlt,
+                            eyebrow = stringResource(R.string.entity_note),
+                            title = item.value.title,
+                            preview = item.value.content,
+                            timeLabel = relativeTime(item.timestamp),
+                            accent = vervanAccentFor(index),
+                            onClick = { onOpenNote(item.value.id) }
+                        )
+                        is HomeRecentItem.ToolRunItem -> ContinueRow(
+                            icon = Icons.Filled.History,
+                            eyebrow = stringResource(R.string.entity_tool_result),
+                            title = item.value.toolName,
+                            preview = item.value.output.ifBlank { item.value.input },
+                            timeLabel = relativeTime(item.timestamp),
+                            accent = vervanAccentFor(index),
+                            onClick = { onOpenToolRun(item.value.id) }
+                        )
+                    }
                 }
             }
         }
@@ -574,6 +552,11 @@ private fun ContinueRow(
     accent: com.vervan.chat.ui.theme.VervanAccent,
     onClick: () -> Unit,
 ) {
+    val displayPreview = if (preview.isBlank()) {
+        stringResource(R.string.home_ready_to_continue, eyebrow)
+    } else {
+        preview
+    }
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -585,12 +568,26 @@ private fun ContinueRow(
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = accent.onContainer)
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(timeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OverflowTooltipText(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = timeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = Space.sm),
+                    )
                 }
                 Text(
-                    preview.ifBlank { "$eyebrow ready to continue" }.replace("\n", " "),
+                    displayPreview.replace("\n", " "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -604,96 +601,23 @@ private fun ContinueRow(
 }
 
 @Composable
-private fun ContinueCard(
-    icon: ImageVector,
-    eyebrow: String,
-    title: String,
-    timeLabel: String,
-    accent: com.vervan.chat.ui.theme.VervanAccent,
-    onClick: () -> Unit
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.width(220.dp).heightIn(min = 128.dp),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border()
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Space.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(30.dp).background(accent.container, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = accent.onContainer)
-                }
-                Text(
-                    eyebrow,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Space.sm)
-                )
-            }
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = Space.sm).weight(1f, fill = false)
-            )
-            Spacer(Modifier.height(Space.sm))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    timeLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
 private fun relativeTime(timestamp: Long): String {
     val diff = System.currentTimeMillis() - timestamp
     return when {
-        diff < 60_000L -> "Just now"
-        diff < 3_600_000L -> "${diff / 60_000L}m ago"
-        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
-        diff < 7L * 86_400_000L -> "${diff / 86_400_000L}d ago"
-        else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(timestamp))
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun QuickStartSection(
-    onOpenNotes: () -> Unit,
-    onOpenProjects: () -> Unit,
-    onOpenModels: () -> Unit
-) {
-    Column {
-        VervanSectionHeader("Start something")
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-            maxItemsInEachRow = 2
-        ) {
-            val tile = Modifier.weight(1f).heightIn(min = 84.dp)
-            val a0 = vervanAccentFor(0); val a1 = vervanAccentFor(1); val a2 = vervanAccentFor(2)
-            // "Ask documents" used to be a tile here too — it's already the hero's own quick-ask
-            // chip right above, so this repeated the exact same action on the same screen.
-            // Model setup fills the same "first thing a new user needs" role without duplicating it.
-            ActionTile(Icons.Filled.AutoAwesome, "Set up a model", "Import or download a local model", onOpenModels, tile, iconContainerColor = a0.container, iconTint = a0.onContainer)
-            ActionTile(Icons.Filled.Edit, "Write a note", "Capture and shape an idea", onOpenNotes, tile, iconContainerColor = a1.container, iconTint = a1.onContainer)
-            ActionTile(Icons.AutoMirrored.Filled.MenuBook, "Open projects", "Keep long-running work together", onOpenProjects, tile, iconContainerColor = a2.container, iconTint = a2.onContainer)
+        diff < 60_000L -> stringResource(R.string.relative_just_now)
+        diff < 3_600_000L -> {
+            val minutes = (diff / 60_000L).toInt()
+            pluralStringResource(R.plurals.relative_minutes_ago, minutes, minutes)
         }
+        diff < 86_400_000L -> {
+            val hours = (diff / 3_600_000L).toInt()
+            pluralStringResource(R.plurals.relative_hours_ago, hours, hours)
+        }
+        diff < 7L * 86_400_000L -> {
+            val days = (diff / 86_400_000L).toInt()
+            pluralStringResource(R.plurals.relative_days_ago, days, days)
+        }
+        else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(timestamp))
     }
 }
 
@@ -703,12 +627,14 @@ private fun WorkspaceStatusSection(
     workspaceName: String?,
     indexingCount: Int,
     onOpenModels: () -> Unit,
-    onOpenWorkspaces: () -> Unit
+    onOpenWorkspaces: () -> Unit,
+    onOpenProjects: () -> Unit,
+    onOpenFolders: () -> Unit
 ) {
     val modelTone = if (model == null) StatusTone.Warning else StatusTone.Ready
     val indexTone = if (indexingCount > 0) StatusTone.Running else StatusTone.Info
     Column {
-        VervanSectionHeader("Local workspace")
+        VervanSectionHeader("Local workspace", topPadding = 0.dp)
         SectionCard(items = listOf<@Composable () -> Unit>(
             {
                 SectionRow(
@@ -726,6 +652,26 @@ private fun WorkspaceStatusSection(
                     subtitle = if (indexingCount > 0) "$indexingCount document${if (indexingCount == 1) "" else "s"} indexing" else "Everything is up to date",
                     onClick = onOpenWorkspaces,
                     trailing = { StatusChip(statusLabel(indexTone), indexTone) }
+                )
+            },
+            // Projects/Folders were previously only reachable via the Create sheet's secondary
+            // "Organize" group — no bottom-nav or Home presence, unlike Workspaces above. Adding
+            // them here as plain browse-all entries (same SectionRow pattern, no status chip
+            // since there's no single "current" project/folder to reflect).
+            {
+                SectionRow(
+                    icon = Icons.Filled.Workspaces,
+                    title = "Projects",
+                    subtitle = "Browse grouped work",
+                    onClick = onOpenProjects
+                )
+            },
+            {
+                SectionRow(
+                    icon = Icons.Filled.Folder,
+                    title = "Folders",
+                    subtitle = "Browse manual filing",
+                    onClick = onOpenFolders
                 )
             }
         ))
@@ -757,7 +703,12 @@ private fun ToolsSection(
         ),
     )
     Column {
-        VervanSectionHeader("Choose a mode", actionLabel = "See all", onAction = onOpenAllTools)
+        VervanSectionHeader(
+            "Choose a mode",
+            actionLabel = "See all",
+            onAction = onOpenAllTools,
+            topPadding = 0.dp
+        )
         Text(
                     "Choose a task below, or browse the full toolkit in Tools.",
             style = MaterialTheme.typography.bodySmall,
@@ -804,5 +755,5 @@ private fun ModelBackend.label(): String = when (this) {
     ModelBackend.NPU -> "NPU backend"
     ModelBackend.GPU -> "GPU backend"
     ModelBackend.CPU -> "CPU backend"
-    ModelBackend.UNVERIFIED -> "Backend not verified"
+    ModelBackend.UNVERIFIED -> "Setup not checked"
 }

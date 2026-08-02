@@ -1,20 +1,12 @@
 package com.vervan.chat.ui.nav
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -24,7 +16,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
@@ -38,8 +30,11 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -50,20 +45,19 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
@@ -75,6 +69,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.annotation.StringRes
+import com.vervan.chat.R
 import com.vervan.chat.IncomingShare
 import com.vervan.chat.IncomingShareKind
 import com.vervan.chat.VervanApp
@@ -82,6 +79,7 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.modelload.ModelLoadPhase
+import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.chat.BranchTreeScreen
 import com.vervan.chat.ui.chat.ChatScreen
 import com.vervan.chat.ui.chat.ChatInfoScreen
@@ -102,10 +100,10 @@ import com.vervan.chat.ui.models.ModelCalculatorScreen
 import com.vervan.chat.ui.notes.NoteEditorScreen
 import com.vervan.chat.ui.notes.NotesListScreen
 import com.vervan.chat.ui.onboarding.OnboardingScreen
+import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
-import com.vervan.chat.ui.theme.vervanBrandGradient
 import com.vervan.chat.ui.personas.PersonaEditorScreen
 import com.vervan.chat.ui.personas.PersonaTestBenchScreen
 import com.vervan.chat.ui.profile.UserProfileScreen
@@ -128,17 +126,18 @@ import com.vervan.chat.ui.study.StudyReviewScreen
 import com.vervan.chat.ui.study.StudyWorkspaceScreen
 import com.vervan.chat.ui.templates.TemplateEditorScreen
 import com.vervan.chat.ui.workflows.WorkflowEditorScreen
-import com.vervan.chat.ui.workflows.WorkflowListScreen
 import com.vervan.chat.ui.workflows.WorkflowRunScreen
 import com.vervan.chat.ui.workspaces.WorkspaceDetailScreen
 import com.vervan.chat.ui.workspaces.WorkspacesScreen
 import com.vervan.chat.ui.writing.WritingWorkspaceScreen
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private data class Tab(
     val route: String,
-    val label: String,
+    @StringRes val labelRes: Int,
     val icon: ImageVector,
     val selectedIcon: ImageVector
 )
@@ -151,11 +150,11 @@ private data class PendingChatAttachment(
 )
 
 private val tabs = listOf(
-    Tab("home", "Home", Icons.Outlined.Home, Icons.Filled.Home),
-    Tab("chats", "Chats", Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
+    Tab(AppRoutes.HOME, R.string.nav_home, Icons.Outlined.Home, Icons.Filled.Home),
+    Tab("chats", R.string.nav_chats, Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
 )
-private val libraryTab = Tab("library", "Library", Icons.Outlined.Folder, Icons.Filled.Folder)
-private val toolsTab = Tab("tools", "Tools", Icons.Outlined.GridView, Icons.Filled.GridView)
+private val libraryTab = Tab("library", R.string.nav_library, Icons.Outlined.Folder, Icons.Filled.Folder)
+private val toolsTab = Tab("tools", R.string.nav_tools, Icons.Outlined.GridView, Icons.Filled.GridView)
 private val trailingTabs = listOf(
     libraryTab,
     toolsTab
@@ -172,8 +171,47 @@ fun VervanNavGraph(
     windowSizeClass: WindowSizeClass? = null,
 ) {
     val navController = rememberNavController()
-    val prefs = LocalContext.current.getSharedPreferences("vervan", 0)
-    val startDestination = if (prefs.getBoolean("onboarded", false)) "home" else "onboarding"
+    val legacyPrefs = LocalContext.current.getSharedPreferences("vervan", 0)
+    val legacyOnboarded = remember { legacyPrefs.getBoolean("onboarded", false) }
+    var onboardingReadError by remember { mutableStateOf<String?>(null) }
+    var onboardingReadAttempt by remember { mutableIntStateOf(0) }
+    val nullableOnboardedFlow = remember(onboardingReadAttempt) {
+        app.container.settingsRepository.onboarded
+            .map<Boolean, Boolean?> { it }
+            .catch { error ->
+                onboardingReadError = error.toUserMessage()
+                emit(null)
+            }
+    }
+    val storedOnboarded by nullableOnboardedFlow.collectAsStateWithLifecycle(initialValue = null)
+    if (storedOnboarded == null) {
+        val loadingLabel = stringResource(R.string.startup_loading)
+        Box(
+            Modifier.fillMaxSize().padding(Space.lg),
+            contentAlignment = Alignment.Center
+        ) {
+            val error = onboardingReadError
+            if (error == null) {
+                CircularProgressIndicator(
+                    Modifier.semantics { stateDescription = loadingLabel }
+                )
+            } else {
+                SystemStatusStrip(
+                    title = stringResource(R.string.startup_settings_error),
+                    body = error,
+                    tone = StatusTone.Error,
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = {
+                        onboardingReadError = null
+                        onboardingReadAttempt++
+                    }
+                )
+            }
+        }
+        return
+    }
+    val onboarded = legacyOnboarded || storedOnboarded == true
+    val startDestination = if (onboarded) AppRoutes.HOME else AppRoutes.ONBOARDING
     var pendingStudyMaterialText by remember { mutableStateOf<String?>(null) }
     // Targeted by chat ID so a share received while another chat is open cannot attach to the
     // old composer during the navigation frame.
@@ -181,20 +219,27 @@ fun VervanNavGraph(
     var pendingMessageJump by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (legacyOnboarded) app.container.settingsRepository.setOnboarded(true)
+        legacyPrefs.edit().remove("onboarded").apply()
+    }
 
     // Launcher shortcuts — navigate to the relevant destination on launch.
-    androidx.compose.runtime.LaunchedEffect(shortcut, intentVersion) {
-        if (shortcut == null || !prefs.getBoolean("onboarded", false)) return@LaunchedEffect
+    androidx.compose.runtime.LaunchedEffect(shortcut, intentVersion, onboarded) {
+        if (shortcut == null || !onboarded) return@LaunchedEffect
         // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
         if (shortcut.startsWith("open_chat:")) {
-            navController.navigate("chat/${shortcut.removePrefix("open_chat:")}")
+            navController.navigate(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
             return@LaunchedEffect
         }
         when (shortcut) {
             "new_chat", "voice" -> {
                 val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
                 app.container.db.chatDao().upsert(chat)
-                navController.navigate(if (shortcut == "voice") "chat/${chat.id}/voice" else "chat/${chat.id}")
+                navController.navigate(
+                    if (shortcut == "voice") AppRoutes.chatStart(chat.id, "voice")
+                    else AppRoutes.chat(chat.id)
+                )
             }
             "capture" -> {
                 val note = Note(title = "Quick note")
@@ -202,14 +247,19 @@ fun VervanNavGraph(
                 navController.navigate("note/${note.id}")
             }
             "search" -> navController.navigate("search")
+            "settings" -> navController.navigatePrimaryRoot("settings")
         }
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination
+    val focusManager = LocalFocusManager.current
+    androidx.compose.runtime.LaunchedEffect(currentRoute?.route) {
+        focusManager.clearFocus(force = true)
+    }
     androidx.compose.runtime.LaunchedEffect(incomingShare, intentVersion, currentRoute?.route) {
         val share = incomingShare ?: return@LaunchedEffect
-        if (!prefs.getBoolean("onboarded", false)) return@LaunchedEffect
+        if (!onboarded) return@LaunchedEffect
         val chat = app.container.workspaceManager.applyDefaults(
             Chat(
                 draft = share.text.orEmpty(),
@@ -226,7 +276,7 @@ fun VervanNavGraph(
             )
         }
         onShareConsumed()
-        navController.navigate("chat/${chat.id}") { launchSingleTop = true }
+        navController.navigate(AppRoutes.chat(chat.id)) { launchSingleTop = true }
     }
     val allTabs = tabs + trailingTabs
     val showBottomBar = allTabs.any { currentRoute?.hierarchy?.any { d -> d.route == it.route } == true }
@@ -234,10 +284,10 @@ fun VervanNavGraph(
     // phone (adaptive-layout gap) — same destinations, just repositioned.
     val useRail = windowSizeClass?.widthSizeClass != null && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val useTwoPane = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded
-    val activeJobs by app.container.db.jobDao().observeActive().collectAsState(initial = emptyList())
-    val modelLoadState by app.container.modelLoadCoordinator.state.collectAsState()
+    val activeJobs by app.container.db.jobDao().observeActive().collectAsStateWithLifecycle(initialValue = emptyList())
+    val modelLoadState by app.container.modelLoadCoordinator.state.collectAsStateWithLifecycle()
     val loadingModels = modelLoadState.values.count { it.phase == ModelLoadPhase.LOADING }
-    val downloadStates by app.container.modelDownloadRepository.uiStates.collectAsState(initial = emptyList())
+    val downloadStates by app.container.modelDownloadRepository.uiStates.collectAsStateWithLifecycle(initialValue = emptyList())
     val activeDownloads = downloadStates.count {
         it.status in setOf(
             ModelStatus.QUEUED, ModelStatus.PREPARING, ModelStatus.WAITING_FOR_NETWORK,
@@ -245,21 +295,16 @@ fun VervanNavGraph(
             ModelStatus.PAUSING, ModelStatus.VERIFYING, ModelStatus.IMPORTING,
         )
     }
+    val createLabel = stringResource(R.string.action_create)
 
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                Box(
-                    Modifier
-                        .padding(vertical = 12.dp)
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(vervanBrandGradient())
-                        .clickable { showCreateSheet = true }
-                        .semantics { contentDescription = "Create" },
-                    contentAlignment = Alignment.Center
+                FloatingActionButton(
+                    onClick = { showCreateSheet = true },
+                    modifier = Modifier.padding(vertical = Space.md)
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                    Icon(Icons.Filled.Add, contentDescription = createLabel)
                 }
                 tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
                 Spacer(Modifier.weight(1f))
@@ -276,7 +321,7 @@ fun VervanNavGraph(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (!useRail && showBottomBar) {
-                    VervanNavDock(
+                    VervanNavigationBar(
                         leading = tabs,
                         trailing = trailingTabs,
                         currentRoute = currentRoute,
@@ -292,29 +337,38 @@ fun VervanNavGraph(
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize()
         ) {
-            composable("onboarding") {
+            composable(AppRoutes.ONBOARDING) {
                 OnboardingScreen(
-                    onDone = {
-                        prefs.edit().putBoolean("onboarded", true).apply()
-                        navController.navigate("home") { popUpTo("onboarding") { inclusive = true } }
+                    onDone = { intent ->
+                        scope.launch {
+                            app.container.settingsRepository.setOnboarded(true)
+                            intent.route?.let { route ->
+                                val current = app.container.settingsRepository.toolFavorites.first()
+                                app.container.settingsRepository.setToolFavorites(current + route)
+                            }
+                            navController.navigate(AppRoutes.HOME) {
+                                popUpTo(AppRoutes.ONBOARDING) { inclusive = true }
+                            }
+                            intent.route?.let { navController.navigate(it) }
+                        }
                     },
                     onImportModel = { navController.navigate("models") }
                 )
             }
-            composable("home") {
+            composable(AppRoutes.HOME) {
                 HomeScreen(
                     onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
                     onOpenModels = { navController.navigate("models") },
-                    onOpenNotes = { navController.navigate("notes") },
-                    onOpenProjects = { navController.navigate("projects") },
-                    onOpenLibrary = { navController.navigatePrimaryRoot("library") },
                     onOpenChats = { navController.navigatePrimaryRoot("chats") },
                     onOpenSettings = { navController.navigate("settings") },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
+                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenToolRun = { runId -> navController.navigate("tools/runs?highlightId=$runId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
                     onOpenSearch = { navController.navigate("search") },
-                    onOpenProfile = { navController.navigate("profile") },
                     onOpenWorkspaces = { navController.navigate("workspaces") },
+                    onOpenProjects = { navController.navigate("projects") },
+                    onOpenFolders = { navController.navigate("folders") },
                     onOpenDocScanner = { navController.navigate("tools/document-scanner") },
                     onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
                     onOpenTranslate = { navController.navigate("tools/translate") },
@@ -336,30 +390,24 @@ fun VervanNavGraph(
                 )
             }
             composable("tools/voice-chat") {
-                com.vervan.chat.ui.tools.VoiceChatScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenKeyboard = {
-                        scope.launch {
-                            val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
-                            app.container.db.chatDao().upsert(chat)
-                            navController.navigate("chat/${chat.id}")
-                        }
-                    },
-                    onOpenModelManager = { navController.navigate("models") }
-                )
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                    app.container.db.chatDao().upsert(chat)
+                    navController.navigate(AppRoutes.chatStart(chat.id, "handsfree")) {
+                        popUpTo("tools/voice-chat") { inclusive = true }
+                    }
+                }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
             }
+            composable("tools/transcribe") { com.vervan.chat.ui.tools.TranscriptionScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/text-to-speech") { com.vervan.chat.ui.tools.TextToSpeechScreen(onBack = { navController.popBackStack() }) }
             composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/writing-assistant") { com.vervan.chat.ui.tools.WritingAssistantScreen(onBack = { navController.popBackStack() }) }
             composable("tools/smart-notes") { com.vervan.chat.ui.tools.SmartNotesScreen(onBack = { navController.popBackStack() }) }
             composable("tools/clipboard-assistant") { com.vervan.chat.ui.tools.ClipboardAssistantScreen(onBack = { navController.popBackStack() }) }
             composable("tools/explain-level") { com.vervan.chat.ui.tools.ExplainLikeImScreen(onBack = { navController.popBackStack() }) }
-            composable(
-                "tools/screenshot-intel?imagePath={imagePath}",
-                arguments = listOf(navArgument("imagePath") { type = NavType.StringType })
-            ) { entry ->
-                val imagePath = entry.arguments?.getString("imagePath")?.let { android.net.Uri.decode(it) } ?: return@composable
-                com.vervan.chat.ui.tools.ScreenshotIntelligenceScreen(onBack = { navController.popBackStack() }, imagePath = imagePath)
-            }
             composable("tools/receipt-scanner") {
                 com.vervan.chat.ui.tools.StructuredScanScreen(kind = com.vervan.chat.ui.tools.ScanKind.RECEIPT, onBack = { navController.popBackStack() })
             }
@@ -369,9 +417,6 @@ fun VervanNavGraph(
             composable("tools/quiz-generator") { com.vervan.chat.ui.tools.QuizGeneratorScreen(onBack = { navController.popBackStack() }) }
             composable("tools") {
                 com.vervan.chat.ui.tools.AllToolsScreen(onNavigate = { route -> navController.navigate(route) })
-            }
-            composable("tools/all") {
-                com.vervan.chat.ui.tools.AllToolsScreen(onBack = { navController.popBackStack() }, onNavigate = { route -> navController.navigate(route) })
             }
             composable(
                 "tools/runs?highlightId={highlightId}",
@@ -386,7 +431,7 @@ fun VervanNavGraph(
                                 Chat(draft = "Continue from this result:\n\n$text", workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
                             )
                             app.container.db.chatDao().upsert(chat)
-                            navController.navigate("chat/${chat.id}")
+                            navController.navigate(AppRoutes.chat(chat.id))
                         }
                     },
                     onRerun = { route -> navController.navigate(route) },
@@ -433,7 +478,7 @@ fun VervanNavGraph(
                                 asImage = false,
                                 showPreview = false,
                             )
-                            navController.navigate("chat/${chat.id}") {
+                            navController.navigate(AppRoutes.chat(chat.id)) {
                                 popUpTo("tools/chat-with-file") { inclusive = true }
                             }
                         }
@@ -462,6 +507,7 @@ fun VervanNavGraph(
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") },
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
+                    onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenMemory = { memoryId -> navController.navigate("memory?highlightId=$memoryId") },
                     onOpenMessage = { chatId, messageId ->
                         pendingMessageJump = chatId to messageId
@@ -477,6 +523,25 @@ fun VervanNavGraph(
                     onOpenToolRun = { id -> navController.navigate("tools/runs?highlightId=$id") },
                 )
             }
+            composable("graph") {
+                com.vervan.chat.ui.graph.KnowledgeGraphScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenEntity = { node ->
+                        val route = when (node.type) {
+                            com.vervan.chat.ui.graph.GraphNodeType.WORKSPACE -> "workspace/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.PROJECT -> "project/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.FOLDER -> "folder/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.CHAT -> "chat/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.NOTE -> "note/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.KNOWLEDGE_BASE -> "knowledge/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.DOCUMENT -> "document/${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.MEMORY -> "memory?highlightId=${node.id}"
+                            com.vervan.chat.ui.graph.GraphNodeType.PERSONA -> "persona/${node.id}/edit"
+                        }
+                        navController.navigate(route)
+                    }
+                )
+            }
             composable("writing") { WritingWorkspaceScreen(onBack = { navController.popBackStack() }) }
             composable("dev") { DevWorkspaceScreen(onBack = { navController.popBackStack() }) }
             composable("study") {
@@ -488,14 +553,6 @@ fun VervanNavGraph(
             composable("study/{setName}") { entry ->
                 val setName = entry.arguments?.getString("setName")?.let { android.net.Uri.decode(it) } ?: return@composable
                 StudyReviewScreen(setName = setName, onBack = { navController.popBackStack() })
-            }
-            composable("workflows") {
-                WorkflowListScreen(
-                    onOpenWorkflow = { workflowId -> navController.navigate("workflow/$workflowId") },
-                    onNewWorkflow = { navController.navigate("workflow-new") },
-                    onEditWorkflow = { workflowId -> navController.navigate("workflow/$workflowId/edit") },
-                    onBack = { navController.popBackStack() }
-                )
             }
             composable("workflow/{workflowId}") { entry ->
                 val workflowId = entry.arguments?.getString("workflowId") ?: return@composable
@@ -516,7 +573,8 @@ fun VervanNavGraph(
                     onNewWorkflow = { navController.navigate("workflow-new") },
                     onEditWorkflow = { id -> navController.navigate("workflow/$id/edit") },
                     onOpenTemplate = { id -> navController.navigate("template/$id/edit") },
-                    onNewTemplate = { navController.navigate("template-new") }
+                    onNewTemplate = { navController.navigate("template-new") },
+                    onOpenNotes = { navController.navigate("notes") }
                 )
             }
             composable("template-new") {
@@ -590,7 +648,7 @@ fun VervanNavGraph(
                     ChatListScreen(onOpenChat = { chatId -> navController.navigate("chat/$chatId") })
                 }
             }
-            composable("chat/{chatId}") { backStackEntry2 ->
+            composable(AppRoutes.CHAT) { backStackEntry2 ->
                 val chatId = backStackEntry2.arguments?.getString("chatId") ?: return@composable
                 val attachment = pendingChatAttachment?.takeIf { it.chatId == chatId }
                 ChatScreen(
@@ -604,48 +662,50 @@ fun VervanNavGraph(
                         if (pendingChatAttachment?.chatId == chatId) pendingChatAttachment = null
                     },
                     onBack = { navController.popBackStack() },
-                    onOpenChatInfo = { navController.navigate("chat/$chatId/info") },
+                    onOpenChatInfo = { navController.navigate(AppRoutes.chatInfo(chatId)) },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
-                    onOpenBranchTree = { navController.navigate("chat/$chatId/tree") },
+                    onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     // Forking replaces this chat in the back stack instead of stacking on top of
                     // it — otherwise forking twice then pressing Back walks back through each
                     // fork instead of leaving the chat entirely (user ask).
                     onForkChat = { forkedChatId ->
-                        navController.navigate("chat/$forkedChatId") {
+                        navController.navigate(AppRoutes.chat(forkedChatId)) {
                             popUpTo(backStackEntry2.destination.id) { inclusive = true }
                         }
                     }
                 )
             }
-            composable("chat/{chatId}/{startAction}") { entry ->
+            composable(AppRoutes.CHAT_START) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 ChatScreen(
                     chatId = chatId,
                     initialAction = entry.arguments?.getString("startAction"),
                     onBack = { navController.popBackStack() },
-                    onOpenChatInfo = { navController.navigate("chat/$chatId/info") },
+                    onOpenChatInfo = { navController.navigate(AppRoutes.chatInfo(chatId)) },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
-                    onOpenBranchTree = { navController.navigate("chat/$chatId/tree") },
+                    onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     onForkChat = { forkedChatId ->
-                        navController.navigate("chat/$forkedChatId") {
+                        navController.navigate(AppRoutes.chat(forkedChatId)) {
                             popUpTo(entry.destination.id) { inclusive = true }
                         }
                     }
                 )
             }
-            composable("chat/{chatId}/tree") { entry ->
+            composable(AppRoutes.CHAT_TREE) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 BranchTreeScreen(chatId = chatId, onBack = { navController.popBackStack() })
             }
-            composable("chat/{chatId}/info") { entry ->
+            composable(AppRoutes.CHAT_INFO) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 ChatInfoScreen(
                     chatId = chatId,
@@ -693,7 +753,20 @@ fun VervanNavGraph(
                     onOpenVoice = { navController.navigate("settings/voice") },
                     onOpenStorage = { navController.navigate("settings/storage") },
                     onOpenSecurity = { navController.navigate("settings/security") },
-                    onOpenTools = { navController.navigate("settings/tools") }
+                    onOpenTools = { navController.navigate("settings/tools") },
+                    onOpenHelp = { navController.navigate("settings/help") }
+                )
+            }
+            composable("settings/help") {
+                com.vervan.chat.ui.settings.HelpSupportScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenModels = { navController.navigate("models") },
+                    onOpenKnowledge = { navController.navigate("knowledge") },
+                    onOpenGeneration = { navController.navigate("settings/generation") },
+                    onOpenPermissions = { navController.navigate("settings/permissions") },
+                    onOpenJobs = { navController.navigate("jobs") },
+                    onOpenStorage = { navController.navigate("settings/storage") },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") }
                 )
             }
             composable("settings/tools") { com.vervan.chat.ui.settings.ToolsScreen(onBack = { navController.popBackStack() }) }
@@ -714,7 +787,16 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.settings.SecuritySettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenPermissions = { navController.navigate("settings/permissions") },
-                    onOpenApiServer = { navController.navigate("settings/api-server") }
+                    onOpenApiServer = { navController.navigate("settings/api-server") },
+                    onOpenPrivacyDashboard = { navController.navigate("settings/privacy-dashboard") }
+                )
+            }
+            composable("settings/privacy-dashboard") {
+                com.vervan.chat.ui.settings.PrivacyDashboardScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenSecurity = { navController.popBackStack() },
+                    onOpenApiServer = { navController.navigate("settings/api-server") },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") }
                 )
             }
             composable("settings/permissions") { com.vervan.chat.ui.settings.PermissionsScreen(onBack = { navController.popBackStack() }) }
@@ -780,11 +862,24 @@ fun VervanNavGraph(
             }
             composable("document/{documentId}") { entry ->
                 val documentId = entry.arguments?.getString("documentId") ?: return@composable
-                DocumentViewerScreen(documentId = documentId, onBack = { navController.popBackStack() })
+                DocumentViewerScreen(
+                    documentId = documentId,
+                    onBack = { navController.popBackStack() },
+                    onOpenPdfPage = { docId, page -> navController.navigate("document/$docId/page/$page") }
+                )
             }
             composable("passage/{chunkId}") { entry ->
                 val chunkId = entry.arguments?.getString("chunkId") ?: return@composable
-                SourcePassageScreen(chunkId = chunkId, onBack = { navController.popBackStack() })
+                SourcePassageScreen(
+                    chunkId = chunkId,
+                    onBack = { navController.popBackStack() },
+                    onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") }
+                )
+            }
+            composable("document/{documentId}/page/{page}") { entry ->
+                val documentId = entry.arguments?.getString("documentId") ?: return@composable
+                val page = entry.arguments?.getString("page")?.toIntOrNull() ?: 1
+                com.vervan.chat.ui.knowledge.PdfPageViewerScreen(documentId = documentId, initialPage = page, onBack = { navController.popBackStack() })
             }
         }
         if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
@@ -824,7 +919,9 @@ fun VervanNavGraph(
             scope.launch {
                 val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
                 app.container.db.chatDao().upsert(chat)
-                navController.navigate("chat/${chat.id}${startAction?.let { "/$it" }.orEmpty()}")
+                navController.navigate(
+                    startAction?.let { AppRoutes.chatStart(chat.id, it) } ?: AppRoutes.chat(chat.id)
+                )
             }
         }
         CreateSheet(
@@ -848,13 +945,14 @@ fun VervanNavGraph(
                         navController.navigate("note/${note.id}")
                     }
                 },
-                CreateAction(Icons.Filled.Workspaces, "New project", "Group instructions, chats, and notes", "Start") { go("projects") },
+                CreateAction(Icons.Filled.Workspaces, "Projects", "Open projects to create or manage grouped work", "Organize") { go("projects") },
                 CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Add source", "Create a source collection or import a document for grounded answers", "Sources") { go("knowledge") },
                 CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Library") { go("persona-new") },
                 CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Library") { go("template-new") },
                 CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Library") { go("workflow-new") },
-                CreateAction(Icons.Filled.Dashboard, "New space", "Separate personal, work, or research contexts", "Space") { go("workspaces") },
-                CreateAction(Icons.Filled.Folder, "New folder", "Manual filing with inherited defaults", "Space") { go("folders") },
+                CreateAction(Icons.Filled.Dashboard, "Spaces", "Open spaces to create or manage separate contexts", "Organize") { go("workspaces") },
+                CreateAction(Icons.Filled.Folder, "Folders", "Open folders to create or manage manual filing", "Organize") { go("folders") },
+                CreateAction(Icons.Filled.Collections, "Collections", "Browse saved smart filters over chats, notes, and sources", "Organize") { go("collections") },
                 CreateAction(Icons.Filled.AutoAwesome, "Import model", "Prepare local AI generation", "Import") { go("models") },
                 CreateAction(Icons.Filled.PhotoCamera, "Scan image", "Start a chat with an image attachment", "Capture") { newChat("image") },
                 CreateAction(Icons.Filled.Mic, "Voice note", "Record audio into a new chat", "Capture") { newChat("voice") }
@@ -864,101 +962,50 @@ fun VervanNavGraph(
     }
 }
 
-/**
- * The Aurora navigation dock: a floating pill that replaces the full-width Material
- * NavigationBar + separate Create FAB. Two destinations sit either side of an integrated
- * brand-gradient Create button, content scrolls underneath the dock's inset margins, and
- * selection is an animated tonal pill rather than the stock indicator.
- */
 @Composable
-private fun VervanNavDock(
+private fun VervanNavigationBar(
     leading: List<Tab>,
     trailing: List<Tab>,
     currentRoute: NavDestination?,
     navController: NavHostController,
     onCreate: () -> Unit
 ) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            // The shell already reserves this bottom bar's full height for the NavHost.
-            // Keeping another top inset here created a visible empty strip between every
-            // primary screen and the dock. Only the safe-area breathing room belongs below it.
-            .padding(start = Space.lg, end = Space.lg, bottom = Space.sm)
+    val createLabel = stringResource(R.string.action_create)
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp
     ) {
-        androidx.compose.material3.Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = VervanExtraShapes.pill,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = SurfaceRole.Floating.border(),
-            shadowElevation = SurfaceRole.Floating.shadowElevation
-        ) {
-            Row(
-                Modifier.padding(horizontal = Space.sm, vertical = Space.sm),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                leading.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
-                Box(
-                    Modifier
-                        .padding(horizontal = Space.sm)
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(vervanBrandGradient())
-                        .clickable(onClick = onCreate)
-                        .semantics { contentDescription = "Create" },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                trailing.forEach { tab -> DockItem(tab, currentRoute, navController, Modifier.weight(1f)) }
-            }
-        }
+        leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
+        NavigationBarItem(
+            selected = false,
+            onClick = onCreate,
+            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            label = { Text(createLabel) },
+            alwaysShowLabel = true
+        )
+        trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
     }
 }
 
 @Composable
-private fun DockItem(
+private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController,
-    modifier: Modifier = Modifier
+    navController: NavHostController
 ) {
-    val isSelected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    val tint by animateColorAsState(
-        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "dockTint"
+    val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
+    NavigationBarItem(
+        selected = selected,
+        onClick = { navController.navigatePrimaryRoot(tab.route) },
+        icon = {
+            Icon(
+                if (selected) tab.selectedIcon else tab.icon,
+                contentDescription = null
+            )
+        },
+        label = { Text(stringResource(tab.labelRes)) },
+        alwaysShowLabel = true
     )
-    val pill by animateColorAsState(
-        if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-        label = "dockPill"
-    )
-    Column(
-        modifier
-            .clip(VervanExtraShapes.pill)
-            .clickable { navController.navigatePrimaryRoot(tab.route) }
-            .padding(vertical = Space.xs)
-            .semantics { selected = isSelected },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            Modifier
-                .background(pill, VervanExtraShapes.pill)
-                .padding(horizontal = Space.lg, vertical = Space.xs),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(if (isSelected) tab.selectedIcon else tab.icon, contentDescription = null, tint = tint)
-        }
-        Text(
-            tab.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = tint
-        )
-    }
 }
 
 @Composable
@@ -970,24 +1017,6 @@ private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: 
             navController.navigatePrimaryRoot(tab.route)
         },
         icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
-        label = { Text(tab.label) }
+        label = { Text(stringResource(tab.labelRes)) }
     )
-}
-
-private fun NavHostController.navigatePrimaryRoot(route: String) {
-    // Home is the actual shell root. Restoring state while navigating to it can restore the
-    // destination that was previously popped above Home (for example Chats), making the Home
-    // button appear to open Chats. Collapse directly to the existing Home entry instead.
-    if (route == "home") {
-        popBackStack("home", inclusive = false)
-        return
-    }
-    navigate(route) {
-        // These are flat top-level destinations rather than separate nested navigation graphs.
-        // Replace the current primary destination instead of saving it under Home, which would
-        // make that child stack eligible to reappear when Home is selected.
-        popUpTo("home") { saveState = false }
-        launchSingleTop = true
-        restoreState = false
-    }
 }

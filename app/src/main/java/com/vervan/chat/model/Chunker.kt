@@ -1,6 +1,9 @@
 package com.vervan.chat.model
 
-data class RawChunk(val sectionPath: String, val text: String, val tokenCount: Int)
+// pageNumber is 1-based and only ever set by chunkPaginated (PDFs with a real text layer — see
+// TextExtractor.extractPdf). Every other source format (plain text, DOCX, tables, slides, OCR
+// output) has no page concept, so it stays null and citations for those just show no page link.
+data class RawChunk(val sectionPath: String, val text: String, val tokenCount: Int, val pageNumber: Int? = null)
 
 /** A single sheet's worth of extracted table data — used by [Chunker.chunkTable] for
  * spreadsheet-shaped sources (XLSX, legacy XLS, CSV). [header], if present, is repeated into
@@ -124,6 +127,21 @@ object Chunker {
         }
         return chunks
     }
+
+    /** Per-page chunking for a PDF with a real text layer (see [com.vervan.chat.model.TextExtractor.extractPdf]
+     * / `ExtractResult.Paginated`) — each page is chunked independently through the normal
+     * [chunk] logic (so a long page still splits at TARGET_TOKENS, a short one still gets
+     * carried whole) and every resulting chunk is stamped with its 1-based page number. This
+     * trades away overlap *across* a page boundary (each page starts fresh, no carried-over
+     * tail from the previous one) for a citation that can always point at one concrete page —
+     * a page is usually coherent enough on its own that the loss is minor next to what a page
+     * number buys: a tap that jumps straight to where an answer actually came from. */
+    fun chunkPaginated(pages: List<String>, tokenCounter: (String) -> Int = ::wordProxyCount): List<RawChunk> =
+        pages.flatMapIndexed { index, pageText ->
+            val pageNumber = index + 1
+            chunk(pageText, sectionPrefix = "Page $pageNumber", tokenCounter = tokenCounter)
+                .map { it.copy(pageNumber = pageNumber) }
+        }
 
     /** One chunk per slide (title + body together), plus a separate chunk for speaker notes
      * when present — notes are usually presenter context, not on-slide content, so citing them

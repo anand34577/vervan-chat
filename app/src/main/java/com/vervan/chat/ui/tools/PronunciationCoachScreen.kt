@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
@@ -28,7 +27,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -91,8 +91,7 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             ToolIntro(
                 icon = Icons.Filled.Mic,
                 title = "Listen, repeat, improve",
@@ -100,39 +99,38 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
             )
             OutlinedTextField(
                 value = target, onValueChange = { target = it; heardText = null },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp), placeholder = { Text("Word or phrase to practice") }
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg), placeholder = { Text("Word or phrase to practice") }
             )
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedButton(
                     onClick = { if (ttsReady) tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce") },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text(" Hear it") }
+                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text("Hear it", modifier = Modifier.padding(start = Space.sm)) }
                 OutlinedButton(
                     onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text(" Repeat it") }
+                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text("Repeat it", modifier = Modifier.padding(start = Space.sm)) }
             }
             heardText?.let { heard ->
                 Card(
-                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    Modifier.fillMaxWidth().padding(top = Space.lg),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
-                    Column(Modifier.padding(12.dp)) {
+                    Column(Modifier.padding(Space.md)) {
                         Text("Heard: \"$heard\"", style = MaterialTheme.typography.bodyMedium)
-                        confidence?.let { Text("Confidence: ${(it * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp)) }
+                        confidence?.let { Text("Confidence: ${(it * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs)) }
                         if (missedWords.isEmpty()) {
-                            Text("Sounded right!", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+                            Text("Sounded right!", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                         } else {
                             Text(
                                 "Possibly mispronounced: ${missedWords.joinToString(", ")}",
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(top = 6.dp)
+                                modifier = Modifier.padding(top = Space.sm)
                             )
                         }
                     }
                 }
             }
-        }
-        }
+    }
     }
 }

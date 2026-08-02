@@ -18,7 +18,7 @@ class ErrorMessagesTest {
     fun commonFailuresProvideARecoveryAction() {
         assertTrue(FileNotFoundException().toUserMessage().contains("Choose it again"))
         assertTrue(TimeoutException().toUserMessage().contains("Try again"))
-        assertTrue("No active model".toUserMessage().contains("Open Models"))
+        assertTrue("No active model".toUserMessage().contains("Settings → AI models"))
         assertTrue("backend failed while loading model".toUserMessage().contains("smaller model"))
     }
 }

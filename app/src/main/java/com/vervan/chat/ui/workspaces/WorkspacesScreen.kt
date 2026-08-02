@@ -38,7 +38,7 @@ import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +65,9 @@ import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.foundation.BorderStroke
 
@@ -74,17 +76,19 @@ import androidx.compose.foundation.BorderStroke
 fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: WorkspacesViewModel = viewModel(factory = viewModelFactory { initializer { WorkspacesViewModel(app) } })
-    val workspaces by vm.workspaces.collectAsState()
-    val archived by vm.archivedWorkspaces.collectAsState()
-    val activeId by vm.activeWorkspaceId.collectAsState()
-    val personas by vm.personas.collectAsState()
+    val workspaces by vm.workspaces.collectAsStateWithLifecycle()
+    val archived by vm.archivedWorkspaces.collectAsStateWithLifecycle()
+    val activeId by vm.activeWorkspaceId.collectAsStateWithLifecycle()
+    val personas by vm.personas.collectAsStateWithLifecycle()
+    val chatCounts by vm.chatCounts.collectAsStateWithLifecycle()
+    val personaNamesById = remember(personas) { personas.associate { it.id to it.name } }
     var showCreate by remember { mutableStateOf(false) }
     var showArchived by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Workspace?>(null) }
     var pendingBulkDelete by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
-    val confirmationMessage by vm.confirmationMessage.collectAsState()
+    val confirmationMessage by vm.confirmationMessage.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(confirmationMessage) {
         confirmationMessage?.let { snackbarHostState.showSnackbar(it); vm.clearConfirmation() }
@@ -136,8 +140,8 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                 WorkspaceCard(
                     workspace = workspace,
                     isActive = workspace.id == activeId,
-                    chatCount = vm.chatCount(workspace.id).collectAsState(initial = 0).value,
-                    personaName = personas.find { it.id == workspace.personaId }?.name ?: "—",
+                    chatCount = chatCounts[workspace.id] ?: 0,
+                    personaName = personaNamesById[workspace.personaId] ?: "—",
                     onClick = { onOpenWorkspace(workspace.id) },
                     onSetActive = { vm.setActive(workspace) },
                     onArchive = { vm.archive(workspace) },
@@ -151,14 +155,14 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
             if (archived.isNotEmpty()) {
                 item {
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        Modifier.fillMaxWidth().padding(vertical = Space.sm),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "Archived (${archived.size})",
                             style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(start = 8.dp)
+                            modifier = Modifier.padding(start = Space.sm)
                         )
                         TextButton(onClick = { showArchived = !showArchived }) {
                             Text(if (showArchived) "Hide" else "Show")
@@ -170,8 +174,8 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                         WorkspaceCard(
                             workspace = workspace,
                             isActive = false,
-                            chatCount = vm.chatCount(workspace.id).collectAsState(initial = 0).value,
-                            personaName = personas.find { it.id == workspace.personaId }?.name ?: "—",
+                            chatCount = chatCounts[workspace.id] ?: 0,
+                            personaName = personaNamesById[workspace.personaId] ?: "—",
                             onClick = { onOpenWorkspace(workspace.id) },
                             onRestore = { vm.restore(workspace) },
                             onDelete = { pendingDelete = workspace },
@@ -249,7 +253,7 @@ private fun WorkspaceCard(
     // or long-pressing this row always just opens it, since it can neither be selected nor deleted.
     val participatesInSelection = selectionMode && onEnterSelection != null
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
             .selectableItem(
                 selectionMode = participatesInSelection,
                 onClick = onClick,
@@ -259,7 +263,7 @@ private fun WorkspaceCard(
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             if (participatesInSelection) {
                 androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             }
@@ -269,21 +273,22 @@ private fun WorkspaceCard(
                 tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        workspace.name, style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                    OverflowTooltipText(
+                        text = workspace.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (isActive) {
                         Icon(
                             Icons.Filled.CheckCircle, contentDescription = "Active",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 6.dp)
+                            modifier = Modifier.padding(start = Space.xs)
                         )
                     }
                     if (workspace.archived) {
-                        Icon(Icons.Filled.Archive, contentDescription = "Archived", modifier = Modifier.padding(start = 6.dp))
+                        Icon(Icons.Filled.Archive, contentDescription = "Archived", modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 // Compact card fields only (Android phone space rule): persona, chat
@@ -342,9 +347,9 @@ private fun CreateWorkspaceDialog(
                 BoundedTextField(
                     value = description, onValueChange = { description = it }, placeholder = "Description",
                     maxLength = ValidationLimits.WORKSPACE_DESCRIPTION,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 )
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = 8.dp)) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = Space.sm)) {
                     OutlinedTextField(
                         value = selectedPersona?.name ?: "Select persona",
                         onValueChange = {},
@@ -373,14 +378,4 @@ private fun CreateWorkspaceDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-private fun relativeTime(epochMs: Long): String {
-    val diffMin = (System.currentTimeMillis() - epochMs) / 60000
-    return when {
-        diffMin < 1 -> "now"
-        diffMin < 60 -> "${diffMin}m"
-        diffMin < 60 * 24 -> "${diffMin / 60}h"
-        else -> "${diffMin / (60 * 24)}d"
-    }
 }

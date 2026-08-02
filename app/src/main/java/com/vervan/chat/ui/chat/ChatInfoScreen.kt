@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,7 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -70,23 +71,24 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.vervanAccentFor
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
-    val chat by app.container.db.chatDao().observeChat(chatId).collectAsState(initial = null)
-    val messages by app.container.db.messageDao().observeMessages(chatId).collectAsState(initial = emptyList())
-    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
-    val personas by app.container.db.personaDao().observePersonas().collectAsState(initial = emptyList())
-    val models by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
-    val workspaces by app.container.db.workspaceDao().observeAll().collectAsState(initial = emptyList())
-    val knowledgeBases by app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList())
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
+    val chat by app.container.db.chatDao().observeChat(chatId).collectAsStateWithLifecycle(initialValue = null)
+    val messages by app.container.db.messageDao().observeMessages(chatId).collectAsStateWithLifecycle(initialValue = emptyList())
+    val documents by app.container.db.documentDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val personas by app.container.db.personaDao().observePersonas().collectAsStateWithLifecycle(initialValue = emptyList())
+    val models by app.container.db.modelDao().observeModels().collectAsStateWithLifecycle(initialValue = emptyList())
+    val workspaces by app.container.db.workspaceDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val knowledgeBases by app.container.db.knowledgeBaseDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
     val imagePaths = remember(messages) { messages.mapNotNull { it.imagePath }.distinct() }
     val sharedDocumentIds = remember(messages) { messages.mapNotNull { it.documentId }.toSet() }
     val sharedDocuments = remember(documents, sharedDocumentIds) { documents.filter { it.id in sharedDocumentIds } }
@@ -172,21 +174,27 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             chat?.title ?: "Chat",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         val subtitle = "$persona · ${latestResponseModel ?: model}"
                         Text(
                             subtitle,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         // Status pills — only the ones that actually apply, mirroring the chat's
                         // own header language ("Private · on device", Incognito, Pinned, Archived).
-                        Row(
+                        // FlowRow so 3-4 pills wrap onto a second line on narrow devices instead of
+                        // being squeezed or clipped.
+                        FlowRow(
                             Modifier.fillMaxWidth().padding(top = Space.xs),
                             horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(Space.xs)
                         ) {
                             StatusPill("Private · on device", Icons.Filled.Lock)
                             if (chat?.isTemporary == true) StatusPill("Incognito", Icons.Filled.VisibilityOff)
@@ -352,7 +360,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         horizontalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         rowPaths.forEach { path ->
-                            val bitmap = com.vervan.chat.model.ImageUtils.decodeThumbnail(path, 240)?.asImageBitmap()
+                            val bitmap = rememberThumbnail(path, 240)
                             Card(
                                 Modifier.size(108.dp).clickable { previewPath = path },
                                 colors = SurfaceRole.Raised.cardColors(),
@@ -361,7 +369,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                 if (bitmap != null) {
                                     Image(bitmap, "Shared image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                 } else {
-                                    Icon(Icons.Filled.Image, "Shared image", Modifier.fillMaxSize().padding(28.dp))
+                                    Icon(Icons.Filled.Image, "Shared image", Modifier.fillMaxSize().padding(Space.xxl))
                                 }
                             }
                         }
@@ -469,9 +477,15 @@ private fun BalanceRow(label: String, user: Int, assistant: Int) {
     val userColor = MaterialTheme.colorScheme.tertiary
     val assistantColor = MaterialTheme.colorScheme.primary
     Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-        Row(Modifier.fillMaxWidth()) {
-            Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-            Text("You $user · AI $assistant", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(
+                "You $user · AI $assistant",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
         Canvas(Modifier.fillMaxWidth().height(12.dp)) {
             val radius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
@@ -499,7 +513,7 @@ private fun ActivityChart(points: List<ActivityPoint>) {
     Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
             Canvas(Modifier.fillMaxWidth().height(112.dp)) {
-                val gap = 8.dp.toPx()
+                val gap = Space.sm.toPx()
                 val barWidth = (size.width - gap * (points.size - 1)) / points.size.coerceAtLeast(1)
                 points.forEachIndexed { index, point ->
                     val x = index * (barWidth + gap)

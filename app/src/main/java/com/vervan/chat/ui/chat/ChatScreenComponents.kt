@@ -139,7 +139,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -165,6 +165,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -201,6 +202,8 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
+import com.vervan.chat.ui.theme.VervanBreakpoints
+import com.vervan.chat.ui.theme.VervanContentWidth
 import com.vervan.chat.ui.theme.VervanMotion
 import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.ui.theme.vervanBorder
@@ -237,7 +240,7 @@ internal fun SavedResponsesDialog(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     items(outputs, key = { it.id }) { output ->
                         Card(
@@ -245,7 +248,7 @@ internal fun SavedResponsesDialog(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                                Modifier.fillMaxWidth().padding(start = Space.md, top = Space.sm, bottom = Space.sm, end = Space.xs),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
@@ -281,7 +284,7 @@ internal fun ModelReadinessPanel(
     if (state is ChatViewModel.ModelLoadState.Ready) return
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.fillMaxWidth().widthIn(max = 840.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+            Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(
                 containerColor = when (state) {
                     is ChatViewModel.ModelLoadState.Failed -> MaterialTheme.colorScheme.errorContainer
@@ -290,14 +293,14 @@ internal fun ModelReadinessPanel(
             ),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Filled.Psychology,
                         contentDescription = null,
                         tint = if (state is ChatViewModel.ModelLoadState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Column(Modifier.weight(1f).padding(start = Space.md)) {
                         Text(
                             when (state) {
                                 ChatViewModel.ModelLoadState.NoModel -> "A local model is required"
@@ -320,15 +323,23 @@ internal fun ModelReadinessPanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    when (state) {
-                        ChatViewModel.ModelLoadState.NoModel -> TextButton(onClick = onOpenModels) { Text("Models") }
-                        is ChatViewModel.ModelLoadState.NotLoaded,
-                        is ChatViewModel.ModelLoadState.Failed -> TextButton(onClick = onLoad) { Text("Load") }
-                        else -> Unit
-                    }
                 }
                 if (state is ChatViewModel.ModelLoadState.Loading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.sm))
+                }
+                when (state) {
+                    ChatViewModel.ModelLoadState.NoModel -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onOpenModels) { Text("Models") }
+                        }
+                    }
+                    is ChatViewModel.ModelLoadState.NotLoaded,
+                    is ChatViewModel.ModelLoadState.Failed -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onLoad) { Text("Load") }
+                        }
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -342,16 +353,16 @@ internal fun ModelReadinessPanel(
 internal fun ThermalNotice(severe: Boolean) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.fillMaxWidth().widthIn(max = 840.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+            Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
                 Text(
                     if (severe) "Running much slower — device is very warm" else "Running slower due to device temperature",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.padding(start = 10.dp)
+                    modifier = Modifier.padding(start = Space.sm)
                 )
             }
         }
@@ -365,16 +376,16 @@ internal fun ThermalNotice(severe: Boolean) {
 internal fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
-            Modifier.widthIn(max = 840.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+            Modifier.widthIn(max = VervanContentWidth.standard).padding(horizontal = Space.lg, vertical = Space.xs),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(
                     "${String.format("%.1f", stats.tokensPerSecond)} tok/s · ${stats.tokens} tokens · ${stats.availMemMb}/${stats.totalMemMb} MB free",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 6.dp)
+                    modifier = Modifier.padding(start = Space.sm)
                 )
             }
         }
@@ -416,7 +427,7 @@ internal fun ChatMoreOptionsSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+            Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
@@ -711,7 +722,7 @@ internal fun ChatContextDetailsSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+            Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
             Text("Chat context", style = MaterialTheme.typography.headlineSmall)
@@ -754,11 +765,11 @@ internal fun ChatContextDetailsSheet(
 @Composable
 internal fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
     Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.32f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f))
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Archived Workspace", style = MaterialTheme.typography.labelLarge)
                 Text(
@@ -789,7 +800,7 @@ internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit,
         matches.firstOrNull()?.let(onJumpTo)
     }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
         VervanSearchField(
@@ -799,7 +810,7 @@ internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit,
             modifier = Modifier.weight(1f)
         )
         if (matches.isNotEmpty()) {
-            Text("${matchIndex + 1}/${matches.size}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp))
+            Text("${matchIndex + 1}/${matches.size}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm))
             IconButton(onClick = { matchIndex = (matchIndex - 1 + matches.size) % matches.size; onJumpTo(matches[matchIndex]) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous match")
             }
@@ -815,29 +826,51 @@ internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit,
  * highlighting, just the raw outputs next to each other, "compare" not "diff". */
 @Composable
 internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse: (String) -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         // Adaptive layout (B5): stacked cards on a compact window, side-by-side on an
         // expanded one — measured locally via BoxWithConstraints rather than threading
         // WindowSizeClass down through ChatScreen's nav signature just for this dialog.
-        androidx.compose.foundation.layout.BoxWithConstraints {
-            val stacked = maxWidth < 600.dp
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Compare branches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier
+                .padding(horizontal = Space.lg)
+                .widthIn(max = VervanContentWidth.standard)
+                .fillMaxWidth()
+        ) {
+            val stacked = maxWidth < VervanBreakpoints.medium
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = SurfaceRole.Overlay.cardColors(),
+                border = SurfaceRole.Overlay.border()
+            ) {
+                Column(Modifier.padding(Space.md)) {
+                    Text(
+                        "Compare branches",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = Space.sm).semantics { heading() }
+                    )
                     if (stacked) {
                         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                             siblings.forEachIndexed { index, sibling ->
-                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).heightIn(min = 120.dp))
+                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm).heightIn(min = 120.dp))
                             }
                         }
                     } else {
                         Row(Modifier.horizontalScroll(rememberScrollState())) {
                             siblings.forEachIndexed { index, sibling ->
-                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.padding(end = 8.dp).size(width = 240.dp, height = 320.dp))
+                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.padding(end = Space.sm).size(width = 240.dp, height = 320.dp))
                             }
                         }
                     }
-                    TextButton(onClick = onDismiss, modifier = Modifier.padding(top = 4.dp)) { Text("Close") }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.xs),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("Close") }
+                    }
                 }
             }
         }
@@ -850,12 +883,12 @@ internal fun CompareBranchCard(index: Int, sibling: Message, onUse: (String) -> 
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(8.dp)) {
+        Column(Modifier.padding(Space.sm)) {
             Text("Branch ${index + 1}", style = MaterialTheme.typography.labelMedium)
             Text(
                 sibling.content.ifBlank { "(empty)" },
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 4.dp)
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = Space.xs)
             )
             TextButton(onClick = { onUse(sibling.id) }) { Text("Use this") }
         }
@@ -891,7 +924,7 @@ internal fun ModeSettingsDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Thinking", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.padding(top = 6.dp, bottom = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.padding(top = Space.sm, bottom = Space.lg).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     listOf("OFF", "FAST", "BALANCED", "DEEP").forEach { mode ->
                         VervanFilterChip(
                             selected = thinkingMode == mode,
@@ -902,7 +935,7 @@ internal fun ModeSettingsDialog(
                     }
                 }
                 Text("Profile", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.padding(top = 6.dp, bottom = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.padding(top = Space.sm, bottom = Space.lg).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
                         VervanFilterChip(
                             selected = currentProfile == p.id,
@@ -911,16 +944,16 @@ internal fun ModeSettingsDialog(
                         )
                     }
                 }
-                HorizontalDivider(Modifier.padding(bottom = 8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenModelPicker() }.padding(vertical = 12.dp)) {
+                HorizontalDivider(Modifier.padding(bottom = Space.sm))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenModelPicker() }.padding(vertical = Space.md)) {
                     Text("Chat model", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenPersonaPicker() }.padding(vertical = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenPersonaPicker() }.padding(vertical = Space.md)) {
                     Text("Persona", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(Modifier.padding(vertical = Space.sm))
                 // Per-chat sampler overrides — the slider always shows the
                 // effective value (override or inherited default); dragging it sets a
                 // chat-specific override, Reset clears back to inherited.
@@ -956,11 +989,11 @@ internal fun SamplerOverrideRow(
     onChange: (Float) -> Unit,
     onReset: () -> Unit
 ) {
-    Column(Modifier.padding(top = 4.dp)) {
+    Column(Modifier.padding(top = Space.xs)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("$label: ${format(value)}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             if (isOverridden) {
-                TextButton(onClick = onReset, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) { Text("Reset") }
+                TextButton(onClick = onReset, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.sm)) { Text("Reset") }
             }
         }
         androidx.compose.material3.Slider(value = value, onValueChange = onChange, valueRange = range)
@@ -988,7 +1021,7 @@ internal fun SourcePickerDialog(
                     Text("Use selected knowledge bases", modifier = Modifier.weight(1f))
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(Modifier.padding(vertical = Space.sm))
                 if (kbs.isEmpty()) {
                     Text("No knowledge bases yet. Import a document in Knowledge.", style = MaterialTheme.typography.bodySmall)
                 }
@@ -1017,6 +1050,8 @@ internal fun SourcePickerDialog(
  */
 @Composable
 internal fun ChatToolsDialog(
+    toolsEnabled: Boolean,
+    onSetToolsEnabled: (Boolean) -> Unit,
     overrides: Map<String, Boolean>,
     globallyDisabled: Set<String>,
     onSetOverride: (String, Boolean?) -> Unit,
@@ -1027,18 +1062,34 @@ internal fun ChatToolsDialog(
         title = { Text("Chat tools") },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                // The per-tool overrides below only take effect once tools are actually turned
+                // on for this chat — without this switch there was no way to flip that master
+                // flag on at all, so every chat silently stayed toolless regardless of overrides.
+                Row(Modifier.fillMaxWidth().padding(bottom = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tools for this chat", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "The model discovers tools itself (list_tools, then tool_details) instead of " +
+                                "getting every description up front — see the tools below.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = toolsEnabled, onCheckedChange = onSetToolsEnabled)
+                }
+                HorizontalDivider(Modifier.padding(bottom = Space.sm))
                 Text(
                 "Choose which tools this chat can use.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
                 com.vervan.chat.tools.ToolRegistry.tools.forEach { tool ->
                     val override = overrides[tool.name]
                     val effectivelyOn = override ?: (tool.name !in globallyDisabled)
-                    Column(Modifier.padding(vertical = 6.dp)) {
+                    Column(Modifier.padding(vertical = Space.sm)) {
                         Text(tool.name, style = MaterialTheme.typography.bodyMedium)
-                        Row(Modifier.padding(top = 4.dp)) {
+                        Row(Modifier.padding(top = Space.xs)) {
                             VervanFilterChip(
                                 selected = override == null,
                                 onClick = { onSetOverride(tool.name, null) },
@@ -1048,13 +1099,13 @@ internal fun ChatToolsDialog(
                                 selected = override == true,
                                 onClick = { onSetOverride(tool.name, true) },
                                 label = { Text("On") },
-                                modifier = Modifier.padding(start = 6.dp)
+                                modifier = Modifier.padding(start = Space.sm)
                             )
                             VervanFilterChip(
                                 selected = override == false,
                                 onClick = { onSetOverride(tool.name, false) },
                                 label = { Text("Off") },
-                                modifier = Modifier.padding(start = 6.dp)
+                                modifier = Modifier.padding(start = Space.sm)
                             )
                         }
                         if (!effectivelyOn) {

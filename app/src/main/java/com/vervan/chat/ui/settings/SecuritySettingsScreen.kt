@@ -34,7 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,11 +56,17 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Unit = {}, onOpenApiServer: () -> Unit = {}) {
+fun SecuritySettingsScreen(
+    onBack: () -> Unit = {},
+    onOpenPermissions: () -> Unit = {},
+    onOpenApiServer: () -> Unit = {},
+    onOpenPrivacyDashboard: () -> Unit = {}
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
@@ -77,14 +83,26 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Security") },
+                title = { Text("Privacy & security") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
+                    Text("Privacy dashboard", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "See what's stored, what's indexed, and what has ever left this device.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = Space.sm)
+                    )
+                    OutlinedButton(onClick = onOpenPrivacyDashboard) { Text("Open") }
+                }
+            }
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("App lock", style = MaterialTheme.typography.bodyMedium)
@@ -103,9 +121,9 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         )
                     }
                     if (enabled || showPinSetup) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(Space.md))
                         Text("Unlock method", style = MaterialTheme.typography.labelMedium)
-                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp)) {
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm)) {
                             listOf("BIOMETRIC" to "Biometric", "PIN" to "PIN", "BOTH" to "Both").forEach { (value, label) ->
                                 VervanFilterChip(
                                     selected = method == value,
@@ -114,16 +132,16 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                                         if (value != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
                                     },
                                     label = { Text(label) },
-                                    modifier = Modifier.padding(end = 6.dp)
+                                    modifier = Modifier.padding(end = Space.sm)
                                 )
                             }
                         }
                         if (method != "BIOMETRIC") {
-                            OutlinedButton(onClick = { showPinSetup = true }, modifier = Modifier.padding(top = 8.dp)) {
+                            OutlinedButton(onClick = { showPinSetup = true }, modifier = Modifier.padding(top = Space.sm)) {
                                 Text(if (vm.hasPin) "Change PIN" else "Set PIN")
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(Space.md))
                         Text("Auto-lock after ${timeoutSeconds}s in the background", style = MaterialTheme.typography.labelMedium)
                         Slider(
                             value = timeoutSeconds.toFloat(),
@@ -144,13 +162,13 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                 }
             }
             val screenshotBlocking by vm.screenshotBlockingEnabled.collectAsState()
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Block screenshots & screen recording", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Protect every screen and hide content in the recent-apps preview.",
+                            "Hide app content in screenshots, recordings, and recent apps.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -162,48 +180,46 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
 
             OnDeviceDataSourcesCard(vm)
 
-            WebSearchCard(vm)
-
             QuickActionBubbleCard(vm)
 
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Local API server", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Let trusted apps use the active model through a local API.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.padding(bottom = Space.sm)
                     )
                     OutlinedButton(onClick = onOpenApiServer) { Text("Open") }
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
-                    Text("Privacy", style = MaterialTheme.typography.titleSmall)
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
+                    Text("Data privacy", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "No analytics or crash reports are sent. Diagnostics stay local unless you copy them.",
+                        "Vervan sends no analytics or crash reports. Diagnostics stay on this device.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                        modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
                     )
                     OutlinedButton(onClick = onOpenPermissions) { Text("See all permissions") }
                 }
             }
 
             Card(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Danger zone", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
 
                     Text(
                         if (retentionDays == 0) "Auto-delete old chats: off" else "Auto-delete chats untouched for $retentionDays days",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(top = 12.dp)
+                        modifier = Modifier.padding(top = Space.md)
                     )
                     Text(
                         "Moves old chats to the bin. Pinned and temporary chats are kept.",
@@ -220,11 +236,11 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         }
                     )
 
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(Modifier.padding(vertical = Space.sm))
 
                     Text("Panic wipe", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
                     Text(
-                        "Erases all chats, notes, documents, and models, then closes the app. Back up first.",
+                        "Erases all local content and models, then closes Vervan. Export a backup first.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -232,7 +248,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
                         onClick = { confirmWipeStep1 = true },
                         enabled = !wiping,
                         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = Space.sm)
                     ) { Text(if (wiping) "Wiping…" else "Wipe everything") }
                 }
             }
@@ -242,7 +258,7 @@ fun SecuritySettingsScreen(onBack: () -> Unit = {}, onOpenPermissions: () -> Uni
     if (confirmWipeStep1) {
         ConfirmDialog(
             title = "Wipe everything?",
-            body = "Permanently erase all chats, notes, documents, and models?",
+            body = "Permanently erase all local content and models?",
             confirmLabel = "Continue",
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
@@ -304,7 +320,7 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 )
             }
         },
@@ -328,18 +344,10 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     val context = LocalContext.current
     val calendar by vm.calendarToolEnabled.collectAsState()
     val deviceStatus by vm.deviceStatusToolEnabled.collectAsState()
-    val files by vm.filesToolEnabled.collectAsState()
     val location by vm.locationToolEnabled.collectAsState()
-    val screenTime by vm.screenTimeToolEnabled.collectAsState()
 
     val requestCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setCalendarToolEnabled(granted) }
-    val requestFiles = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setFilesToolEnabled(granted) }
     val requestLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setLocationToolEnabled(granted) }
-    // PACKAGE_USAGE_STATS is a special access, not a runtime permission — granted via a Settings
-    // redirect and checked through AppOpsManager, same shape as the overlay permission below.
-    val usageAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (hasUsageAccess(context)) vm.setScreenTimeToolEnabled(true)
-    }
 
     // Each toggle's own app-level "on" is independently checked at call time anyway (see
     // ToolRegistry.gatedResult), so a revoked permission never breaks a tool call — this just
@@ -349,112 +357,24 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     fun hasPermission(permission: String) = androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
     androidx.compose.runtime.LaunchedEffect(resumeTick) {
         if (calendar && !hasPermission(android.Manifest.permission.READ_CALENDAR)) vm.setCalendarToolEnabled(false)
-        if (files && android.os.Build.VERSION.SDK_INT <= 32 && !hasPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)) vm.setFilesToolEnabled(false)
         if (location && !hasPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)) vm.setLocationToolEnabled(false)
-        if (screenTime && !hasUsageAccess(context)) vm.setScreenTimeToolEnabled(false)
     }
 
-    Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-        Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+        Column(Modifier.padding(Space.lg)) {
             Text("On-device data sources", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Allow selected local data sources. Off by default and processed on-device.",
+            "Choose which local data Vervan can use. Processing stays on-device.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Space.sm)
             )
             DataSourceRow("Calendar", calendar) { turnOn ->
                 if (turnOn) requestCalendar.launch(android.Manifest.permission.READ_CALENDAR) else vm.setCalendarToolEnabled(false)
             }
             DataSourceRow("Device status (battery, storage, network, Wi-Fi)", deviceStatus) { vm.setDeviceStatusToolEnabled(it) }
-            DataSourceRow("Files (Downloads)", files) { turnOn ->
-                if (turnOn) requestFiles.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE) else vm.setFilesToolEnabled(false)
-            }
             DataSourceRow("Location (coarse, no address lookup)", location) { turnOn ->
                 if (turnOn) requestLocation.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION) else vm.setLocationToolEnabled(false)
-            }
-            DataSourceRow("Screen time (per-app usage today)", screenTime) { turnOn ->
-                if (!turnOn) {
-                    vm.setScreenTimeToolEnabled(false)
-                } else if (hasUsageAccess(context)) {
-                    vm.setScreenTimeToolEnabled(true)
-                } else {
-                    usageAccessLauncher.launch(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                }
-            }
-        }
-    }
-}
-
-/** PACKAGE_USAGE_STATS special-access check — see [OnDeviceDataSourcesCard]'s screen-time row. */
-private fun hasUsageAccess(context: android.content.Context): Boolean {
-    val appOps = context.getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager
-    @Suppress("DEPRECATION")
-    val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-        appOps.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
-    } else {
-        appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
-    }
-    return mode == android.app.AppOpsManager.MODE_ALLOWED
-}
-
-/**
- * Web search — the only tool whose execution leaves the device. Off by default AND needs
- * a Google Knowledge Graph API key before the model call actually goes through; the UI
- * here surfaces both so the user can see at a glance whether the toggle they flipped is
- * actually wired up, instead of the tool silently 403-ing on the first call.
- */
-@Composable
-private fun WebSearchCard(vm: SettingsViewModel) {
-    val enabled by vm.webSearchToolEnabled.collectAsState()
-    var apiKeyField by remember { mutableStateOf(vm.webSearchApiKey()) }
-    var showKey by remember { mutableStateOf(false) }
-    val resumeTick = com.vervan.chat.ui.common.rememberOnResumeTick()
-    // The key can be wiped from another surface (panic wipe, app data clear) — refresh on
-    // resume so the field doesn't show stale contents the tool would then fail to use.
-    androidx.compose.runtime.LaunchedEffect(resumeTick) { apiKeyField = vm.webSearchApiKey() }
-
-    Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-        Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Web search (Google Knowledge Graph)", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Let the model look up entity facts (people, places, things) over the network. " +
-                            "Off by default. Your API key is stored encrypted on this device.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(checked = enabled, onCheckedChange = { vm.setWebSearchToolEnabled(it) })
-            }
-            if (enabled) {
-                Spacer(Modifier.height(12.dp))
-                Text("Knowledge Graph API key", style = MaterialTheme.typography.labelMedium)
-                OutlinedTextField(
-                    value = apiKeyField,
-                    onValueChange = { apiKeyField = it },
-                    singleLine = true,
-                    visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "Hide" else "Show") }
-                    },
-                    supportingText = {
-                        Text(
-                            if (apiKeyField.isBlank()) "Required — get one free at console.cloud.google.com (Knowledge Graph API)."
-                            else "Stored encrypted on this device."
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                )
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
-                    OutlinedButton(
-                        onClick = {
-                            vm.setWebSearchApiKey(apiKeyField)
-                        },
-                        enabled = apiKeyField != vm.webSearchApiKey()
-                    ) { Text("Save key") }
-                }
             }
         }
     }
@@ -462,7 +382,7 @@ private fun WebSearchCard(vm: SettingsViewModel) {
 
 @Composable
 private fun DataSourceRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
         }
@@ -511,14 +431,13 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
         if (enabled && !android.provider.Settings.canDrawOverlays(context)) vm.setQuickActionBubbleEnabled(false)
     }
 
-    Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-        Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+        Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Quick-action bubble", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Show a floating button to explain a screenshot and ask follow-up questions locally. Requires overlay permission. " +
-                            "From the bubble menu you can hide it until you next open Vervan, or turn it off.",
+                            "Show a floating button for screenshot questions. Requires overlay permission; each capture still needs approval.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -543,13 +462,9 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
             title = { Text("Allow the quick-action bubble?") },
             text = {
                 Text(
-                    "Vervan will appear above other apps and keep a low-priority notification " +
-                        "while enabled. A screenshot is captured only after you tap a capture " +
-                        "action and approve Android's screen-sharing prompt each time — Vervan " +
-                        "uses that standard prompt, not an accessibility service, so no " +
-                        "always-on screen access is ever granted. Images stay on this device. " +
-                        "The explanation needs a vision-capable local model. Some apps block " +
-                        "capture of protected content."
+                    "The bubble appears above other apps with a quiet notification. Vervan captures " +
+                        "only after you choose Capture and approve Android's prompt each time. Images " +
+                        "stay on this device. A vision model is required, and protected apps may block capture."
                 )
             },
             confirmButton = {

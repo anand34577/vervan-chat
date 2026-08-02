@@ -36,7 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -54,12 +55,14 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.selectableItem
+import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -119,18 +122,18 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
             )
         } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxSize().padding(horizontal = Space.md, vertical = Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 item {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = Space.xs)
                     ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Column(Modifier.padding(start = 12.dp)) {
+                            Column(Modifier.padding(start = Space.md)) {
                                 Text("Small reviews, stronger recall", style = MaterialTheme.typography.titleSmall)
                                 Text("Answer before revealing each card.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -196,25 +199,25 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f),
                         shape = MaterialTheme.shapes.extraLarge,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = Space.sm)
                     ) {
-                        Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
                             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(56.dp)) {
-                                Icon(Icons.Filled.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(14.dp))
+                                Icon(Icons.Filled.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Space.md))
                             }
-                            Text(generationStage, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(generationStage, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.md))
                             Text(
                                 "This can take a moment when the model needs to load.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
+                                modifier = Modifier.padding(top = Space.xs)
                             )
-                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.lg))
                             Text(
                                 "Everything stays on this device.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 8.dp)
+                                modifier = Modifier.padding(top = Space.sm)
                             )
                         }
                     }
@@ -223,27 +226,27 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     BoundedTextField(
                         value = setName, onValueChange = { setName = it }, label = "Deck name",
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !generating
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md), enabled = !generating
                     )
                     BoundedTextField(
                         value = sourceText, onValueChange = { sourceText = it }, label = "Study material",
                         minLines = 5, maxLength = ValidationLimits.STUDY_SOURCE,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !generating
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm), enabled = !generating
                     )
                     BoundedTextField(
                         value = focus, onValueChange = { focus = it }, label = "Learning goal (optional)",
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !generating
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm), enabled = !generating
                     )
-                    Text("Card style", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Card style", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         listOf("balanced" to "Balanced", "active-recall" to "Active recall", "concept-focused" to "Concepts").forEach { (value, label) ->
                             VervanFilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
                         }
                     }
-                    Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+                    Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
                     Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..30f, steps = 24, enabled = !generating)
-                    error?.let { ValidationMessage(it, modifier = Modifier.padding(top = 8.dp)) }
+                    error?.let { ValidationMessage(it, modifier = Modifier.padding(top = Space.sm)) }
                 }
             },
             confirmButton = {
@@ -285,20 +288,30 @@ private fun StudySetCard(
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else accent.copy(alpha = 0.26f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp, pressedElevation = 3.dp)
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = CircleShape, color = accentContainer, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.School, contentDescription = null, tint = accent, modifier = Modifier.padding(12.dp))
+                    Icon(Icons.Filled.School, contentDescription = null, tint = accent, modifier = Modifier.padding(Space.md))
                 }
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(set.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Surface(shape = CircleShape, color = accentContainer) {
+                        OverflowTooltipText(
+                            text = set.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = accentContainer,
+                            modifier = Modifier.padding(start = Space.sm),
+                        ) {
                             Text(
                                 masteryLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = onAccentContainer,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs)
                             )
                         }
                     }
@@ -312,12 +325,12 @@ private fun StudySetCard(
             }
             LinearProgressIndicator(
                 progress = { progress },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                 color = accent,
                 trackColor = accent.copy(alpha = 0.14f)
             )
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
+            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
                     Text("${set.masteredCount} of ${set.cardCount} mastered", style = MaterialTheme.typography.labelMedium, color = accent)
                     Text(
                         listOfNotNull(
@@ -325,10 +338,17 @@ private fun StudySetCard(
                             set.lastStudiedAt?.let { DateUtils.getRelativeTimeSpanString(it).toString() }
                         ).joinToString(" · ").ifBlank { "Not reviewed yet" },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (!selectionMode) TextButton(onClick = onDelete) { Text("Delete") }
+                if (!selectionMode) {
+                    TextButton(
+                        onClick = onDelete,
+                        modifier = Modifier.padding(start = Space.sm),
+                    ) { Text("Delete") }
+                }
             }
         }
     }

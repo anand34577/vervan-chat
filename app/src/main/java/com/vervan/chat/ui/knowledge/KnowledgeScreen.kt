@@ -1,12 +1,9 @@
 package com.vervan.chat.ui.knowledge
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -52,8 +48,11 @@ import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.ui.common.ChipTone
+import com.vervan.chat.ui.common.AdaptiveCardFlow
+import com.vervan.chat.ui.common.ActionTile
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
@@ -104,43 +103,28 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
                 )
             }
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val columns = when {
-                    maxWidth >= 760.dp -> 3
-                    maxWidth >= 520.dp -> 2
-                    else -> 1
-                }
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                    verticalArrangement = Arrangement.spacedBy(Space.sm),
-                    maxItemsInEachRow = columns
-                ) {
-                    kbs.forEach { kb ->
-                        val stats = kbStats[kb.id]
-                        Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
-                            KbCard(
-                                kb,
-                                docCount = stats?.first ?: 0,
-                                allReady = stats?.second ?: true,
-                                onClick = { onOpenKb(kb.id) }
-                            )
-                        }
+            AdaptiveCardFlow {
+                kbs.forEach { kb ->
+                    val stats = kbStats[kb.id]
+                    Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                        KbCard(
+                            kb,
+                            docCount = stats?.first ?: 0,
+                            allReady = stats?.second ?: true,
+                            onClick = { onOpenKb(kb.id) }
+                        )
                     }
-                    if (kbs.isNotEmpty()) {
-                        Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
-                            Card(
-                                onClick = { showCreate = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-                            ) {
-                                Column(Modifier.padding(Space.lg)) {
-                                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                    Text("New base", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl))
-                                    Text("Create a document collection", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
+                }
+                if (kbs.isNotEmpty()) {
+                    Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                        ActionTile(
+                            icon = Icons.Filled.Add,
+                            title = "New knowledge base",
+                            body = "Create a document collection",
+                            onClick = { showCreate = true },
+                            modifier = Modifier.fillMaxSize(),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
                     }
                 }
             }
@@ -202,7 +186,11 @@ private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick:
                 Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.secondaryContainer),
                 contentAlignment = Alignment.Center
             ) { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
-            Text(kb.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Space.xl))
+            OverflowTooltipText(
+                text = kb.name,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = Space.xl)
+            )
             Text(
                 "$docCount document(s) · ${if (allReady) "ready" else "indexing"}",
                 style = MaterialTheme.typography.labelSmall,
@@ -214,13 +202,16 @@ private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick:
 
 @Composable
 private fun DocRow(doc: Document) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(34.dp).clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) { Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(doc.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f).padding(start = Space.md)) {
+            OverflowTooltipText(
+                text = doc.displayName,
+                style = MaterialTheme.typography.bodyMedium
+            )
             Text(
                 if (doc.status in setOf(DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)) {
                     doc.failureReason.toUserMessage()

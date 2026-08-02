@@ -44,7 +44,6 @@ private val PERMISSIONS = listOf(
     PermissionInfo(Manifest.permission.POST_NOTIFICATIONS, "Notifications", "Show generation, import, job, and quick-action bubble status."),
     PermissionInfo(Manifest.permission.READ_CALENDAR, "Calendar", "Let enabled tools search upcoming events locally."),
     PermissionInfo(Manifest.permission.ACCESS_COARSE_LOCATION, "Location", "Share approximate coordinates with enabled local tools."),
-    PermissionInfo(Manifest.permission.READ_EXTERNAL_STORAGE, "Files", "Search Downloads by filename on Android 12 or older."),
     PermissionInfo("android.permission.SYSTEM_ALERT_WINDOW", "Draw over other apps", "Show the optional bubble above other apps. Screen capture is approved separately each time.")
 )
 
@@ -69,7 +68,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 "See why each permission is used. Vervan asks only when a feature needs it.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Space.sm)
             )
             PERMISSIONS.forEach { info ->
                 // SYSTEM_ALERT_WINDOW is a "special" permission granted via a system Settings

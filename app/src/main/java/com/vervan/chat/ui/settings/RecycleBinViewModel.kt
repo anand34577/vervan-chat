@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.repo.MessageAttachmentCleanup
+import com.vervan.chat.data.repo.PersonaAvatarCleanup
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.Folder
@@ -77,6 +79,9 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     fun restoreChat(chat: Chat) { viewModelScope.launch { db.chatDao().update(chat.copy(deletedAt = null)) } }
     fun deleteChatForever(chat: Chat) {
         viewModelScope.launch {
+            // Reads (and deletes) the messages' attachment files before the transaction below
+            // removes the rows that name them — file IO doesn't belong inside a DB transaction.
+            MessageAttachmentCleanup.deleteOrphanedFiles(db, chat.id)
             db.withTransaction {
                 db.messageDao().deleteForChat(chat.id)
                 db.toolAuditDao().deleteForChat(chat.id)
@@ -106,6 +111,9 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     fun restorePersona(persona: Persona) { viewModelScope.launch { db.personaDao().upsert(persona.copy(deletedAt = null)) } }
     fun deletePersonaForever(persona: Persona) {
         viewModelScope.launch {
+            // File IO doesn't belong inside the DB transaction below — read (and delete) the
+            // avatar file first.
+            PersonaAvatarCleanup.deleteOrphanedAvatar(db, persona)
             db.withTransaction {
                 db.chatDao().clearPersona(persona.id)
                 db.folderDao().clearDefaultPersona(persona.id)

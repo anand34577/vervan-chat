@@ -30,9 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -47,6 +45,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -144,12 +143,12 @@ fun StorageDataSettingsScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: StorageDataViewModel = viewModel(factory = viewModelFactory { initializer { StorageDataViewModel(app) } })
-    val overview by vm.overview.collectAsState()
+    val overview by vm.overview.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Storage & data") },
+                title = { Text("Storage & backup") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
@@ -158,6 +157,23 @@ fun StorageDataSettingsScreen(
             StorageHero(overview)
             Text("App data", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
             StorageBreakdown(overview)
+            Card(
+                Modifier.fillMaxWidth().padding(top = Space.sm),
+                colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+                border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
+            ) {
+                Column(Modifier.fillMaxWidth().padding(Space.md)) {
+                    Text("Where your data lives", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Chats, settings, imported documents, and models are stored in Vervan's private app storage. " +
+                            "Other apps cannot browse it. Uninstalling Vervan removes this local data because Android system backup is disabled. " +
+                            "Files you export remain wherever you choose to save them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.xs)
+                    )
+                }
+            }
             Card(
                 Modifier.fillMaxWidth().padding(top = Space.sm),
                 colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
@@ -177,11 +193,11 @@ fun StorageDataSettingsScreen(
                 }
             }
 
-            Text("Manage", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
-            SettingsRow(Icons.Filled.ImportExport, "Import & export", "Back up your saved app data", onOpenBackup)
-            SettingsRow(Icons.Filled.DeleteOutline, "Recycle bin", "Restore or permanently remove deleted items", onOpenRecycleBin)
-            SettingsRow(Icons.AutoMirrored.Filled.ListAlt, "Job queue", "View, stop, and clear background work", onOpenJobs)
-            SettingsRow(Icons.Filled.Build, "Index maintenance", "Repair or rebuild document search", onOpenIndexMaintenance)
+            Text("Data tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+            SettingsRow(Icons.Filled.ImportExport, "Backup & restore", "Export or restore your data", onOpenBackup)
+            SettingsRow(Icons.Filled.DeleteOutline, "Recycle bin", "Restore items or delete them forever", onOpenRecycleBin)
+            SettingsRow(Icons.AutoMirrored.Filled.ListAlt, "Background jobs", "View, stop, or clear work", onOpenJobs)
+            SettingsRow(Icons.Filled.Build, "Search index", "Repair or rebuild document search", onOpenIndexMaintenance)
             SettingsRow(Icons.Filled.SmartToy, "Model calculator", "Find model sizes that fit this device", onOpenModelCalculator)
             SettingsRow(Icons.Filled.MonitorHeart, "Diagnostics", "Inspect runtime and device health", onOpenDiagnostics)
         }

@@ -139,7 +139,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -153,7 +153,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -198,6 +197,7 @@ import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -277,7 +277,7 @@ internal fun DocumentComposerPreviewDialog(
     ) {
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White)
                     }
@@ -292,7 +292,7 @@ internal fun DocumentComposerPreviewDialog(
                     ) {
                         Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
                             Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                                Column(Modifier.padding(horizontal = 30.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(Modifier.padding(horizontal = Space.xxl, vertical = Space.xxl), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(52.dp))
                                     Text(type, style = MaterialTheme.typography.labelLarge, fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = Space.xs))
                                 }
@@ -364,8 +364,8 @@ internal fun ModernChatAttachmentSheet(
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 CompactAttachmentAction(Icons.Filled.DocumentScanner, "Scan text", if (isRunningOcr) "Reading…" else "From photo", !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Mic, "Record", if (audioAvailable == true) "Voice note" else "Unavailable", audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) "Preparing…" else "Audio", if (audioAvailable == true) "Choose file" else "Unavailable", audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Mic, "Record", if (audioAvailable == true) "Transcribe" else "STT is off", audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) "Transcribing…" else "Audio", if (audioAvailable == true) "Transcribe file" else "STT is off", audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
             }
             TextButton(
                 onClick = onOcrCamera,
@@ -421,6 +421,23 @@ internal fun VoiceMessageRow(path: String) {
     // a 0:00 duration, looking like a stuck player. Now the user sees the failure and can
     // retry in case it was a transient read error.
     var loadFailed by remember(path) { mutableStateOf(false) }
+    // Duration is metadata, not playback state. Resolve it as soon as the row appears so a saved
+    // recording never misleadingly reads 0:00 / 0:00 until the first tap.
+    LaunchedEffect(path) {
+        durationMs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                android.media.MediaMetadataRetriever().let { retriever ->
+                    try {
+                        retriever.setDataSource(path)
+                        retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toIntOrNull() ?: 0
+                    } finally {
+                        retriever.release()
+                    }
+                }
+            }.getOrDefault(0)
+        }
+    }
     DisposableEffect(path) {
         onDispose { mediaPlayer?.release(); mediaPlayer = null }
     }
@@ -458,7 +475,10 @@ internal fun VoiceMessageRow(path: String) {
             loadFailed = true
         }
     }
-    Row(Modifier.padding(bottom = 4.dp).widthIn(min = 180.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs).widthIn(min = 220.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         IconButton(
             // No explicit size override — the default 48dp keeps this within Material's minimum
             // touch target; the 20dp Icon inside already gives the compact visual footprint.
@@ -483,7 +503,14 @@ internal fun VoiceMessageRow(path: String) {
                         isPlaying = true
                     }
                 }
-            }
+            },
+            modifier = Modifier
+                .size(48.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(
+                    if (loadFailed) MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.primaryContainer
+                )
         ) {
             Icon(
                 when {
@@ -496,8 +523,9 @@ internal fun VoiceMessageRow(path: String) {
                     isPlaying -> "Pause voice message"
                     else -> "Play voice message"
                 },
-                tint = if (loadFailed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified,
-                modifier = Modifier.size(20.dp)
+                tint = if (loadFailed) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(24.dp)
             )
         }
         if (loadFailed) {
@@ -508,20 +536,30 @@ internal fun VoiceMessageRow(path: String) {
                 modifier = Modifier.weight(1f)
             )
         } else {
-            Slider(
-                value = if (durationMs > 0) positionMs.toFloat().coerceIn(0f, durationMs.toFloat()) else 0f,
-                valueRange = 0f..(durationMs.toFloat().coerceAtLeast(1f)),
-                onValueChange = { value ->
-                    positionMs = value.toInt()
-                    ensurePlayer { mp -> mp.seekTo(positionMs) }
-                },
-                modifier = Modifier.weight(1f).height(24.dp)
-            )
-            Text(
-                "${formatMs(positionMs)} / ${formatMs(durationMs)}",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(start = 4.dp)
-            )
+            Column(Modifier.weight(1f).padding(start = Space.sm)) {
+                Slider(
+                    value = if (durationMs > 0) positionMs.toFloat().coerceIn(0f, durationMs.toFloat()) else 0f,
+                    valueRange = 0f..(durationMs.toFloat().coerceAtLeast(1f)),
+                    onValueChange = { value ->
+                        positionMs = value.toInt()
+                        ensurePlayer { mp -> mp.seekTo(positionMs) }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(30.dp)
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        if (isPlaying) "Playing" else formatMs(positionMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isPlaying) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        formatMs(durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
@@ -599,7 +637,7 @@ internal fun AudioComposerPreviewDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
                     Text("Audio preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
@@ -647,10 +685,16 @@ internal fun FullScreenImagePreview(
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val context = LocalContext.current
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
-                    Text(title, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.weight(1f))
+                    Text(
+                        title,
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(horizontal = Space.xs)
+                    )
                     onRemove?.let {
                         IconButton(onClick = it) { Icon(Icons.Filled.Close, "Remove attachment", tint = androidx.compose.ui.graphics.Color.White) }
                     }
@@ -664,9 +708,7 @@ internal fun FullScreenImagePreview(
                     }
                 }
                 val previewPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
-                val bitmap = remember(path, previewPx) {
-                    com.vervan.chat.model.ImageUtils.decodeThumbnail(path, previewPx)?.asImageBitmap()
-                }
+                val bitmap = rememberThumbnail(path, previewPx)
                 // Pinch-to-zoom + pan, plus double-tap to toggle 1x/2.5x — the baseline
                 // "view an image" gesture set users expect from any photo viewer. Pan only
                 // engages while zoomed in; at 1x the image stays centered so it can't drift.
@@ -737,7 +779,7 @@ internal fun OcrPreviewDialog(
     ) {
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
                     Column {
                         Text("OCR preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
@@ -748,9 +790,7 @@ internal fun OcrPreviewDialog(
                 }
 
                 val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
-                val bitmap = remember(imagePath, thumbnailPx) {
-                    com.vervan.chat.model.ImageUtils.decodeThumbnail(imagePath, thumbnailPx)?.asImageBitmap()
-                }
+                val bitmap = rememberThumbnail(imagePath, thumbnailPx)
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     bitmap?.let {
                         Image(

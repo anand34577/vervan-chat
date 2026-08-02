@@ -46,11 +46,11 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 720.dp) {
-            Column(Modifier.fillMaxSize().padding(Space.lg)) {
+            Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 ToolIntro(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Ask questions about a document",
-                    body = "Pick a PDF, Word, or text file and start a chat grounded in it — answers cite the file, and nothing leaves your device."
+        body = "Choose a PDF, Word, or text file. Answers cite it and stay on-device."
                 )
                 Button(
                     onClick = {
@@ -68,7 +68,7 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = Space.xl)
                 ) {
                     Icon(Icons.Filled.UploadFile, null, Modifier.size(18.dp))
-                    Text("  Choose a file", modifier = Modifier.padding(start = Space.xs))
+                    Text("Choose a file", modifier = Modifier.padding(start = Space.sm))
                 }
             }
         }

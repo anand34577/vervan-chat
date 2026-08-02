@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.CheckCircle
@@ -183,10 +184,18 @@ fun ModelManagerScreen(
         uri?.let { pendingMmprojUri = it }
     }
 
+    // whisper.cpp local import — a single ggml (.bin) or GGUF model file, no catalog/network.
+    var showWhisperImportDialog by remember { mutableStateOf(false) }
+    var pendingWhisperUri by remember { mutableStateOf<Uri?>(null) }
+    val pickWhisperFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { pendingWhisperUri = it }
+    }
+
     // Press-and-hold selects one or more models for bulk delete; tapping a card while in
     // selection mode toggles it instead of doing its normal action.
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var confirmBulkDelete by remember { mutableStateOf(false) }
+    var showImportOptions by rememberSaveable { mutableStateOf(false) }
     val selectionMode = selectedIds.isNotEmpty()
 
     val generationModels = models.filter { it.role == ModelRole.GENERATION }
@@ -211,6 +220,9 @@ fun ModelManagerScreen(
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                     },
                     actions = {
+                        IconButton(onClick = { showImportOptions = true }) {
+                            Icon(Icons.Filled.Add, contentDescription = "Import a model")
+                        }
                         IconButton(onClick = onOpenCalculator) { Icon(Icons.Filled.Calculate, contentDescription = "Model calculator") }
                     }
                 )
@@ -246,7 +258,7 @@ fun ModelManagerScreen(
                     title = title,
                     body = body,
                     tone = tone,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = Space.lg)
                 )
             }
             // Persistent load-failure banners — the same ModelLoadCoordinator error Chat/Voice
@@ -257,7 +269,7 @@ fun ModelManagerScreen(
                     title = "Generation model load failed",
                     message = err.errorMessage.toUserMessage(),
                     recovery = "Retry from the model card, or use a smaller model or another runtime.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             embeddingLoadInfo.error?.let { err ->
@@ -265,7 +277,7 @@ fun ModelManagerScreen(
                     title = "Embedding model load failed",
                     message = err.errorMessage.toUserMessage(),
                     recovery = "Retry the model. Keyword search still works without it.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             val downloadingStates = downloadStates.filter {
@@ -275,24 +287,11 @@ fun ModelManagerScreen(
                 it.status == ModelStatus.READY && it.category in setOf(ModelRole.TTS_VOICE, ModelRole.STT_MODEL)
             }
             val catalogStates = downloadStates.filter { it.status == com.vervan.chat.data.db.entities.ModelStatus.NOT_DOWNLOADED }
-
-            if (generationModels.isEmpty()) {
-                val memory = remember {
-                    android.app.ActivityManager.MemoryInfo().also {
-                        (app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(it)
-                    }
-                }
-                val recommendation = remember(memory.totalMem) { com.vervan.chat.ui.onboarding.recommendModel(memory.totalMem) }
-                val recommendedState = recommendation?.let { rec -> catalogStates.firstOrNull { it.modelId == rec.model.modelId } }
-                if (recommendation != null && recommendedState != null) {
-                    RecommendedSetupCard(
-                        model = recommendedState,
-                        reason = recommendation.reason,
-                        onSetup = { vm.setupRecommendedModel(recommendedState.modelId, recommendedState.version) },
-                    )
-                    Box(Modifier.height(Space.md))
-                }
-            }
+            // A first-time user with nothing installed yet should land on the unified picker
+            // (recommended setup + Model Store + catalog) instead of an empty Library list —
+            // that picker IS the single "one entry point" this screen already provides, it just
+            // wasn't the default tab.
+            var showingDiscover by rememberSaveable { mutableStateOf(browseBudgetBytes != null || generationModels.isEmpty()) }
 
             if (downloadingStates.isNotEmpty()) {
                 SectionHeader("Active downloads", Icons.Filled.CloudDownload)
@@ -307,111 +306,125 @@ fun ModelManagerScreen(
                 }
             }
 
-            if (downloadedVoiceStates.isNotEmpty()) {
-                SectionHeader("Downloaded voice & speech models", Icons.Filled.GraphicEq)
-                downloadedVoiceStates.forEach { state ->
-                    DownloadPackageCard(
-                        state = state,
-                        onPause = {},
-                        onResume = {},
-                        onStop = {},
-                        onDelete = { vm.deleteDownload(state.modelId, state.version) }
-                    )
-                }
-            }
-
-            if (catalogStates.isNotEmpty()) {
-                AvailableForDownloadSection(
-                    catalogStates,
-                    onDownload = { vm.downloadModel(it.modelId, it.version) },
-                    highlightBudgetBytes = browseBudgetBytes
-                )
-                Box(Modifier.height(Space.lg))
-            }
-
-            // Entry point to the curated Model Store (com.vervan.chat.store). Kept as a distinct
-            // destination rather than merged into the list above: the store's catalogue is signed
-            // and fetched remotely, its entries have per-runtime variants and per-device
-            // eligibility, and it installs through its own content-addressed pipeline.
-            StoreEntryCard(onOpenStore)
-            Box(Modifier.height(Space.lg))
-
-            ImportCard(
-                importing = importing,
-                onImport = { role ->
-                    if (role == ModelRole.GENERATION) {
-                        pickFile.launch(arrayOf("*/*"))
-                    } else {
-                        pendingEmbeddingModelUri = null
-                        pendingTokenizerUri = null
-                        showEmbeddingImportDialog = true
-                    }
-                },
-                onImportGguf = {
-                    pendingLlamaCppModelUri = null
-                    pendingMmprojUri = null
-                    showLlamaCppImportDialog = true
-                }
+            ModelManagerSwitcher(
+                showingDiscover = showingDiscover,
+                installedCount = models.size + downloadedVoiceStates.size,
+                onLibrary = { showingDiscover = false },
+                onDiscover = { showingDiscover = true },
+                modifier = Modifier.padding(top = Space.md, bottom = Space.sm)
             )
 
-            if (importing) {
-                com.vervan.chat.ui.common.OperationProgressCard(
-                    title = busyLabel ?: "Importing model",
-                    body = "Copying and checking the model. Keep the app open.",
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-            }
-            status?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-            }
+            if (showingDiscover) {
+                if (generationModels.isEmpty()) {
+                    val memory = remember {
+                        android.app.ActivityManager.MemoryInfo().also {
+                            (app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(it)
+                        }
+                    }
+                    val recommendation = remember(memory.totalMem) { com.vervan.chat.ui.onboarding.recommendModel(memory.totalMem) }
+                    val recommendedState = recommendation?.let { rec -> catalogStates.firstOrNull { it.modelId == rec.model.modelId } }
+                    if (recommendation != null && recommendedState != null) {
+                        RecommendedSetupCard(
+                            model = recommendedState,
+                            reason = recommendation.reason,
+                            onSetup = { vm.setupRecommendedModel(recommendedState.modelId, recommendedState.version) },
+                        )
+                        Box(Modifier.height(Space.md))
+                    }
+                }
 
-            if (generationModels.isNotEmpty()) {
-                SectionHeader("Generation models", Icons.Filled.Bolt)
-                generationModels.forEach { model ->
-                    ModelCard(
-                        model,
-                        isLoaded = generationLoadInfo.currentModelId == model.id,
-                        showSetActive = generationModels.size > 1,
-                        onSetActive = { vm.setActive(model) },
-                        onToggleLoad = { if (generationLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
-                        onEdit = { editingModel = model },
-                        onBenchmark = { vm.benchmark(model) },
-                        onDelete = { vm.delete(model) },
-                        busy = busyModelId == model.id,
-                        busyLabel = busyLabel,
-                        selectionMode = selectionMode,
-                        selected = model.id in selectedIds,
-                        onToggleSelect = { selectedIds = if (model.id in selectedIds) selectedIds - model.id else selectedIds + model.id },
-                        onLongPress = { selectedIds = selectedIds + model.id }
+                // The signed store and the lightweight built-in catalogue are separate sources,
+                // but live together here because both answer the same user intent: find a model.
+                StoreEntryCard(onOpenStore)
+                Box(Modifier.height(Space.md))
+                if (catalogStates.isNotEmpty()) {
+                    AvailableForDownloadSection(
+                        catalogStates,
+                        onDownload = { vm.downloadModel(it.modelId, it.version) },
+                        highlightBudgetBytes = browseBudgetBytes
+                    )
+                    Box(Modifier.height(Space.lg))
+                }
+            } else {
+                if (importing) {
+                    com.vervan.chat.ui.common.OperationProgressCard(
+                        title = busyLabel ?: "Importing model",
+                        body = "Copying and checking the model. Keep the app open.",
+                        modifier = Modifier.padding(top = Space.sm)
                     )
                 }
-            }
+                status?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.sm))
+                }
 
-            if (embeddingModels.isNotEmpty()) {
-                SectionHeader("Embedding models", Icons.Outlined.Storage)
-                Text(
-                    "Used automatically for semantic search.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                embeddingModels.forEach { model ->
-                    ModelCard(
-                        model,
-                        isLoaded = embeddingLoadInfo.currentModelId == model.id,
-                        showSetActive = embeddingModels.size > 1,
-                        onSetActive = { vm.setActive(model) },
-                        onToggleLoad = { if (embeddingLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
-                        onEdit = { editingModel = model },
-                        onBenchmark = { vm.benchmark(model) },
-                        onDelete = { vm.delete(model) },
-                        busy = busyModelId == model.id,
-                        busyLabel = busyLabel,
-                        selectionMode = selectionMode,
-                        selected = model.id in selectedIds,
-                        onToggleSelect = { selectedIds = if (model.id in selectedIds) selectedIds - model.id else selectedIds + model.id },
-                        onLongPress = { selectedIds = selectedIds + model.id }
+                if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
+                    EmptyModelLibrary(
+                        onDiscover = { showingDiscover = true },
+                        onImport = { showImportOptions = true }
                     )
+                } else {
+                    if (generationModels.isNotEmpty()) {
+                        SectionHeader("For chat", Icons.Filled.Bolt)
+                        generationModels.forEach { model ->
+                            ModelCard(
+                                model,
+                                isLoaded = generationLoadInfo.currentModelId == model.id,
+                                showSetActive = generationModels.size > 1,
+                                onSetActive = { vm.setActive(model) },
+                                onToggleLoad = { if (generationLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
+                                onEdit = { editingModel = model },
+                                onBenchmark = { vm.benchmark(model) },
+                                onDelete = { vm.delete(model) },
+                                busy = busyModelId == model.id,
+                                busyLabel = busyLabel,
+                                selectionMode = selectionMode,
+                                selected = model.id in selectedIds,
+                                onToggleSelect = { selectedIds = if (model.id in selectedIds) selectedIds - model.id else selectedIds + model.id },
+                                onLongPress = { selectedIds = selectedIds + model.id }
+                            )
+                        }
+                    }
+
+                    if (embeddingModels.isNotEmpty()) {
+                        SectionHeader("For search", Icons.Outlined.Storage)
+                        Text(
+                            "Used automatically for semantic search.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = Space.sm)
+                        )
+                        embeddingModels.forEach { model ->
+                            ModelCard(
+                                model,
+                                isLoaded = embeddingLoadInfo.currentModelId == model.id,
+                                showSetActive = embeddingModels.size > 1,
+                                onSetActive = { vm.setActive(model) },
+                                onToggleLoad = { if (embeddingLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
+                                onEdit = { editingModel = model },
+                                onBenchmark = { vm.benchmark(model) },
+                                onDelete = { vm.delete(model) },
+                                busy = busyModelId == model.id,
+                                busyLabel = busyLabel,
+                                selectionMode = selectionMode,
+                                selected = model.id in selectedIds,
+                                onToggleSelect = { selectedIds = if (model.id in selectedIds) selectedIds - model.id else selectedIds + model.id },
+                                onLongPress = { selectedIds = selectedIds + model.id }
+                            )
+                        }
+                    }
+
+                    if (downloadedVoiceStates.isNotEmpty()) {
+                        SectionHeader("Voice & speech", Icons.Filled.GraphicEq)
+                        downloadedVoiceStates.forEach { state ->
+                            DownloadPackageCard(
+                                state = state,
+                                onPause = {},
+                                onResume = {},
+                                onStop = {},
+                                onDelete = { vm.deleteDownload(state.modelId, state.version) }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -446,6 +459,34 @@ fun ModelManagerScreen(
         )
     }
 
+    if (showImportOptions) {
+        ImportModelDialog(
+            importing = importing,
+            onDismiss = { showImportOptions = false },
+            onImport = { role ->
+                showImportOptions = false
+                if (role == ModelRole.GENERATION) {
+                    pickFile.launch(arrayOf("*/*"))
+                } else {
+                    pendingEmbeddingModelUri = null
+                    pendingTokenizerUri = null
+                    showEmbeddingImportDialog = true
+                }
+            },
+            onImportGguf = {
+                showImportOptions = false
+                pendingLlamaCppModelUri = null
+                pendingMmprojUri = null
+                showLlamaCppImportDialog = true
+            },
+            onImportWhisper = {
+                showImportOptions = false
+                pendingWhisperUri = null
+                showWhisperImportDialog = true
+            }
+        )
+    }
+
     if (showLlamaCppImportDialog) {
         LlamaCppImportDialog(
             modelUri = pendingLlamaCppModelUri,
@@ -456,6 +497,18 @@ fun ModelManagerScreen(
             onImport = { modelUri, mmprojUri ->
                 vm.importLlamaCppModel(modelUri, mmprojUri)
                 showLlamaCppImportDialog = false
+            }
+        )
+    }
+
+    if (showWhisperImportDialog) {
+        WhisperCppImportDialog(
+            modelUri = pendingWhisperUri,
+            onPickModel = { pickWhisperFile.launch(arrayOf("*/*")) },
+            onDismiss = { showWhisperImportDialog = false },
+            onImport = { modelUri ->
+                vm.importWhisperCppModel(modelUri)
+                showWhisperImportDialog = false
             }
         )
     }

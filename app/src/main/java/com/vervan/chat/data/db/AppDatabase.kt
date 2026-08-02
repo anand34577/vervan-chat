@@ -28,11 +28,14 @@ import com.vervan.chat.data.db.dao.StoreInstallSessionDao
 import com.vervan.chat.data.db.dao.StudyCardDao
 import com.vervan.chat.data.db.dao.ToolAuditDao
 import com.vervan.chat.data.db.dao.ToolRunDao
+import com.vervan.chat.data.db.dao.TranscriptionProjectDao
+import com.vervan.chat.data.db.dao.TtsProjectDao
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.dao.WorkflowDao
 import com.vervan.chat.data.db.dao.WorkspaceDao
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Chunk
+import com.vervan.chat.data.db.entities.ChunkFts
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.DownloadFile
@@ -74,6 +77,8 @@ import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.data.db.entities.ToolAudit
 import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.ToolRunState
+import com.vervan.chat.data.db.entities.TranscriptionProject
+import com.vervan.chat.data.db.entities.TtsProject
 import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
@@ -135,15 +140,16 @@ class Converters {
 @Database(
     entities = [
         Chat::class, Message::class, Persona::class, ModelInfo::class,
-        KnowledgeBase::class, Document::class, Chunk::class, Note::class, Project::class,
+        KnowledgeBase::class, Document::class, Chunk::class, ChunkFts::class, Note::class, Project::class,
         PromptTemplate::class, SavedOutput::class, Memory::class, Workflow::class, StudyCard::class,
         Folder::class, FlashcardSet::class, MemorySuggestion::class, ToolAudit::class, JobRecord::class,
         Workspace::class, Expense::class, TtsVoiceModel::class, ToolRun::class,
         DownloadPackage::class, DownloadFile::class,
-        StoreInstallSession::class, StoreInstallArtifact::class
+        StoreInstallSession::class, StoreInstallArtifact::class, TranscriptionProject::class,
+        TtsProject::class
     ],
-    version = 45,
-    exportSchema = false
+    version = 1,
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -174,4 +180,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadFileDao(): DownloadFileDao
     abstract fun storeInstallSessionDao(): StoreInstallSessionDao
     abstract fun storeInstallArtifactDao(): StoreInstallArtifactDao
+    abstract fun transcriptionProjectDao(): TranscriptionProjectDao
+    abstract fun ttsProjectDao(): TtsProjectDao
 }

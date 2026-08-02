@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -57,6 +56,7 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.modeldownload.CatalogModel
 import com.vervan.chat.modeldownload.ModelCatalog
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
@@ -71,14 +71,24 @@ import kotlinx.coroutines.launch
  * Three decisions only: understand the privacy promise, prepare a suitable local model, and
  * choose a starting response profile. Runtime and file-format detail belongs in Model Manager.
  */
+/** What a new user is here for — routes straight to the matching workspace instead of the
+ * full 45-tool grid, and seeds it as a favorite so it's still one tap away from All Tools later. */
+enum class OnboardIntent(val label: String, val route: String?) {
+    CHAT("Just chat", null),
+    WRITE("Write", "writing"),
+    STUDY("Study documents", "study"),
+    CODE("Code", "dev")
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
+fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     var page by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfile by rememberSaveable { mutableStateOf("BALANCED") }
+    var selectedIntent by rememberSaveable { mutableStateOf(OnboardIntent.CHAT) }
     val reducedMotion = rememberReducedMotion()
 
     val activityManager = context.getSystemService(ActivityManager::class.java)
@@ -104,7 +114,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
         OnboardPage(
             icon = Icons.Filled.AutoAwesome,
             title = "Your private AI workspace",
-            body = "Chat, write, study, and work with documents—privately on your device.",
+        body = "Chat, write, study, and use documents privately on your device.",
             note = "AI can make mistakes. Review important answers and actions.",
             accentTone = OnboardAccentTone.Primary
         ),
@@ -112,17 +122,25 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
             icon = Icons.Filled.Security,
             title = "Choose a model for this device",
             body = "Android ${Build.VERSION.RELEASE}  •  $abi\n$ramGb GB RAM  •  $storageGb GB storage free\n$capabilityBlurb",
-            note = "Vervan checks every package. Advanced runtime and import options stay in Model Manager.",
+        note = "Vervan checks each package. Find advanced options later in AI models.",
             accentTone = OnboardAccentTone.Tertiary,
             importButton = true
         ),
         OnboardPage(
             icon = Icons.Filled.Tune,
             title = "Choose your starting balance",
-            body = "Choose a balance of speed, answer depth, and battery use, then start your first conversation.",
+        body = "Balance speed, answer depth, and battery use.",
             note = "Balanced suits most devices. You can change this later in Settings.",
             accentTone = OnboardAccentTone.Primary,
             profilePicker = true
+        ),
+        OnboardPage(
+            icon = Icons.Filled.AutoAwesome,
+            title = "What brings you here?",
+            body = "Jump straight into the workspace you'll use most. You can open any tool from All Tools any time.",
+            note = "This just picks your starting screen — nothing else changes.",
+            accentTone = OnboardAccentTone.Secondary,
+            intentPicker = true
         )
     )
 
@@ -130,8 +148,9 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
         contentAlignment = Alignment.TopCenter
     ) {
+        PageContainer(maxContentWidth = 680.dp) {
         Column(
-            Modifier.fillMaxSize().widthIn(max = 680.dp).padding(horizontal = Space.xxl, vertical = Space.lg)
+            Modifier.fillMaxSize().padding(vertical = Space.lg)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
@@ -154,7 +173,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 // profile the user had already tapped.
                 TextButton(onClick = {
                     scope.launch { app.container.settingsRepository.setDefaultProfile(selectedProfile) }
-                    onDone()
+                    onDone(selectedIntent)
                 }) { Text("Skip") }
             }
             Row(
@@ -195,8 +214,14 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 label = "onboardingPage"
             ) { targetPage ->
                 val p = pages[targetPage]
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Spacer(Modifier.height(Space.xxl))
+                // Centered rather than top-aligned: pages vary a lot in content height (the
+                // profile-picker step has far more below the note card than the intro step), so
+                // top-alignment left short pages with a large dead gap above the nav buttons.
+                // Arrangement.Center still scrolls correctly for the taller pages.
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     // Hero icon — tinted per-page so each step has its own visual identity instead
                     // of every page looking identical.
                     val (heroBg, heroFg) = accentColors(p.accentTone)
@@ -253,7 +278,21 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                             }
                         }
                     }
-                    Spacer(Modifier.height(Space.xxl))
+                    if (p.intentPicker) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            verticalArrangement = Arrangement.spacedBy(Space.sm)
+                        ) {
+                            OnboardIntent.entries.forEach { intent ->
+                                VervanFilterChip(
+                                    selected = selectedIntent == intent,
+                                    onClick = { selectedIntent = intent },
+                                    label = { Text(intent.label) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
             Row(
@@ -265,7 +304,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                 Button(onClick = {
                     if (page == pages.lastIndex) {
                         scope.launch { app.container.settingsRepository.setDefaultProfile(selectedProfile) }
-                        onDone()
+                        onDone(selectedIntent)
                     } else {
                         page++
                     }
@@ -273,6 +312,7 @@ fun OnboardingScreen(onDone: () -> Unit, onImportModel: () -> Unit = {}) {
                     Text(if (page == pages.lastIndex) "Get started" else "Continue")
                 }
             }
+        }
         }
     }
 }
@@ -294,7 +334,8 @@ private data class OnboardPage(
     val note: String,
     val accentTone: OnboardAccentTone = OnboardAccentTone.Primary,
     val importButton: Boolean = false,
-    val profilePicker: Boolean = false
+    val profilePicker: Boolean = false,
+    val intentPicker: Boolean = false
 )
 
 /** A starting generation model chosen for a device, plus whether it comfortably fits. */

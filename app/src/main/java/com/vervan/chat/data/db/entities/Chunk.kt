@@ -24,7 +24,11 @@ data class Chunk(
     // before this field existed. Lets RetrievalEngine tell "stale embedding from a different
     // model" apart from "current model, no match" by exact id rather than by vector dimension
     // alone, which two different models can share by coincidence. Mirrors Memory.embeddingModelId.
-    val embeddingModelId: String? = null
+    val embeddingModelId: String? = null,
+    // 1-based PDF page this chunk came from — only set for a PDF with a real text layer (see
+    // com.vervan.chat.model.Chunker.chunkPaginated). Null for every other source format and for
+    // an OCR'd/scanned PDF, which has no per-page text boundary to preserve.
+    val pageNumber: Int? = null
 ) {
     override fun equals(other: Any?) = other is Chunk && id == other.id
     override fun hashCode() = id.hashCode()

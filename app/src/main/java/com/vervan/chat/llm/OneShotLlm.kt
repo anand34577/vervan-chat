@@ -29,7 +29,9 @@ data class ToolRunContext(
  */
 object OneShotLlm {
 
-    /** Null return means no generation model is available/active. */
+    /** Null return means no generation model is available/active. [maxOutputTokensOverride] caps
+     * a short utility call (e.g. query rewriting) well below the model/global output-length
+     * setting, which is sized for real chat replies, not a one-line rewrite. */
     suspend fun run(
         app: VervanApp,
         prompt: String,
@@ -37,8 +39,9 @@ object OneShotLlm {
         audioPath: String? = null,
         model: ModelInfo? = null,
         runContext: ToolRunContext? = null,
+        maxOutputTokensOverride: Int? = null,
     ): String? {
-        val flow = stream(app, prompt, imagePath, audioPath, model, runContext) ?: return null
+        val flow = stream(app, prompt, imagePath, audioPath, model, runContext, maxOutputTokensOverride) ?: return null
         val out = StringBuilder()
         flow.collect { out.append(it) }
         return out.toString()
@@ -52,6 +55,7 @@ object OneShotLlm {
         audioPath: String? = null,
         model: ModelInfo? = null,
         runContext: ToolRunContext? = null,
+        maxOutputTokensOverride: Int? = null,
     ): Flow<String>? {
         val model = model ?: app.container.db.modelDao().getActiveModel(ModelRole.GENERATION) ?: return null
         val run = runContext?.let {
@@ -73,7 +77,8 @@ object OneShotLlm {
             app.container.generate(
                 model, prompt, imagePath, audioPath,
                 params.temperature, params.topP, params.topK, params.seed,
-                params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+                params.minP, params.repetitionPenalty,
+                maxOutputTokensOverride ?: params.maxOutputTokens, params.stopSequences
             )
         } catch (t: Throwable) {
             run?.let {

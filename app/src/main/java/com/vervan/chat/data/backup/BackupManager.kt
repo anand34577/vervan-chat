@@ -2,6 +2,7 @@ package com.vervan.chat.data.backup
 
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.entities.Chat
+import com.vervan.chat.data.db.entities.Expense
 import com.vervan.chat.data.db.entities.FlashcardSet
 import com.vervan.chat.data.db.entities.Folder
 import com.vervan.chat.data.db.entities.KnowledgeBase
@@ -16,6 +17,10 @@ import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.StudyCard
+import com.vervan.chat.data.db.entities.ToolRun
+import com.vervan.chat.data.db.entities.ToolRunState
+import com.vervan.chat.data.db.entities.TranscriptionProject
+import com.vervan.chat.data.db.entities.TtsProject
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.system.toUserMessage
@@ -28,20 +33,23 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * JSON export/import for everything a user actually authored. Model files,
- * knowledge bases, and imported documents are deliberately NOT included — those are large
+ * JSON export/import for user-authored Room content. Model files,
+ * imported document files and media attachments are deliberately not included — those are large
  * binary assets tied to on-device paths, re-importing them belongs to Models/Knowledge, not
- * a settings backup. hand-rolled org.json mapping per entity (matches how the rest
+ * a content backup. Knowledge-base definitions are included, but their imported document
+ * files are not. Hand-rolled org.json mapping per entity (matches how the rest
  * of the app already encodes JSON — Workflow steps, tool-call payloads) rather than pulling
  * in a serialization library for one screen.
  */
 object BackupManager {
-    private const val FORMAT_VERSION = 1
+    private const val FORMAT_VERSION = 2
+    private const val MIN_SUPPORTED_FORMAT_VERSION = 1
 
     suspend fun export(db: AppDatabase, out: OutputStream) {
         val root = JSONObject()
         root.put("formatVersion", FORMAT_VERSION)
         root.put("exportedAt", System.currentTimeMillis())
+        root.put("includesBinaryFiles", false)
 
         root.put("workspaces", JSONArray(db.workspaceDao().observeAll().firstList().map { workspaceToJson(it) }))
         // Incognito mode — a temporary chat is excluded from export entirely, same
@@ -61,6 +69,13 @@ object BackupManager {
         root.put("flashcardSets", JSONArray(db.flashcardSetDao().observeAll().firstList().map { flashcardSetToJson(it) }))
         root.put("studyCards", JSONArray(db.studyCardDao().observeAll().firstList().map { studyCardToJson(it) }))
         root.put("knowledgeBases", JSONArray(db.knowledgeBaseDao().observeAll().firstList().map { knowledgeBaseToJson(it) }))
+        root.put("toolRuns", JSONArray(db.toolRunDao().observeAll().firstList().map { toolRunToJson(it) }))
+        root.put("expenses", JSONArray(db.expenseDao().observeAll().firstList().map { expenseToJson(it) }))
+        root.put("ttsProjects", JSONArray(db.ttsProjectDao().observeAll().firstList().map { ttsProjectToJson(it) }))
+        root.put(
+            "transcriptionProjects",
+            JSONArray(db.transcriptionProjectDao().observeAll().firstList().map { transcriptionProjectToJson(it) })
+        )
 
         out.writer().use { it.write(root.toString(2)) }
     }
@@ -78,6 +93,7 @@ object BackupManager {
         val root = JSONObject()
         root.put("formatVersion", FORMAT_VERSION)
         root.put("exportedAt", System.currentTimeMillis())
+        root.put("includesBinaryFiles", false)
 
         root.put("workspaces", JSONArray(listOf(workspaceToJson(workspace))))
         val exportableChats = db.chatDao().getForWorkspace(workspaceId).filterNot { it.isTemporary }
@@ -108,6 +124,15 @@ object BackupManager {
 
     private suspend fun importUnchecked(db: AppDatabase, input: InputStream): BackupSummary {
         val root = JSONObject(input.bufferedReader().readText())
+        val formatVersion = root.optInt("formatVersion", 0)
+        require(formatVersion in MIN_SUPPORTED_FORMAT_VERSION..FORMAT_VERSION) {
+            when {
+                formatVersion == 0 -> "The selected file is not a versioned Vervan backup."
+                formatVersion > FORMAT_VERSION ->
+                    "This backup was created by a newer Vervan version (format $formatVersion). Update Vervan before restoring it."
+                else -> "Backup format $formatVersion is no longer supported."
+            }
+        }
         val workspaces = root.optJSONArray("workspaces")?.toObjectList()?.map { workspaceFromJson(it) } ?: emptyList()
         val chats = root.optJSONArray("chats")?.toObjectList()?.map { chatFromJson(it) } ?: emptyList()
         val messages = root.optJSONArray("messages")?.toObjectList()?.map { messageFromJson(it) } ?: emptyList()
@@ -122,6 +147,13 @@ object BackupManager {
         val flashcardSets = root.optJSONArray("flashcardSets")?.toObjectList()?.map { flashcardSetFromJson(it) } ?: emptyList()
         val studyCards = root.optJSONArray("studyCards")?.toObjectList()?.map { studyCardFromJson(it) } ?: emptyList()
         val knowledgeBases = root.optJSONArray("knowledgeBases")?.toObjectList()?.map { knowledgeBaseFromJson(it) } ?: emptyList()
+        val toolRuns = root.optJSONArray("toolRuns")?.toObjectList()?.map { toolRunFromJson(it) } ?: emptyList()
+        val expenses = root.optJSONArray("expenses")?.toObjectList()?.map { expenseFromJson(it) } ?: emptyList()
+        val ttsProjects = root.optJSONArray("ttsProjects")?.toObjectList()?.map { ttsProjectFromJson(it) } ?: emptyList()
+        val transcriptionProjects = root.optJSONArray("transcriptionProjects")
+            ?.toObjectList()
+            ?.map { transcriptionProjectFromJson(it) }
+            ?: emptyList()
 
         db.withTransaction {
             workspaces.forEach { db.workspaceDao().upsert(it) }
@@ -138,9 +170,18 @@ object BackupManager {
             flashcardSets.forEach { db.flashcardSetDao().upsert(it) }
             db.studyCardDao().insertAll(studyCards)
             knowledgeBases.forEach { db.knowledgeBaseDao().upsert(it) }
+            toolRuns.forEach { db.toolRunDao().upsert(it) }
+            expenses.forEach { db.expenseDao().upsert(it) }
+            ttsProjects.forEach { db.ttsProjectDao().upsert(it) }
+            transcriptionProjects.forEach { db.transcriptionProjectDao().upsert(it) }
         }
 
-        return BackupSummary(chats.size, notes.size, personas.size, templates.size, workflows.size, memories.size, projects.size, folders.size, savedOutputs.size, flashcardSets.size, studyCards.size, knowledgeBases.size, workspaces.size)
+        return BackupSummary(
+            chats.size, notes.size, personas.size, templates.size, workflows.size, memories.size,
+            projects.size, folders.size, savedOutputs.size, flashcardSets.size, studyCards.size,
+            knowledgeBases.size, workspaces.size, toolRuns.size, expenses.size, ttsProjects.size,
+            transcriptionProjects.size
+        )
     }
 
     private suspend fun <T> Flow<List<T>>.firstList(): List<T> = first()
@@ -152,6 +193,9 @@ object BackupManager {
         put("isDefault", w.isDefault); put("archived", w.archived)
         put("createdAt", w.createdAt); put("updatedAt", w.updatedAt); put("lastActiveAt", w.lastActiveAt)
         put("autoTitleGeneration", w.autoTitleGeneration)
+        put("lockEnabled", w.lockEnabled)
+        put("defaultProfile", w.defaultProfile ?: JSONObject.NULL)
+        put("defaultKnowledgeBaseIds", w.defaultKnowledgeBaseIds)
     }
     private fun workspaceFromJson(o: JSONObject) = Workspace(
         id = o.getString("id"),
@@ -163,7 +207,10 @@ object BackupManager {
         createdAt = o.getLong("createdAt"),
         updatedAt = o.getLong("updatedAt"),
         lastActiveAt = o.getLong("lastActiveAt"),
-        autoTitleGeneration = o.optBoolean("autoTitleGeneration")
+        autoTitleGeneration = o.optBoolean("autoTitleGeneration"),
+        lockEnabled = o.optBoolean("lockEnabled"),
+        defaultProfile = o.optStringOrNull("defaultProfile"),
+        defaultKnowledgeBaseIds = o.optString("defaultKnowledgeBaseIds")
     )
 
     private fun chatToJson(c: Chat) = JSONObject().apply {
@@ -176,6 +223,17 @@ object BackupManager {
         put("thinkingMode", c.thinkingMode); put("profile", c.profile)
         put("activeLeafId", c.activeLeafId ?: JSONObject.NULL); put("knowledgeBaseIds", c.knowledgeBaseIds)
         put("createdAt", c.createdAt); put("updatedAt", c.updatedAt)
+        put("temperature", c.temperature ?: JSONObject.NULL)
+        put("topP", c.topP ?: JSONObject.NULL)
+        put("topK", c.topK ?: JSONObject.NULL)
+        put("scrollAnchorMessageId", c.scrollAnchorMessageId ?: JSONObject.NULL)
+        put("scrollAnchorOffsetPx", c.scrollAnchorOffsetPx)
+        put("titleIsCustom", c.titleIsCustom)
+        put("previousTitle", c.previousTitle ?: JSONObject.NULL)
+        put("screenshotBlocked", c.screenshotBlocked)
+        put("toolOverrides", c.toolOverrides)
+        put("contextSummary", c.contextSummary ?: JSONObject.NULL)
+        put("summaryCoversUpToMessageId", c.summaryCoversUpToMessageId ?: JSONObject.NULL)
     }
     private fun chatFromJson(o: JSONObject) = Chat(
         id = o.getString("id"), title = o.getString("title"), workspaceId = o.optString("workspaceId", Workspace.DEFAULT_WORKSPACE_ID), personaId = o.optStringOrNull("personaId"),
@@ -187,26 +245,68 @@ object BackupManager {
         profile = o.optString("profile", "BALANCED"),
         activeLeafId = o.optStringOrNull("activeLeafId"),
         knowledgeBaseIds = o.optString("knowledgeBaseIds"), createdAt = o.getLong("createdAt"), updatedAt = o.getLong("updatedAt"),
-        deletedAt = null
+        deletedAt = null,
+        temperature = o.optFloatOrNull("temperature"),
+        topP = o.optFloatOrNull("topP"),
+        topK = o.optIntOrNull("topK"),
+        scrollAnchorMessageId = o.optStringOrNull("scrollAnchorMessageId"),
+        scrollAnchorOffsetPx = o.optInt("scrollAnchorOffsetPx"),
+        titleIsCustom = o.optBoolean("titleIsCustom"),
+        previousTitle = o.optStringOrNull("previousTitle"),
+        screenshotBlocked = o.optBoolean("screenshotBlocked"),
+        toolOverrides = o.optString("toolOverrides"),
+        contextSummary = o.optStringOrNull("contextSummary"),
+        summaryCoversUpToMessageId = o.optStringOrNull("summaryCoversUpToMessageId")
     )
 
     private fun messageToJson(m: Message) = JSONObject().apply {
         put("id", m.id); put("chatId", m.chatId); put("parentId", m.parentId ?: JSONObject.NULL)
         put("role", m.role.name); put("content", m.content); put("state", m.state.name)
-        put("imagePath", m.imagePath ?: JSONObject.NULL); put("audioPath", m.audioPath ?: JSONObject.NULL)
+        put("imagePath", m.imagePath ?: JSONObject.NULL)
+        put("documentId", m.documentId ?: JSONObject.NULL)
+        put("audioPath", m.audioPath ?: JSONObject.NULL)
+        put("voiceRecordingPath", m.voiceRecordingPath ?: JSONObject.NULL)
+        put("inputModality", m.inputModality)
+        put("transcriptMetadataJson", m.transcriptMetadataJson ?: JSONObject.NULL)
+        put("outputModalities", m.outputModalities)
+        put("playbackMetadataJson", m.playbackMetadataJson ?: JSONObject.NULL)
         put("sourcesJson", m.sourcesJson ?: JSONObject.NULL)
         put("memoryActivityJson", m.memoryActivityJson ?: JSONObject.NULL)
         put("toolCallJson", m.toolCallJson ?: JSONObject.NULL); put("toolResultJson", m.toolResultJson ?: JSONObject.NULL)
         put("createdAt", m.createdAt)
+        put("generationMs", m.generationMs ?: JSONObject.NULL)
+        put("tokenCount", m.tokenCount ?: JSONObject.NULL)
+        put("modelId", m.modelId ?: JSONObject.NULL)
+        put("modelName", m.modelName ?: JSONObject.NULL)
+        put("backend", m.backend ?: JSONObject.NULL)
+        put("profile", m.profile ?: JSONObject.NULL)
+        put("thinkingMode", m.thinkingMode ?: JSONObject.NULL)
+        put("reaction", m.reaction ?: JSONObject.NULL)
+        put("feedbackReason", m.feedbackReason ?: JSONObject.NULL)
     }
     private fun messageFromJson(o: JSONObject) = Message(
         id = o.getString("id"), chatId = o.getString("chatId"), parentId = o.optStringOrNull("parentId"),
         role = MessageRole.valueOf(o.getString("role")), content = o.getString("content"),
         state = MessageState.valueOf(o.optString("state", "COMPLETE")), imagePath = o.optStringOrNull("imagePath"),
+        documentId = o.optStringOrNull("documentId"),
         audioPath = o.optStringOrNull("audioPath"),
+        voiceRecordingPath = o.optStringOrNull("voiceRecordingPath"),
+        inputModality = o.optString("inputModality", "TEXT"),
+        transcriptMetadataJson = o.optStringOrNull("transcriptMetadataJson"),
+        outputModalities = o.optString("outputModalities", "TEXT"),
+        playbackMetadataJson = o.optStringOrNull("playbackMetadataJson"),
         sourcesJson = o.optStringOrNull("sourcesJson"), memoryActivityJson = o.optStringOrNull("memoryActivityJson"),
         toolCallJson = o.optStringOrNull("toolCallJson"),
-        toolResultJson = o.optStringOrNull("toolResultJson"), createdAt = o.getLong("createdAt")
+        toolResultJson = o.optStringOrNull("toolResultJson"), createdAt = o.getLong("createdAt"),
+        generationMs = o.optLongOrNull("generationMs"),
+        tokenCount = o.optIntOrNull("tokenCount"),
+        modelId = o.optStringOrNull("modelId"),
+        modelName = o.optStringOrNull("modelName"),
+        backend = o.optStringOrNull("backend"),
+        profile = o.optStringOrNull("profile"),
+        thinkingMode = o.optStringOrNull("thinkingMode"),
+        reaction = o.optStringOrNull("reaction"),
+        feedbackReason = o.optStringOrNull("feedbackReason")
     )
 
     private fun noteToJson(n: Note) = JSONObject().apply {
@@ -226,6 +326,7 @@ object BackupManager {
         put("id", p.id); put("name", p.name); put("description", p.description); put("systemInstruction", p.systemInstruction)
         put("tone", p.tone); put("formality", p.formality); put("conciseness", p.conciseness)
         put("creativity", p.creativity); put("responseLength", p.responseLength); put("language", p.language)
+        put("avatarPath", p.avatarPath ?: JSONObject.NULL)
     }
     private fun personaFromJson(o: JSONObject) = Persona(
         id = o.getString("id"), name = o.getString("name"), description = o.optString("description"),
@@ -235,7 +336,8 @@ object BackupManager {
         conciseness = o.optString("conciseness", "NORMAL"),
         creativity = o.optDouble("creativity", 0.5).toFloat(),
         responseLength = o.optString("responseLength", "BALANCED"),
-        language = o.optString("language")
+        language = o.optString("language"),
+        avatarPath = o.optStringOrNull("avatarPath")
     )
 
     private fun templateToJson(t: PromptTemplate) = JSONObject().apply {
@@ -354,16 +456,111 @@ object BackupManager {
         autoIndex = o.optBoolean("autoIndex", true)
     )
 
+    private fun toolRunToJson(run: ToolRun) = JSONObject().apply {
+        put("id", run.id); put("toolRoute", run.toolRoute); put("toolName", run.toolName)
+        put("input", run.input); put("output", run.output); put("state", run.state.name)
+        put("errorMessage", run.errorMessage ?: JSONObject.NULL)
+        put("modelId", run.modelId ?: JSONObject.NULL); put("modelName", run.modelName ?: JSONObject.NULL)
+        put("backend", run.backend ?: JSONObject.NULL)
+        put("createdAt", run.createdAt); put("updatedAt", run.updatedAt)
+    }
+    private fun toolRunFromJson(o: JSONObject) = ToolRun(
+        id = o.getString("id"),
+        toolRoute = o.getString("toolRoute"),
+        toolName = o.getString("toolName"),
+        input = o.optString("input"),
+        output = o.optString("output"),
+        state = ToolRunState.valueOf(o.optString("state", ToolRunState.COMPLETED.name)).let {
+            if (it == ToolRunState.RUNNING) ToolRunState.INTERRUPTED else it
+        },
+        errorMessage = o.optStringOrNull("errorMessage"),
+        modelId = o.optStringOrNull("modelId"),
+        modelName = o.optStringOrNull("modelName"),
+        backend = o.optStringOrNull("backend"),
+        createdAt = o.getLong("createdAt"),
+        updatedAt = o.getLong("updatedAt"),
+        deletedAt = null
+    )
+
+    private fun expenseToJson(expense: Expense) = JSONObject().apply {
+        put("id", expense.id); put("merchant", expense.merchant); put("amount", expense.amount)
+        put("currency", expense.currency); put("category", expense.category)
+        put("paymentMethod", expense.paymentMethod); put("note", expense.note)
+        put("date", expense.date); put("createdAt", expense.createdAt)
+    }
+    private fun expenseFromJson(o: JSONObject) = Expense(
+        id = o.getString("id"),
+        merchant = o.getString("merchant"),
+        amount = o.getDouble("amount"),
+        currency = o.optString("currency"),
+        category = o.optString("category"),
+        paymentMethod = o.optString("paymentMethod"),
+        note = o.optString("note"),
+        date = o.getLong("date"),
+        createdAt = o.getLong("createdAt")
+    )
+
+    private fun ttsProjectToJson(project: TtsProject) = JSONObject().apply {
+        put("id", project.id); put("title", project.title); put("sourceText", project.sourceText)
+        put("engine", project.engine); put("voiceVariant", project.voiceVariant)
+        put("language", project.language); put("audioPath", project.audioPath)
+        put("durationMs", project.durationMs); put("createdAt", project.createdAt)
+    }
+    private fun ttsProjectFromJson(o: JSONObject) = TtsProject(
+        id = o.getString("id"),
+        title = o.getString("title"),
+        sourceText = o.getString("sourceText"),
+        engine = o.getString("engine"),
+        voiceVariant = o.getString("voiceVariant"),
+        language = o.getString("language"),
+        audioPath = o.getString("audioPath"),
+        durationMs = o.getLong("durationMs"),
+        createdAt = o.getLong("createdAt")
+    )
+
+    private fun transcriptionProjectToJson(project: TranscriptionProject) = JSONObject().apply {
+        put("id", project.id); put("fileName", project.fileName); put("audioPath", project.audioPath)
+        put("durationMs", project.durationMs); put("transcript", project.transcript)
+        put("engine", project.engine); put("modelVariant", project.modelVariant); put("status", project.status)
+        put("errorMessage", project.errorMessage ?: JSONObject.NULL)
+        put("segmentsJson", project.segmentsJson ?: JSONObject.NULL)
+        put("createdAt", project.createdAt); put("updatedAt", project.updatedAt)
+    }
+    private fun transcriptionProjectFromJson(o: JSONObject) = TranscriptionProject(
+        id = o.getString("id"),
+        fileName = o.getString("fileName"),
+        audioPath = o.getString("audioPath"),
+        durationMs = o.getLong("durationMs"),
+        transcript = o.optString("transcript"),
+        engine = o.optString("engine", "WHISPER_CPP"),
+        modelVariant = o.getString("modelVariant"),
+        status = o.optString("status", "DONE").let {
+            if (it == "PENDING" || it == "TRANSCRIBING") "CANCELLED" else it
+        },
+        errorMessage = o.optStringOrNull("errorMessage"),
+        segmentsJson = o.optStringOrNull("segmentsJson"),
+        createdAt = o.getLong("createdAt"),
+        updatedAt = o.getLong("updatedAt")
+    )
+
     private fun JSONObject.optStringOrNull(key: String): String? =
         if (!has(key) || isNull(key)) null else getString(key)
 
     private fun JSONObject.optLongOrNull(key: String): Long? =
         if (!has(key) || isNull(key)) null else getLong(key)
+
+    private fun JSONObject.optIntOrNull(key: String): Int? =
+        if (!has(key) || isNull(key)) null else getInt(key)
+
+    private fun JSONObject.optFloatOrNull(key: String): Float? =
+        if (!has(key) || isNull(key)) null else getDouble(key).toFloat()
 }
 
 data class BackupSummary(
     val chats: Int, val notes: Int, val personas: Int,
     val templates: Int, val workflows: Int, val memories: Int, val projects: Int,
     val folders: Int = 0, val savedOutputs: Int = 0, val flashcardSets: Int = 0,
-    val studyCards: Int = 0, val knowledgeBases: Int = 0, val workspaces: Int = 0
+    val studyCards: Int = 0, val knowledgeBases: Int = 0, val workspaces: Int = 0,
+    val toolRuns: Int = 0, val expenses: Int = 0, val ttsProjects: Int = 0,
+    val transcriptionProjects: Int = 0
 )

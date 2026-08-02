@@ -139,7 +139,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -153,7 +153,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -198,6 +197,7 @@ import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -229,6 +229,7 @@ internal fun MessageBubble(
     onReaction: (String?) -> Unit,
     onReadAloud: (text: String, utteranceId: String) -> Unit,
     isGenerating: Boolean,
+    showStreamingStatus: Boolean = true,
     siblingPosition: Pair<Int, Int>,
     onConfirmTool: (Boolean) -> Unit,
     onEditAndResend: (String) -> Unit,
@@ -308,7 +309,7 @@ internal fun MessageBubble(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 12.dp)
+                .padding(start = Space.md)
                 .graphicsLayer { alpha = (dragOffset.value / quoteThresholdPx).coerceIn(0f, 1f) }
         )
         Column(
@@ -342,6 +343,9 @@ internal fun MessageBubble(
                 // would have no way to reveal the action row or reply — mirror both gestures
                 // as accessibility actions here.
                 .semantics {
+                    if (message.state == MessageState.STREAMING) {
+                        liveRegion = LiveRegionMode.Polite
+                    }
                     onClick(label = if (showActions) "Hide message actions" else "Show message actions") {
                         showActions = !showActions
                         true
@@ -488,23 +492,23 @@ internal fun MessageBubble(
                                 MessageState.FAILED, MessageState.INTERRUPTED -> MaterialTheme.colorScheme.error
                                 MessageState.STREAMING -> MaterialTheme.colorScheme.primary
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
                 message.imagePath?.let { path ->
                     // Media-first bubble preview; tap opens the zoomable full-screen viewer.
                     val previewPx = with(LocalDensity.current) { 560.dp.roundToPx() }
-                    val bitmap = remember(path, previewPx) {
-                        com.vervan.chat.model.ImageUtils.decodeThumbnail(path, previewPx)?.asImageBitmap()
-                    }
+                    val bitmap = rememberThumbnail(path, previewPx)
                     bitmap?.let {
                         Image(
                             it, contentDescription = "Attached image — tap to view",
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 160.dp, max = 280.dp)
-                                .padding(bottom = 8.dp)
+                                .padding(bottom = Space.sm)
                                 .clip(MaterialTheme.shapes.medium)
                                 .clickable { showImagePreview = true },
                             contentScale = ContentScale.Crop
@@ -517,12 +521,12 @@ internal fun MessageBubble(
                         ?.takeIf { it.isNotBlank() }?.uppercase() ?: "DOCUMENT"
                     Surface(
                         onClick = { onOpenDocument(documentId) },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     ) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
@@ -530,11 +534,11 @@ internal fun MessageBubble(
                                 Icon(
                                     Icons.Filled.Description,
                                     contentDescription = null,
-                                    modifier = Modifier.padding(10.dp).size(24.dp),
+                                    modifier = Modifier.padding(Space.md).size(24.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                                 Text(
                                     attachedDocument?.displayName ?: "Attached document",
                                     style = MaterialTheme.typography.labelLarge,
@@ -548,6 +552,32 @@ internal fun MessageBubble(
                                 )
                             }
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open document preview", modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+                message.voiceRecordingPath?.let { recordingPath ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = Space.xs)
+                    ) {
+                        Column(Modifier.padding(horizontal = Space.xs, vertical = Space.xs)) {
+                            Text(
+                                if (message.inputModality in setOf("AUDIO_FILE", "VOICE_FILE")) {
+                                    "Original audio"
+                                } else {
+                                    "Voice request"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(
+                                    start = Space.xs,
+                                    end = Space.xs,
+                                    bottom = Space.xs
+                                )
+                            )
+                            VoiceMessageRow(recordingPath)
                         }
                     }
                 }
@@ -581,7 +611,7 @@ internal fun MessageBubble(
                     val editButtonColors = androidx.compose.material3.ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
-                    Row(Modifier.padding(top = 4.dp)) {
+                    Row(Modifier.padding(top = Space.xs)) {
                         TextButton(colors = editButtonColors, onClick = {
                             editing = false
                             if (editText.isNotBlank() && editText != message.content) onEditAndResend(editText)
@@ -589,6 +619,38 @@ internal fun MessageBubble(
                         TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text("Cancel") }
                     }
                 } else {
+                    if (isUser && message.inputModality != "TEXT") {
+                        Row(
+                            Modifier.padding(bottom = Space.xs),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                            )
+                            Text(
+                                when (message.inputModality) {
+                                    "HANDS_FREE" -> "Hands-free"
+                                    "VOICE_DICTATION" -> "Dictated"
+                                    "MIXED" -> "Typed + dictated"
+                                    else -> "Voice"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
+                                modifier = Modifier.padding(start = Space.xs)
+                            )
+                        }
+                    }
+                    if (isUser && message.voiceRecordingPath != null) {
+                        Text(
+                            "Transcription",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
+                            modifier = Modifier.padding(bottom = Space.xs)
+                        )
+                    }
                     // Strip <tool_call> markup before Thinking/Clarification parsing, same as
                     // those two already do for their own tags — without this, the raw
                     // {"tool": ..., "params": ...} JSON types out visibly in the bubble while
@@ -600,7 +662,7 @@ internal fun MessageBubble(
                         com.vervan.chat.ui.common.AssistantSubCard(
                             kind = com.vervan.chat.ui.common.SubCardKind.Reasoning,
                             title = "Reasoning",
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            modifier = Modifier.padding(bottom = Space.sm)
                         ) {
                             MarkdownLiteText(parsed.reasoning)
                         }
@@ -620,7 +682,7 @@ internal fun MessageBubble(
                                 request = request,
                                 enabled = clarificationEnabled,
                                 onReply = onClarificationReply,
-                                modifier = Modifier.padding(top = 10.dp)
+                                modifier = Modifier.padding(top = Space.md)
                             )
                         }
                     }
@@ -632,10 +694,12 @@ internal fun MessageBubble(
                         timeLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
                     )
                 }
-                if (message.state == MessageState.STREAMING) {
+                if (message.state == MessageState.STREAMING && isGenerating && showStreamingStatus) {
                     // "Thinking" indicator while the model is alive but hasn't emitted its first
                     // token yet — replaces the silent gap that previously made the app feel broken
                     // on slow models. Once the first token is in, the dots hand off to the
@@ -726,7 +790,7 @@ internal fun MessageBubble(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = Space.xs, top = 2.dp),
+                modifier = Modifier.padding(start = Space.xs, top = Space.xs),
             )
         }
         // Stats + actions live below the bubble, outside its card — this is the response's
@@ -743,8 +807,8 @@ internal fun MessageBubble(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
+                    .padding(top = Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showGenerationStats && !isUser && message.state == MessageState.COMPLETE && message.generationMs != null) {
@@ -754,7 +818,10 @@ internal fun MessageBubble(
                     Text(
                         "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(Modifier.weight(1f))
                 }
@@ -864,7 +931,7 @@ internal fun MessageBubble(
                     "Saved to Memory for future chats.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.padding(top = 8.dp))
+                    OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.padding(top = Space.sm))
                 }
             },
             confirmButton = {
@@ -943,7 +1010,7 @@ internal fun MessageBubble(
                     Text("Reusable via /name in any chat.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
                         value = name, onValueChange = { name = it }, singleLine = true,
-                        label = { Text("Command name (no spaces)") }, modifier = Modifier.padding(top = 8.dp)
+                        label = { Text("Command name (no spaces)") }, modifier = Modifier.padding(top = Space.sm)
                     )
                 }
             },

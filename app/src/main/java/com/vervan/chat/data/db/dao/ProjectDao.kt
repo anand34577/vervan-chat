@@ -10,6 +10,9 @@ interface ProjectDao : BaseDao<Project> {
     @Query("SELECT * FROM projects WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<Project>>
 
+    @Query("SELECT * FROM projects WHERE deletedAt IS NULL ORDER BY createdAt DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<Project>>
+
     /** Projects browser is scoped to the active workspace (projects now live inside a workspace,
      *  same as chats and folders). observeAll stays for cross-workspace callers (backup, name
      *  labels, tool lookup). */

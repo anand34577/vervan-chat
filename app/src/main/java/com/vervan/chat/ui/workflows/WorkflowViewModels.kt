@@ -109,6 +109,9 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                     is ExtractResult.Slides -> result.slides.joinToString("\n\n") { slide ->
                         listOfNotNull(slide.body.takeIf { it.isNotBlank() }, slide.notes?.takeIf { it.isNotBlank() }).joinToString("\n")
                     }
+                    // One-shot input, not a KB import — page boundaries (see Chunker.chunkPaginated)
+                    // only matter for citation page numbers, which this path has no use for.
+                    is ExtractResult.Paginated -> result.pages.joinToString("\n\n")
                     is ExtractResult.Unsupported -> { _error.value = result.reason; null }
                     ExtractResult.NeedsOcr -> {
                         val text = if (name.substringAfterLast('.', "").lowercase() == "pdf") {
@@ -173,7 +176,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
 
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No chat model selected. Import or activate one in Models."
+                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
                 _running.value = false
                 return@launch
             }

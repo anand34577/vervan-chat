@@ -52,6 +52,7 @@ import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
@@ -110,7 +111,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     runContext = com.vervan.chat.llm.ToolRunContext(route, title, transcriptText()),
                 )
                 if (flow == null) {
-                    turns = turns + ChatTurn(false, "⚠️ No generation model is active. Load one from Models, then continue.")
+                    turns = turns + ChatTurn(false, "⚠️ No model is ready. Open Settings → AI models and load one.")
                 } else {
                     // Grow one assistant bubble as tokens arrive; throttle the state write so the
                     // markdown isn't re-parsed on every token during a fast stream (ponytail).
@@ -147,7 +148,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { OverflowTooltipText(title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
@@ -230,7 +231,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     if (isThinking && turns.lastOrNull()?.text.isNullOrBlank()) {
                         item {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Space.xs)) {
-                                CircularProgressIndicator(Modifier.padding(end = 8.dp).size(16.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(Modifier.padding(end = Space.sm).size(16.dp), strokeWidth = 2.dp)
                                 Text("Thinking…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
                         }

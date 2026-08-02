@@ -27,7 +27,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +42,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,10 +80,9 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
         ),
         // Network trust dashboard — every intentional network call this app makes is
         // meant to report to NetworkAuditLog first, so "no silent networking" is verifiable
-        // instead of just claimed. Empty today because there are no network call sites at all
-        // yet (no downloader, no update checker, no analytics) — see NetworkAuditLog's own doc.
+        // instead of just claimed. Downloads, store access, and API-server events report here.
         "Network activity" to if (networkEntries.isEmpty()) {
-            listOf("This session" to "0 outbound connections — nothing in this app has contacted the network")
+            listOf("This session" to "No recorded network activity")
         } else {
             networkEntries.takeLast(10).map {
                 java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it.timestamp)) to it.reason
@@ -97,7 +97,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics & storage") },
+                title = { Text("Diagnostics") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = {
@@ -136,7 +136,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
                 "Compatibility is tested during import, not guessed from filenames.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = Space.sm)
             )
         }
     }
@@ -148,8 +148,8 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
 @Composable
 private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -> Unit, onClear: () -> Unit) {
     var expanded by remember { mutableStateOf<String?>(null) }
-    Card(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-        Column(Modifier.padding(14.dp)) {
+    Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Crash reports", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (logs.isNotEmpty()) {
@@ -158,10 +158,10 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
             }
             if (logs.isEmpty()) {
                 Text(
-                    "No crashes recorded. If the app ever crashes or is stopped by the system, a report appears here.",
+                    "No crashes recorded. New crash reports will appear here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             logs.forEach { file ->
@@ -171,7 +171,7 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp)
+                        .padding(top = Space.sm)
                         .clickable { expanded = if (expanded == file.name) null else file.name }
                 ) {
                     Text(headline, style = MaterialTheme.typography.bodyMedium)
@@ -180,7 +180,7 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
                         Text(
                             runCatching { file.readText() }.getOrDefault("(unreadable)"),
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 6.dp)
+                            modifier = Modifier.padding(top = Space.sm)
                         )
                         TextButton(onClick = { onShare(file) }) { Text("Share") }
                     }
@@ -192,10 +192,10 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
 
 @Composable
 private fun DiagnosticCard(title: String, rows: List<Pair<String, String>>) {
-    Card(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-        Column(Modifier.padding(14.dp)) {
+    Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
+        Column(Modifier.padding(Space.lg)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            rows.forEach { (label, value) -> Text("$label: $value", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
+            rows.forEach { (label, value) -> Text("$label: $value", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm)) }
         }
     }
 }

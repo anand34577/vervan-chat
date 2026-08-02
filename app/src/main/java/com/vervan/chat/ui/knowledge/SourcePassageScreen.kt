@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -18,9 +19,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +38,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chunk
+import com.vervan.chat.data.db.entities.Document
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +55,9 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
     private val _neighbors = MutableStateFlow<List<Chunk>>(emptyList())
     val neighbors: StateFlow<List<Chunk>> = _neighbors
 
+    private val _document = MutableStateFlow<Document?>(null)
+    val document: StateFlow<Document?> = _document
+
     init {
         viewModelScope.launch {
             val c = db.chunkDao().getChunk(chunkId)
@@ -60,6 +66,7 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
                 // Load all chunks for the same document so the passage is shown in context.
                 val all = db.chunkDao().observeForDocument(c.documentId).first()
                 _neighbors.value = all
+                _document.value = db.documentDao().get(c.documentId)
             }
         }
     }
@@ -67,11 +74,12 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SourcePassageScreen(chunkId: String, onBack: () -> Unit) {
+fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> }) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SourcePassageViewModel = viewModel(factory = viewModelFactory { initializer { SourcePassageViewModel(app, chunkId) } })
     val chunk by vm.chunk.collectAsState()
     val neighbors by vm.neighbors.collectAsState()
+    val document by vm.document.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(chunk, neighbors) {
@@ -84,18 +92,27 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Source passage") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    val page = chunk?.pageNumber
+                    val docId = document?.id
+                    if (page != null && docId != null) {
+                        IconButton(onClick = { onOpenPdfPage(docId, page) }) {
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "View page $page in PDF")
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(Space.sm)) {
             items(neighbors, key = { it.id }) { c ->
                 val isTarget = c.id == chunk?.id
                 Card(
-                    Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    Modifier.fillMaxWidth().padding(vertical = Space.xs)
                 ) {
-                    Column(Modifier.padding(10.dp)) {
+                    Column(Modifier.padding(Space.md)) {
                         if (c.sectionPath.isNotBlank()) {
                             Text(c.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         }

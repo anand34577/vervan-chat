@@ -28,9 +28,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -130,23 +133,23 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Index maintenance") },
+                title = { Text("Search index") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-          Column(Modifier.fillMaxSize().padding(vertical = 8.dp)) {
-            Text("Rebuild after changing the embedding model or to repair search.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-            Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = 8.dp)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+          Column(Modifier.fillMaxSize().padding(vertical = Space.sm)) {
+            Text("Rebuild after changing the embedding model or when document search is wrong.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
+            Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = Space.sm)) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = Space.sm))
                 Text("Re-index all documents")
             }
             if (busy && busyDocumentId == null) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Rebuilding the search index",
-                    body = status ?: "Preparing documents for local search. Keep this screen open.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    body = status ?: "Preparing documents. Keep this screen open.",
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             error?.let {
@@ -154,28 +157,46 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                     title = "Index rebuild failed",
                     message = it,
                     recovery = "Documents are safe. Check the model and free storage, then try again.",
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             status?.takeIf { !busy }?.let {
-                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
+                    colors = SurfaceRole.Card.cardColors(),
+                    border = SurfaceRole.Card.border(),
+                ) {
+                    Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(Space.md))
                 }
             }
             HorizontalDivider()
-            Text("Documents (${documents.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = 8.dp))
+            Text("Documents (${documents.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = Space.sm))
             LazyColumn(Modifier.fillMaxSize()) {
                 items(documents, key = { it.id }) { doc ->
-                    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                        colors = SurfaceRole.Card.cardColors(),
+                        border = SurfaceRole.Card.border(),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(Space.md), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(doc.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                OverflowTooltipText(
+                                    text = doc.displayName,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                                 Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (busyDocumentId == doc.id) {
-                                androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp).padding(end = 8.dp), strokeWidth = 2.dp)
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    Modifier.padding(start = Space.sm, end = Space.sm).size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
                             } else {
-                                OutlinedButton(onClick = { vm.reindexOne(doc.id) }, enabled = !busy) { Text("Re-index") }
+                                OutlinedButton(
+                                    onClick = { vm.reindexOne(doc.id) },
+                                    enabled = !busy,
+                                    modifier = Modifier.padding(start = Space.sm),
+                                ) { Text("Re-index") }
                             }
                         }
                     }

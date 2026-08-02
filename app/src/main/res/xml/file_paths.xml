@@ -5,4 +5,9 @@
     <!-- Imported documents stay private until a user explicitly taps Open with; the Intent
          grants read access to that one content URI only. -->
     <files-path name="shared_files" path="." />
+    <!-- PDF/export output (DocumentScannerScreen.exportPdf, StructuredScanScreen) is written to
+         cacheDir/exports, not filesDir — files-path above doesn't cover it, so sharing one of
+         those PDFs via openWithExternalApp crashed FileProvider.getUriForFile with
+         "Failed to find configured root that contains ...". -->
+    <cache-path name="exports" path="exports/" />
 </paths>

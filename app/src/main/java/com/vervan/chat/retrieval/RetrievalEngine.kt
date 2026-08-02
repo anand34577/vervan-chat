@@ -19,13 +19,18 @@ data class SourcePassage(
     val documentName: String,
     val sectionPath: String,
     val excerpt: String,
-    val score: Float
+    val score: Float,
+    val pageNumber: Int? = null
 )
 
 /**
- * brute-force over every chunk in scope for both keyword (term overlap) and
- * semantic (cosine) scoring — no FTS index, no ANN index. Fine for a personal knowledge
- * base (hundreds to low thousands of chunks); revisit if imports grow past that.
+ * Keyword matching goes through [ChunkDao]'s FTS4 index ([com.vervan.chat.data.db.entities.ChunkFts])
+ * instead of a per-chunk Kotlin scan — real tokenized, indexed lookup, so a KEYWORD/EXACT_PHRASE
+ * query no longer has to fetch every chunk in scope just to find the handful that match. SEMANTIC
+ * still brute-forces cosine similarity over every chunk with an embedding (no ANN index — fine
+ * for a personal knowledge base of a few thousand chunks; revisit if imports grow past that), and
+ * HYBRID's semantic half inherits that same ceiling since it needs the full candidate set either
+ * way.
  */
 class RetrievalEngine(
     private val chunkDao: ChunkDao,
@@ -40,25 +45,49 @@ class RetrievalEngine(
         topK: Int = 5
     ): List<SourcePassage> {
         if (kbIds.isEmpty() || query.isBlank()) return emptyList()
-        // Fetch one past the cap so an oversized KB is still detectable/loggable below, without
-        // pulling the full unbounded result set into memory first (the cap used to be applied
-        // only after the whole scope had already been read).
-        var chunks = chunkDao.getForKnowledgeBases(kbIds, MAX_CHUNKS_PER_QUERY + 1)
-        if (chunks.isEmpty()) return emptyList()
-        if (chunks.size > MAX_CHUNKS_PER_QUERY) {
-            // brute-force scan has no size guard (B9) — cap rather than let a large
-            // KB silently balloon memory/latency. Upgrade to an FTS/ANN index if imports
-            // routinely exceed this in practice.
-            android.util.Log.w("RetrievalEngine", "KB scope has more than $MAX_CHUNKS_PER_QUERY chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
-            chunks = chunks.take(MAX_CHUNKS_PER_QUERY)
-        }
 
-        val keywordScores = if (mode == RetrievalMode.KEYWORD || mode == RetrievalMode.HYBRID) keywordScore(query, chunks) else emptyMap()
+        val chunks: List<Chunk>
+        val keywordScores: Map<String, Float>
+        val exactPhraseScores: Map<String, Float>
+
+        when (mode) {
+            RetrievalMode.KEYWORD -> {
+                val terms = extractTerms(query)
+                if (terms.isEmpty()) return emptyList()
+                val ids = chunkDao.matchFts(orMatchQuery(terms), kbIds, MAX_CHUNKS_PER_QUERY)
+                chunks = if (ids.isEmpty()) emptyList() else chunkDao.getByIds(ids)
+                keywordScores = keywordScore(terms, chunks)
+                exactPhraseScores = emptyMap()
+            }
+            RetrievalMode.EXACT_PHRASE -> {
+                val phrase = query.trim()
+                if (phrase.isEmpty()) return emptyList()
+                val ids = chunkDao.matchFts(phraseMatchQuery(phrase), kbIds, MAX_CHUNKS_PER_QUERY)
+                chunks = if (ids.isEmpty()) emptyList() else chunkDao.getByIds(ids)
+                keywordScores = emptyMap()
+                // FTS already only returned chunks containing the phrase — every candidate here
+                // is a hit, so score is uniformly 1 (matches the old contains()-based scoring).
+                exactPhraseScores = chunks.associate { it.id to 1f }
+            }
+            RetrievalMode.SEMANTIC, RetrievalMode.HYBRID -> {
+                // Fetch one past the cap so an oversized KB is still detectable/loggable below,
+                // without pulling the full unbounded result set into memory first.
+                var fetched = chunkDao.getForKnowledgeBases(kbIds, MAX_CHUNKS_PER_QUERY + 1)
+                if (fetched.size > MAX_CHUNKS_PER_QUERY) {
+                    android.util.Log.w("RetrievalEngine", "KB scope has more than $MAX_CHUNKS_PER_QUERY chunks, capping scan to $MAX_CHUNKS_PER_QUERY")
+                    fetched = fetched.take(MAX_CHUNKS_PER_QUERY)
+                }
+                chunks = fetched
+                keywordScores = if (mode == RetrievalMode.HYBRID) keywordScore(extractTerms(query), chunks) else emptyMap()
+                exactPhraseScores = emptyMap()
+            }
+        }
+        if (chunks.isEmpty()) return emptyList()
+
         val semanticScores = if ((mode == RetrievalMode.SEMANTIC || mode == RetrievalMode.HYBRID) && embeddingEngine.isLoaded) {
             val activeModelId = modelDao.getActiveModel(ModelRole.EMBEDDING)?.id
             semanticScore(query, chunks, activeModelId)
         } else emptyMap()
-        val exactPhraseScores = if (mode == RetrievalMode.EXACT_PHRASE) exactPhraseScore(query, chunks) else emptyMap()
         // Recency-weighting folded directly into HYBRID rather than a standalone
         // mode — a small tie-breaker toward more recently imported documents, not a filter.
         val recencyScores = if (mode == RetrievalMode.HYBRID) recencyScore(chunks) else emptyMap()
@@ -101,7 +130,7 @@ class RetrievalEngine(
             .take(topK)
             .map { (chunk, score) ->
                 val docName = docNames.getOrPut(chunk.documentId) { documentDao.get(chunk.documentId)?.displayName ?: "Unknown" }
-                SourcePassage(chunk.id, chunk.documentId, docName, chunk.sectionPath, chunk.text, score)
+                SourcePassage(chunk.id, chunk.documentId, docName, chunk.sectionPath, chunk.text, score, chunk.pageNumber)
             }
     }
 
@@ -111,20 +140,26 @@ class RetrievalEngine(
         private const val MAX_CHUNKS_PER_DOCUMENT = 2
     }
 
-    private fun keywordScore(query: String, chunks: List<Chunk>): Map<String, Float> {
-        val terms = query.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+    private fun extractTerms(query: String): Set<String> =
+        query.lowercase().split(Regex("\\W+")).filter { it.length > 2 }.toSet()
+
+    /** FTS4 MATCH expression: any term hits (OR), each quoted so punctuation-free tokens are
+     * matched literally rather than as FTS query-syntax operators. */
+    private fun orMatchQuery(terms: Set<String>): String = terms.joinToString(" OR ") { "\"$it\"" }
+
+    /** FTS4 phrase query — a quoted string matches only chunks containing that exact contiguous
+     * token sequence, the FTS equivalent of the old raw `String.contains()` check. */
+    private fun phraseMatchQuery(phrase: String): String = "\"${phrase.replace("\"", " ")}\""
+
+    // Word-boundary term matching (real tokenization via split, not a substring `.contains()`),
+    // so a term like "cat" no longer false-positives inside an unrelated word like "category".
+    private fun keywordScore(terms: Set<String>, chunks: List<Chunk>): Map<String, Float> {
         if (terms.isEmpty()) return emptyMap()
         return chunks.associate { chunk ->
-            val lower = chunk.text.lowercase()
-            val matched = terms.count { lower.contains(it) }
+            val words = chunk.text.lowercase().split(Regex("\\W+")).toSet()
+            val matched = terms.count { it in words }
             chunk.id to (matched.toFloat() / terms.size)
         }
-    }
-
-    private fun exactPhraseScore(query: String, chunks: List<Chunk>): Map<String, Float> {
-        val phrase = query.trim()
-        if (phrase.isEmpty()) return emptyMap()
-        return chunks.associate { chunk -> chunk.id to if (chunk.text.contains(phrase, ignoreCase = true)) 1f else 0f }
     }
 
     private suspend fun recencyScore(chunks: List<Chunk>): Map<String, Float> {

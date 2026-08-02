@@ -6,13 +6,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -31,7 +28,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.system.toUserMessage
 import androidx.compose.runtime.Composable
@@ -42,7 +43,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -67,14 +67,15 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var extractedText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     fun runOcr(file: File) {
-        imagePath = file.absolutePath
+        managedImagePath.set(file.absolutePath)
         savedMessage = null
         errorText = null
         isProcessing = true
@@ -100,14 +101,14 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         if (success && file != null) {
             ImageUtils.fixOrientation(file)
             runOcr(file)
-        }
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             val (file, uri) = newImageFile()
             pendingCameraFile = file
             takePicture.launch(uri)
-            } else errorText = "Camera access is off. Choose an image or allow it in Settings."
+            } else errorText = "Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions."
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -118,7 +119,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                         context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                         ImageUtils.fixOrientation(file)
                         file
-                    }.getOrNull()
+                    }.getOrElse { file.delete(); null }
                 }
                 if (dest != null) runOcr(dest)
             else errorText = "Could not open the image. Choose another one."
@@ -134,9 +135,9 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
         Column(
-            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             ToolIntro(
@@ -149,22 +150,22 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
+                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(" Camera")
+                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
                 }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { pickImage.launch("image/*") }) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text(" From files")
+                    Text("From files", modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 800)?.asImageBitmap() }
+                val bitmap = rememberThumbnail(path, 800)
                 bitmap?.let {
                     Image(
                         it, contentDescription = "Scanned image",
-                        modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = Space.md),
                         contentScale = ContentScale.Fit
                     )
                 }
@@ -190,43 +191,43 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 OutlinedTextField(
                     value = extractedText,
                     onValueChange = { extractedText = it },
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                     minLines = 6,
                     label = { Text("Recognized text") },
                     placeholder = { Text("No text found") }
                 )
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     OutlinedButton(
                         onClick = {
                             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("OCR text", extractedText))
+                            clipboard.setSensitiveText(extractedText, scope, "OCR text")
                         },
-                        enabled = extractedText.isNotBlank(),
-                        modifier = Modifier.weight(1f)
+                        enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
-                        Text(" Copy")
+                        Text("Copy", modifier = Modifier.padding(start = Space.sm))
                     }
                     Button(
                         onClick = {
                             scope.launch {
-                                val kb = KnowledgeBase(name = "Scans")
-                                app.container.db.knowledgeBaseDao().upsert(kb)
+                                val kb = app.container.db.knowledgeBaseDao().get(KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID)
+                                    ?: KnowledgeBase(id = KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID, name = "Scans").also {
+                                        app.container.db.knowledgeBaseDao().upsert(it)
+                                    }
                                 val name = "Scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
                                 val document = app.container.documentImportManager.importRawText(kb.id, name, extractedText)
                                 savedMessage = "Saved to Knowledge"
                                 onOpenDocument(document.id)
                             }
                         },
-                        enabled = extractedText.isNotBlank(),
-                        modifier = Modifier.weight(1f)
+                        enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text(" Save as document")
+                        Text("Save as document", modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 savedMessage?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                 }
             }
         }

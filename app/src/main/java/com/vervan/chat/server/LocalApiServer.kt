@@ -58,6 +58,12 @@ class LocalApiServer(
         // an oversized body up front with a clean 413 is cheaper than letting it allocate first.
         // 8 MB is far above any legitimate chat-completions payload (messages are text).
         private const val MAX_BODY_BYTES = 8L * 1024 * 1024
+        // Hard ceiling on one request's model-load + generation time. Without this, a wedged
+        // native call (stuck GPU driver, a load that never returns) blocks the calling thread —
+        // a NanoHTTPD worker thread for the non-streaming path, or a streamingScope coroutine
+        // for the streaming path — forever. 5 minutes is far above any real chat-completions
+        // turnaround but still bounds the failure instead of leaving it unbounded.
+        private const val GENERATION_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -121,23 +127,25 @@ class LocalApiServer(
             val pipedOut = PipedOutputStream(pipedIn)
             streamingScope.launch {
                 try {
-                    val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
-                    check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
-                    val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
-                    app.container.generate(
-                        model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
-                        params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
-                        systemPrompt = systemPrompt
-                    ).collect { chunk ->
-                        val bytes = sseChunk(completionId, model.displayName, chunk).toByteArray()
-                        // Abort the stream if the consumer has stopped draining — see SSE_WRITE_TIMEOUT_MS.
-                        try {
-                            withTimeout(SSE_WRITE_TIMEOUT_MS) {
-                                runInterruptible { pipedOut.write(bytes); pipedOut.flush() }
+                    withTimeout(GENERATION_TIMEOUT_MS) {
+                        val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                        check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                        val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                        app.container.generate(
+                            model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
+                            params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
+                            systemPrompt = systemPrompt
+                        ).collect { chunk ->
+                            val bytes = sseChunk(completionId, model.displayName, chunk).toByteArray()
+                            // Abort the stream if the consumer has stopped draining — see SSE_WRITE_TIMEOUT_MS.
+                            try {
+                                withTimeout(SSE_WRITE_TIMEOUT_MS) {
+                                    runInterruptible { pipedOut.write(bytes); pipedOut.flush() }
+                                }
+                            } catch (e: TimeoutCancellationException) {
+                                Log.w(TAG, "SSE client stopped reading; aborting stream", e)
+                                throw kotlinx.coroutines.CancellationException("SSE consumer gone")
                             }
-                        } catch (e: TimeoutCancellationException) {
-                            Log.w(TAG, "SSE client stopped reading; aborting stream", e)
-                            throw kotlinx.coroutines.CancellationException("SSE consumer gone")
                         }
                     }
                     try {
@@ -149,7 +157,18 @@ class LocalApiServer(
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "streaming chat completion failed", t)
-                    runCatching { pipedOut.write(sseChunk(completionId, model.displayName, "[error: ${t.toUserMessage()}]").toByteArray()) }
+                    // Same write-timeout guard as the token/[DONE] writes above — the consumer may
+                    // already be gone by the time generation fails, and an unguarded write() here
+                    // could block this coroutine on the full pipe forever instead of tearing down.
+                    try {
+                        withTimeout(SSE_WRITE_TIMEOUT_MS) {
+                            runInterruptible {
+                                pipedOut.write(sseChunk(completionId, model.displayName, "[error: ${t.toUserMessage()}]").toByteArray())
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Could not deliver the error chunk to the SSE client", e)
+                    }
                 } finally {
                     runCatching { pipedOut.close() }
                 }
@@ -157,16 +176,18 @@ class LocalApiServer(
             newChunkedResponse(Response.Status.OK, "text/event-stream", pipedIn)
         } else {
             val text = runBlocking {
-                val sb = StringBuilder()
-                val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
-                check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
-                val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
-                app.container.generate(
-                    model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
-                    params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
-                    systemPrompt = systemPrompt
-                ).collect { chunk -> sb.append(chunk) }
-                sb.toString()
+                withTimeout(GENERATION_TIMEOUT_MS) {
+                    val sb = StringBuilder()
+                    val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
+                    check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
+                    val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+                    app.container.generate(
+                        model, prompt, null, null, params.temperature, params.topP, params.topK, params.seed,
+                        params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
+                        systemPrompt = systemPrompt
+                    ).collect { chunk -> sb.append(chunk) }
+                    sb.toString()
+                }
             }
             jsonResponse(Response.Status.OK, chatCompletionJson(completionId, model.displayName, text))
         }

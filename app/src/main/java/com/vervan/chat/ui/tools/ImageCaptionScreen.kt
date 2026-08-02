@@ -7,14 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -41,7 +37,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -52,8 +47,11 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.ui.common.ErrorCard
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -63,10 +61,10 @@ import java.io.File
 private data class CaptionMode(val label: String, val prompt: String)
 
 private val CAPTION_MODES = listOf(
-    CaptionMode("Alt text", "Write concise, accessible alt text describing this image for a screen reader user."),
+    CaptionMode("Alt text", "Write concise alt text for screen readers."),
     CaptionMode("Social caption", "Write a short, engaging social media caption for this image."),
     CaptionMode("Product description", "Write a short product description for what's shown in this image."),
-    CaptionMode("Document description", "Describe the content and layout of this document/screen image in a few sentences.")
+    CaptionMode("Document description", "Describe this document or screen and its layout.")
 )
 
 /** Vision-model image captioning — requires the active model to declare vision support; shows a
@@ -83,7 +81,8 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         visionAvailable = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)?.supportsVision == true
     }
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var output by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var activeMode by remember { mutableStateOf<String?>(null) }
@@ -107,7 +106,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/image-caption", "Image caption · ${mode.label}", "Image: ${java.io.File(path).name}"),
                 )
                 if (flow == null) {
-                    errorText = "No generation model is active. Load a vision-capable model from Models."
+                    errorText = "No vision model is ready. Open Settings → AI models and load one."
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L
@@ -139,7 +138,9 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val file = pendingFile
         pendingFile = null
-        if (success && file != null) { ImageUtils.fixOrientation(file); imagePath = file.absolutePath; output = "" }
+        if (success && file != null) {
+            ImageUtils.fixOrientation(file); managedImagePath.set(file.absolutePath); output = ""
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { val (file, uri) = newImageFile(); pendingFile = file; takePicture.launch(uri) }
@@ -152,7 +153,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                     context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                     ImageUtils.fixOrientation(file)
                 }
-                imagePath = file.absolutePath
+                managedImagePath.set(file.absolutePath)
                 output = ""
             }
         }
@@ -167,34 +168,34 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
         Column(
-            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             ToolIntro(
                 icon = Icons.Filled.ImageSearch,
                 title = "Describe an image for any audience",
-                body = "Create alt text, captions, or detailed image descriptions locally."
+                body = "Create alt text, captions, or image descriptions on-device."
             )
             if (visionAvailable == false) {
                 Text(
-                "Load a vision-capable model to use this tool.",
+                    "Load a vision-capable model to use this tool.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error
                 )
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f), enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(" Camera")
+            ResponsiveActions {
+                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = visionAvailable != false) {
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text("Camera", modifier = Modifier.padding(start = Space.sm))
                 }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, modifier = Modifier.weight(1f), enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text(" From files")
+                OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = visionAvailable != false) {
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text("From files", modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 700)?.asImageBitmap() }
-                bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = 12.dp), contentScale = ContentScale.Fit) }
-                FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val bitmap = rememberThumbnail(path, 700)
+                bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
+                FlowRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     CAPTION_MODES.forEach { mode ->
                         VervanFilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
                     }
@@ -214,18 +215,18 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                         title = activeMode?.takeIf { it.isNotBlank() } ?: "Description ready",
                         supportingText = if (isRunning) "Generating on-device…" else "Ready to copy and use"
                     )
-                    Card(Modifier.fillMaxWidth().padding(top = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                        Column(Modifier.padding(12.dp)) {
+                    Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                        Column(Modifier.padding(Space.md)) {
                             Text(output, style = MaterialTheme.typography.bodyMedium)
                             if (!isRunning) {
                                 OutlinedButton(
                                     onClick = {
                                         context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .setPrimaryClip(android.content.ClipData.newPlainText("Caption", output))
+                                            .setSensitiveText(output, scope, "Caption")
                                         scope.launch { snackbarHostState.showSnackbar("Copied") }
                                     },
-                                    modifier = Modifier.padding(top = 8.dp)
-                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" Copy") }
+                                    modifier = Modifier.padding(top = Space.sm)
+                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
                             }
                         }
                     }
@@ -237,7 +238,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                         recovery = "Load a vision model or choose a clearer image, then try again.",
                         actionLabel = lastMode?.let { "Try again" },
                         onAction = lastMode?.let { mode -> { runMode(mode) } },
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
                 }
             }

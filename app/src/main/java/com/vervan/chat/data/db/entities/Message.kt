@@ -30,9 +30,21 @@ data class Message(
     val documentId: String? = null,
     // Mono-WAV voice message attachment, sent as raw audio bytes to the model directly
     // (LlmEngine.generate's Content.AudioBytes) when the loaded model supports audio input —
-    // separate from the composer's "Dictate to text" mic, which runs Android's own offline
-    // SpeechRecognizer and sends the transcript as plain text instead.
+    // separate from the composer's "Dictate to text" mic, which uses the selected local
+    // transcription path and sends the reviewed transcript as text instead.
     val audioPath: String? = null,
+    // Optional retained microphone capture for a transcribed request. Unlike audioPath this is
+    // playback provenance only and is never forwarded to the generation model.
+    val voiceRecordingPath: String? = null,
+    // Modality provenance keeps spoken turns first-class inside ordinary chat history.
+    // TEXT, VOICE_DICTATION, HANDS_FREE, AUDIO_ATTACHMENT, or MIXED.
+    val inputModality: String = "TEXT",
+    // Lightweight JSON metadata: original transcript, edited flag, language/STT label and
+    // duration when known. Optional so existing text messages remain compact.
+    val transcriptMetadataJson: String? = null,
+    // Comma-separated visible output modes for this response (TEXT, SPEECH).
+    val outputModalities: String = "TEXT",
+    val playbackMetadataJson: String? = null,
     // JSON array of {chunkId, documentName, sectionPath, excerpt, score} — org.json,
     // not a real table, because it's display-only provenance for this one message.
     val sourcesJson: String? = null,

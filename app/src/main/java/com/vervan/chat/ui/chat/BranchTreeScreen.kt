@@ -28,7 +28,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.PageContainer
@@ -92,7 +93,7 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.MyLocation,
                 title = "No branches yet",
-                body = "Edit or regenerate a message to fork the conversation — every branch shows up here."
+            body = "Edit or retry a message to create a branch. Every branch appears here."
             )
         } else {
             LazyColumn(
@@ -127,15 +128,15 @@ private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLe
             // Guide lines for ancestry — the active path is drawn in primary so the eye can
             // follow the current conversation's spine through the forks.
             val lineColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-            Canvas(Modifier.width((depth * 16).dp).fillMaxHeight()) {
+            Canvas(Modifier.width(com.vervan.chat.ui.theme.Space.lg * depth).fillMaxHeight()) {
                 for (level in 0 until depth) {
-                    val x = (level * 16).dp.toPx() + 8.dp.toPx()
+                    val x = (com.vervan.chat.ui.theme.Space.lg * level).toPx() + com.vervan.chat.ui.theme.Space.sm.toPx()
                     drawLine(color = lineColor, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 2.dp.toPx())
                 }
             }
         }
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
             onClick = onClick,
             shape = MaterialTheme.shapes.medium,
             colors = if (isActive) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
@@ -157,7 +158,8 @@ private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLe
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
-                    modifier = Modifier.padding(top = 2.dp)
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = com.vervan.chat.ui.theme.Space.xs)
                 )
             }
         }

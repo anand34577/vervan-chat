@@ -24,7 +24,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,13 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.SectionLabel
+import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -48,6 +49,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
     val retrievalMode by vm.defaultRetrievalMode.collectAsState()
+    val queryExpansionEnabled by vm.queryExpansionEnabled.collectAsState()
     val contextLimit by vm.contextTokenLimit.collectAsState()
     val responseLength by vm.responseLength.collectAsState()
     val responseTone by vm.responseTone.collectAsState()
@@ -74,7 +76,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Generation & retrieval") },
+                title = { Text("Responses & search") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 }
@@ -82,14 +84,14 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
         }
     ) { padding ->
         ScrollablePage(padding) {
-            SectionLabel("Chat & retrieval")
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            SectionLabel("Search & context")
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text("Default retrieval mode", style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        verticalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         listOf("KEYWORD", "SEMANTIC", "HYBRID", "EXACT_PHRASE").forEach { mode ->
                             VervanFilterChip(
@@ -100,30 +102,46 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         }
                     }
                     Text(
-                        "Uses semantic search when an embedding model is available; otherwise uses keywords.",
+                        "Semantic search needs an embedding model. Without one, Vervan uses keywords.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = Space.xs)
                     )
-                    Text("Context budget", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Rewrite search queries", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Asks the model for a couple of alternate phrasings before searching, to catch " +
+                                    "passages that use different words than your question. Costs an extra response " +
+                                    "before every grounded reply.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = queryExpansionEnabled, onCheckedChange = vm::setQueryExpansionEnabled)
+                    }
+                    Text("Context budget", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.lg))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
                             value = contextLimit.toFloat(), onValueChange = { vm.setContextTokenLimit(it.toInt()) },
                             valueRange = 1024f..16384f, steps = 14, modifier = Modifier.weight(1f)
                         )
-                        Text("$contextLimit tok", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))
+                        Text("$contextLimit tok", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = Space.sm))
                     }
                     Text(
                         "Sets the target shown in Context inspector.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 16.dp),
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Summarize long chats automatically", style = MaterialTheme.typography.titleSmall)
+                            Text("Summarize long chats", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "When a conversation is about to outgrow the model's context, fold older turns into a running summary instead of silently dropping them. Uses one extra background reply on the model already loaded.",
+                                "Keeps older context in a running summary when a chat gets too long. Uses one extra background response.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -134,14 +152,14 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             SectionLabel("Response style")
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text(
                         "Sets the default style for new responses.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text("Length", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
-                    Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Length", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         listOf("CONCISE", "BALANCED", "DETAILED").forEach { length ->
                             VervanFilterChip(
                                 selected = responseLength == length,
@@ -150,8 +168,8 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             )
                         }
                     }
-                    Text("Tone", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 14.dp))
-                    Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Tone", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         listOf("NEUTRAL", "CASUAL", "FORMAL").forEach { tone ->
                             VervanFilterChip(
                                 selected = responseTone == tone,
@@ -165,8 +183,8 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
 
             if (expertMode) {
             SectionLabel("Raw generation parameters")
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     GenerationSlider("Temperature", temperature, "%.2f", 0f..2f, onChange = vm::setTemperature)
                     GenerationSlider("Top-p", topP, "%.2f", 0.1f..1f, onChange = vm::setTopP)
                     GenerationSlider("Top-k", topK.toFloat(), "%.0f", 1f..64f) { vm.setTopK(it.toInt()) }
@@ -175,7 +193,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                     GenerationSlider("Max output tokens", maxOutputTokens.toFloat(), "%.0f", 64f..4096f) { vm.setMaxOutputTokens(it.toInt()) }
                     GenerationSlider("Max images/prompt", maxNumImages.toFloat(), "%.0f", 1f..4f) { vm.setMaxNumImages(it.toInt()) }
 
-                    Text("Random seed", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 14.dp))
+                    Text("Random seed", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                     Text(
                         "Leave blank for varied output. Set a number for repeatable output.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -189,7 +207,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                                 vm.setRandomSeed(seedText.toIntOrNull() ?: -1)
                             },
                             singleLine = true,
-                            modifier = Modifier.weight(1f).padding(top = 6.dp)
+                            modifier = Modifier.weight(1f).padding(top = Space.sm)
                         )
                         androidx.compose.material3.TextButton(onClick = {
                             seedText = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString()
@@ -200,21 +218,21 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
             } else {
                 SectionLabel("Response behavior")
-                Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                    Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+                Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                    Column(Modifier.padding(Space.lg)) {
                         Text("Creativity", style = MaterialTheme.typography.titleSmall)
                         Text(
                             "Choose how closely replies should follow the most likely answer.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                            modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
                         )
                         val selected = when {
                             temperature <= 0.45f -> "FOCUSED"
                             temperature >= 1.05f -> "CREATIVE"
                             else -> "BALANCED"
                         }
-                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             listOf("FOCUSED" to "Focused", "BALANCED" to "Balanced", "CREATIVE" to "Creative").forEach { (id, label) ->
                                 VervanFilterChip(
                                     selected = selected == id,
@@ -237,7 +255,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp)
+                            modifier = Modifier.padding(top = Space.sm)
                         )
                     }
                 }
@@ -245,8 +263,8 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
 
             if (expertMode) {
                 SectionLabel("Advanced (llama.cpp)")
-                Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                    Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+                Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                    Column(Modifier.padding(Space.lg)) {
                         Text(
                             "Defaults for llama.cpp GGUF models. Per-model settings can override them.",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -257,20 +275,20 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         // Vulkan device index is no longer surfaced — llama.cpp is locked to the
                         // CPU backend in this build, so per-device Vulkan selection doesn't apply.
 
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             Switch(checked = useMlock, onCheckedChange = vm::setUseMlock)
                         }
 
-                        Text("Flash attention", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 14.dp))
-                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Flash attention", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             listOf("AUTO" to "Auto", "ON" to "On", "OFF" to "Off").forEach { (value, label) ->
                                 VervanFilterChip(selected = flashAttentionMode == value, onClick = { vm.setFlashAttentionMode(value) }, label = { Text(label) })
                             }
                         }
 
-                        Text("KV cache type", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 14.dp))
-                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("KV cache type", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             listOf("f16", "q8_0", "q4_0").forEach { value ->
                                 VervanFilterChip(selected = kvCacheType == value, onClick = { vm.setKvCacheType(value) }, label = { Text(value) })
                             }
@@ -280,20 +298,20 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             SectionLabel("Model engine")
-            Card(Modifier.fillMaxWidth().padding(vertical = com.vervan.chat.ui.theme.Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
-                Column(Modifier.padding(com.vervan.chat.ui.theme.Space.lg)) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.lg)) {
                     Text(
-                        "Global model loading and engine defaults. Per-model engine choices take priority.",
+                        "Default loading options. Per-model choices take priority.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        Modifier.fillMaxWidth().padding(top = Space.md),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text("Allow low-memory model loads", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "Try loading even when the estimate exceeds available memory. Android swap may help, but the app can become unstable or be stopped.",
+                                "Load models that may exceed available memory. This can slow or stop the app.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -301,7 +319,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         Switch(checked = allowLowMemoryModelLoads, onCheckedChange = vm::setAllowLowMemoryModelLoads)
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        Modifier.fillMaxWidth().padding(top = Space.md),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -314,11 +332,11 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         }
                         Switch(checked = showGenerationStats, onCheckedChange = vm::setShowGenerationStats)
                     }
-                    Text(if (expertMode) "Backend" else "Performance preference", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    Text(if (expertMode) "Backend" else "Performance preference", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.md))
                     androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        verticalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         (if (expertMode) {
                             listOf("AUTO" to "Auto", "GPU" to "GPU only", "CPU" to "CPU only", "NPU" to "NPU only")

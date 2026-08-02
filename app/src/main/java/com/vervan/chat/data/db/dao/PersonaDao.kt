@@ -25,6 +25,13 @@ interface PersonaDao : BaseDao<Persona> {
     @Query("DELETE FROM personas WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 
+    // duplicate() (PersonaEditorViewModel) copies a persona's avatarPath verbatim onto a new row
+    // rather than copying the file, so the same avatar image can legitimately be referenced by
+    // more than one persona. See PersonaAvatarCleanup: checked before a persona's avatar file is
+    // deleted, so deleting one persona never breaks another persona's avatar still on screen.
+    @Query("SELECT COUNT(*) FROM personas WHERE id != :excludeId AND avatarPath = :avatarPath")
+    suspend fun countOtherReferencesToAvatarPath(excludeId: String, avatarPath: String): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(personas: List<Persona>)
 }

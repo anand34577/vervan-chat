@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.NoteAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +34,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +46,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,13 +56,16 @@ import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.ContextGuideCard
+import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.VervanGridMinWidth
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.SnackbarHost
@@ -81,15 +84,16 @@ fun LibraryScreen(
     onNewWorkflow: () -> Unit = {},
     onEditWorkflow: (String) -> Unit = {},
     onOpenTemplate: (String) -> Unit = {},
-    onNewTemplate: () -> Unit = {}
+    onNewTemplate: () -> Unit = {},
+    onOpenNotes: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
-    val allPersonas by app.container.db.personaDao().observePersonas().collectAsState(initial = emptyList())
-    val allTemplates by app.container.db.promptTemplateDao().observeAll().collectAsState(initial = emptyList())
-    val allWorkflows by app.container.db.workflowDao().observeAll().collectAsState(initial = emptyList())
-    val allOutputs by app.container.db.savedOutputDao().observeAll().collectAsState(initial = emptyList())
+    val allPersonas by app.container.db.personaDao().observePersonas().collectAsStateWithLifecycle(initialValue = emptyList())
+    val allTemplates by app.container.db.promptTemplateDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val allWorkflows by app.container.db.workflowDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val allOutputs by app.container.db.savedOutputDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
@@ -154,6 +158,7 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = onOpenNotes) { Icon(Icons.Outlined.NoteAlt, contentDescription = "Open notes") }
                         if (tab == 0) IconButton(onClick = onNewPersona) { Icon(Icons.Filled.Add, contentDescription = "New persona") }
                         if (tab == 1) IconButton(onClick = onNewTemplate) { Icon(Icons.Filled.Add, contentDescription = "New template") }
                         if (tab == 2) IconButton(onClick = onNewWorkflow) { Icon(Icons.Filled.Add, contentDescription = "New workflow") }
@@ -170,11 +175,11 @@ fun LibraryScreen(
             ContextGuideCard(
                 icon = Icons.Outlined.BookmarkBorder,
                 title = "Your reusable toolkit",
-                body = "Swipe between personas, prompt templates, workflows, and saved responses.",
+        body = "Browse personas, prompts, workflows, and saved responses.",
                 modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
                 accentIndex = 4,
             )
-            androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
+            androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md) {
                 libTabs.forEachIndexed { index, label ->
                     Tab(
                         selected = tab == index,
@@ -228,13 +233,17 @@ private fun PersonasTab(
         EmptyState(
             Icons.Outlined.Person,
             if (query.isBlank()) "No personas yet" else "No matching personas",
-            if (query.isBlank()) "Create a persona to give chats a reusable voice and working style." else "Try another name or clear your search.",
+                    if (query.isBlank()) "Create a persona to reuse a voice and working style." else "Try another name or clear the search.",
             actionLabel = if (query.isBlank()) "New persona" else null,
             onAction = if (query.isBlank()) onNewPersona else null
         )
         return
     }
-    LazyVerticalGrid(columns = GridCells.Adaptive(220.dp), modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(VervanGridMinWidth.compactCard),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)
+    ) {
         items(personas, key = { it.id }) { persona ->
             PersonaCard(
                 persona = persona,
@@ -248,12 +257,12 @@ private fun PersonasTab(
         if (!selectionMode) item {
             Card(
                 onClick = onNewPersona,
-                modifier = Modifier.padding(6.dp).fillMaxWidth(),
+                modifier = Modifier.padding(Space.xs).fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
-                Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.padding(Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("New persona", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                    Text("New persona", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
                 }
             }
         }
@@ -270,7 +279,7 @@ private fun PersonaCard(
     onEnterSelection: () -> Unit
 ) {
     Card(
-        modifier = Modifier.padding(6.dp).fillMaxWidth().selectableItem(
+        modifier = Modifier.padding(Space.xs).fillMaxWidth().selectableItem(
             selectionMode = selectionMode,
             onClick = onClick,
             onToggleSelected = onToggleSelected,
@@ -282,10 +291,9 @@ private fun PersonaCard(
     ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
-            val avatar = remember(persona.avatarPath) {
-                persona.avatarPath?.takeUnless { it.startsWith("emoji:") }
-                    ?.let { com.vervan.chat.model.ImageUtils.decodeThumbnail(it, 128) }
-            }
+            val avatar = rememberThumbnail(
+                persona.avatarPath?.takeUnless { it.startsWith("emoji:") }, 128
+            )
             val emoji = persona.avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
             val accent = com.vervan.chat.ui.theme.vervanAccentFor((persona.name.hashCode() and Int.MAX_VALUE) % 6)
             Box(
@@ -294,7 +302,7 @@ private fun PersonaCard(
             ) {
                 if (avatar != null) {
                     androidx.compose.foundation.Image(
-                        bitmap = avatar.asImageBitmap(),
+                        bitmap = avatar,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.medium)
@@ -309,8 +317,11 @@ private fun PersonaCard(
                     )
                 }
             }
-            Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                Text(persona.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f).padding(start = Space.sm)) {
+                OverflowTooltipText(
+                    text = persona.name,
+                    style = MaterialTheme.typography.labelLarge
+                )
                 if (persona.description.isNotBlank()) {
                     Text(
                         persona.description, style = MaterialTheme.typography.labelSmall, maxLines = 1,
@@ -362,7 +373,7 @@ private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit, selected
             if (template.description.isNotBlank()) {
                 Text(
                     template.description, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs)
                 )
             }
             }
@@ -447,7 +458,7 @@ private fun SavedTab(
             val isSelected = output.id in selected
             var expanded by remember(output.id) { mutableStateOf(false) }
             Card(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                Modifier.fillMaxWidth().padding(vertical = Space.xs)
                     .selectableItem(
                         selectionMode = selectionMode,
                         onClick = { expanded = !expanded },
@@ -457,7 +468,7 @@ private fun SavedTab(
                 colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
                 border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
             ) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     if (selectionMode) {
                         Checkbox(
                             checked = isSelected,
@@ -477,7 +488,7 @@ private fun SavedTab(
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
+                            modifier = Modifier.padding(top = Space.xs),
                         )
                         Text(
                             output.content,

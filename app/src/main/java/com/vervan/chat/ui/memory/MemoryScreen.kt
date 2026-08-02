@@ -28,7 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,7 +93,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 FeatureHero(
                     eyebrow = "Private and approved",
                     title = "What the assistant remembers",
-                    body = "Review, disable, or delete details saved for future chats. Relevant memories are recalled semantically when an embedding model is available.",
+            body = "Review details saved for future chats. Vervan uses relevant memories when available.",
                     icon = Icons.Filled.Lightbulb,
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
                 )
@@ -124,7 +124,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         androidx.compose.material3.CardDefaults.cardColors()
                     }
                 ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                             Text(memory.text, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "") +
@@ -134,7 +134,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         Switch(checked = memory.enabled, onCheckedChange = { checked ->
                             scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
                         })
-                        TextButton(onClick = { pendingDelete = memory }) { Text("Delete") }
+                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text("Delete") }
                     }
                 }
             }
@@ -160,8 +160,8 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         placeholder = "Key (optional, e.g. \"tone\")",
                         singleLine = true,
                         maxLength = ValidationLimits.MEMORY_KEY,
-                        supportingText = "Saving with the same key replaces the old value instead of adding a duplicate",
-                        modifier = Modifier.padding(top = 8.dp)
+                supportingText = "Using the same key replaces its current value",
+                        modifier = Modifier.padding(top = Space.sm)
                     )
                 }
             },

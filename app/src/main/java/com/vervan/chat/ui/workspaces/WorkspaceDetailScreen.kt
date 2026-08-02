@@ -8,12 +8,11 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -40,7 +39,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,8 +61,13 @@ import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.DeleteMenuItem
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.SectionCard
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.vervanAccentFor
@@ -130,6 +134,8 @@ fun WorkspaceDetailScreen(
 
     val ws = workspace
     val isActive = ws?.id == activeWorkspaceId
+    val personaNamesById = remember(personas) { personas.associate { it.id to it.name } }
+    val folderNamesById = remember(folders) { folders.associate { it.id to it.name } }
 
     // a locked workspace requires a fresh unlock before switching into it, regardless
     // of whether the app-wide lock is currently satisfied (this reuses AppLockManager/LockScreen
@@ -149,7 +155,7 @@ fun WorkspaceDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(ws?.name ?: "Workspace", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { OverflowTooltipText(ws?.name ?: "Workspace") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Workspace menu") }
@@ -183,14 +189,13 @@ fun WorkspaceDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (ws == null) return@Scaffold
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             if (ws.description.isNotBlank()) {
-                Text(ws.description, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
+                Text(ws.description, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = Space.xs))
             }
             Text(
                 buildString {
-                    append(personas.find { it.id == ws.personaId }?.name ?: "No persona")
+                    append(personaNamesById[ws.personaId] ?: "No persona")
                     if (isActive) append(" · Active")
                     if (ws.archived) append(" · Archived")
                 },
@@ -214,8 +219,8 @@ fun WorkspaceDetailScreen(
             // status summary — horizontally scrollable stat cards (phone space rule:
             // "show four or fewer primary statistics at once").
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 12.dp).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().padding(vertical = Space.md).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 StatCard("Chats", activeChatCount.toString())
                 StatCard("Projects", projects.size.toString())
@@ -235,7 +240,7 @@ fun WorkspaceDetailScreen(
 
             // Chat Screen — workspace-scoped auto title generation toggle.
             Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp),
+                Modifier.fillMaxWidth().padding(top = Space.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -256,7 +261,7 @@ fun WorkspaceDetailScreen(
                 androidx.biometric.BiometricManager.from(LocalContext.current)
                     .canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
             Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp),
+                Modifier.fillMaxWidth().padding(top = Space.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -264,7 +269,7 @@ fun WorkspaceDetailScreen(
                     Text("Lock this workspace", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         if (lockCredentialsExist) "Requires biometrics or your PIN to switch into this workspace."
-                        else "Set up app lock in Settings → Security first.",
+                        else "Set up app lock in Settings → Privacy & security first.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -276,8 +281,8 @@ fun WorkspaceDetailScreen(
             }
 
             // per-workspace defaults for chats created inside it (WorkspaceManager.applyDefaults).
-            Text("Default for new chats in this workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
-            Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Default for new chats in this workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
+            Row(Modifier.padding(top = Space.xs).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
                     androidx.compose.material3.FilterChip(
                         selected = ws.defaultProfile == p.id,
@@ -287,10 +292,14 @@ fun WorkspaceDetailScreen(
                 }
             }
             var showDefaultKbPicker by remember { mutableStateOf(false) }
-            OutlinedButton(onClick = { showDefaultKbPicker = true }, modifier = Modifier.padding(top = 8.dp)) {
+            OutlinedButton(
+                onClick = { showDefaultKbPicker = true },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+            ) {
                 Text(
                     if (ws.defaultKbIdList().isEmpty()) "Default knowledge bases: none"
-                    else "Default knowledge bases: ${ws.defaultKbIdList().size} selected"
+                    else "Default knowledge bases: ${ws.defaultKbIdList().size} selected",
+                    maxLines = 2,
                 )
             }
             if (showDefaultKbPicker) {
@@ -301,26 +310,27 @@ fun WorkspaceDetailScreen(
                 )
             }
 
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(Modifier.padding(vertical = Space.md))
 
             Text("Folders (${folders.size})", style = MaterialTheme.typography.titleSmall)
-            folders.forEach { folder ->
-                Card(onClick = { onOpenFolder(folder.id) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(folder.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(10.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+            if (folders.isNotEmpty()) {
+                SectionCard(
+                    modifier = Modifier.padding(top = Space.xs),
+                    items = folders.map { folder ->
+                        {
+                            SectionRow(title = folder.name, onClick = { onOpenFolder(folder.id) })
+                        }
+                    }
+                )
             }
 
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
                 Text(
                     if (selectionMode) "${selectedChatIds.size} selected" else "Recent chats (${chats.size})",
                     style = MaterialTheme.typography.titleSmall
                 )
                 if (selectionMode) {
-                    Row {
+                    ResponsiveActions(Modifier.padding(top = Space.xs)) {
                         TextButton(
                             onClick = { showBatchTitleOptions = true },
                             enabled = selectedChatIds.isNotEmpty()
@@ -348,8 +358,8 @@ fun WorkspaceDetailScreen(
                 chats.take(20).forEach { chat ->
                     WorkspaceChatCard(
                         chat = chat,
-                        folderName = folders.find { it.id == chat.folderId }?.name,
-                        personaName = personas.find { it.id == chat.personaId }?.name ?: personas.find { it.id == ws.personaId }?.name,
+                        folderName = chat.folderId?.let(folderNamesById::get),
+                        personaName = chat.personaId?.let(personaNamesById::get) ?: personaNamesById[ws.personaId],
                         selectionMode = selectionMode,
                         selected = chat.id in selectedChatIds,
                         onClick = {
@@ -366,7 +376,6 @@ fun WorkspaceDetailScreen(
                     )
                 }
             }
-        }
         }
     }
 
@@ -424,7 +433,7 @@ fun WorkspaceDetailScreen(
                     Text("${progress.completed} of ${progress.total} completed")
                     androidx.compose.material3.LinearProgressIndicator(
                         progress = { if (progress.total == 0) 0f else progress.completed.toFloat() / progress.total },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = Space.sm)
                     )
                     if (!progress.done) progress.currentChatTitle?.let { Text("Current: $it", style = MaterialTheme.typography.bodySmall) }
                     if (progress.failed > 0) Text("${progress.failed} failed", style = MaterialTheme.typography.labelSmall)
@@ -485,7 +494,7 @@ private fun WorkspaceChatCard(
     }
     val accent = vervanAccentFor((chat.title.hashCode() and Int.MAX_VALUE) % 6)
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         colors = if (selected) {
             androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -496,7 +505,7 @@ private fun WorkspaceChatCard(
     ) {
         Row(Modifier.padding(Space.md), verticalAlignment = Alignment.Top) {
             if (selectionMode) {
-                androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() }, modifier = Modifier.padding(end = 4.dp))
+                androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() }, modifier = Modifier.padding(end = Space.xs))
             }
             androidx.compose.foundation.layout.Box(
                 Modifier
@@ -513,46 +522,46 @@ private fun WorkspaceChatCard(
                 )
             }
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        chat.title, style = MaterialTheme.typography.titleSmall, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OverflowTooltipText(
+                        text = chat.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
                         relativeTime(chat.updatedAt), style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = Space.sm),
                     )
                 }
                 preview?.takeIf { it.isNotBlank() }?.let {
                     Text(
                         it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = Space.xs)
                     )
                 }
                 Text(
                     listOfNotNull(folderName ?: "No folder", personaName, "$messageCount messages").joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp)
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = Space.xs)
                 )
             }
         }
     }
 }
 
-private fun relativeTime(epochMs: Long): String {
-    val diffMin = (System.currentTimeMillis() - epochMs) / 60000
-    return when {
-        diffMin < 1 -> "now"
-        diffMin < 60 -> "${diffMin}m"
-        diffMin < 60 * 24 -> "${diffMin / 60}h"
-        else -> "${diffMin / (60 * 24)}d"
-    }
-}
-
 @Composable
 private fun StatCard(label: String, value: String) {
-    Card {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Card(modifier = Modifier.widthIn(min = 88.dp)) {
+        Column(
+            Modifier.padding(Space.md).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(value, style = MaterialTheme.typography.titleLarge)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -587,9 +596,9 @@ private fun EditWorkspaceDialog(
                 BoundedTextField(
                     value = descriptionField, onValueChange = { descriptionField = it }, placeholder = "Description",
                     maxLength = ValidationLimits.WORKSPACE_DESCRIPTION,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 )
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = 8.dp)) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = Space.sm)) {
                     OutlinedTextField(
                         value = selectedPersona?.name ?: "Select persona",
                         onValueChange = {},
@@ -643,7 +652,10 @@ private fun WorkspaceKbPickerDialog(
                             checked = selected.contains(kb.id),
                             onCheckedChange = { checked -> selected = if (checked) selected + kb.id else selected - kb.id }
                         )
-                        Text(kb.name)
+                        OverflowTooltipText(
+                            text = kb.name,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }

@@ -22,25 +22,140 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
     val defaultRetrievalMode: StateFlow<String> = settings.defaultRetrievalMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "HYBRID")
-    val ttsRate: StateFlow<Float> = settings.ttsRate
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
+    val queryExpansionEnabled: StateFlow<Boolean> = settings.queryExpansionEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val autoReadAloud: StateFlow<Boolean> = settings.autoReadAloud
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val ttsEnginePreference: StateFlow<String> = settings.ttsEnginePreference
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
-    val kokoroQualityEnabled: StateFlow<Boolean> = settings.kokoroQualityEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bargeInEnabled: StateFlow<Boolean> = settings.bargeInEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val inbuiltSttEnabled: StateFlow<Boolean> = settings.inbuiltSttEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val sttEnginePreference: StateFlow<String> = settings.sttEnginePreference
+    val modelAudioSttEnabled = settings.modelAudioSttEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val androidSttEnabled = settings.androidSttEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val sttEnginePreference = settings.sttEnginePreference
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val sttFallbackEnabled = settings.sttFallbackEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val voiceQualityPreset: StateFlow<String> = settings.voiceQualityPreset
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "BALANCED")
+
+    /** Collapses the six TTS/STT engines behind one dial. FAST skips whisper.cpp's heavier compute;
+     * BALANCED is today's engine defaults; BEST prefers the highest-quality downloaded TTS voice
+     * (Kokoro, else Supertonic, else Piper) and drops the lower-accuracy Android STT fallback. Each
+     * underlying toggle stays visible and overridable in the Advanced section below. */
+    fun setVoiceQualityPreset(preset: String) = viewModelScope.launch {
+        settings.setVoiceQualityPreset(preset)
+        val voices = downloadedVoiceModels.value
+        val bestTts = when {
+            voices.any { it.engine == "KOKORO" && it.isReady } -> "KOKORO"
+            voices.any { it.engine == "SUPERTONIC" && it.isReady } -> "SUPERTONIC"
+            else -> "AUTO"
+        }
+        when (preset) {
+            "FAST" -> {
+                settings.setTtsEnginePreference("AUTO")
+                settings.setInbuiltSttEnabled(false)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(true)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+            "BALANCED" -> {
+                settings.setTtsEnginePreference("AUTO")
+                settings.setInbuiltSttEnabled(true)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(true)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+            "BEST" -> {
+                settings.setTtsEnginePreference(bestTts)
+                settings.setInbuiltSttEnabled(true)
+                settings.setModelAudioSttEnabled(true)
+                settings.setAndroidSttEnabled(false)
+                settings.setSttEnginePreference("AUTO")
+                settings.setSttFallbackEnabled(true)
+            }
+        }
+    }
+    val whisperGpuEnabled: StateFlow<Boolean> = settings.whisperGpuEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val supertonicVoiceVariant: StateFlow<String> = settings.supertonicVoiceVariant
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "multi")
+    fun setSupertonicVoiceVariant(v: String) = viewModelScope.launch { settings.setSupertonicVoiceVariant(v) }
+    val whisperModelVariant: StateFlow<String> = settings.whisperModelVariant
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "multi")
+    fun setWhisperModelVariant(v: String) = viewModelScope.launch { settings.setWhisperModelVariant(v) }
+    val speechInputEnabled = settings.speechInputEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val voiceReplyMode = settings.voiceReplyMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "MANUAL")
+    val voiceInputMethod = settings.voiceInputMethod.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DICTATION")
+    val transcriptReviewEnabled = settings.transcriptReviewEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val handsFreeAutoSend = settings.handsFreeAutoSend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val continueListening = settings.continueListening.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val headphonesOnlyPlayback = settings.headphonesOnlyPlayback.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val headphonePrivacyPause = settings.headphonePrivacyPause.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val voiceInputLanguage = settings.voiceInputLanguage.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
+    val vadSensitivity = settings.vadSensitivity.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.5f)
+    val voiceSilenceDurationMs = settings.voiceSilenceDurationMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 600)
+    val maxUtteranceSeconds = settings.maxUtteranceSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
+    val storeVoiceRecordings = settings.storeVoiceRecordings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val voiceSpeechRate = settings.voiceSpeechRate.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
+    val voiceSpeechPitch = settings.voiceSpeechPitch.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
+    val readCodeMode = settings.readCodeMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "SUMMARY")
+    val readTableMode = settings.readTableMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "SUMMARY")
+    val longResponseVoiceMode = settings.longResponseVoiceMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "ASK")
+    val backgroundVoiceEnabled = settings.backgroundVoiceEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val voiceBatterySaver = settings.voiceBatterySaver.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val transcriptRetentionEnabled = settings.transcriptRetentionEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val recordingRetentionMode = settings.recordingRetentionMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "TEMPORARY")
+
+    fun setSpeechInputEnabled(v: Boolean) = viewModelScope.launch { settings.setSpeechInputEnabled(v) }
+    fun setModelAudioSttEnabled(v: Boolean) = viewModelScope.launch { settings.setModelAudioSttEnabled(v) }
+    fun setAndroidSttEnabled(v: Boolean) = viewModelScope.launch { settings.setAndroidSttEnabled(v) }
+    fun setSttEnginePreference(v: String) = viewModelScope.launch { settings.setSttEnginePreference(v) }
+    fun setSttFallbackEnabled(v: Boolean) = viewModelScope.launch { settings.setSttFallbackEnabled(v) }
+    fun setVoiceReplyMode(v: String) = viewModelScope.launch {
+        settings.setVoiceReplyMode(v)
+        settings.setAutoReadAloud(v == "AUTOMATIC")
+    }
+    fun setVoiceInputMethod(v: String) = viewModelScope.launch { settings.setVoiceInputMethod(v) }
+    fun setTranscriptReviewEnabled(v: Boolean) = viewModelScope.launch { settings.setTranscriptReviewEnabled(v) }
+    fun setHandsFreeAutoSend(v: Boolean) = viewModelScope.launch { settings.setHandsFreeAutoSend(v) }
+    fun setContinueListening(v: Boolean) = viewModelScope.launch { settings.setContinueListening(v) }
+    fun setHeadphonesOnlyPlayback(v: Boolean) = viewModelScope.launch { settings.setHeadphonesOnlyPlayback(v) }
+    fun setHeadphonePrivacyPause(v: Boolean) = viewModelScope.launch { settings.setHeadphonePrivacyPause(v) }
+    fun setVoiceInputLanguage(v: String) = viewModelScope.launch { settings.setVoiceInputLanguage(v) }
+    fun setVadSensitivity(v: Float) = viewModelScope.launch { settings.setVadSensitivity(v) }
+    fun setVoiceSilenceDurationMs(v: Int) = viewModelScope.launch { settings.setVoiceSilenceDurationMs(v) }
+    fun setMaxUtteranceSeconds(v: Int) = viewModelScope.launch { settings.setMaxUtteranceSeconds(v) }
+    fun setStoreVoiceRecordings(v: Boolean) = viewModelScope.launch {
+        settings.setStoreVoiceRecordings(v)
+        settings.setRecordingRetentionMode(if (v) "KEEP" else "NONE")
+    }
+    fun setVoiceSpeechRate(v: Float) = viewModelScope.launch { settings.setVoiceSpeechRate(v) }
+    fun setVoiceSpeechPitch(v: Float) = viewModelScope.launch { settings.setVoiceSpeechPitch(v) }
+    fun setReadCodeMode(v: String) = viewModelScope.launch { settings.setReadCodeMode(v) }
+    fun setReadTableMode(v: String) = viewModelScope.launch { settings.setReadTableMode(v) }
+    fun setLongResponseVoiceMode(v: String) = viewModelScope.launch { settings.setLongResponseVoiceMode(v) }
+    fun setBackgroundVoiceEnabled(v: Boolean) = viewModelScope.launch { settings.setBackgroundVoiceEnabled(v) }
+    fun setVoiceBatterySaver(v: Boolean) = viewModelScope.launch { settings.setVoiceBatterySaver(v) }
+    fun setTranscriptRetentionEnabled(v: Boolean) = viewModelScope.launch { settings.setTranscriptRetentionEnabled(v) }
+    fun setRecordingRetentionMode(v: String) = viewModelScope.launch {
+        settings.setRecordingRetentionMode(v)
+        settings.setStoreVoiceRecordings(v == "KEEP")
+    }
 
     // ---- Realtime voice — Piper/Kokoro voice model downloads ----
     val downloadedVoiceModels: StateFlow<List<com.vervan.chat.data.db.entities.TtsVoiceModel>> =
         app.container.db.ttsVoiceModelDao().observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val activeGenerationModel = app.container.db.modelDao()
+        .observeActiveModel(com.vervan.chat.data.db.entities.ModelRole.GENERATION)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val activeVoiceDownloadJobs: StateFlow<List<com.vervan.chat.data.db.entities.JobRecord>> =
         app.container.db.jobDao().observeActive()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -91,6 +206,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val autoModelSelectionEnabled: StateFlow<Boolean> = settings.autoModelSelectionEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val fastCapableRoutingEnabled: StateFlow<Boolean> = settings.fastCapableRoutingEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceAwarePerformance: StateFlow<Boolean> = settings.deviceAwarePerformance
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val largeTouchTargets: StateFlow<Boolean> = settings.largeTouchTargets
@@ -165,28 +282,10 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     // ---- On-device data sources ----
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val filesToolEnabled: StateFlow<Boolean> = settings.filesToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val locationToolEnabled: StateFlow<Boolean> = settings.locationToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val screenTimeToolEnabled: StateFlow<Boolean> = settings.screenTimeToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setCalendarToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCalendarToolEnabled(v) } }
     fun setDeviceStatusToolEnabled(v: Boolean) { viewModelScope.launch { settings.setDeviceStatusToolEnabled(v) } }
-    fun setFilesToolEnabled(v: Boolean) { viewModelScope.launch { settings.setFilesToolEnabled(v) } }
     fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
-    fun setScreenTimeToolEnabled(v: Boolean) { viewModelScope.launch { settings.setScreenTimeToolEnabled(v) } }
-
-    // ---- Web search (model-initiated outbound-network tool) ----
-    val webSearchToolEnabled: StateFlow<Boolean> = settings.webSearchToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    fun setWebSearchToolEnabled(v: Boolean) { viewModelScope.launch { settings.setWebSearchToolEnabled(v) } }
-    /** True only when both the toggle is on AND an API key has been configured, since either
-     * being false leaves the tool unable to actually run — surfaces honestly in the Settings
-     * UI instead of showing "on" for a switch the model call will still reject. */
-    val webSearchConfigured: Boolean get() = webSearchToolEnabled.value && app.container.knowledgeGraphStore.get()?.isNotBlank() == true
-    fun webSearchApiKey(): String = app.container.knowledgeGraphStore.get().orEmpty()
-    fun setWebSearchApiKey(value: String) {
-        // Blank clears the key entirely (KnowledgeGraphStore.set treats null/blank as "remove"),
-        // so the user can wipe what's stored without having to dig through app data.
-        app.container.knowledgeGraphStore.set(value.ifBlank { null })
-    }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: StateFlow<Set<String>> = settings.disabledToolIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -236,13 +335,19 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
 
     fun setThemeMode(mode: ThemeMode) { viewModelScope.launch { settings.setThemeMode(mode) } }
     fun setDefaultRetrievalMode(mode: String) { viewModelScope.launch { settings.setDefaultRetrievalMode(mode) } }
-    fun setTtsRate(rate: Float) { viewModelScope.launch { settings.setTtsRate(rate) } }
+    fun setQueryExpansionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setQueryExpansionEnabled(enabled) } }
     fun setAutoReadAloud(enabled: Boolean) { viewModelScope.launch { settings.setAutoReadAloud(enabled) } }
     fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
-    fun setKokoroQualityEnabled(v: Boolean) { viewModelScope.launch { settings.setKokoroQualityEnabled(v) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }
     fun setInbuiltSttEnabled(v: Boolean) { viewModelScope.launch { settings.setInbuiltSttEnabled(v) } }
-    fun setSttEnginePreference(v: String) { viewModelScope.launch { settings.setSttEnginePreference(v) } }
+    fun setWhisperGpuEnabled(v: Boolean) { viewModelScope.launch { settings.setWhisperGpuEnabled(v) } }
+
+    /** Best-effort, non-live status for the Voice Settings screen — see
+     *  [com.vervan.chat.voice.WhisperCppSttEngine]'s companion helpers. Read fresh each call
+     *  rather than cached/reactive: it only changes as a side effect of an actual voice session
+     *  loading whisper.cpp, which this screen doesn't run. */
+    fun whisperLastKnownBackend(): String? = com.vervan.chat.voice.WhisperCppSttEngine.lastKnownBackendLabel(app)
+    fun whisperGpuDisabledAfterCrash(): Boolean = com.vervan.chat.voice.WhisperCppSttEngine.isGpuDisabledAfterCrash(app)
     fun setFontScale(scale: Float) { viewModelScope.launch { settings.setFontScale(scale) } }
     fun setOledTrueBlack(enabled: Boolean) { viewModelScope.launch { settings.setOledTrueBlack(enabled) } }
     fun setAccentTheme(theme: AccentTheme) { viewModelScope.launch { settings.setAccentTheme(theme) } }
@@ -251,6 +356,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setExpertMode(enabled: Boolean) { viewModelScope.launch { settings.setExpertMode(enabled) } }
     fun setDeviceAwarePerformance(enabled: Boolean) { viewModelScope.launch { settings.setDeviceAwarePerformance(enabled) } }
     fun setAutoModelSelectionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setAutoModelSelectionEnabled(enabled) } }
+    fun setFastCapableRoutingEnabled(enabled: Boolean) { viewModelScope.launch { settings.setFastCapableRoutingEnabled(enabled) } }
     fun setLargeTouchTargets(enabled: Boolean) { viewModelScope.launch { settings.setLargeTouchTargets(enabled) } }
     fun setDynamicColor(enabled: Boolean) { viewModelScope.launch { settings.setDynamicColor(enabled) } }
     fun setHighContrast(enabled: Boolean) { viewModelScope.launch { settings.setHighContrast(enabled) } }

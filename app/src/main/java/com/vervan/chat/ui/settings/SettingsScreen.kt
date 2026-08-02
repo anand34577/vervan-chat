@@ -2,7 +2,6 @@ package com.vervan.chat.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -37,16 +36,10 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import com.vervan.chat.ui.theme.vervanBorder
-import com.vervan.chat.ui.theme.vervanSubtleDividerColor
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -54,7 +47,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +61,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -75,11 +69,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.settings.AccentTheme
-import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.SectionCard
+import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.swatchColor
@@ -90,6 +86,7 @@ private data class SettingsDestination(
     val icon: ImageVector,
     val title: String,
     val subtitle: String,
+    val searchTerms: List<String> = emptyList(),
     val onClick: () -> Unit
 )
 
@@ -113,15 +110,16 @@ fun SettingsScreen(
     onOpenVoice: () -> Unit = {},
     onOpenStorage: () -> Unit = {},
     onOpenSecurity: () -> Unit = {},
-    onOpenTools: () -> Unit = {}
+    onOpenTools: () -> Unit = {},
+    onOpenHelp: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val modelCount by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
-    val memoryCount by app.container.db.memoryDao().observeAll().collectAsState(initial = emptyList())
-    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsState(initial = 0)
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
-    val userName by app.container.settingsRepository.userName.collectAsState(initial = "")
-    val userOccupation by app.container.settingsRepository.userOccupation.collectAsState(initial = "")
+    val modelCount by app.container.db.modelDao().observeModels().collectAsStateWithLifecycle(initialValue = emptyList())
+    val memoryCount by app.container.db.memoryDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsStateWithLifecycle(initialValue = 0)
+    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
+    val userName by app.container.settingsRepository.userName.collectAsStateWithLifecycle(initialValue = "")
+    val userOccupation by app.container.settingsRepository.userOccupation.collectAsStateWithLifecycle(initialValue = "")
     // Live build label from PackageInfo — the footer used to hardcode "version 0.1", which drifted
     // from the actual release on every bump. Read once; it can't change during the session.
     val versionLabel = remember {
@@ -133,29 +131,80 @@ fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
-            "Experience",
+            "Help",
             listOf(
-                SettingsDestination(Icons.Filled.Palette, "Appearance", "Theme, accent color, and display options", onOpenAppearance),
-                SettingsDestination(Icons.Filled.Tune, "Interaction", "Defaults and device-aware controls", onOpenExperience),
-                SettingsDestination(Icons.Filled.AutoAwesome, "AI responses", "Generation, retrieval, context, and sampling", onOpenGeneration),
-                SettingsDestination(Icons.Filled.Accessibility, "Accessibility", "Text scale, motion, touch targets, and haptics", onOpenAccessibility),
-                SettingsDestination(Icons.Filled.Mic, "Voice", "Read-aloud, playback, and voice models", onOpenVoice)
+                SettingsDestination(
+                    Icons.AutoMirrored.Filled.Help,
+                    "Help & troubleshooting",
+                    "How-to guides, common fixes, and app diagnostics",
+                    listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
+                    onOpenHelp
+                )
             )
         ),
         SettingsSection(
-            "Local AI & data",
+            "Look & feel",
             listOf(
-                SettingsDestination(Icons.Filled.AutoAwesome, "Models", "${modelCount.size} installed • ${activeModel?.displayName ?: "none active"}", onOpenModels),
-                SettingsDestination(Icons.AutoMirrored.Filled.List, "Model tools", "Choose what the model can call", onOpenTools),
-                SettingsDestination(Icons.Filled.Storage, "Storage & data", "Backups, diagnostics, jobs, and indexing", onOpenStorage)
+                SettingsDestination(
+                    Icons.Filled.Palette, "Appearance", "Theme, colors, and dark mode",
+                    listOf("dark", "light", "OLED", "Material You", "display"), onOpenAppearance
+                ),
+                SettingsDestination(
+                    Icons.Filled.Accessibility, "Accessibility", "Text, contrast, motion, and touch size",
+                    listOf("TalkBack", "screen reader", "vibration"), onOpenAccessibility
+                ),
+                SettingsDestination(
+                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, and voice models",
+                    listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
+                )
             )
         ),
         SettingsSection(
-            "Privacy & personalization",
+            "AI & chat",
             listOf(
-                SettingsDestination(Icons.Filled.Lock, "Security", "App lock, biometrics, PIN, and auto-lock", onOpenSecurity),
-                SettingsDestination(Icons.Filled.Psychology, "Personal memory", "${memoryCount.size} memories saved", onOpenMemory),
-                SettingsDestination(Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions pending review", onOpenMemorySuggestions)
+                SettingsDestination(
+                    Icons.Filled.AutoAwesome, "AI models",
+                    "${modelCount.size} installed · ${activeModel?.displayName ?: "none active"}",
+                    listOf("download", "import", "load", "active model", "GGUF"), onOpenModels
+                ),
+                SettingsDestination(
+                    Icons.Filled.Tune, "Chat behavior", "Model choice, presets, and device performance",
+                    listOf("interaction", "expert mode", "automatic", "battery", "thermal"), onOpenExperience
+                ),
+                SettingsDestination(
+                    Icons.Filled.AutoAwesome, "Responses & search", "Length, tone, context, and retrieval",
+                    listOf("generation", "sampling", "temperature", "top p", "semantic", "keyword", "summary"), onOpenGeneration
+                ),
+                SettingsDestination(
+                    Icons.AutoMirrored.Filled.List, "Tools", "Choose what AI can use in chats",
+                    listOf("model tools", "calculator", "date", "time"), onOpenTools
+                )
+            )
+        ),
+        SettingsSection(
+            "Personalization",
+            listOf(
+                SettingsDestination(
+                    Icons.Filled.Psychology, "Memory", "${memoryCount.size} saved",
+                    listOf("personal memory", "remember", "facts"), onOpenMemory
+                ),
+                SettingsDestination(
+                    Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions to review",
+                    listOf("pending", "learned"), onOpenMemorySuggestions
+                )
+            )
+        ),
+        SettingsSection(
+            "Privacy & data",
+            listOf(
+                SettingsDestination(
+                    Icons.Filled.Lock, "Privacy & security", "App lock, permissions, and local access",
+                    listOf("biometrics", "PIN", "auto lock", "screenshots", "API server", "panic wipe"), onOpenSecurity
+                ),
+                SettingsDestination(
+                    Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, and diagnostics",
+                    listOf("export", "restore", "recycle bin", "jobs", "index", "cache"), onOpenStorage
+                )
             )
         )
     )
@@ -163,7 +212,8 @@ fun SettingsScreen(
         val matchesSection = section.title.contains(query, ignoreCase = true)
         val destinations = section.destinations.filter { destination ->
             query.isBlank() || matchesSection || destination.title.contains(query, ignoreCase = true) ||
-                destination.subtitle.contains(query, ignoreCase = true)
+                destination.subtitle.contains(query, ignoreCase = true) ||
+                destination.searchTerms.any { it.contains(query, ignoreCase = true) }
         }
         section.copy(destinations = destinations).takeIf { destinations.isNotEmpty() }
     }
@@ -205,15 +255,16 @@ fun SettingsScreen(
                         }
                     }
                     Column(Modifier.weight(1f).padding(start = Space.lg)) {
-                        Text(
-                            userName.trim().ifBlank { "Set up your profile" },
-                            style = MaterialTheme.typography.titleMedium
+                        OverflowTooltipText(
+                            text = userName.trim().ifBlank { "Set up your profile" },
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            userOccupation.trim().ifBlank { "Personalize how Vervan responds to you" },
+                            userOccupation.trim().ifBlank { "Add details for more relevant replies" },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     Icon(
@@ -233,7 +284,7 @@ fun SettingsScreen(
                 EmptyState(
                     icon = Icons.Filled.Tune,
                     title = "No settings found",
-                    body = "Try another term or clear the search."
+                    body = "Try a simpler term, such as “voice,” “backup,” or “model.”"
                 )
             } else {
                 visibleSections.forEach { section ->
@@ -279,18 +330,10 @@ fun SettingsScreen(
                     },
                     {
                         Text(
-                            "Your conversations and documents stay on this device.",
+                            "Chats and documents stay on this device. Check important answers before acting on them.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(Space.lg)
-                        )
-                    },
-                    {
-                        Text(
-                            "AI can be wrong. Review important answers and confirm actions.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = Space.lg).padding(bottom = Space.lg)
                         )
                     }
                 )
@@ -302,52 +345,31 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsGroup(destinations: List<SettingsDestination>) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
-    ) {
-        destinations.forEachIndexed { index, destination ->
-            ListItem(
-                headlineContent = { Text(destination.title, style = MaterialTheme.typography.titleSmall) },
-                supportingContent = {
-                    Text(
-                        destination.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
-                    )
-                },
-                leadingContent = {
-                    // Stable categorical accent per destination (hashed from the title, so it
-                    // survives search filtering) — a wall of identical primary-tinted icons made
-                    // every row read the same; distinct hues make the hub scannable at a glance.
-                    val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
-                    IconAffordance(
-                        icon = destination.icon,
-                        size = IconAffordanceSize.Default,
-                        tint = accent.onContainer,
-                        containerColor = accent.container
-                    )
-                },
-                trailingContent = {
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable(onClick = destination.onClick)
-            )
-            if (index != destinations.lastIndex) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 68.dp),
-                    color = vervanSubtleDividerColor()
+    SectionCard(
+        items = destinations.map { destination ->
+            {
+                // Stable categorical accent per destination (hashed from the title, so it
+                // survives search filtering; distinct hues make the hub scannable at a glance.
+                val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
+                SectionRow(
+                    title = destination.title,
+                    subtitle = destination.subtitle,
+                    icon = destination.icon,
+                    iconSize = IconAffordanceSize.Default,
+                    iconTint = accent.onContainer,
+                    iconContainerColor = accent.container,
+                    onClick = destination.onClick,
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -359,7 +381,7 @@ fun GenerationSlider(
     steps: Int = 0,
     onChange: (Float) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Slider(
@@ -370,7 +392,7 @@ fun GenerationSlider(
             )
             Text(
                 String.format(format, value), style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = Space.sm)
             )
         }
     }
@@ -413,44 +435,34 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = Space.xs)
         )
     }
 }
 
 @Composable
 fun SettingsRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(Space.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.md)
-        ) {
-            IconAffordance(
-                icon = icon,
-                size = IconAffordanceSize.Default,
-                tint = MaterialTheme.colorScheme.primary,
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
-            )
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2
+    SectionCard(
+        modifier = Modifier.padding(vertical = Space.xs),
+        items = listOf(
+            {
+                SectionRow(
+                    title = title,
+                    subtitle = subtitle,
+                    icon = icon,
+                    iconSize = IconAffordanceSize.Default,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    iconContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+                    onClick = onClick,
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
             }
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+        )
+    )
 }

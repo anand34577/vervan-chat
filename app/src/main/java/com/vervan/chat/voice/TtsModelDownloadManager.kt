@@ -1,17 +1,20 @@
 package com.vervan.chat.voice
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.vervan.chat.data.db.dao.JobDao
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.data.db.entities.TtsVoiceModel
+import com.vervan.chat.model.ModelFileSniffer
+import com.vervan.chat.modeldownload.HttpRangeDownloader
+import com.vervan.chat.modeldownload.ModelDownloadException
 import com.vervan.chat.system.NetworkAuditLog
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -29,10 +32,16 @@ sealed class TtsDownloadResult {
  * "higher quality" tier — the only voice still on this path. Hindi/English Piper voices moved to
  * the app's real model-download system ([com.vervan.chat.modeldownload.ModelDownloadRepository] +
  * [com.vervan.chat.modeldownload.ModelCatalog], category `TTS_VOICE`), which gives them proper
- * pause/resume/cancel/retry/delete UI instead of this class's simple download-only flow. Kokoro
- * stays here because it needs `.tar.bz2` archive extraction (`voices.bin` alongside the model,
- * no MMS/flat-file equivalent), which the generic multi-file download system doesn't support —
- * not worth building for one optional secondary voice.
+ * pause/resume/cancel/retry/delete UI instead of this class's simple download flow. Kokoro stays
+ * here because it needs `.tar.bz2` archive extraction (`voices.bin` alongside the model, no
+ * MMS/flat-file equivalent), which the generic multi-file download system doesn't support — not
+ * worth building a whole second catalogue category for one optional secondary voice.
+ *
+ * The archive download itself still resumes via [HttpRangeDownloader] (the same Range-request
+ * engine the real system uses) — [downloadArchiveVoice] keeps the partial `.tar.bz2` on a
+ * deterministic per-(engine, language) path instead of deleting it on every interruption, so a
+ * dropped connection or a user-cancelled retry continues from where it left off rather than
+ * re-fetching the whole ~300 MB archive. Only extraction (post-download) stays custom.
  */
 class TtsModelDownloadManager(
     private val context: Context,
@@ -46,10 +55,12 @@ class TtsModelDownloadManager(
      * contains `model.onnx` + `tokens.txt` + a shared `espeak-ng-data/` directory, all under one
      * top-level folder matching the archive name) directly into a flat voice directory — the
      * layout [PiperTtsEngine]/[KokoroTtsEngine] expect. No-ops (returns the existing row) if
-     * already downloaded. On any failure (bad URL, truncated download, corrupt archive, missing
-     * `model.onnx` after extraction) the partial directory is removed and nothing is written, so
-     * [TtsEngineSelector] simply finds nothing for that engine/language and falls through to the
-     * next tier. */
+     * already downloaded. The download step resumes via [HttpRangeDownloader] if a previous
+     * attempt was interrupted (see the class doc); a corrupt/incomplete archive that still fails
+     * extraction after a full download is discarded so a subsequent call starts clean rather than
+     * retrying a bad file forever. On failure the voice directory is removed and nothing is
+     * written, so [TtsEngineSelector] simply finds nothing for that engine/language and falls
+     * through to the next tier. */
     suspend fun downloadArchiveVoice(
         engine: String,
         language: String,
@@ -65,12 +76,21 @@ class TtsModelDownloadManager(
         networkAuditLog.record("Downloading TTS voice model: $displayLabel")
 
         val voiceDir = File(voicesDir, "${engine.lowercase()}_$language").apply { mkdirs() }
-        val archiveFile = File(context.cacheDir, "tts_download_${System.currentTimeMillis()}.tar.bz2")
+        // Deterministic (not timestamped) so a later call — after a dropped connection or a user
+        // cancel/retry — finds the same partial file and resumes it via Range requests instead of
+        // re-fetching the whole archive (Kokoro's is ~300 MB). Kokoro's archive URL is a pinned
+        // GitHub release asset, which GitHub treats as immutable once published, so skipping
+        // ETag/Last-Modified persistence across attempts (unlike the main downloader, which
+        // additionally guards against a mutable upstream source) is an acceptable, deliberately
+        // scoped-down risk here.
+        val archiveFile = File(context.cacheDir, "tts_download_${engine.lowercase()}_$language.tar.bz2")
         try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val totalBytes = downloadFile(archiveUrl, archiveFile, digest) { fraction ->
+            var totalBytes: Long? = null
+            HttpRangeDownloader().download(archiveUrl, archiveFile, knownEtag = null, knownLastModified = null, authToken = null) { downloaded, total ->
                 if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
-                jobDao.upsert(job.copy(progress = (fraction * 90).toInt(), detail = "Downloading…", updatedAt = System.currentTimeMillis()))
+                totalBytes = total
+                val progress = if (total != null && total > 0) ((downloaded * 90) / total).toInt() else 0
+                jobDao.upsert(job.copy(progress = progress, detail = "Downloading…", updatedAt = System.currentTimeMillis()))
             }
             if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
             jobDao.upsert(job.copy(progress = 90, detail = "Extracting…", updatedAt = System.currentTimeMillis()))
@@ -79,25 +99,52 @@ class TtsModelDownloadManager(
                 throw IOException("Archive did not contain model.onnx")
             }
 
-            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            val hash = sha256Of(archiveFile)
             val model = TtsVoiceModel(
                 engine = engine, language = language, filePath = voiceDir.absolutePath,
-                fileSizeBytes = totalBytes, sha256 = hash
+                fileSizeBytes = totalBytes ?: archiveFile.length(), sha256 = hash
             )
             voiceModelDao.upsert(model)
             jobDao.upsert(job.copy(state = JobState.COMPLETED, progress = 100, updatedAt = System.currentTimeMillis()))
+            archiveFile.delete()
             TtsDownloadResult.Success(model)
         } catch (cancelled: CancellationException) {
-            voiceDir.deleteRecursively()
-            jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped by user", updatedAt = System.currentTimeMillis()))
+            // The archive file is deliberately kept (not deleted) so the next attempt resumes
+            // instead of restarting — only extraction output is cleaned up, since extraction
+            // hasn't necessarily run yet or may have partially written into voiceDir.
+            voiceDir.listFiles()?.forEach { it.deleteRecursively() }
+            jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped by user — resumes on retry", updatedAt = System.currentTimeMillis()))
             TtsDownloadResult.Failed("Download stopped")
+        } catch (e: ModelDownloadException) {
+            // A network/transport failure — the partial archive is still good, so keep it for a
+            // resumed retry. Only a range/source-integrity failure invalidates it outright, and
+            // HttpRangeDownloader already deletes/restarts that case internally before this can
+            // observe it.
+            voiceDir.listFiles()?.forEach { it.deleteRecursively() }
+            jobDao.upsert(job.copy(state = JobState.FAILED, detail = e.message ?: "Download failed", updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Failed(e.message ?: "Download failed")
         } catch (t: Throwable) {
-            voiceDir.deleteRecursively()
+            // Extraction/validation failed on a *complete* download — the archive bytes
+            // themselves are the problem, so discard it; resuming a known-bad file would just
+            // fail the same way again.
+            archiveFile.delete()
+            voiceDir.listFiles()?.forEach { it.deleteRecursively() }
             jobDao.upsert(job.copy(state = JobState.FAILED, detail = t.message ?: "Download failed", updatedAt = System.currentTimeMillis()))
             TtsDownloadResult.Failed(t.message ?: "Download failed")
-        } finally {
-            archiveFile.delete()
         }
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     /** Removes a downloaded voice's files and its [TtsVoiceModel] row. */
@@ -105,6 +152,113 @@ class TtsModelDownloadManager(
         val existing = voiceModelDao.getByEngine(engine, language) ?: return@withContext
         File(existing.filePath).deleteRecursively()
         voiceModelDao.delete(existing)
+    }
+
+    /**
+     * Imports a whisper.cpp ggml/GGUF model file already on-device (SAF-picked) — the
+     * local-file counterpart to [downloadArchiveVoice], for bringing your own whisper.cpp model
+     * (a different size/quantization, or simply without going through the catalog/network at
+     * all) the same way [com.vervan.chat.model.ModelImportManager] lets you locally import a
+     * generation/embedding model. Extension- and magic-byte-validated via [ModelFileSniffer] so
+     * this can't silently accept, say, a renamed GGUF language model. Writes into the exact
+     * directory [WhisperCppSttEngine] already reads
+     * (`stt_models/whisper_cpp_multi/`, matching what a catalog `STT_MODEL` download produces —
+     * see [ModelDownloadRepository][com.vervan.chat.modeldownload.ModelDownloadRepository]'s
+     * `finalizeVoiceModel`), and replaces any existing whisper.cpp model in that slot, mirroring
+     * what a fresh catalog re-download would do.
+     */
+    suspend fun importWhisperCppModel(
+        context: Context,
+        uri: Uri,
+        onProgress: (String) -> Unit = {}
+    ): TtsDownloadResult = withContext(Dispatchers.IO) {
+        val rawName = queryDisplayName(context, uri) ?: uri.lastPathSegment ?: "whisper-model.bin"
+        val safeName = rawName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifBlank { "whisper-model.bin" }
+        if (!safeName.endsWith(".bin", ignoreCase = true) && !safeName.endsWith(".gguf", ignoreCase = true)) {
+            return@withContext TtsDownloadResult.Failed("whisper.cpp models must be a .bin (ggml) or .gguf file.")
+        }
+        if (!ModelFileSniffer.looksLikeWhisperContainer(context, uri)) {
+            return@withContext TtsDownloadResult.Failed("This doesn't look like a valid whisper.cpp model file (missing ggml/GGUF header).")
+        }
+        if (safeName.endsWith(".gguf", ignoreCase = true)) {
+            // GGUF is also llama.cpp's language-model container — architecture disambiguates a
+            // whisper GGUF from, say, a chat model someone picked here by mistake. A null
+            // (unparseable/absent architecture key) is let through rather than rejected, since
+            // that's a parser-coverage gap, not evidence the file is wrong.
+            val architecture = ModelFileSniffer.ggufArchitecture(context, uri)
+            if (architecture != null && architecture != "whisper") {
+                return@withContext TtsDownloadResult.Failed(
+                    "This GGUF file is a \"$architecture\" model, not whisper — import it from the matching option instead."
+                )
+            }
+        }
+
+        val job = JobRecord(type = JobType.TTS_MODEL_DOWNLOAD, label = "Whisper (imported)", state = JobState.RUNNING)
+        jobDao.upsert(job)
+        onProgress("Copying ${safeName}…")
+        val voiceDir = File(context.filesDir, "stt_models/${WhisperCppSttEngine.ENGINE.lowercase()}_${WhisperCppSttEngine.MODEL_LANGUAGE_KEY}").apply { mkdirs() }
+        val dest = File(voiceDir, safeName)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            var bytesCopied = 0L
+            val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Could not open selected file")
+            input.use { src ->
+                dest.outputStream().use { output ->
+                    val buffer = ByteArray(1 shl 20)
+                    while (true) {
+                        val read = src.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        digest.update(buffer, 0, read)
+                        bytesCopied += read
+                        onProgress("Copying… ${bytesCopied / (1024 * 1024)} MB")
+                        jobDao.upsert(job.copy(detail = "Copying… ${bytesCopied / (1024 * 1024)} MB", updatedAt = System.currentTimeMillis()))
+                    }
+                }
+            }
+            if (bytesCopied == 0L) throw IOException("Selected file is empty")
+            // Only one whisper.cpp model is ever "the" model for this language slot — drop any
+            // other file left in the directory (a previous local import or catalog download) now
+            // that the new one has copied successfully, so WhisperCppSttEngine's "largest file in
+            // the directory" lookup can't pick up a stale leftover.
+            voiceDir.listFiles()?.forEach { if (it != dest) it.delete() }
+            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            // Reuse the existing (engine, language) row's id, if one exists (a prior catalog
+            // download or import at this same slot), instead of always minting a fresh UUID —
+            // TtsVoiceModel.id-keyed upsert() only replaces an exact id match, so a new id here
+            // would leave the old row behind as a stale duplicate that other (engine, language)
+            // keyed lookups (installedVoiceUi, WhisperCppSttEngine.ensureLoadedLocked) could
+            // resolve to instead of this fresh import.
+            val existingId = voiceModelDao.getByEngine(WhisperCppSttEngine.ENGINE, WhisperCppSttEngine.MODEL_LANGUAGE_KEY)?.id
+            val model = TtsVoiceModel(
+                id = existingId ?: java.util.UUID.randomUUID().toString(),
+                engine = WhisperCppSttEngine.ENGINE,
+                language = WhisperCppSttEngine.MODEL_LANGUAGE_KEY,
+                filePath = voiceDir.absolutePath,
+                fileSizeBytes = bytesCopied,
+                sha256 = hash
+            )
+            voiceModelDao.upsert(model)
+            jobDao.upsert(job.copy(state = JobState.COMPLETED, progress = 100, updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Success(model)
+        } catch (cancelled: CancellationException) {
+            dest.delete()
+            jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped", updatedAt = System.currentTimeMillis()))
+            throw cancelled
+        } catch (t: Throwable) {
+            dest.delete()
+            jobDao.upsert(job.copy(state = JobState.FAILED, detail = t.message ?: "Import failed", updatedAt = System.currentTimeMillis()))
+            TtsDownloadResult.Failed(t.message ?: "Import failed")
+        }
+    }
+
+    private fun queryDisplayName(context: Context, uri: Uri): String? {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) return cursor.getString(nameIndex)
+        }
+        return null
     }
 
     /** Extracts a `.tar.bz2` into [destDir], stripping the archive's single top-level directory
@@ -130,37 +284,6 @@ class TtsModelDownloadManager(
         }
     }
 
-    private suspend fun downloadFile(url: String, dest: File, digest: MessageDigest, onProgress: suspend (Float) -> Unit): Long {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        connection.connect()
-        if (connection.responseCode !in 200..299) {
-            connection.disconnect()
-            throw IOException("HTTP ${connection.responseCode} fetching $url")
-        }
-        val contentLength = connection.contentLengthLong.takeIf { it > 0 }
-        var bytesCopied = 0L
-        connection.inputStream.use { input ->
-            dest.outputStream().use { output ->
-                val buffer = ByteArray(1 shl 16)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read == -1) break
-                    output.write(buffer, 0, read)
-                    digest.update(buffer, 0, read)
-                    bytesCopied += read
-                    if (contentLength != null) onProgress((bytesCopied.toFloat() / contentLength).coerceIn(0f, 1f))
-                }
-            }
-        }
-        connection.disconnect()
-        if (bytesCopied == 0L) {
-            dest.delete()
-            throw IOException("Downloaded file was empty: $url")
-        }
-        return bytesCopied
-    }
 }
 
 /** The one voice still offered outside the real model-download system — see the class doc above

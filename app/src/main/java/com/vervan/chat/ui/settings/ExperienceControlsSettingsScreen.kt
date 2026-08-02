@@ -22,7 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,12 +55,13 @@ fun ExperienceControlsSettingsScreen(
     val preferredBackend by vm.preferredBackend.collectAsState()
     val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsState()
     val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsState()
+    val fastCapableRoutingEnabled by vm.fastCapableRoutingEnabled.collectAsState()
     var confirmExpert by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Experience & controls") },
+                title = { Text("Chat behavior") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -84,7 +85,7 @@ fun ExperienceControlsSettingsScreen(
             androidx.compose.material3.Card(Modifier.padding(top = Space.xs)) {
                 ListItem(
                     headlineContent = { Text("Expert mode") },
-                    supportingContent = { Text("Show model, context, retrieval, and diagnostic controls.") },
+                    supportingContent = { Text("Show advanced model and response controls.") },
                     leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                     trailingContent = {
                         Switch(
@@ -99,19 +100,36 @@ fun ExperienceControlsSettingsScreen(
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Model selection: Auto") },
-                    supportingContent = { Text("Picks the best installed model for each message's needs — speed, quality, or image/audio. Turn off to always choose a model yourself.") },
+                    headlineContent = { Text("Choose models automatically") },
+                    supportingContent = { Text("Selects a suitable installed model for each message. Turn off to choose one yourself.") },
                     leadingContent = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = autoModelSelectionEnabled, onCheckedChange = vm::setAutoModelSelectionEnabled)
                     }
                 )
+                if (autoModelSelectionEnabled) {
+                    androidx.compose.material3.HorizontalDivider()
+                    ListItem(
+                        headlineContent = { Text("Route short/long messages differently") },
+                        supportingContent = {
+                            Text(
+                                "For a chat left on Balanced, uses a smaller installed model for short messages " +
+                                    "and a larger one for long/complex ones. Switching models mid-conversation " +
+                                    "costs a brief reload."
+                            )
+                        },
+                        leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
+                        trailingContent = {
+                            Switch(checked = fastCapableRoutingEnabled, onCheckedChange = vm::setFastCapableRoutingEnabled)
+                        }
+                    )
+                }
             }
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
                     headlineContent = { Text("Adapt to device conditions") },
-                    supportingContent = { Text("Uses Battery saver or Thermal safe only when Android reports power or heat pressure.") },
+                    supportingContent = { Text("Reduces demand when Android reports low power or high heat.") },
                     leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = deviceAwarePerformance, onCheckedChange = vm::setDeviceAwarePerformance)
@@ -119,16 +137,16 @@ fun ExperienceControlsSettingsScreen(
                 )
             }
 
-            SectionLabel("Current resolved defaults")
-            SettingsRow(Icons.Filled.Memory, "Context capacity", "$contextLimit tokens · preserved when modes change") {}
+            SectionLabel("Current defaults")
+            SettingsRow(Icons.Filled.Memory, "Context capacity", "$contextLimit tokens") {}
             SettingsRow(Icons.Filled.Speed, "Response length", responseLength.lowercase().replaceFirstChar { it.uppercase() }) {}
             SettingsRow(Icons.Filled.Tune, "Performance", preferredBackend.lowercase().replaceFirstChar { it.uppercase() }) {}
 
-            SectionLabel(if (expertMode) "Raw controls unlocked" else "Configuration")
+            SectionLabel("More settings")
             SettingsRow(
                 Icons.Filled.Tune,
                 "Generation settings",
-                if (expertMode) "Temperature, sampling, context, and llama.cpp parameters" else "Simple response style and length controls",
+                if (expertMode) "Sampling, context, and llama.cpp controls" else "Response style, length, and search",
                 onOpenGeneration
             )
             SettingsRow(
@@ -150,7 +168,7 @@ fun ExperienceControlsSettingsScreen(
     if (confirmExpert) {
         ConfirmDialog(
             title = "Enable Expert mode?",
-            body = "This reveals raw model and generation parameters. Existing values are preserved when you switch modes.",
+            body = "Shows advanced model and response controls. Your current values stay unchanged.",
             confirmLabel = "Enable",
             onConfirm = { vm.setExpertMode(true); confirmExpert = false },
             onDismiss = { confirmExpert = false }

@@ -41,9 +41,20 @@ fun JobProgressCard(
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.labelLarge)
+                OverflowTooltipText(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
                 elapsedLabel?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = Space.sm),
+                    )
                 }
             }
             Text(
@@ -58,7 +69,7 @@ fun JobProgressCard(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (primaryActionLabel != null || secondaryActionLabel != null) {
-                Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
+                ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     if (secondaryActionLabel != null && onSecondaryAction != null) {
                         TextButton(onClick = onSecondaryAction) { Text(secondaryActionLabel) }
                     }

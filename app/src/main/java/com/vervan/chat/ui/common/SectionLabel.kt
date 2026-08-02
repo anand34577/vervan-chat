@@ -47,12 +47,13 @@ fun SectionLabel(
     } else {
         Row(
             base.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
-            Text(
-                title,
+            OverflowTooltipText(
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
             )
             Text(
                 "$count",

@@ -1,9 +1,17 @@
 package com.vervan.chat.ui.tools
 
+import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +43,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberThumbnail
+import com.vervan.chat.ui.theme.Space
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
@@ -43,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -71,11 +83,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Multi-page camera capture -> corner-adjust crop with perspective correction -> export as
- * PDF/images (share sheet, all local) or import as a Knowledge document via OCR.
- * manual draggable corners, no auto edge-detection — that needs a CV library (OpenCV/
- * MLKit) this offline app doesn't bundle. The perspective warp itself is Matrix.setPolyToPoly,
- * pure platform API. Add auto boundary detection if manual corners prove too slow in practice.
+ * Capture via Google ML Kit's own full-screen Document Scanner UI ([GmsDocumentScanning], see
+ * [DocumentScannerScreen.startScan]) -> export as PDF/images (share sheet, all local) or import as
+ * a Knowledge document via OCR. ML Kit's capture/crop/deskew is trained specifically for this job
+ * and returns already-finished page images directly into `pages`, skipping any manual crop step —
+ * [PageCropDialog] only comes up if the user taps an already-imported page to re-adjust it.
+ *
+ * Requires Google Play Services (it dynamically downloads the scanner module/UI on first use);
+ * the capture button is disabled with an explanation when that's unavailable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,48 +103,79 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
     var isWorking by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    fun newImageFile(): Pair<File, android.net.Uri> {
-        val dir = File(app.filesDir, "scans").apply { mkdirs() }
-        val file = File(dir, "page-${System.currentTimeMillis()}.jpg")
-        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
-        return file to uri
-    }
-
-    var pendingFile by remember { mutableStateOf<File?>(null) }
-    // Path currently open in the crop editor: a fresh capture (not yet in `pages`) or an existing
-    // page being re-adjusted. thumbVersion invalidates remembered thumbnails after an in-place
-    // re-crop, since the path itself doesn't change.
+    // Path currently open in the crop editor, for re-adjusting an already-imported page.
+    // thumbVersion invalidates remembered thumbnails after an in-place re-crop, since the path
+    // itself doesn't change.
     var cropTarget by remember { mutableStateOf<String?>(null) }
     var thumbVersion by remember { mutableIntStateOf(0) }
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = pendingFile
-        pendingFile = null
-        if (success && file != null) {
-            ImageUtils.fixOrientation(file)
-            cropTarget = file.absolutePath
-        }
-    }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            val (file, uri) = newImageFile()
-            pendingFile = file
-            takePicture.launch(uri)
+    var isImportingScan by remember { mutableStateOf(false) }
+
+    // ML Kit's own scanner already crops/deskews each page, so its results land straight in
+    // `pages`, skipping [PageCropDialog] entirely.
+    fun importGmsScanResult(scanResult: GmsDocumentScanningResult) {
+        val uris = scanResult.pages?.map { it.imageUri } ?: return
+        if (uris.isEmpty()) return
+        isImportingScan = true
+        scope.launch {
+            val imported = withContext(Dispatchers.IO) {
+                val dir = File(context.filesDir, "scans").apply { mkdirs() }
+                uris.mapNotNull { uri ->
+                    val file = File(dir, "page-${System.currentTimeMillis()}-${uri.hashCode()}.jpg")
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            file.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    file.takeIf { it.exists() }?.absolutePath
+                }
+            }
+            isImportingScan = false
+            pages = pages + imported
         }
     }
 
+    val gmsScanLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.let(::importGmsScanResult)
+        }
+    }
+
+    // Google Play services is required for GmsDocumentScanning (it dynamically downloads the
+    // scanner module/UI from Play services on first use) — absent on GMS-less devices/ROMs, the
+    // capture button below is disabled with an explanation instead of silently failing.
+    val gmsAvailable = remember {
+        GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+    }
+
+    fun startScan() {
+        val activity = context as? Activity ?: return
+        val options = GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(false)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+            .addOnSuccessListener { intentSender ->
+                gmsScanLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            }
+            .addOnFailureListener {
+                // Play services reported available but the scanner module itself failed to start
+                // (e.g. first-run module download failed offline).
+                statusMessage = "Couldn't start the scanner — check your connection and try again."
+            }
+    }
+
+    // cropTarget is only ever set from an already-imported page's thumbnail (see the Card
+    // onClick below) — every target here is always already in `pages`, so re-adjusting a crop
+    // never needs to add or delete a page, only re-save the file in place.
     cropTarget?.let { target ->
         PageCropDialog(
             imagePath = target,
             onDone = {
-                if (target !in pages) pages = pages + target
                 thumbVersion++
                 cropTarget = null
             },
-            onCancel = {
-                // A fresh capture the user backed out of shouldn't linger on disk.
-                if (target !in pages) File(target).delete()
-                cropTarget = null
-            }
+            onCancel = { cropTarget = null }
         )
     }
 
@@ -151,6 +197,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 val out = File(dir, "scan-${System.currentTimeMillis()}.pdf")
                 out.outputStream().use { doc.writeTo(it) }
                 doc.close()
+                com.vervan.chat.system.pruneOldExports(dir)
                 out
             }
             isWorking = false
@@ -162,15 +209,27 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
         pages.forEach { path -> com.vervan.chat.ui.common.openWithExternalApp(context, File(path), "image/jpeg") }
     }
 
+    // Extracts OCR text for every captured page, joined for downstream use. Returns null (with
+    // statusMessage set to an explanation) when text recognition found nothing on any page —
+    // callers must not silently save/process an empty result as if it succeeded.
+    suspend fun extractPagesTextOrNull(): String? {
+        val text = withContext(Dispatchers.IO) {
+            pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
+        }
+        if (text.isBlank()) {
+            statusMessage = "No text could be recognized in these pages. Try clearer, evenly lit captures."
+            return null
+        }
+        return text
+    }
+
     fun processAsStudyMaterial() {
         isWorking = true
         statusMessage = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
-            }
+            val text = extractPagesTextOrNull()
             isWorking = false
-            onProcessAsStudyMaterial(text)
+            if (text != null) onProcessAsStudyMaterial(text)
         }
     }
 
@@ -178,11 +237,15 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
         isWorking = true
         statusMessage = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
+            val text = extractPagesTextOrNull()
+            if (text == null) {
+                isWorking = false
+                return@launch
             }
-            val kb = KnowledgeBase(name = "Scans")
-            app.container.db.knowledgeBaseDao().upsert(kb)
+            val kb = app.container.db.knowledgeBaseDao().get(KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID)
+                ?: KnowledgeBase(id = KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID, name = "Scans").also {
+                    app.container.db.knowledgeBaseDao().upsert(it)
+                }
             val name = "Document scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
             val document = app.container.documentImportManager.importRawText(kb.id, name, text)
             isWorking = false
@@ -199,8 +262,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             )
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             ToolIntro(
                 icon = Icons.Filled.PhotoCamera,
                 title = "Scan a complete document",
@@ -209,25 +271,47 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             Text(
                 "Capture pages, then export or add them to Knowledge.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.sm)
             )
             OutlinedButton(
-                onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                onClick = ::startScan,
+                enabled = gmsAvailable && !isImportingScan,
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
             ) {
-                Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                Text(" Capture page ${pages.size + 1}")
+                if (isImportingScan) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Importing…", modifier = Modifier.padding(start = Space.sm))
+                } else {
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                    Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
+                }
+            }
+            if (!gmsAvailable) {
+                Text(
+                    "Document scanning needs Google Play services, which isn't available on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = Space.sm)
+                )
             }
             if (pages.isNotEmpty()) {
-                LazyRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(pages, key = { it }) { path ->
                         Box(Modifier.size(100.dp)) {
-                            val bitmap = remember(path, thumbVersion) { ImageUtils.decodeThumbnail(path, 200)?.asImageBitmap() }
+                            val bitmap = rememberThumbnail(path, 200, invalidationKey = thumbVersion)
                             Card(onClick = { cropTarget = path }, modifier = Modifier.fillMaxSize()) {
                                 bitmap?.let { Image(it, "Page — tap to adjust crop", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                             }
                             IconButton(
-                                onClick = { pages = pages.filterNot { it == path } },
+                                onClick = {
+                                    pages = pages.filterNot { it == path }
+                                    // Pages only ever get here via a copy into filesDir/scans (see
+                                    // importGmsScanResult) — nothing else in the app references this
+                                    // path (OCR/export read it in place, they don't persist it), so a
+                                    // discarded page is safe to delete outright instead of leaking it.
+                                    runCatching { File(path).delete() }
+                                },
                                 modifier = Modifier.align(Alignment.TopEnd)
                                     .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), CircleShape)
                             ) { Icon(Icons.Filled.Close, "Remove page", tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.size(16.dp)) }
@@ -238,32 +322,31 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Processing ${pages.size} ${if (pages.size == 1) "page" else "pages"}",
                         body = "Reading and preparing captured pages. Keep this screen open.",
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
                 } else {
-                    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = ::exportPdf, modifier = Modifier.weight(1f)) {
+                    ResponsiveActions(Modifier.padding(top = Space.lg)) {
+                        OutlinedButton(onClick = ::exportPdf) {
                             Icon(Icons.Filled.PictureAsPdf, null, Modifier.size(18.dp))
-                            Text(" PDF")
+                            Text("PDF", modifier = Modifier.padding(start = Space.sm))
                         }
-                        OutlinedButton(onClick = ::exportImages, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = ::exportImages) {
                             Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
-                            Text(" Images")
+                            Text("Images", modifier = Modifier.padding(start = Space.sm))
                         }
                     }
-                    Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text(" Save as document (RAG)")
+                        Text("Save as document (RAG)", modifier = Modifier.padding(start = Space.sm))
                     }
-                    OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
                         Text("Create study material")
                     }
                 }
                 statusMessage?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                 }
             }
-        }
         }
     }
 }
@@ -271,28 +354,33 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
 /**
  * Corner-adjust crop editor with perspective correction, like dedicated scanner apps: drag the
  * four handles onto the document's corners and the page is de-skewed to a flat rectangle via
- * [android.graphics.Matrix.setPolyToPoly] (no CV dependency). Corners live in normalized [0,1]
+ * [android.graphics.Matrix.setPolyToPoly] (pure platform API). Corners live in normalized [0,1]
  * image coordinates so screen size/rotation never invalidates them; the warp itself runs on the
- * full-resolution bitmap at confirm time and overwrites [imagePath] in place.
+ * full-resolution bitmap at confirm time and overwrites [imagePath] in place. Only reachable by
+ * tapping an already-imported page to re-adjust it — ML Kit itself already crops/deskews on
+ * capture, so this always starts from a fixed inset rather than a detected outline.
  */
 @Composable
 private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -> Unit) {
     val scope = rememberCoroutineScope()
     var isSaving by remember { mutableStateOf(false) }
-    // Display copy only — bounded decode keeps an 8MP+ capture from costing 30MB+ here.
-    val displayBitmap = remember(imagePath) {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(imagePath, bounds)
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) > 1600 || bounds.outHeight / (sample * 2) > 1600) sample *= 2
-        BitmapFactory.decodeFile(imagePath, BitmapFactory.Options().apply { inSampleSize = sample })
+    // Display copy only — bounded decode keeps an 8MP+ capture from costing 30MB+ here. Decoded
+    // on Dispatchers.IO via produceState, not inline in remember{} — a synchronous decode here
+    // (the previous pattern) runs on the main thread during composition, i.e. exactly when this
+    // dialog is opening, which is precisely the moment jank is most visible to the user.
+    val displayBitmap by produceState<Bitmap?>(initialValue = null, imagePath) {
+        value = withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(imagePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) > 1600 || bounds.outHeight / (sample * 2) > 1600) sample *= 2
+            BitmapFactory.decodeFile(imagePath, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
     }
-    // Default corners at an 8% inset — visibly "a crop" so the affordance is obvious, and close
-    // enough to full-page that Full page/small adjustments are both one gesture away.
+    // An 8% inset — visibly "a crop" so the affordance is obvious, and close enough to full-page
+    // that Full page/small adjustments are both one gesture away.
     val corners = remember(imagePath) {
-        mutableStateListOf(
-            Offset(0.08f, 0.08f), Offset(0.92f, 0.08f), Offset(0.92f, 0.92f), Offset(0.08f, 0.92f),
-        )
+        mutableStateListOf(Offset(0.08f, 0.08f), Offset(0.92f, 0.08f), Offset(0.92f, 0.92f), Offset(0.08f, 0.92f))
     }
 
     fun confirmCrop() {
@@ -318,6 +406,9 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     android.graphics.Canvas(out).drawBitmap(full, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                     File(imagePath).outputStream().use { out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
                     out.recycle()
+                    // The page-list thumbnail is keyed on this same path — without this it would
+                    // keep rendering the pre-crop image after saving (see ImageUtils.invalidateThumbnail).
+                    ImageUtils.invalidateThumbnail(imagePath)
                 }
                 full.recycle()
             }
@@ -333,7 +424,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
         androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = Color.Black) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, "Cancel crop", tint = Color.White) }
@@ -349,7 +440,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     }) { Text("Full page") }
                 }
 
-                Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)) {
+                Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = Space.lg)) {
                     // The displayed image rect inside this Box (ContentScale.Fit letterboxing) —
                     // needed to map normalized corners <-> screen px and back.
                     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -422,14 +513,14 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    Modifier.fillMaxWidth().padding(Space.lg),
+                    horizontalArrangement = Arrangement.spacedBy(Space.md)
                 ) {
                     OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving) { Text("Cancel") }
                     Button(onClick = ::confirmCrop, modifier = Modifier.weight(1f), enabled = !isSaving) {
                         if (isSaving) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text(" Saving…")
+                            Text("Saving…", modifier = Modifier.padding(start = Space.sm))
                         } else Text("Use this crop")
                     }
                 }

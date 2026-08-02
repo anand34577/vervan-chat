@@ -1,7 +1,6 @@
 package com.vervan.chat.ui.templates
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -21,7 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +37,7 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,7 +68,7 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             if (isBuiltIn) {
                 Text(
                 "Saving creates an editable copy. The built-in stays unchanged.",
@@ -79,37 +79,35 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Slash-command name",
                 prefix = "/", maxLength = ValidationLimits.TEMPLATE_COMMAND_NAME, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             BoundedTextField(
                 value = description, onValueChange = vm::setDescription, label = "Description",
                 maxLength = ValidationLimits.TEMPLATE_DESCRIPTION,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             BoundedTextField(
                 value = body, onValueChange = vm::setBody, label = "Template body",
                 maxLength = ValidationLimits.TEMPLATE_BODY, minLines = 5,
                 supportingText = "Use {{input}} where the text after the command should go",
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             if (name.isNotBlank()) {
                 Text(
                     "Preview: /$name optional input",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             val withinLimits = name.length <= ValidationLimits.TEMPLATE_COMMAND_NAME &&
                 description.length <= ValidationLimits.TEMPLATE_DESCRIPTION &&
                 body.length <= ValidationLimits.TEMPLATE_BODY
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                Button(
-                    enabled = withinLimits,
-                    onClick = { scope.launch { if (vm.save()) onBack() } },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Save") }
-            }
+            Button(
+                enabled = withinLimits,
+                onClick = { scope.launch { if (vm.save()) onBack() } },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
+            ) { Text("Save") }
         }
         }
     }

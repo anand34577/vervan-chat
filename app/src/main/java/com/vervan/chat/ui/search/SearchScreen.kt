@@ -47,7 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +92,7 @@ fun SearchScreen(
     onOpenKnowledge: (String) -> Unit,
     onOpenPersona: (String) -> Unit,
     onOpenDocument: (String) -> Unit = onOpenKnowledge,
+    onOpenPassage: (String) -> Unit = {},
     onOpenMemory: (String) -> Unit = {},
     onOpenMessage: (String, String) -> Unit = { chatId, _ -> onOpenChat(chatId) },
     onOpenProject: (String) -> Unit = {},
@@ -148,7 +149,7 @@ fun SearchScreen(
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = "Search your private workspace",
-                        body = "Find conversations, messages, projects, files, tools, workflows, and saved work locally."
+        body = "Search chats, files, tools, workflows, and saved work on this device."
                     )
                     searching -> LoadingSkeletonList(
                         rows = 6,
@@ -172,13 +173,23 @@ fun SearchScreen(
                             item { GroupLabel("Documents") }
                             items(results.documents, key = { "d_" + it.id }) { ResultRow(Icons.Filled.Description, it.displayName, "Local document", query) { onOpenDocument(it.id) } }
                         }
+                        if (results.passages.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Content)) {
+                            item { GroupLabel("In documents") }
+                            items(results.passages, key = { "pg_" + it.chunkId }) {
+                                val subtitle = it.documentName + (it.pageNumber?.let { p -> " · p.$p" } ?: "")
+                                ResultRow(Icons.Filled.Description, it.excerpt.take(100), subtitle, query) { onOpenPassage(it.chunkId) }
+                            }
+                        }
                         if (results.personas.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Reusable)) {
                             item { GroupLabel("Personas") }
                             items(results.personas, key = { "p_" + it.id }) { ResultRow(Icons.Outlined.Person, it.name, it.description, query) { onOpenPersona(it.id) } }
                         }
                         if (results.messages.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Messages)) {
                             item { GroupLabel("Messages") }
-                            items(results.messages, key = { "m_" + it.id }) { ResultRow(Icons.AutoMirrored.Filled.Chat, it.content.take(100), "Message in a conversation", query) { onOpenMessage(it.chatId, it.id) } }
+                            items(results.messages, key = { "m_" + it.id }) {
+                                val preview = com.vervan.chat.ui.chat.chatPreviewText(it.content, it.role == com.vervan.chat.data.db.entities.MessageRole.USER)
+                                ResultRow(Icons.AutoMirrored.Filled.Chat, preview.take(100), "Message in a conversation", query) { onOpenMessage(it.chatId, it.id) }
+                            }
                         }
                         if (results.memories.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Reusable)) {
                             item { GroupLabel("Memory") }
@@ -224,7 +235,7 @@ fun SearchScreen(
                             when (scope) {
                                 SearchScope.Chats -> results.chats.isEmpty()
                                 SearchScope.Messages -> results.messages.isEmpty()
-                                SearchScope.Content -> results.notes.isEmpty() && results.documents.isEmpty() && results.knowledgeBases.isEmpty()
+                                SearchScope.Content -> results.notes.isEmpty() && results.documents.isEmpty() && results.knowledgeBases.isEmpty() && results.passages.isEmpty()
                                 SearchScope.Organize -> results.workspaces.isEmpty() && results.projects.isEmpty() && results.folders.isEmpty()
                                 SearchScope.Reusable -> results.personas.isEmpty() && results.memories.isEmpty() && results.templates.isEmpty() && results.workflows.isEmpty() && results.savedOutputs.isEmpty()
                                 SearchScope.Tools -> results.tools.isEmpty() && results.toolRuns.isEmpty()
@@ -286,7 +297,7 @@ private fun ResultRow(icon: ImageVector, title: String, subtitle: String = "", q
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = Space.xs)
                     )
                 }
             }

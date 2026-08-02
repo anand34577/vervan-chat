@@ -16,18 +16,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,9 +45,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
 
     val themeMode by vm.themeMode.collectAsState()
     val accentTheme by vm.accentTheme.collectAsState()
-    val fontScale by vm.fontScale.collectAsState()
     val oledTrueBlack by vm.oledTrueBlack.collectAsState()
-    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val dynamicColor by vm.dynamicColor.collectAsState()
 
     Scaffold(
@@ -67,7 +62,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Theme", style = MaterialTheme.typography.bodyMedium)
-                    Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         ThemeMode.entries.forEach { mode ->
                             VervanFilterChip(
                                 selected = themeMode == mode,
@@ -78,10 +73,10 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     }
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         Row(
-                            Modifier.fillMaxWidth().padding(top = 16.dp),
+                            Modifier.fillMaxWidth().padding(top = Space.lg),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                             Switch(checked = dynamicColor, onCheckedChange = { vm.setDynamicColor(it) })
                         }
                     }
@@ -89,9 +84,9 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         "Accent color",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(top = 16.dp)
+                        modifier = Modifier.padding(top = Space.lg)
                     )
-                    Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                         AccentTheme.entries.forEach { accent ->
                             AccentSwatch(
                                 accent = accent,
@@ -108,29 +103,11 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         )
                     }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 16.dp),
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                         Switch(checked = oledTrueBlack, onCheckedChange = { vm.setOledTrueBlack(it) })
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Haptic feedback", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
-                        Switch(checked = hapticsEnabled, onCheckedChange = { vm.setHapticsEnabled(it) })
-                    }
-                    Text("Font size", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Slider(
-                            value = fontScale, onValueChange = { vm.setFontScale(it) },
-                            valueRange = 0.85f..1.5f,
-                            modifier = Modifier.weight(1f).semantics {
-                                contentDescription = "Font size, ${(fontScale * 100).toInt()} percent"
-                            }
-                        )
-                        Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }

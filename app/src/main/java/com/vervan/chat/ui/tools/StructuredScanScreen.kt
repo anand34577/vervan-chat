@@ -4,17 +4,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -40,7 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,8 +45,13 @@ import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
-import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.OverflowTooltipText
+import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -81,7 +80,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var isProcessing by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -96,7 +96,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     }
 
     fun runExtraction(file: File) {
-        imagePath = file.absolutePath
+        managedImagePath.set(file.absolutePath)
         lastFile = file
         isProcessing = true
         errorText = null
@@ -118,7 +118,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         app, prompt,
                         runContext = com.vervan.chat.llm.ToolRunContext("tools/table-scanner", "Table scanner", ocrText),
                     )?.trim()
-                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                        ?: throw IllegalStateException("No model is ready. Open Settings → AI models, load one, then scan again.")
                     if (markdownTable.isBlank()) errorText = "The model couldn't build a table from that image. Try again."
                 } else {
                     val keys = activeFields.joinToString(", ") { it.first }
@@ -132,7 +132,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         app, prompt,
                         runContext = com.vervan.chat.llm.ToolRunContext(route, kind.title, ocrText),
                     )?.trim()
-                        ?: throw IllegalStateException("No generation model is active. Load one from Models, then scan again.")
+                        ?: throw IllegalStateException("No model is ready. Open Settings → AI models, load one, then scan again.")
                     val json = runCatching { JSONObject(raw.substringAfter("{").let { "{$it" }.substringBeforeLast("}").let { "$it}" }) }.getOrNull()
                     fields = activeFields.associate { (key, _) -> key to (json?.optString(key).orEmpty()) }
                     lineItems = json?.optJSONArray("lineItems")?.let { arr -> (0 until arr.length()).joinToString("\n") { arr.optString(it) } }.orEmpty()
@@ -159,7 +159,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         if (success && file != null) {
             ImageUtils.fixOrientation(file)
             runExtraction(file)
-        }
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -177,7 +177,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                         ImageUtils.fixOrientation(file)
                         file
-                    }.getOrNull()
+                    }.getOrElse { file.delete(); null }
                 }
                 if (dest != null) runExtraction(dest)
             }
@@ -186,27 +186,26 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
 
     fun copyText(text: String) {
         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(kind.title, text))
+        clipboard.setSensitiveText(text, scope, kind.title)
     }
 
     fun exportFile(name: String, content: String, mime: String) {
         val dir = File(app.cacheDir, "exports").apply { mkdirs() }
         val file = File(dir, name)
         file.writeText(content)
+        com.vervan.chat.system.pruneOldExports(dir)
         com.vervan.chat.ui.common.openWithExternalApp(context, file, mime)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(kind.title) },
+                title = { OverflowTooltipText(kind.title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
     ) { padding ->
-      PageContainer(Modifier.padding(padding)) {
-       Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 840.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
+        ScrollablePage(contentPadding = padding) {
             FeatureHero(
                 icon = Icons.Filled.PhotoCamera,
                 eyebrow = "Scan and extract",
@@ -217,32 +216,32 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             if (kind == ScanKind.CUSTOM) {
                 OutlinedTextField(
                     value = customFieldsInput, onValueChange = { customFieldsInput = it },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
                     label = { Text("Fields to extract") },
                     placeholder = { Text("e.g. name, ID number, date of birth, expiry date") }
                 )
             }
             val captureEnabled = kind != ScanKind.CUSTOM || activeFields.isNotEmpty()
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = captureEnabled, modifier = Modifier.weight(1f)) {
+            ResponsiveActions {
+                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = captureEnabled) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(" Camera")
+                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
                 }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = captureEnabled, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = captureEnabled) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text(" From files")
+                    Text("From files", modifier = Modifier.padding(start = Space.sm))
                 }
             }
             VervanSectionHeader("2 · Check the source")
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 700)?.asImageBitmap() }
-                bitmap?.let { Image(it, "Scanned image", Modifier.fillMaxWidth().height(180.dp).padding(top = 12.dp), contentScale = ContentScale.Fit) }
+                val bitmap = rememberThumbnail(path, 700)
+                bitmap?.let { Image(it, "Scanned image", Modifier.fillMaxWidth().height(180.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
             } ?: Card(
                 Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 Text(
-                "Take a photo or choose an image to begin.",
+                    "Take a photo or choose an image to begin.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(Space.lg)
@@ -268,34 +267,34 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 if (markdownTable.isNotBlank()) {
                     OutlinedTextField(
                         value = markdownTable, onValueChange = { markdownTable = it },
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp), minLines = 6, label = { Text("Markdown table") }
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 6, label = { Text("Markdown table") }
                     )
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { copyText(markdownTable) }, modifier = Modifier.weight(1f)) { Text("Copy Markdown") }
-                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }, modifier = Modifier.weight(1f)) { Text("Copy CSV") }
-                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }, modifier = Modifier.weight(1f)) { Text("Copy JSON") }
+                    ResponsiveActions(Modifier.padding(top = Space.sm)) {
+                        OutlinedButton(onClick = { copyText(markdownTable) }) { Text("Copy Markdown") }
+                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }) { Text("Copy CSV") }
+                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }) { Text("Copy JSON") }
                     }
                 }
             } else if (fields.isNotEmpty()) {
-                Column(Modifier.padding(top = 16.dp)) {
+                Column(Modifier.padding(top = Space.lg)) {
                     activeFields.forEach { (key, label) ->
                         OutlinedTextField(
                             value = fields[key].orEmpty(),
                             onValueChange = { fields = fields + (key to it) },
                             label = { Text(label) },
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )
                     }
                     if (kind == ScanKind.RECEIPT) {
                         OutlinedTextField(
                             value = lineItems, onValueChange = { lineItems = it },
                             label = { Text("Line items") }, minLines = 3,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )
                     }
                     when (kind) {
                         ScanKind.RECEIPT -> Column {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                                 OutlinedButton(
                                     onClick = {
                                         val header = activeFields.joinToString(",") { it.first }
@@ -303,7 +302,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                         exportFile("receipt-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                     },
                                     modifier = Modifier.weight(1f)
-                                ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Export CSV") }
+                                ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Export CSV", modifier = Modifier.padding(start = Space.sm)) }
                                 Button(
                                     onClick = {
                                         scope.launch {
@@ -321,9 +320,9 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Log as expense") }
                             }
-                            statusMessage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp)) }
+                            statusMessage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.xs)) }
                         }
-                        ScanKind.CUSTOM -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ScanKind.CUSTOM -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                             OutlinedButton(
                                 onClick = {
                                     val json = JSONObject().apply { activeFields.forEach { (key, _) -> put(key, fields[key].orEmpty()) } }
@@ -338,15 +337,13 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                     exportFile("form-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(" Export CSV") }
+                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Export CSV", modifier = Modifier.padding(start = Space.sm)) }
                         }
                         else -> {}
                     }
                 }
             }
         }
-       }
-      }
     }
 }
 

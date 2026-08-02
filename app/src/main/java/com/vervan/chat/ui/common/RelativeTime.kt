@@ -2,8 +2,8 @@ package com.vervan.chat.ui.common
 
 /**
  * "Just now / 5m ago / 3h ago / 2d ago / 12/31/25" — the one relative-timestamp treatment for
- * list rows and cards. Home, Chats, Workspaces, and Workspace Detail each carried a private
- * copy of this; new screens should call this instead of adding a fifth.
+ * list rows and cards. New screens should call this instead of adding another formatter.
+ * Home keeps a resource-backed variant because its wording is localized and intentionally longer.
  */
 fun relativeTime(epochMs: Long, now: Long = System.currentTimeMillis()): String {
     val diff = now - epochMs

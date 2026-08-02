@@ -230,6 +230,7 @@ class DocumentImportManager(
         is ExtractResult.Text -> Chunker.chunk(extracted.content, tokenCounter = tokenCounter())
         is ExtractResult.Tabular -> Chunker.chunkTable(extracted.sheets, tokenCounter())
         is ExtractResult.Slides -> Chunker.chunkSlides(extracted.slides, tokenCounter())
+        is ExtractResult.Paginated -> Chunker.chunkPaginated(extracted.pages, tokenCounter())
         ExtractResult.NeedsOcr, is ExtractResult.Unsupported -> emptyList()
     }
 
@@ -270,7 +271,8 @@ class DocumentImportManager(
                 text = rc.text,
                 tokenCount = rc.tokenCount,
                 embedding = embedding,
-                embeddingModelId = if (embedding != null) activeEmbeddingModelId else null
+                embeddingModelId = if (embedding != null) activeEmbeddingModelId else null,
+                pageNumber = rc.pageNumber
             )
         }
         ensureJobActive(jobId)

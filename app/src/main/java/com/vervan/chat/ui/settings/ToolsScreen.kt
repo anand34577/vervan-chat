@@ -23,7 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,7 +78,7 @@ fun ToolsScreen(onBack: () -> Unit) {
                 "Choose which tools chats can use by default. Each chat can override this.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                modifier = Modifier.padding(top = Space.sm, bottom = Space.sm)
             )
 
             Card(
@@ -103,7 +103,7 @@ fun ToolsScreen(onBack: () -> Unit) {
                 value = query,
                 onValueChange = { query = it },
                 placeholder = "Search model tools",
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
             )
 
             LazyColumn(Modifier.fillMaxSize()) {
