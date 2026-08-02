@@ -6,15 +6,17 @@
     This is the script Gradle's `buildLlamaCppNative` task invokes; it is also runnable by hand.
     Unlike the previous revision of this file it takes no machine-specific edits and does NOT
     need a Developer PowerShell: every toolchain path is either passed in, discovered, or
-    derived, and the MSVC x64 environment is imported from vcvars64.bat when cl.exe isn't
-    already on PATH.
+    derived. A host C/C++ compiler is put on PATH automatically — TDM-GCC-64 first (this repo's
+    current dev machine has Visual Studio uninstalled and uses TDM-GCC-64 at
+    C:\TDM-GCC-64\bin), falling back to MSVC (imported from vcvars64.bat) for machines that still
+    have Visual Studio instead.
 
-    Why MSVC is needed at all for an *Android* build: ggml's Vulkan backend generates its SPIR-V
-    shader headers with `vulkan-shaders-gen`, a tool that must run on the *host*. ggml builds it
-    via ExternalProject with a generated host toolchain file, and on Windows its
-    detect_host_compiler() looks for `cl`/`gcc`/`clang` on PATH. With no MSVC on PATH it either
-    fails outright or (worse) picks up the NDK's clang and produces an ARM binary the host can't
-    execute.
+    Why a host compiler is needed at all for an *Android* build: ggml's Vulkan backend generates
+    its SPIR-V shader headers with `vulkan-shaders-gen`, a tool that must run on the *host*. ggml
+    builds it via ExternalProject with a generated host toolchain file, and on Windows its
+    detect_host_compiler() looks for `cl`/`gcc`/`clang` on PATH. With no working host compiler on
+    PATH it either fails outright or (worse) picks up the NDK's clang and produces an ARM binary
+    the host can't execute.
 
     Output layout (per ABI, so one checkout serves every ABI):
         <LlamaCppDir>/build-android/<abi>/bin/*.so
@@ -37,6 +39,11 @@ param(
     [string] $Ndk,
     [string] $VulkanSdk,
     [string] $MsvcDir,
+
+    # GCC/MinGW install directory (the folder containing gcc.exe/g++.exe, or its parent). Tried
+    # BEFORE MSVC — see the script header. Defaults to `mingw.dir` in local.properties, then
+    # %MINGW_DIR%, then the current dev machine's TDM-GCC-64 install.
+    [string] $GccDir,
 
     # Native API floor. This is deliberately ABOVE the app's minSdk of 26: ggml's Vulkan backend
     # calls Vulkan 1.1 entry points (vkGetPhysicalDeviceFeatures2 and friends), and Android's
@@ -241,9 +248,67 @@ foreach ($required in @(
 Write-Ok "Vulkan SDK: $VulkanSdk"
 
 # ------------------------------------------------------------
-# MSVC host environment (for vulkan-shaders-gen)
+# Host C/C++ compiler environment (for vulkan-shaders-gen)
 # ------------------------------------------------------------
+# ggml builds its Vulkan shader generator for the *host*, and on Windows that needs a working
+# C/C++ toolchain on PATH: ggml's detect_host_compiler() looks for `cl`/`gcc`/`clang`. GCC/MinGW
+# (TDM-GCC-64) is tried first since that's what this dev machine has after removing Visual
+# Studio; MSVC (via vcvars64.bat) is the fallback for machines that still have it.
 
+function Test-GccAt {
+    param([string] $Dir)
+    if (-not $Dir) { return $false }
+    return (Test-Path (Join-Path $Dir "gcc.exe")) -and (Test-Path (Join-Path $Dir "g++.exe"))
+}
+
+# Returns $true and leaves gcc.exe/g++.exe on PATH on success; $false (no throw) if no GCC could
+# be found, so the caller can fall back to MSVC.
+function Import-GccEnvironment {
+    param([string] $ExplicitDir)
+
+    $existing = Get-Command gcc.exe -ErrorAction SilentlyContinue
+    if ($existing) {
+        $existingGxx = Get-Command g++.exe -ErrorAction SilentlyContinue
+        if ($existingGxx) {
+            Write-Ok "GCC already on PATH: $($existing.Source)"
+            return $true
+        }
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($ExplicitDir) {
+        $candidates.Add($ExplicitDir)
+        $candidates.Add((Join-Path $ExplicitDir "bin"))
+    }
+    $fromProps = Get-LocalProperty "mingw.dir"
+    if ($fromProps) {
+        $candidates.Add($fromProps)
+        $candidates.Add((Join-Path $fromProps "bin"))
+    }
+    $fromEnv = [Environment]::GetEnvironmentVariable("MINGW_DIR")
+    if ($fromEnv) {
+        $candidates.Add($fromEnv)
+        $candidates.Add((Join-Path $fromEnv "bin"))
+    }
+    # This dev machine's current install — Visual Studio was removed in favor of TDM-GCC-64.
+    $candidates.Add("C:/TDM-GCC-64/bin")
+
+    foreach ($dir in $candidates) {
+        if (Test-GccAt $dir) {
+            $env:PATH = "$dir;$env:PATH"
+            $resolved = Get-Command gcc.exe -ErrorAction SilentlyContinue
+            if (-not $resolved) { continue }
+            Write-Ok "Using GCC toolchain: $dir"
+            Write-Ok "Host compiler: $($resolved.Source)"
+            return $true
+        }
+    }
+    return $false
+}
+
+# Returns $true and leaves cl.exe on PATH on success; $false if no MSVC toolset could be found at
+# all. Still throws for a genuine mid-import failure (vcvars64.bat found but errored), since that
+# indicates a broken install worth surfacing distinctly rather than silently falling through.
 function Import-MsvcEnvironment {
     param([string] $ExplicitDir)
 
@@ -251,7 +316,7 @@ function Import-MsvcEnvironment {
     $existing = Get-Command cl.exe -ErrorAction SilentlyContinue
     if ($existing -and $existing.Source -match "Hostx64[\\/]+x64[\\/]+cl\.exe$") {
         Write-Ok "MSVC already on PATH: $($existing.Source)"
-        return
+        return $true
     }
 
     $vcvars = $null
@@ -281,13 +346,7 @@ function Import-MsvcEnvironment {
     }
 
     if (-not $vcvars -or -not (Test-Path $vcvars)) {
-        throw @"
-No x64 MSVC toolset found.
-
-ggml builds its Vulkan shader generator for the host, and on Windows that needs MSVC. Install
-"Desktop development with C++" in the Visual Studio Installer, or pass -MsvcDir pointing at your
-VC directory (the one containing Auxiliary\Build\vcvars64.bat).
-"@
+        return $false
     }
 
     # vcvars64.bat only mutates its own cmd.exe; run it, dump the resulting environment, and
@@ -308,10 +367,26 @@ VC directory (the one containing Auxiliary\Build\vcvars64.bat).
         throw "Expected the x64 host compiler (Hostx64\x64\cl.exe) but found: $($resolved.Source)"
     }
     Write-Ok "Host compiler: $($resolved.Source)"
+    return $true
 }
 
 Write-Step "Preparing the Windows host compiler"
-Import-MsvcEnvironment -ExplicitDir $MsvcDir
+if (-not (Import-GccEnvironment -ExplicitDir $GccDir)) {
+    if (-not (Import-MsvcEnvironment -ExplicitDir $MsvcDir)) {
+        throw @"
+No working host C/C++ compiler found for building vulkan-shaders-gen (the host-side tool ggml's
+Vulkan backend needs to generate its SPIR-V shader headers).
+
+Looked for:
+  - GCC/MinGW: gcc.exe + g++.exe on PATH, at -GccDir, at local.properties' mingw.dir, at
+    %MINGW_DIR%, or at C:\TDM-GCC-64\bin
+  - MSVC: cl.exe on PATH, at -MsvcDir, or discoverable via vswhere.exe
+
+Install TDM-GCC-64 (https://jmeubank.github.io/tdm-gcc/) and/or "Desktop development with C++"
+in the Visual Studio Installer, or pass -GccDir/-MsvcDir pointing at an existing install.
+"@
+    }
+}
 
 # ------------------------------------------------------------
 # Local patches against the llama.cpp checkout

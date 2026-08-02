@@ -46,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,6 +62,7 @@ import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanAccentFor
 import kotlinx.coroutines.launch
@@ -116,10 +116,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
                 val avatarAccent = vervanAccentFor((name.hashCode() and Int.MAX_VALUE) % 6)
-                val avatarBitmap = remember(avatarPath) {
-                    avatarPath?.takeUnless { it.startsWith("emoji:") }
-                        ?.let { path -> runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() }
-                }
+                val avatarBitmap = rememberThumbnail(avatarPath?.takeUnless { it.startsWith("emoji:") }, 128)
                 val avatarEmoji = avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
                 Box(
                     Modifier
@@ -130,7 +127,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 ) {
                     if (avatarBitmap != null) {
                         androidx.compose.foundation.Image(
-                            bitmap = avatarBitmap.asImageBitmap(),
+                            bitmap = avatarBitmap,
                             contentDescription = null,
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.size(64.dp).clip(CircleShape)

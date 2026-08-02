@@ -153,7 +153,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -198,6 +197,7 @@ import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -708,9 +708,7 @@ internal fun FullScreenImagePreview(
                     }
                 }
                 val previewPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
-                val bitmap = remember(path, previewPx) {
-                    com.vervan.chat.model.ImageUtils.decodeThumbnail(path, previewPx)?.asImageBitmap()
-                }
+                val bitmap = rememberThumbnail(path, previewPx)
                 // Pinch-to-zoom + pan, plus double-tap to toggle 1x/2.5x — the baseline
                 // "view an image" gesture set users expect from any photo viewer. Pan only
                 // engages while zoomed in; at 1x the image stays centered so it can't drift.
@@ -792,9 +790,7 @@ internal fun OcrPreviewDialog(
                 }
 
                 val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
-                val bitmap = remember(imagePath, thumbnailPx) {
-                    com.vervan.chat.model.ImageUtils.decodeThumbnail(imagePath, thumbnailPx)?.asImageBitmap()
-                }
+                val bitmap = rememberThumbnail(imagePath, thumbnailPx)
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     bitmap?.let {
                         Image(

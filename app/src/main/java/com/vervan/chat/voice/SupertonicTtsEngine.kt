@@ -21,6 +21,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.random.Random
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /**
  * Wraps Supertonic 3 (github.com/supertone-inc/supertonic) — a 31-language flow-matching TTS
@@ -66,9 +68,22 @@ class SupertonicTtsEngine(
     // Serializes ensureLoaded/ensureVoiceLoaded: TtsPlaybackQueue runs up to 2 synth coroutines
     // concurrently (see Semaphore(2) there), and without this both could observe attemptedLoad/
     // loadedVariant unchanged before either sets it, triggering loadGraphs()/loadVoiceStyle()
-    // twice in parallel — duplicate native ONNX sessions, or racing native calls. Not reentrant:
-    // release() must never be called while this is held (it isn't — release() doesn't lock).
+    // twice in parallel — duplicate native ONNX sessions, or racing native calls.
     private val loadMutex = Mutex()
+    // Guards runInference() (a reader) against release() (the writer) closing the same native
+    // ONNX sessions/tensors mid-call. Without this, releaseAll() during teardown (screen dispose,
+    // TTS engine switch, RealtimeVoiceController cleanup) could call OrtSession.close() while
+    // another coroutine is still inside OrtSession.run() on that session — undefined behavior in
+    // ONNX Runtime's native layer, up to a process crash, not just a Kotlin NPE. Plain
+    // java.util.concurrent lock (not a coroutine Mutex) because runInference() itself never
+    // suspends — it is blocking native work already running on Dispatchers.Default — so blocking
+    // the underlying thread here is fine and avoids threading a suspend release() through every
+    // call site (some of which are DisposableEffect.onDispose, a non-suspend context). The read
+    // lock allows unlimited concurrent readers, so this adds no serialization beyond whatever
+    // TtsPlaybackQueue's own Semaphore(2) already imposes on concurrent synthesis; release()
+    // takes the exclusive write lock, so it always waits for any in-flight synthesis to finish
+    // (and blocks new synthesis from starting) before closing anything.
+    private val inferenceLock = java.util.concurrent.locks.ReentrantReadWriteLock()
     /** Which voice's tensors are currently in [styleTtl]/[styleDp], or null before the first
      * successful voice load. */
     private var loadedVariant: String? = null
@@ -138,7 +153,7 @@ class SupertonicTtsEngine(
         // Self-test synthesis before trusting the load — catches both a broken/incomplete
         // download and a native ONNX Runtime version mismatch (see the build.gradle.kts comment
         // on the vendored sherpa-onnx AAR repack) immediately rather than on first real use.
-        val selfTest = runInference("Hello.", "en")
+        val selfTest = inferenceLock.read { runInference("Hello.", "en") }
         if (selfTest.samples.isEmpty()) {
             throw IllegalStateException("Supertonic loaded but self-test synthesis produced no audio")
         }
@@ -150,7 +165,14 @@ class SupertonicTtsEngine(
         ensureVoiceLoaded()
         if (styleTtl == null) throw IllegalStateException("Supertonic voice not available")
         val supertonicLang = if (SUPPORTED_LANGS.contains(lang)) lang else "na"
-        return runInference(text, supertonicLang)
+        // Re-check inside the read lock: release() (the writer) may have run and nulled these
+        // fields in the window between the checks above and acquiring this lock.
+        return inferenceLock.read {
+            if (vocoderSession == null || styleTtl == null) {
+                throw IllegalStateException("Supertonic was released while a synthesis request was queued")
+            }
+            runInference(text, supertonicLang)
+        }
     }
 
     private fun runInference(text: String, lang: String): TtsAudio {
@@ -368,7 +390,10 @@ class SupertonicTtsEngine(
         return OnnxTensor.createTensor(ortEnv, FloatBuffer.wrap(flat.toFloatArray()), shape)
     }
 
-    fun release() {
+    // Write lock: waits for any in-flight runInference() (reader) to finish, and blocks new
+    // synthesis from starting, before closing the native sessions/tensors — see inferenceLock's
+    // doc comment for why this matters.
+    fun release() = inferenceLock.write {
         runCatching { dpSession?.close() }
         runCatching { textEncSession?.close() }
         runCatching { vectorEstSession?.close() }

@@ -35,7 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +48,8 @@ import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
@@ -79,7 +80,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var isProcessing by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -94,7 +96,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     }
 
     fun runExtraction(file: File) {
-        imagePath = file.absolutePath
+        managedImagePath.set(file.absolutePath)
         lastFile = file
         isProcessing = true
         errorText = null
@@ -157,7 +159,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         if (success && file != null) {
             ImageUtils.fixOrientation(file)
             runExtraction(file)
-        }
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -175,7 +177,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                         ImageUtils.fixOrientation(file)
                         file
-                    }.getOrNull()
+                    }.getOrElse { file.delete(); null }
                 }
                 if (dest != null) runExtraction(dest)
             }
@@ -191,6 +193,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         val dir = File(app.cacheDir, "exports").apply { mkdirs() }
         val file = File(dir, name)
         file.writeText(content)
+        com.vervan.chat.system.pruneOldExports(dir)
         com.vervan.chat.ui.common.openWithExternalApp(context, file, mime)
     }
 
@@ -231,7 +234,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             }
             VervanSectionHeader("2 · Check the source")
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 700)?.asImageBitmap() }
+                val bitmap = rememberThumbnail(path, 700)
                 bitmap?.let { Image(it, "Scanned image", Modifier.fillMaxWidth().height(180.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
             } ?: Card(
                 Modifier.fillMaxWidth(),

@@ -31,6 +31,17 @@ interface MessageDao : BaseDao<Message> {
     @Query("DELETE FROM messages WHERE chatId = :chatId")
     suspend fun deleteForChat(chatId: String)
 
+    // A message's imagePath/audioPath/voiceRecordingPath can be shared with messages in other
+    // chats — editAndResend, forkChat and ChatViewModel.duplicate all copy an attachment's path
+    // verbatim onto a new Message row rather than copying the file, so the same on-disk file can
+    // be legitimately referenced from several chats at once. See MessageAttachmentCleanup: this
+    // is the check that keeps its file deletes from cutting a path still in use elsewhere.
+    @Query(
+        "SELECT COUNT(*) FROM messages WHERE chatId != :excludeChatId " +
+            "AND (imagePath = :path OR audioPath = :path OR voiceRecordingPath = :path)"
+    )
+    suspend fun countOtherReferencesToPath(excludeChatId: String, path: String): Int
+
     // Universal search — message-body search was missing entirely before;
     // chats only matched by title. Returns matching messages directly so the search screen can
     // show the matching snippet, not just "found in some chat".

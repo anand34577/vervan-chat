@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.data.repo.MessageAttachmentCleanup
 import com.vervan.chat.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
 
@@ -72,11 +73,14 @@ class WorkspaceManager(
      */
     suspend fun delete(workspace: Workspace) {
         check(!workspace.isDefault) { "Default Workspace cannot be deleted" }
-        // Document cleanup runs outside the DB transaction below since it also touches the
-        // filesystem (copied file + embedded chunks) via DocumentImportManager.
+        // Document and message-attachment cleanup run outside the DB transaction below since
+        // they also touch the filesystem (copied file + embedded chunks / imagePath-audioPath-
+        // voiceRecordingPath) via DocumentImportManager / MessageAttachmentCleanup.
         db.documentDao().getForWorkspace(workspace.id).forEach { documentImportManager.delete(it) }
+        val chatsToDelete = db.chatDao().getForWorkspace(workspace.id)
+        chatsToDelete.forEach { chat -> MessageAttachmentCleanup.deleteOrphanedFiles(db, chat.id) }
         db.withTransaction {
-            db.chatDao().getForWorkspace(workspace.id).forEach { chat ->
+            chatsToDelete.forEach { chat ->
                 db.messageDao().deleteForChat(chat.id)
                 db.toolAuditDao().deleteForChat(chat.id)
             }

@@ -37,7 +37,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +49,8 @@ import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
@@ -80,7 +81,8 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         visionAvailable = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)?.supportsVision == true
     }
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var output by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var activeMode by remember { mutableStateOf<String?>(null) }
@@ -136,7 +138,9 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val file = pendingFile
         pendingFile = null
-        if (success && file != null) { ImageUtils.fixOrientation(file); imagePath = file.absolutePath; output = "" }
+        if (success && file != null) {
+            ImageUtils.fixOrientation(file); managedImagePath.set(file.absolutePath); output = ""
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { val (file, uri) = newImageFile(); pendingFile = file; takePicture.launch(uri) }
@@ -149,7 +153,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                     context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                     ImageUtils.fixOrientation(file)
                 }
-                imagePath = file.absolutePath
+                managedImagePath.set(file.absolutePath)
                 output = ""
             }
         }
@@ -189,7 +193,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 }
             }
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 700)?.asImageBitmap() }
+                val bitmap = rememberThumbnail(path, 700)
                 bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
                 FlowRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     CAPTION_MODES.forEach { mode ->

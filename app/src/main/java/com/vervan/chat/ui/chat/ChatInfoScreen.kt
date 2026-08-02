@@ -57,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -72,6 +71,7 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.vervanAccentFor
@@ -360,7 +360,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         horizontalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         rowPaths.forEach { path ->
-                            val bitmap = com.vervan.chat.model.ImageUtils.decodeThumbnail(path, 240)?.asImageBitmap()
+                            val bitmap = rememberThumbnail(path, 240)
                             Card(
                                 Modifier.size(108.dp).clickable { previewPath = path },
                                 colors = SurfaceRole.Raised.cardColors(),

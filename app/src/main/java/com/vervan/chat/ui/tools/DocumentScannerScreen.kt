@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.tools
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,6 +45,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -52,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -162,19 +165,17 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             }
     }
 
+    // cropTarget is only ever set from an already-imported page's thumbnail (see the Card
+    // onClick below) — every target here is always already in `pages`, so re-adjusting a crop
+    // never needs to add or delete a page, only re-save the file in place.
     cropTarget?.let { target ->
         PageCropDialog(
             imagePath = target,
             onDone = {
-                if (target !in pages) pages = pages + target
                 thumbVersion++
                 cropTarget = null
             },
-            onCancel = {
-                // A fresh capture the user backed out of shouldn't linger on disk.
-                if (target !in pages) File(target).delete()
-                cropTarget = null
-            }
+            onCancel = { cropTarget = null }
         )
     }
 
@@ -196,6 +197,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 val out = File(dir, "scan-${System.currentTimeMillis()}.pdf")
                 out.outputStream().use { doc.writeTo(it) }
                 doc.close()
+                com.vervan.chat.system.pruneOldExports(dir)
                 out
             }
             isWorking = false
@@ -207,15 +209,27 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
         pages.forEach { path -> com.vervan.chat.ui.common.openWithExternalApp(context, File(path), "image/jpeg") }
     }
 
+    // Extracts OCR text for every captured page, joined for downstream use. Returns null (with
+    // statusMessage set to an explanation) when text recognition found nothing on any page —
+    // callers must not silently save/process an empty result as if it succeeded.
+    suspend fun extractPagesTextOrNull(): String? {
+        val text = withContext(Dispatchers.IO) {
+            pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
+        }
+        if (text.isBlank()) {
+            statusMessage = "No text could be recognized in these pages. Try clearer, evenly lit captures."
+            return null
+        }
+        return text
+    }
+
     fun processAsStudyMaterial() {
         isWorking = true
         statusMessage = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
-            }
+            val text = extractPagesTextOrNull()
             isWorking = false
-            onProcessAsStudyMaterial(text)
+            if (text != null) onProcessAsStudyMaterial(text)
         }
     }
 
@@ -223,11 +237,15 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
         isWorking = true
         statusMessage = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
+            val text = extractPagesTextOrNull()
+            if (text == null) {
+                isWorking = false
+                return@launch
             }
-            val kb = KnowledgeBase(name = "Scans")
-            app.container.db.knowledgeBaseDao().upsert(kb)
+            val kb = app.container.db.knowledgeBaseDao().get(KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID)
+                ?: KnowledgeBase(id = KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID, name = "Scans").also {
+                    app.container.db.knowledgeBaseDao().upsert(it)
+                }
             val name = "Document scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
             val document = app.container.documentImportManager.importRawText(kb.id, name, text)
             isWorking = false
@@ -281,12 +299,19 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 LazyRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(pages, key = { it }) { path ->
                         Box(Modifier.size(100.dp)) {
-                            val bitmap = remember(path, thumbVersion) { ImageUtils.decodeThumbnail(path, 200)?.asImageBitmap() }
+                            val bitmap = rememberThumbnail(path, 200, invalidationKey = thumbVersion)
                             Card(onClick = { cropTarget = path }, modifier = Modifier.fillMaxSize()) {
                                 bitmap?.let { Image(it, "Page — tap to adjust crop", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                             }
                             IconButton(
-                                onClick = { pages = pages.filterNot { it == path } },
+                                onClick = {
+                                    pages = pages.filterNot { it == path }
+                                    // Pages only ever get here via a copy into filesDir/scans (see
+                                    // importGmsScanResult) — nothing else in the app references this
+                                    // path (OCR/export read it in place, they don't persist it), so a
+                                    // discarded page is safe to delete outright instead of leaking it.
+                                    runCatching { File(path).delete() }
+                                },
                                 modifier = Modifier.align(Alignment.TopEnd)
                                     .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), CircleShape)
                             ) { Icon(Icons.Filled.Close, "Remove page", tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.size(16.dp)) }
@@ -339,13 +364,18 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
 private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -> Unit) {
     val scope = rememberCoroutineScope()
     var isSaving by remember { mutableStateOf(false) }
-    // Display copy only — bounded decode keeps an 8MP+ capture from costing 30MB+ here.
-    val displayBitmap = remember(imagePath) {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(imagePath, bounds)
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) > 1600 || bounds.outHeight / (sample * 2) > 1600) sample *= 2
-        BitmapFactory.decodeFile(imagePath, BitmapFactory.Options().apply { inSampleSize = sample })
+    // Display copy only — bounded decode keeps an 8MP+ capture from costing 30MB+ here. Decoded
+    // on Dispatchers.IO via produceState, not inline in remember{} — a synchronous decode here
+    // (the previous pattern) runs on the main thread during composition, i.e. exactly when this
+    // dialog is opening, which is precisely the moment jank is most visible to the user.
+    val displayBitmap by produceState<Bitmap?>(initialValue = null, imagePath) {
+        value = withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(imagePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) > 1600 || bounds.outHeight / (sample * 2) > 1600) sample *= 2
+            BitmapFactory.decodeFile(imagePath, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
     }
     // An 8% inset — visibly "a crop" so the affordance is obvious, and close enough to full-page
     // that Full page/small adjustments are both one gesture away.
@@ -376,6 +406,9 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     android.graphics.Canvas(out).drawBitmap(full, matrix, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
                     File(imagePath).outputStream().use { out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
                     out.recycle()
+                    // The page-list thumbnail is keyed on this same path — without this it would
+                    // keep rendering the pre-crop image after saving (see ImageUtils.invalidateThumbnail).
+                    ImageUtils.invalidateThumbnail(imagePath)
                 }
                 full.recycle()
             }

@@ -147,7 +147,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -193,6 +192,7 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -594,6 +594,11 @@ fun ChatScreen(
     val voiceModelLoadError by voiceController.modelLoadError.collectAsState()
     val voiceSttUnavailable by voiceController.sttUnavailable.collectAsState()
     val voiceLoadingModelName by voiceController.loadingModelName.collectAsState()
+    val voicePushToTalkHeld by voiceController.pushToTalkHeld.collectAsState()
+    val voicePushToTalkEnabled by app.container.settingsRepository.voicePushToTalkEnabled.collectAsState(initial = false)
+    val onTogglePushToTalkMode: () -> Unit = {
+        scope.launch { app.container.settingsRepository.setVoicePushToTalkEnabled(!voicePushToTalkEnabled) }
+    }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             val copied = vm.copyImage(uri)
@@ -1379,11 +1384,19 @@ fun ChatScreen(
                         )
                     }
                 }
-                // Hoisted out of the per-item lambdas: each of these was an O(n) list scan per
-                // visible item per recomposition — and streaming recomposes this list every
-                // ~80ms, so long chats janked exactly when the app was busiest.
+                // Hoisted out of the per-item lambdas: each of these was an O(n) list scan (or,
+                // for siblingPosition, two O(n) scans) per visible item per recomposition — and
+                // streaming recomposes this list every ~80ms, so long/branchy chats janked
+                // exactly when the app was busiest. Same fix as lastCompleteAssistantId/
+                // lastMessageId below, extended to the other per-item lookups that had the same
+                // shape: build the lookup structure once per list recomposition, not once per
+                // rendered row.
                 val lastCompleteAssistantId = messages.lastOrNull { it.role == MessageRole.ASSISTANT && it.state == MessageState.COMPLETE }?.id
                 val lastMessageId = messages.lastOrNull()?.id
+                val documentsById = documents.associateBy { it.id }
+                val savedOutputsByLabel = chatSavedOutputs.filter { it.label.isNotBlank() }.associateBy { it.label }
+                val blankLabelSavedOutputsByContent = chatSavedOutputs.filter { it.label.isBlank() }.associateBy { it.content }
+                val siblingPositions = com.vervan.chat.data.branch.BranchUtil.siblingPositions(allMessages)
                 itemsIndexed(messages, key = { _, m -> m.id }) { index, message ->
                     // Date separator — rendered *before* the first message of each new day so
                     // long conversations get the same "Today / Yesterday / Mar 14" anchors every
@@ -1406,10 +1419,8 @@ fun ChatScreen(
                             // which otherwise snap the whole list into its new shape.
                             modifier = Modifier.animateItem(),
                             message = message,
-                            attachedDocument = message.documentId?.let { id -> documents.firstOrNull { it.id == id } },
-                            savedOutput = chatSavedOutputs.firstOrNull {
-                                it.label == message.id || (it.label.isBlank() && it.content == message.content)
-                            },
+                            attachedDocument = message.documentId?.let { id -> documentsById[id] },
+                            savedOutput = savedOutputsByLabel[message.id] ?: blankLabelSavedOutputsByContent[message.content],
                             onBookmarkChanged = { saved ->
                                 scope.launch {
                                     snackbarHostState.showSnackbar(if (saved) "Response bookmarked" else "Bookmark removed")
@@ -1429,7 +1440,7 @@ fun ChatScreen(
                             onReadAloud = { text, _ -> speakAloud(text) },
                             isGenerating = isGenerating,
                             showStreamingStatus = !handsFreeActive,
-                            siblingPosition = com.vervan.chat.data.branch.BranchUtil.siblingPosition(allMessages, message.id),
+                            siblingPosition = siblingPositions[message.id] ?: (1 to 1),
                             onConfirmTool = { approve -> vm.confirmToolCall(message.id, approve) },
                             onEditAndResend = { newText -> vm.editAndResend(message.id, newText) },
                             onRegenerate = { vm.regenerate(message.id) },
@@ -1614,9 +1625,7 @@ fun ChatScreen(
                     pendingOcrImagePath?.let { path ->
                         Box(Modifier.fillMaxWidth().padding(Space.sm).clickable { showOcrPreview = true }) {
                             val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
-                            val bitmap = remember(path, thumbnailPx) {
-                                com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
-                            }
+                            val bitmap = rememberThumbnail(path, thumbnailPx)
                             bitmap?.let {
                                 Image(
                                     it,
@@ -1646,9 +1655,7 @@ fun ChatScreen(
                     pendingImagePath?.let { path ->
                         Box(Modifier.fillMaxWidth().heightIn(min = 92.dp).padding(Space.sm).clickable { showPendingImagePreview = true }) {
                             val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
-                            val bitmap = remember(path, thumbnailPx) {
-                                com.vervan.chat.model.ImageUtils.decodeThumbnail(path, thumbnailPx)?.asImageBitmap()
-                            }
+                            val bitmap = rememberThumbnail(path, thumbnailPx)
                             bitmap?.let {
                                 Image(
                                     it,
@@ -1736,7 +1743,12 @@ fun ChatScreen(
                         immersiveVoiceActive = false
                         voiceSessionKey += 1
                     },
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = Space.lg, vertical = Space.sm)
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = Space.lg, vertical = Space.sm),
+                    pushToTalkEnabled = voicePushToTalkEnabled,
+                    onTogglePushToTalkMode = onTogglePushToTalkMode,
+                    pushToTalkHeld = voicePushToTalkHeld,
+                    onPushToTalkPress = voiceController::pushToTalkPress,
+                    onPushToTalkRelease = voiceController::pushToTalkRelease
                 )
             } else {
             Card(
@@ -2183,7 +2195,12 @@ fun ChatScreen(
                     voiceController.stop()
                     handsFreeActive = false
                     voiceSessionKey += 1
-                }
+                },
+                pushToTalkEnabled = voicePushToTalkEnabled,
+                onTogglePushToTalkMode = onTogglePushToTalkMode,
+                pushToTalkHeld = voicePushToTalkHeld,
+                onPushToTalkPress = voiceController::pushToTalkPress,
+                onPushToTalkRelease = voiceController::pushToTalkRelease
             )
         }
     }
@@ -2194,9 +2211,11 @@ fun ChatScreen(
                 speechOutputEnabled = voiceSpeechOutputEnabled,
                 microphoneMuted = voiceMicrophoneMuted,
                 immersiveEnabled = immersiveVoiceActive,
+                pushToTalkEnabled = voicePushToTalkEnabled,
                 onToggleSpeechOutput = voiceController::toggleSpeechOutput,
                 onToggleMute = voiceController::toggleMicrophoneMute,
                 onToggleImmersive = { immersiveVoiceActive = !immersiveVoiceActive },
+                onTogglePushToTalk = onTogglePushToTalkMode,
                 onSwitchModel = {
                     showVoiceOptions = false
                     showModelPicker = true

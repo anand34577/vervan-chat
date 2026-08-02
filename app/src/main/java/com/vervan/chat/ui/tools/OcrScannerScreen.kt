@@ -30,6 +30,8 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.rememberManagedImagePath
+import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.system.toUserMessage
@@ -41,7 +43,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -66,14 +67,15 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var imagePath by remember { mutableStateOf<String?>(null) }
+    val managedImagePath = rememberManagedImagePath()
+    val imagePath = managedImagePath.path
     var extractedText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     fun runOcr(file: File) {
-        imagePath = file.absolutePath
+        managedImagePath.set(file.absolutePath)
         savedMessage = null
         errorText = null
         isProcessing = true
@@ -99,7 +101,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         if (success && file != null) {
             ImageUtils.fixOrientation(file)
             runOcr(file)
-        }
+        } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -117,7 +119,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                         context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                         ImageUtils.fixOrientation(file)
                         file
-                    }.getOrNull()
+                    }.getOrElse { file.delete(); null }
                 }
                 if (dest != null) runOcr(dest)
             else errorText = "Could not open the image. Choose another one."
@@ -159,7 +161,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 }
             }
             imagePath?.let { path ->
-                val bitmap = remember(path) { ImageUtils.decodeThumbnail(path, 800)?.asImageBitmap() }
+                val bitmap = rememberThumbnail(path, 800)
                 bitmap?.let {
                     Image(
                         it, contentDescription = "Scanned image",
@@ -208,8 +210,10 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                     Button(
                         onClick = {
                             scope.launch {
-                                val kb = KnowledgeBase(name = "Scans")
-                                app.container.db.knowledgeBaseDao().upsert(kb)
+                                val kb = app.container.db.knowledgeBaseDao().get(KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID)
+                                    ?: KnowledgeBase(id = KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID, name = "Scans").also {
+                                        app.container.db.knowledgeBaseDao().upsert(it)
+                                    }
                                 val name = "Scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
                                 val document = app.container.documentImportManager.importRawText(kb.id, name, extractedText)
                                 savedMessage = "Saved to Knowledge"

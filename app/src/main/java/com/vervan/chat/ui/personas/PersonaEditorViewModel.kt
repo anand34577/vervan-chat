@@ -48,6 +48,15 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError
 
+    /** A freshly copied/imported avatar file created during this editing session that hasn't
+     * been saved onto a Persona row yet — distinct from [_avatarPath], which right after
+     * `init{}` runs for an existing persona is instead that persona's already-persisted avatar
+     * and must never be deleted here. Tracked separately so replacing the pick before saving
+     * (import a photo, then a different one, or a character card, or switch to an emoji) doesn't
+     * leak the file the user backed away from, and so leaving the editor without saving at all
+     * doesn't leave one behind either — see [setScratchAvatar]/[discardPendingScratchAvatar]. */
+    private var pendingScratchAvatarFile: File? = null
+
     init {
         if (personaId != null) {
             viewModelScope.launch {
@@ -89,7 +98,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             _name.value = card.name
             _description.value = card.description
             _systemInstruction.value = card.systemInstruction
-            _avatarPath.value = card.avatarFile?.absolutePath
+            card.avatarFile?.let { setScratchAvatar(it) } ?: run { discardPendingScratchAvatar(); _avatarPath.value = null }
         } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
             _importError.value = e.message
         } catch (t: Throwable) {
@@ -107,14 +116,29 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         viewModelScope.launch {
             val dest = File(File(context.filesDir, "personas/avatars"), "${UUID.randomUUID()}.png")
             val ok = withContext(Dispatchers.IO) { ImageUtils.copyNormalizedPng(context, uri, dest, 512) }
-            if (ok) _avatarPath.value = dest.absolutePath
+            if (ok) setScratchAvatar(dest)
             else _importError.value = "Could not use this image as an avatar. Try a different file."
         }
     }
 
-    fun setEmojiAvatar(emoji: String) { _avatarPath.value = "emoji:$emoji" }
+    /** Replaces the avatar with a freshly created scratch file, deleting whatever scratch file
+     * (if any) it's superseding — but never the persona's original persisted avatar, since that
+     * one was never recorded in [pendingScratchAvatarFile] to begin with. */
+    private fun setScratchAvatar(file: File) {
+        val previous = pendingScratchAvatarFile
+        pendingScratchAvatarFile = file
+        _avatarPath.value = file.absolutePath
+        if (previous != null && previous != file) previous.delete()
+    }
 
-    fun clearAvatar() { _avatarPath.value = null }
+    private fun discardPendingScratchAvatar() {
+        pendingScratchAvatarFile?.delete()
+        pendingScratchAvatarFile = null
+    }
+
+    fun setEmojiAvatar(emoji: String) { discardPendingScratchAvatar(); _avatarPath.value = "emoji:$emoji" }
+
+    fun clearAvatar() { discardPendingScratchAvatar(); _avatarPath.value = null }
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false
@@ -133,6 +157,9 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             avatarPath = _avatarPath.value
         )
         db.personaDao().upsert(persona)
+        // The scratch file (if any) is now the persona's real, persisted avatar — stop treating
+        // it as an unsaved leftover this ViewModel owns and would otherwise delete on dispose.
+        pendingScratchAvatarFile = null
         return true
     }
 
@@ -166,5 +193,13 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         )
         db.personaDao().upsert(copy)
         return copy.id
+    }
+
+    /** Leaving the editor (back button, process death) without ever calling [save] must not
+     * leave whatever avatar was picked/imported during this session sitting in
+     * `personas/avatars` forever — [save] already clears [pendingScratchAvatarFile] the instant
+     * the file becomes a real, persisted avatar, so anything still here was never saved. */
+    override fun onCleared() {
+        discardPendingScratchAvatar()
     }
 }

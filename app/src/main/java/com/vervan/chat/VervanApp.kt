@@ -15,6 +15,8 @@ import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.data.repo.BuiltInPersonas
 import com.vervan.chat.data.repo.BuiltInPromptTemplates
 import com.vervan.chat.data.repo.BuiltInWorkflows
+import com.vervan.chat.data.repo.MessageAttachmentCleanup
+import com.vervan.chat.data.repo.PersonaAvatarCleanup
 import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.settings.SettingsRepository
@@ -363,135 +365,168 @@ class VervanApp : Application() {
         })
         // Process death mid-generation leaves messages stuck PENDING/STREAMING — mark them
         // interrupted so the UI shows them accurately instead of a phantom spinner forever.
-        // The whole block is one runCatching: a SQLiteException/disk hiccup here ran on an
-        // unsupervised coroutine before this fix, which crashes the whole process even though
-        // it's background housekeeping — every launch, until the underlying issue cleared.
-        CoroutineScope(Dispatchers.IO).launch { runCatching {
+        //
+        // Each logically-independent step below is its own runCatching (not one giant block
+        // wrapping the whole sequence): a SQLiteException/disk hiccup in any single step must not
+        // silently skip every *unrelated* step that follows it (e.g. a failure marking
+        // interrupted messages must not also skip the recycle-bin purge and download-recovery
+        // start further down) — that was the previous failure mode, where one bad step meant
+        // partial/inconsistent housekeeping until the underlying issue happened to clear on its
+        // own. A SQLiteException/disk hiccup here previously ran on an unsupervised coroutine and
+        // crashed the whole process even though it's background housekeeping; each step below
+        // still can't do that, since it's caught and logged individually.
+        CoroutineScope(Dispatchers.IO).launch {
             // Native crashes, ANRs, and low-memory kills never reach the in-process handler —
-            // ApplicationExitInfo on the next launch is the only way to learn about them.
-            crashLogManager.recordSystemExits()
-            container.db.messageDao().getUnfinished().forEach {
-                container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
-            }
+            // ApplicationExitInfo on the next launch is the only way to learn about them. Bundled
+            // with interrupted-message marking since both are the same "recover from process
+            // death" concern.
+            runCatching {
+                crashLogManager.recordSystemExits()
+                container.db.messageDao().getUnfinished().forEach {
+                    container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
+                }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: crash/interrupted-message recovery failed", it) }
+
             // Incognito mode — a temporary chat is meant to hard-delete itself on
             // close (see ChatViewModel.purgeTemporaryChat); this is the fallback for a process
             // that died before that ran. Any chat still marked isTemporary at cold start is one
             // nothing ever cleaned up.
-            container.db.chatDao().observeAllChats().first().filter { it.isTemporary }.forEach { chat ->
-                chat.kbIdList().forEach { kbId ->
-                    container.db.documentDao().getForKb(kbId).forEach { container.documentImportManager.delete(it) }
-                    container.db.knowledgeBaseDao().get(kbId)?.let { container.db.knowledgeBaseDao().delete(it) }
+            runCatching {
+                container.db.chatDao().observeAllChats().first().filter { it.isTemporary }.forEach { chat ->
+                    chat.kbIdList().forEach { kbId ->
+                        container.db.documentDao().getForKb(kbId).forEach { container.documentImportManager.delete(it) }
+                        container.db.knowledgeBaseDao().get(kbId)?.let { container.db.knowledgeBaseDao().delete(it) }
+                    }
+                    MessageAttachmentCleanup.deleteOrphanedFiles(container.db, chat.id)
+                    container.db.messageDao().deleteForChat(chat.id)
+                    container.db.toolAuditDao().deleteForChat(chat.id)
+                    container.db.chatDao().delete(chat)
                 }
-                container.db.messageDao().deleteForChat(chat.id)
-                container.db.toolAuditDao().deleteForChat(chat.id)
-                container.db.chatDao().delete(chat)
-            }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: temporary-chat purge failed", it) }
+
             // Retention policy — soft-deletes (not hard-deletes) chats older than the
             // configured window, same reversible-first pattern as every other delete path in
             // this app; the existing 30-day recycle-bin sweep below eventually hard-deletes
             // them. Pinned chats are exempt — a retention timer silently eating something the
             // user deliberately pinned would be a surprise, not a privacy win. 0 (default) means
             // off entirely.
-            val retentionDays = container.settingsRepository.autoDeleteAfterDays.first()
-            if (retentionDays > 0) {
-                val retentionCutoff = System.currentTimeMillis() - retentionDays * 24L * 60 * 60 * 1000
-                container.db.chatDao().observeAllChats().first()
-                    .filter { !it.pinned && !it.isTemporary && it.deletedAt == null && it.updatedAt < retentionCutoff }
-                    .forEach { container.db.chatDao().update(it.copy(deletedAt = System.currentTimeMillis())) }
-            }
-            container.db.personaDao().insertAll(BuiltInPersonas.defaults)
-            // Built-ins are immutable in the editor, so refresh the default definition on
-            // existing installs as well as seeding it on fresh installs.
-            container.db.personaDao().update(BuiltInPersonas.vervan)
-            // Fresh-install seed for the permanent Default Workspace (Workspace System spec
-            //) — a no-op once it exists, whether created here or by migration 22->23.
-            container.db.workspaceDao().insertDefault(
-                Workspace(
-                    id = Workspace.DEFAULT_WORKSPACE_ID,
-                    name = "Default Workspace",
-                    description = "General-purpose workspace for conversations and documents",
-                    personaId = "builtin-general",
-                    isDefault = true
+            runCatching {
+                val retentionDays = container.settingsRepository.autoDeleteAfterDays.first()
+                if (retentionDays > 0) {
+                    val retentionCutoff = System.currentTimeMillis() - retentionDays * 24L * 60 * 60 * 1000
+                    container.db.chatDao().observeAllChats().first()
+                        .filter { !it.pinned && !it.isTemporary && it.deletedAt == null && it.updatedAt < retentionCutoff }
+                        .forEach { container.db.chatDao().update(it.copy(deletedAt = System.currentTimeMillis())) }
+                }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: retention policy failed", it) }
+
+            // Built-in seeding — fresh-install seed plus refresh of immutable built-in
+            // definitions on existing installs.
+            runCatching {
+                container.db.personaDao().insertAll(BuiltInPersonas.defaults)
+                // Built-ins are immutable in the editor, so refresh the default definition on
+                // existing installs as well as seeding it on fresh installs.
+                container.db.personaDao().update(BuiltInPersonas.vervan)
+                // Fresh-install seed for the permanent Default Workspace (Workspace System spec
+                //) — a no-op once it exists, whether created here or by migration 22->23.
+                container.db.workspaceDao().insertDefault(
+                    Workspace(
+                        id = Workspace.DEFAULT_WORKSPACE_ID,
+                        name = "Default Workspace",
+                        description = "General-purpose workspace for conversations and documents",
+                        personaId = "builtin-general",
+                        isDefault = true
+                    )
                 )
-            )
-            container.db.promptTemplateDao().insertAll(BuiltInPromptTemplates.defaults)
-            container.db.workflowDao().insertAll(BuiltInWorkflows.defaults)
+                container.db.promptTemplateDao().insertAll(BuiltInPromptTemplates.defaults)
+                container.db.workflowDao().insertAll(BuiltInWorkflows.defaults)
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: built-in seeding failed", it) }
 
             // Recycle bin auto-purge — anything soft-deleted more than 30 days ago is gone
             // for good. Runs once per cold start, cheap enough not to need WorkManager.
-            val cutoff = System.currentTimeMillis() - RECYCLE_BIN_RETENTION_MS
-            container.db.chatDao().observeDeleted().first().forEach { chat ->
-                if (chat.deletedAt != null && chat.deletedAt < cutoff) {
-                    container.db.messageDao().deleteForChat(chat.id)
-                    container.db.toolAuditDao().deleteForChat(chat.id)
-                    container.db.savedOutputDao().clearSourceChat(chat.id)
+            runCatching {
+                val cutoff = System.currentTimeMillis() - RECYCLE_BIN_RETENTION_MS
+                container.db.chatDao().observeDeleted().first().forEach { chat ->
+                    if (chat.deletedAt != null && chat.deletedAt < cutoff) {
+                        MessageAttachmentCleanup.deleteOrphanedFiles(container.db, chat.id)
+                        container.db.messageDao().deleteForChat(chat.id)
+                        container.db.toolAuditDao().deleteForChat(chat.id)
+                        container.db.savedOutputDao().clearSourceChat(chat.id)
+                    }
                 }
-            }
-            container.db.chatDao().purgeDeletedBefore(cutoff)
-            container.db.noteDao().purgeDeletedBefore(cutoff)
-            container.db.folderDao().observeDeleted().first().forEach { folder ->
-                if (folder.deletedAt != null && folder.deletedAt < cutoff) {
-                    container.db.chatDao().clearFolder(folder.id)
-                    container.db.noteDao().clearFolder(folder.id)
+                container.db.chatDao().purgeDeletedBefore(cutoff)
+                container.db.noteDao().purgeDeletedBefore(cutoff)
+                container.db.folderDao().observeDeleted().first().forEach { folder ->
+                    if (folder.deletedAt != null && folder.deletedAt < cutoff) {
+                        container.db.chatDao().clearFolder(folder.id)
+                        container.db.noteDao().clearFolder(folder.id)
+                    }
                 }
-            }
-            container.db.folderDao().purgeDeletedBefore(cutoff)
-            container.db.personaDao().observeDeleted().first().forEach { persona ->
-                if (persona.deletedAt != null && persona.deletedAt < cutoff) {
-                    container.db.chatDao().clearPersona(persona.id)
-                    container.db.folderDao().clearDefaultPersona(persona.id)
-                    container.db.projectDao().clearPersona(persona.id)
-                    // Workspace.personaId is NOT NULL (a workspace always has exactly one
-                    // persona), so a deleted persona repoints its workspaces at the Default
-                    // Persona instead of being nulled out like the other FKs here.
-                    container.db.workspaceDao().relinkPersona(persona.id, "builtin-general")
-                    container.db.knowledgeBaseDao().clearDefaultPersona(persona.id)
+                container.db.folderDao().purgeDeletedBefore(cutoff)
+                container.db.personaDao().observeDeleted().first().forEach { persona ->
+                    if (persona.deletedAt != null && persona.deletedAt < cutoff) {
+                        PersonaAvatarCleanup.deleteOrphanedAvatar(container.db, persona)
+                        container.db.chatDao().clearPersona(persona.id)
+                        container.db.folderDao().clearDefaultPersona(persona.id)
+                        container.db.projectDao().clearPersona(persona.id)
+                        // Workspace.personaId is NOT NULL (a workspace always has exactly one
+                        // persona), so a deleted persona repoints its workspaces at the Default
+                        // Persona instead of being nulled out like the other FKs here.
+                        container.db.workspaceDao().relinkPersona(persona.id, "builtin-general")
+                        container.db.knowledgeBaseDao().clearDefaultPersona(persona.id)
+                    }
                 }
-            }
-            container.db.personaDao().purgeDeletedBefore(cutoff)
-            container.db.workflowDao().purgeDeletedBefore(cutoff)
-            container.db.promptTemplateDao().purgeDeletedBefore(cutoff)
-            container.db.projectDao().observeDeleted().first().forEach { project ->
-                if (project.deletedAt != null && project.deletedAt < cutoff) {
-                    container.db.chatDao().clearProject(project.id)
-                    container.db.noteDao().clearProject(project.id)
-                    container.db.knowledgeBaseDao().clearDefaultProject(project.id)
+                container.db.personaDao().purgeDeletedBefore(cutoff)
+                container.db.workflowDao().purgeDeletedBefore(cutoff)
+                container.db.promptTemplateDao().purgeDeletedBefore(cutoff)
+                container.db.projectDao().observeDeleted().first().forEach { project ->
+                    if (project.deletedAt != null && project.deletedAt < cutoff) {
+                        container.db.chatDao().clearProject(project.id)
+                        container.db.noteDao().clearProject(project.id)
+                        container.db.knowledgeBaseDao().clearDefaultProject(project.id)
+                    }
                 }
-            }
-            container.db.projectDao().purgeDeletedBefore(cutoff)
-            container.db.memoryDao().purgeDeletedBefore(cutoff)
-            container.db.savedOutputDao().purgeDeletedBefore(cutoff)
-            // Tool audit older than 30 days also purged.
-            container.db.toolAuditDao().purgeBefore(cutoff)
-            container.db.jobDao().purgeFinishedBefore(cutoff)
-            // Documents go through the import manager, not a raw DELETE — it also removes
-            // the copied file and embedded chunks, which a bare SQL delete would orphan.
-            container.db.documentDao().observeDeleted().first().forEach { doc ->
-                if (doc.deletedAt != null && doc.deletedAt < cutoff) container.documentImportManager.delete(doc)
-            }
+                container.db.projectDao().purgeDeletedBefore(cutoff)
+                container.db.memoryDao().purgeDeletedBefore(cutoff)
+                container.db.savedOutputDao().purgeDeletedBefore(cutoff)
+                // Tool audit older than 30 days also purged.
+                container.db.toolAuditDao().purgeBefore(cutoff)
+                container.db.jobDao().purgeFinishedBefore(cutoff)
+                // Documents go through the import manager, not a raw DELETE — it also removes
+                // the copied file and embedded chunks, which a bare SQL delete would orphan.
+                container.db.documentDao().observeDeleted().first().forEach { doc ->
+                    if (doc.deletedAt != null && doc.deletedAt < cutoff) container.documentImportManager.delete(doc)
+                }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: recycle-bin purge failed", it) }
+
             // A download package left active/paused by a process death needs the
             // foreground service back up to reconcile and (if settings allow) auto-resume it —
             // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
-            if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
-                com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
-            }
+            runCatching {
+                if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
+                    com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
+                }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: download-recovery start failed", it) }
+
             // Same treatment for the Model Store's own pipeline: an install interrupted by
             // process death is reconciled against the real .part files on disk and parked as
             // PAUSED, never as FAILED. No service is started here — the store has no auto-resume
             // policy yet, so recovery only makes the session resumable when the user returns.
-            container.storeInstallRecovery.recoverOnStartup()
-            // Catalogue refresh, blob GC and the integrity spot-check, each on its own throttle.
-            // Skipped entirely on a device that has never opened the store, so a feature the user
-            // has not touched never reaches the network on their behalf.
-            if (!container.storeHousekeeping.isDormant()) {
-                // recoverOnStartup() above may have left install sessions in PAUSED — their
-                // staging dirs (.part files) MUST be spared from the GC pass, otherwise the
-                // partial download the recovery just reconciled is deleted and the next resume
-                // re-downloads from zero. Pass the live set of in-flight variant ids.
-                val inFlight = container.db.storeInstallSessionDao().getUnfinished().map { it.variantId }.toSet()
-                container.storeHousekeeping.runIfDue(inFlight)
-            }
-        }.onFailure { Log.e(TAG, "Cold-start housekeeping failed", it) } }
+            runCatching {
+                container.storeInstallRecovery.recoverOnStartup()
+                // Catalogue refresh, blob GC and the integrity spot-check, each on its own throttle.
+                // Skipped entirely on a device that has never opened the store, so a feature the user
+                // has not touched never reaches the network on their behalf.
+                if (!container.storeHousekeeping.isDormant()) {
+                    // recoverOnStartup() above may have left install sessions in PAUSED — their
+                    // staging dirs (.part files) MUST be spared from the GC pass, otherwise the
+                    // partial download the recovery just reconciled is deleted and the next resume
+                    // re-downloads from zero. Pass the live set of in-flight variant ids.
+                    val inFlight = container.db.storeInstallSessionDao().getUnfinished().map { it.variantId }.toSet()
+                    container.storeHousekeeping.runIfDue(inFlight)
+                }
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: store recovery/housekeeping failed", it) }
+        }
     }
 
     /**

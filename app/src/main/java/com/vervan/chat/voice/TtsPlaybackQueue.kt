@@ -80,7 +80,14 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
         runCatching { sentenceChannel.close() }
         val channel = Channel<String>(Channel.UNLIMITED)
         sentenceChannel = channel
-        playbackJob = scope.launch(Dispatchers.Default) { runPlaybackLoop(channel) }
+        // Dispatchers.IO, not .Default: playPcm()'s AudioTrack.write(..., WRITE_BLOCKING) blocks
+        // the calling thread for the duration of playback (up to several seconds per sentence).
+        // Default is a small fixed-size pool shared with CPU-bound work elsewhere in the app
+        // (token generation, embedding, image decode via AppContainer's withContext(Default)
+        // calls) — tying one of those threads up on blocking audio I/O for the length of a voice
+        // reply reduces that pool's real parallelism. IO is sized for exactly this kind of
+        // blocking call.
+        playbackJob = scope.launch(Dispatchers.IO) { runPlaybackLoop(channel) }
     }
 
     fun enqueue(text: String) {

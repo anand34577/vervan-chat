@@ -55,6 +55,21 @@ object BranchUtil {
         return (index + 1) to siblings.size
     }
 
+    /** Bulk form of [siblingPosition] — every message's (position, sibling count) in one grouped
+     * pass instead of two O(n) scans (siblingsOf's filter + indexOfFirst) per message. Calling
+     * [siblingPosition] once per rendered row inside a message list is the case this exists for:
+     * that list recomposes on every streamed token (~80ms), so per-row O(n) scans there become
+     * an O(n^2) cost across the whole visible list on every one of those recompositions — this
+     * reduces it to one O(n) pass, memoizable by the caller alongside the message list itself. */
+    fun siblingPositions(all: List<Message>): Map<String, Pair<Int, Int>> {
+        val byParent = childrenByParent(all)
+        val result = HashMap<String, Pair<Int, Int>>(all.size)
+        for (siblings in byParent.values) {
+            siblings.forEachIndexed { index, message -> result[message.id] = (index + 1) to siblings.size }
+        }
+        return result
+    }
+
     /** Every message paired with its depth (0 = root), in depth-first order — a tree view's data source. */
     fun flattenTree(all: List<Message>): List<Pair<Message, Int>> {
         val childrenIndex = childrenByParent(all)

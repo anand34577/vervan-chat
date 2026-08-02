@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.AudioNormalizer
 import com.vervan.chat.data.branch.BranchUtil
+import com.vervan.chat.data.repo.MessageAttachmentCleanup
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
@@ -1040,6 +1041,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.documentDao().getForKb(kbId).forEach { app.container.documentImportManager.delete(it) }
             db.knowledgeBaseDao().get(kbId)?.let { db.knowledgeBaseDao().delete(it) }
         }
+        MessageAttachmentCleanup.deleteOrphanedFiles(db, chat.id)
         db.messageDao().deleteForChat(chat.id)
         db.toolAuditDao().deleteForChat(chat.id)
         db.chatDao().delete(chat)
