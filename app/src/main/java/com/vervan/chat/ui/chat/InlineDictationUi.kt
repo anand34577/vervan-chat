@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -139,18 +140,31 @@ internal fun InlineDictationReview(
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
-            TextButton(onClick = onRetry) {
+            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+            TextButton(onClick = onRetry, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Replay, contentDescription = null)
                 Text("Retry", modifier = Modifier.padding(start = Space.xs))
             }
-            TextButton(onClick = onRecordMore) {
+            TextButton(onClick = onRecordMore, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Mic, contentDescription = null)
                 Text("Add more", modifier = Modifier.padding(start = Space.xs))
             }
-            Box(Modifier.weight(1f))
-            TextButton(onClick = onUseInComposer, enabled = transcript.isNotBlank()) { Text("Edit") }
-            Button(onClick = onSend, enabled = transcript.isNotBlank()) { Text("Send") }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = Space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(
+                onClick = onUseInComposer,
+                enabled = transcript.isNotBlank(),
+                modifier = Modifier.weight(1f)
+            ) { Text("Edit draft") }
+            Button(
+                onClick = onSend,
+                enabled = transcript.isNotBlank(),
+                modifier = Modifier.weight(1f)
+            ) { Text("Send message") }
         }
     }
 }

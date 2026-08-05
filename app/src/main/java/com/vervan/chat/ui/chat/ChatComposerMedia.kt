@@ -190,7 +190,6 @@ import com.vervan.chat.ui.common.QuickReplyChips
 import com.vervan.chat.ui.common.ReactionBadges
 import com.vervan.chat.ui.common.MessageReaction
 import com.vervan.chat.ui.common.ThinkingIndicator
-import com.vervan.chat.ui.common.VoiceWaveform
 import com.vervan.chat.ui.common.defaultQuickReplies
 import com.vervan.chat.ui.common.formatRelativeDay
 import com.vervan.chat.ui.common.setSensitiveText
@@ -198,6 +197,7 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.rememberThumbnail
+import com.vervan.chat.ui.common.rememberDocumentFirstPagePreview
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -271,6 +271,11 @@ internal fun DocumentComposerPreviewDialog(
     onSend: () -> Unit,
 ) {
     val type = selection.name.substringAfterLast('.', "FILE").uppercase().take(8)
+    val documentPreview = rememberDocumentFirstPagePreview(
+        uri = selection.uri,
+        mimeType = selection.mimeType,
+        sizePx = 900
+    )
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -291,10 +296,33 @@ internal fun DocumentComposerPreviewDialog(
                         tonalElevation = 6.dp
                     ) {
                         Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                                Column(Modifier.padding(horizontal = Space.xxl, vertical = Space.xxl), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(52.dp))
-                                    Text(type, style = MaterialTheme.typography.labelLarge, fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = Space.xs))
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 180.dp, max = 360.dp)
+                                    .clip(MaterialTheme.shapes.large)
+                                    .background(androidx.compose.ui.graphics.Color.White),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                documentPreview.bitmap?.let {
+                                    Image(
+                                        it,
+                                        contentDescription = "First page preview",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                } ?: Surface(
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ) {
+                                    Column(
+                                        Modifier.padding(horizontal = Space.xxl, vertical = Space.xxl),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(52.dp))
+                                        Text(type, style = MaterialTheme.typography.labelLarge, fontFamily = com.vervan.chat.ui.theme.VervanMono, modifier = Modifier.padding(top = Space.xs))
+                                    }
                                 }
                             }
                             Text(
@@ -305,6 +333,14 @@ internal fun DocumentComposerPreviewDialog(
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
                             )
+                            documentPreview.pageCount?.let { pages ->
+                                Text(
+                                    "$pages pages",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = Space.xs)
+                                )
+                            }
                             Text(
                                 "${selection.mimeType.substringAfterLast('/').uppercase()} · ${readableFileSize(selection.sizeBytes)}",
                                 style = MaterialTheme.typography.bodySmall,
@@ -480,12 +516,8 @@ internal fun VoiceMessageRow(path: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
-            // No explicit size override — the default 48dp keeps this within Material's minimum
-            // touch target; the 20dp Icon inside already gives the compact visual footprint.
             onClick = {
                 if (loadFailed) {
-                    // Tap on the warning icon retries — a transient SAF/IO hiccup often succeeds
-                    // on a second attempt without making the user feel stuck.
                     loadFailed = false
                     ensurePlayer { mp ->
                         mp.start()

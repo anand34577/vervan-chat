@@ -59,6 +59,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -508,6 +509,14 @@ fun ChatScreen(
     var dictationRecorder by remember { mutableStateOf<WavRecorder?>(null) }
     var dictationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var dictationBaseText by remember { mutableStateOf("") }
+
+    fun discardDraftVoiceAttachment() {
+        draftVoiceRecordingPath = null
+        draftSttLabel = null
+        draftOriginalTranscript = null
+        draftInputModality = "TEXT"
+        vm.setPendingAudio(null)
+    }
     var compareMessageId by remember { mutableStateOf<String?>(null) }
     // A fresh 👎 reaction prompts for why, so a weak model/preset leaves a trail (see
     // ChatViewModel.setFeedbackReason) — holds the message just reacted to, not a running dialog
@@ -522,9 +531,11 @@ fun ChatScreen(
     var isRunningOcr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val voicePushToTalkEnabled by app.container.settingsRepository.voicePushToTalkEnabled.collectAsState(initial = false)
     val latestDraft = rememberUpdatedState(draft)
     val latestPendingQuote = rememberUpdatedState(pendingQuote)
     val latestVoiceReplyMode = rememberUpdatedState(voiceReplyMode)
+    val latestVoicePushToTalk = rememberUpdatedState(voicePushToTalkEnabled)
     val voiceBridge = remember(vm) {
         object : com.vervan.chat.voice.VoiceConversationBridge {
             override suspend fun respond(
@@ -551,7 +562,10 @@ fun ChatScreen(
                 val bodyBase = mergedSpeech.ifBlank {
                     when {
                         document != null -> "Describe this document."
+                        attached.imagePath != null && attached.audioPath != null ->
+                            "Analyze the attached image and audio together."
                         attached.imagePath != null -> "Describe this image."
+                        attached.audioPath != null -> "Transcribe and respond to the attached audio."
                         else -> ""
                     }
                 }
@@ -563,7 +577,11 @@ fun ChatScreen(
                     imagePath = attached.imagePath,
                     audioPath = attached.audioPath,
                     documentId = document?.documentId,
-                    inputModality = if (typedPrefix.isBlank()) "HANDS_FREE" else "MIXED",
+                    inputModality = when {
+                        typedPrefix.isNotBlank() -> "MIXED"
+                        latestVoicePushToTalk.value -> "PUSH_TO_TALK"
+                        else -> "HANDS_FREE"
+                    },
                     outputModalities = if (latestVoiceReplyMode.value == "NEVER") "TEXT" else "TEXT,SPEECH",
                     voiceRecordingPath = input.recordingPath,
                     sttLabel = input.sttLabel,
@@ -595,9 +613,10 @@ fun ChatScreen(
     val voiceSttUnavailable by voiceController.sttUnavailable.collectAsState()
     val voiceLoadingModelName by voiceController.loadingModelName.collectAsState()
     val voicePushToTalkHeld by voiceController.pushToTalkHeld.collectAsState()
-    val voicePushToTalkEnabled by app.container.settingsRepository.voicePushToTalkEnabled.collectAsState(initial = false)
     val onTogglePushToTalkMode: () -> Unit = {
-        scope.launch { app.container.settingsRepository.setVoicePushToTalkEnabled(!voicePushToTalkEnabled) }
+        val enabled = !voicePushToTalkEnabled
+        voiceController.setPushToTalkEnabled(enabled)
+        scope.launch { app.container.settingsRepository.setVoicePushToTalkEnabled(enabled) }
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
@@ -653,6 +672,7 @@ fun ChatScreen(
                         if (old != path) java.io.File(old).delete()
                     }
                     draftVoiceRecordingPath = path
+                    vm.setPendingAudio(path)
                     draftSttLabel = transcription.engineLabel
                     val hadTypedText = draft.isNotBlank()
                     val combined = listOf(draft.trim(), transcription.text)
@@ -762,6 +782,7 @@ fun ChatScreen(
                 result.onSuccess { text ->
                     draftSttLabel = com.vervan.chat.voice.SttEngineChoice.ANDROID.label
                     draftVoiceRecordingPath = null
+                    vm.setPendingAudio(null)
                     val combined = listOf(dictationBaseText, text).filter { it.isNotBlank() }.joinToString(" ")
                     val original = listOf(dictationOriginalTranscript.orEmpty(), text)
                         .filter { it.isNotBlank() }
@@ -837,9 +858,11 @@ fun ChatScreen(
                         if (old != recorder.outputFile.absolutePath) java.io.File(old).delete()
                     }
                     draftVoiceRecordingPath = recorder.outputFile.absolutePath
+                    vm.setPendingAudio(draftVoiceRecordingPath)
                 } else {
                     recorder.outputFile.delete()
                     draftVoiceRecordingPath = null
+                    vm.setPendingAudio(null)
                 }
                 draftSttLabel = transcription.engineLabel
                 val combined = listOf(dictationBaseText, text).filter { it.isNotBlank() }.joinToString(" ")
@@ -1056,7 +1079,7 @@ fun ChatScreen(
 
     fun sendPendingMessage(): Boolean {
         val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
-        val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) &&
+        val canSend = (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || draftVoiceRecordingPath != null || documentReady) &&
             modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
         if (!canSend) return false
 
@@ -1064,11 +1087,15 @@ fun ChatScreen(
             quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
         }.orEmpty()
         val attached = vm.consumeAttachments()
+        val audioForSend = attached.audioPath ?: draftVoiceRecordingPath
         val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
         val bodyBase = draft.ifBlank {
             when {
                 documentReady -> "Describe this document."
+                attached.imagePath != null && audioForSend != null ->
+                    "Analyze the attached image and audio together."
                 attached.imagePath != null -> "Describe this image."
+                audioForSend != null -> "Transcribe and respond to the attached audio."
                 else -> draft
             }
         }
@@ -1076,6 +1103,13 @@ fun ChatScreen(
             "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
         } else bodyBase
         val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
+        val sendModality = when {
+            attached.imagePath != null && audioForSend != null -> "IMAGE_AUDIO"
+            draftInputModality != "TEXT" -> draftInputModality
+            audioForSend != null -> "AUDIO_FILE"
+            else -> "TEXT"
+        }
+        val voicePathForDisplay = draftVoiceRecordingPath ?: audioForSend
 
         draft = ""
         pendingQuote = null
@@ -1093,11 +1127,11 @@ fun ChatScreen(
         vm.send(
             quotePrefix + body,
             attached.imagePath,
-            attached.audioPath,
+            audioForSend,
             documentId,
-            inputModality = draftInputModality,
+            inputModality = sendModality,
             transcriptMetadataJson = transcriptMetadata,
-            voiceRecordingPath = draftVoiceRecordingPath
+            voiceRecordingPath = voicePathForDisplay
         )
         draftInputModality = "TEXT"
         draftOriginalTranscript = null
@@ -1276,7 +1310,8 @@ fun ChatScreen(
                         val defaultTopP by app.container.settingsRepository.topP.collectAsState(initial = 0.95f)
                         val defaultTopK by app.container.settingsRepository.topK.collectAsState(initial = 40)
                         ModeSettingsDialog(
-                            thinkingMode = chat?.thinkingMode ?: "OFF",
+                            thinkingMode = chat?.thinkingMode,
+                            modelDefaultThinkingMode = activeModel?.defaultThinkingMode,
                             thinkingAvailable = activeModel?.supportsThinking != false,
                             currentProfile = chat?.profile ?: "BALANCED",
                             onThinkingChange = { vm.setThinkingMode(it) },
@@ -1301,9 +1336,8 @@ fun ChatScreen(
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            // Chat Screen — compact, horizontally-scrollable status chips; never
-            // wraps to a second row. Context % is a cheap chars/4 estimate (same tradeoff as
-            // the context inspector), not an exact token count.
+            // Chat Screen — compact status chips with a low-profile context meter underneath.
+            // The estimate is intentionally labeled as tokens, not presented as exact accounting.
             run {
                 val defaultContextLimit by app.container.settingsRepository.contextTokenLimit.collectAsState(initial = 4096)
                 // Prefer the resolved model's actual context window over the app-wide default —
@@ -1319,8 +1353,12 @@ fun ChatScreen(
                     folderName = folder?.name,
                     personaName = persona?.name,
                     modelName = activeModelName?.substringBefore(" · "),
-                    thinkingMode = chat?.thinkingMode?.takeIf { it != "OFF" },
+                    thinkingMode = com.vervan.chat.llm.ThinkingPolicy.effectiveThinkingMode(
+                        chat?.thinkingMode, chatModel?.defaultThinkingMode, chatModel?.supportsThinking
+                    ).takeIf { it != "OFF" },
                     sourceCount = chat?.kbIdList()?.size?.takeIf { chat?.sourceGrounded == true && it > 0 },
+                    contextTokens = estimatedTokens,
+                    contextLimit = contextLimit,
                     contextPercent = contextPercent,
                     onWorkspaceClick = { showWorkspaceOptions = true },
                     onFolderClick = onOpenFolders,
@@ -1368,7 +1406,9 @@ fun ChatScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().widthIn(max = 840.dp).align(Alignment.Center),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = Space.lg, top = Space.md, end = Space.lg, bottom = Space.xxl),
+                // The composer owns its own vertical padding; keep only a compact list tail so
+                // the final response does not float unnecessarily far above the input field.
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = Space.lg, top = Space.md, end = Space.lg, bottom = Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.md)
             ) {
                 if (messages.isEmpty()) {
@@ -1683,8 +1723,16 @@ fun ChatScreen(
                     }
                     pendingAudioPath?.let { path ->
                         Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { VoiceMessageRow(path) }
-                            TextButton(onClick = { vm.setPendingAudio(null) }) { Text("Remove") }
+                            Column(Modifier.weight(1f)) {
+                                Text("Audio attachment", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    "Ready to send with your message",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                VoiceMessageRow(path)
+                            }
+                            TextButton(onClick = { discardDraftVoiceAttachment() }) { Text("Remove") }
                         }
                     }
                 }
@@ -1716,7 +1764,7 @@ fun ChatScreen(
                         else -> null
                     },
                     errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
-                        "No offline speech-input model is available. Download one or use the keyboard."
+                        "Offline speech input isn’t ready. Download a voice model or use the keyboard."
                     } else null,
                     onStart = { requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                     onFinishUtterance = voiceController::finishListening,
@@ -1804,17 +1852,13 @@ fun ChatScreen(
                             onTranscriptChange = { dictationTranscript = it },
                             onRecordMore = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                             onRetry = {
-                                draftVoiceRecordingPath?.let { java.io.File(it).delete() }
-                                draftVoiceRecordingPath = null
-                                draftSttLabel = null
+                                discardDraftVoiceAttachment()
                                 dictationTranscript = null
                                 dictationOriginalTranscript = null
                                 requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
                             },
                             onCancel = {
-                                draftVoiceRecordingPath?.let { java.io.File(it).delete() }
-                                draftVoiceRecordingPath = null
-                                draftSttLabel = null
+                                discardDraftVoiceAttachment()
                                 dictationTranscript = null
                                 dictationOriginalTranscript = null
                             },
@@ -1876,6 +1920,7 @@ fun ChatScreen(
                                                 if (old != file.absolutePath) java.io.File(old).delete()
                                             }
                                             draftVoiceRecordingPath = file.absolutePath
+                                            vm.setPendingAudio(file.absolutePath)
                                             draftSttLabel = transcription.engineLabel
                                             val hadTypedText = draft.isNotBlank()
                                             val combined = listOf(draft.trim(), transcription.text)
@@ -2169,7 +2214,7 @@ fun ChatScreen(
                     else -> null
                 },
                 errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
-                    "No offline speech-input model is available. Download one or use the keyboard."
+                    "Offline speech input isn’t ready. Download a voice model or use the keyboard."
                 } else null,
                 onStart = { requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                 onFinishUtterance = voiceController::finishListening,
@@ -2206,7 +2251,11 @@ fun ChatScreen(
     }
 
     if (showVoiceOptions) {
-        ModalBottomSheet(onDismissRequest = { showVoiceOptions = false }) {
+        val voiceSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showVoiceOptions = false },
+            sheetState = voiceSheetState
+        ) {
             VoiceSessionOptionsSheet(
                 speechOutputEnabled = voiceSpeechOutputEnabled,
                 microphoneMuted = voiceMicrophoneMuted,
@@ -2282,7 +2331,7 @@ fun ChatScreen(
             confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
             onDismiss = { showPendingAudioPreview = false },
             onRemove = {
-                vm.setPendingAudio(null)
+                discardDraftVoiceAttachment()
                 showPendingAudioPreview = false
             },
             onSend = {

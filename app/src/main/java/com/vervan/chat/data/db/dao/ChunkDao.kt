@@ -38,6 +38,15 @@ interface ChunkDao {
     @Query("SELECT * FROM chunks WHERE knowledgeBaseId IN (:kbIds) ORDER BY id LIMIT :limit")
     suspend fun getForKnowledgeBases(kbIds: List<String>, limit: Int): List<Chunk>
 
+    /** Reading-order counterpart to [getForKnowledgeBases] — used by
+     * [com.vervan.chat.retrieval.RetrievalEngine.retrieveOverviewFallback] to sample a document
+     * from beginning to end rather than by relevance score. */
+    @Query("SELECT * FROM chunks WHERE knowledgeBaseId IN (:kbIds) ORDER BY documentId, chunkIndex LIMIT :limit")
+    suspend fun getForKnowledgeBasesOrdered(kbIds: List<String>, limit: Int): List<Chunk>
+
+    @Query("SELECT COUNT(DISTINCT documentId) FROM chunks WHERE knowledgeBaseId IN (:kbIds)")
+    suspend fun countDocumentsForKnowledgeBases(kbIds: List<String>): Int
+
     /** Candidate chunk ids matching an FTS4 MATCH expression, scoped to [kbIds] via a join back
      * to [Chunk] (chunks_fts itself carries no knowledgeBaseId — see [ChunkFts]). [RetrievalEngine]
      * builds [matchQuery] from the user's search terms; this replaces the old per-chunk Kotlin

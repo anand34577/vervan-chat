@@ -198,6 +198,7 @@ import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.rememberThumbnail
+import com.vervan.chat.ui.common.rememberDocumentFirstPagePreview
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
@@ -217,6 +218,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.json.JSONArray
+
+private fun formatThinkingDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs.coerceAtLeast(0L) / 1_000L).toInt()
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
+}
 
 
 @Composable
@@ -249,6 +257,10 @@ internal fun MessageBubble(
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
+    val hasAttachment = message.imagePath != null ||
+        message.documentId != null ||
+        message.voiceRecordingPath != null ||
+        message.audioPath != null
     val displayedContent = rememberBatchedStreamingText(
         text = message.content,
         isStreaming = message.state == MessageState.STREAMING
@@ -443,8 +455,8 @@ internal fun MessageBubble(
         ) {
             Column(
                 Modifier.padding(
-                    horizontal = if (isUser) Space.lg else Space.xs,
-                    vertical = if (isUser) Space.md else Space.sm
+                    horizontal = if (isUser && !hasAttachment) Space.lg else Space.xs,
+                    vertical = if (isUser && !hasAttachment) Space.md else Space.xs
                 )
             ) {
                 // Assistant messages carry a compact identity header (gradient avatar + name +
@@ -519,6 +531,11 @@ internal fun MessageBubble(
                     val file = attachedDocument?.filePath?.let { java.io.File(it) }
                     val extension = attachedDocument?.displayName?.substringAfterLast('.', "")
                         ?.takeIf { it.isNotBlank() }?.uppercase() ?: "DOCUMENT"
+                    val documentPreview = rememberDocumentFirstPagePreview(
+                        filePath = attachedDocument?.filePath,
+                        mimeType = attachedDocument?.mimeType,
+                        sizePx = 720
+                    )
                     Surface(
                         onClick = { onOpenDocument(documentId) },
                         modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
@@ -526,7 +543,19 @@ internal fun MessageBubble(
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     ) {
-                        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.fillMaxWidth()) {
+                            documentPreview.bitmap?.let {
+                                Image(
+                                    it,
+                                    contentDescription = "First page preview",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(MaterialTheme.shapes.medium),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
@@ -545,6 +574,13 @@ internal fun MessageBubble(
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
+                                documentPreview.pageCount?.let { pages ->
+                                    Text(
+                                        "$pages pages",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 Text(
                                     "$extension · ${readableFileSize(file?.takeIf { it.exists() }?.length())}",
                                     style = MaterialTheme.typography.labelSmall,
@@ -552,6 +588,7 @@ internal fun MessageBubble(
                                 )
                             }
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open document preview", modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }
@@ -561,27 +598,9 @@ internal fun MessageBubble(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = Space.xs)
-                    ) {
-                        Column(Modifier.padding(horizontal = Space.xs, vertical = Space.xs)) {
-                            Text(
-                                if (message.inputModality in setOf("AUDIO_FILE", "VOICE_FILE")) {
-                                    "Original audio"
-                                } else {
-                                    "Voice request"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(
-                                    start = Space.xs,
-                                    end = Space.xs,
-                                    bottom = Space.xs
-                                )
-                            )
-                            VoiceMessageRow(recordingPath)
-                        }
-                    }
+                    ) { VoiceMessageRow(recordingPath) }
                 }
-                message.audioPath?.let { audioPath ->
+                message.audioPath?.takeIf { it != message.voiceRecordingPath }?.let { audioPath ->
                     if (isUser) {
                         // The slider's primary-colored track would be invisible against the
                         // solid-primary bubble — host the player on a normal surface island.
@@ -595,6 +614,9 @@ internal fun MessageBubble(
                         VoiceMessageRow(audioPath)
                     }
                 }
+                val toolCallHidden = remember(displayedContent) { com.vervan.chat.tools.ToolCallParser.stripForDisplay(displayedContent) }
+                val parsed = remember(toolCallHidden) { com.vervan.chat.llm.ThinkingParser.parse(toolCallHidden) }
+                val clarification = remember(parsed.answer) { com.vervan.chat.llm.ClarificationParser.parse(parsed.answer) }
                 if (editing) {
                     // Editing happens inside the solid-primary user bubble — the field gets a
                     // normal surface island and the buttons explicit onPrimary so neither
@@ -619,22 +641,29 @@ internal fun MessageBubble(
                         TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text("Cancel") }
                     }
                 } else {
+                    // Media communicates the attachment itself; keep the compact source label so
+                    // Hands-free and Push to talk remain distinguishable without adding an audio
+                    // avatar or duplicate mic icon.
                     if (isUser && message.inputModality != "TEXT") {
                         Row(
                             Modifier.padding(bottom = Space.xs),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Filled.Mic,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
-                            )
+                            if (!hasAttachment) {
+                                Icon(
+                                    Icons.Filled.Mic,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                                )
+                            }
                             Text(
                                 when (message.inputModality) {
                                     "HANDS_FREE" -> "Hands-free"
+                                    "PUSH_TO_TALK" -> "Push to talk"
                                     "VOICE_DICTATION" -> "Dictated"
                                     "MIXED" -> "Typed + dictated"
+                                    "IMAGE_AUDIO" -> "Image + audio"
                                     else -> "Voice"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
@@ -643,28 +672,59 @@ internal fun MessageBubble(
                             )
                         }
                     }
-                    if (isUser && message.voiceRecordingPath != null) {
-                        Text(
-                            "Transcription",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
-                            modifier = Modifier.padding(bottom = Space.xs)
-                        )
-                    }
                     // Strip <tool_call> markup before Thinking/Clarification parsing, same as
                     // those two already do for their own tags — without this, the raw
                     // {"tool": ..., "params": ...} JSON types out visibly in the bubble while
                     // streaming and only disappears once the message reaches COMPLETE.
-                    val toolCallHidden = remember(displayedContent) { com.vervan.chat.tools.ToolCallParser.stripForDisplay(displayedContent) }
-                    val parsed = remember(toolCallHidden) { com.vervan.chat.llm.ThinkingParser.parse(toolCallHidden) }
-                    val clarification = remember(parsed.answer) { com.vervan.chat.llm.ClarificationParser.parse(parsed.answer) }
-                    if (parsed.reasoning != null) {
+                    val thinkingActive = !isUser &&
+                        message.state == MessageState.STREAMING &&
+                        isGenerating &&
+                        parsed.thinkingInProgress
+                    var thinkingNow by remember(message.id) { mutableStateOf(System.currentTimeMillis()) }
+                    val thinkingStartedAt = remember(message.id) {
+                        if (message.state == MessageState.STREAMING) message.createdAt else null
+                    }
+                    var thinkingCompletedAt by remember(message.id) { mutableStateOf<Long?>(null) }
+                    LaunchedEffect(message.id, thinkingActive) {
+                        if (thinkingActive) {
+                            while (true) {
+                                thinkingNow = System.currentTimeMillis()
+                                kotlinx.coroutines.delay(1_000L)
+                            }
+                        }
+                    }
+                    LaunchedEffect(message.id, parsed.hasThinking, parsed.thinkingInProgress, message.state) {
+                        if (thinkingStartedAt != null && parsed.hasThinking &&
+                            !parsed.thinkingInProgress && thinkingCompletedAt == null
+                        ) {
+                            thinkingCompletedAt = System.currentTimeMillis()
+                        }
+                    }
+                    val thinkingDurationMs = when {
+                        thinkingStartedAt != null && thinkingCompletedAt != null ->
+                            (thinkingCompletedAt!! - thinkingStartedAt!!).coerceAtLeast(0L)
+                        thinkingActive ->
+                            (thinkingNow - (thinkingStartedAt ?: message.createdAt)).coerceAtLeast(0L)
+                        else -> message.generationMs ?: 0L
+                    }
+                    if (!isUser && parsed.hasThinking) {
+                        val thinkingTitle = if (thinkingActive) {
+                            val elapsed = (thinkingNow - (thinkingStartedAt ?: message.createdAt)).coerceAtLeast(0L)
+                            if (elapsed < 2_000L) "Thinking…" else "Thinking for ${formatThinkingDuration(elapsed)}"
+                        } else {
+                            "Thought for ${formatThinkingDuration(thinkingDurationMs)}"
+                        }
                         com.vervan.chat.ui.common.AssistantSubCard(
                             kind = com.vervan.chat.ui.common.SubCardKind.Reasoning,
-                            title = "Reasoning",
+                            title = thinkingTitle,
                             modifier = Modifier.padding(bottom = Space.sm)
                         ) {
-                            MarkdownLiteText(parsed.reasoning)
+                            parsed.reasoning?.let { MarkdownLiteText(it) }
+                                ?: Text(
+                                    "Reasoning is still in progress…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                         }
                     }
                     // Markdown/code-block rendering — assistant output routinely
@@ -699,7 +759,7 @@ internal fun MessageBubble(
                         modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
                     )
                 }
-                if (message.state == MessageState.STREAMING && isGenerating && showStreamingStatus) {
+                if (message.state == MessageState.STREAMING && isGenerating && showStreamingStatus && !parsed.hasThinking) {
                     // "Thinking" indicator while the model is alive but hasn't emitted its first
                     // token yet — replaces the silent gap that previously made the app feel broken
                     // on slow models. Once the first token is in, the dots hand off to the
@@ -760,7 +820,14 @@ internal fun MessageBubble(
                         IconButton(onClick = { onSwitchBranch(1) }, enabled = siblingPosition.first < siblingPosition.second) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next branch", modifier = Modifier.size(16.dp))
                         }
-                        TextButton(onClick = onCompare) { Text("Compare", style = MaterialTheme.typography.labelSmall) }
+                        TextButton(
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            onClick = onCompare
+                        ) {
+                            Text("Compare", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }

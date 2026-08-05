@@ -149,6 +149,7 @@ internal fun ModelEditDialog(
     var audio by remember(model.id) { mutableStateOf(audioSupported && model.supportsAudio != false) }
     var tools by remember(model.id) { mutableStateOf(model.supportsTools != false) }
     var thinking by remember(model.id) { mutableStateOf(model.supportsThinking != false) }
+    var defaultThinkingMode by remember(model.id) { mutableStateOf(model.defaultThinkingMode ?: "OFF") }
     var mtpEnabled by remember(model.id) { mutableStateOf(model.mtpEnabled) }
     // llama.cpp has no NPU backend — a stale NPU choice persisted by an older build is shown
     // (and re-saved) as AUTO, which is what the load coordinator resolves it to anyway.
@@ -269,6 +270,7 @@ internal fun ModelEditDialog(
                                         supportsAudio = audio,
                                         supportsTools = tools,
                                         supportsThinking = thinking,
+                                        defaultThinkingMode = defaultThinkingMode.takeIf { thinking },
                                         temperature = temperature.takeIf { temperatureOn },
                                         topP = topP.takeIf { topPOn },
                                         topK = topK.toInt().takeIf { topKOn },
@@ -389,6 +391,28 @@ internal fun ModelEditDialog(
                         ) { audio = it }
                         CapabilityToggle("Tools", tools) { tools = it }
                         CapabilityToggle("Thinking", thinking) { thinking = it }
+                        if (thinking) {
+                            Text(
+                                "Default thinking mode",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                com.vervan.chat.llm.ThinkingPolicy.MODES.forEach { mode ->
+                                    VervanFilterChip(
+                                        selected = defaultThinkingMode == mode,
+                                        onClick = { defaultThinkingMode = mode },
+                                        label = { Text(mode.lowercase().replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+                            Text(
+                                "New chats on this model start here; a chat can still override it.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                            )
+                        }
                         // A load that couldn't actually deliver a capability the user asked for
                         // auto-turns it off here (see reconcileCapabilities) instead of quietly
                         // pretending it still works — surfacing that as a plain fact, not an error.

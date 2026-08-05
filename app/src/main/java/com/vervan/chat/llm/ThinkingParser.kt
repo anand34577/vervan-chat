@@ -1,38 +1,90 @@
 package com.vervan.chat.llm
 
 /**
- * Splits a `<thinking>...</thinking>` block out of a raw model response —
- * thinking mode, built as a prompt instruction (see [com.vervan.chat.ui.chat.ChatViewModel])
- * since `tasks-genai` exposes no native reasoning-mode API. If the model didn't emit the
- * tag (wrong mode, or it just ignored the instruction), [Parsed.reasoning] is null and
- * [Parsed.answer] is the full text unchanged — always safe to call on any message.
+ * Separates model reasoning from the visible answer.
+ *
+ * Models do not all use the same spelling: some emit <think>, some emit <thinking> or
+ * <analysis>, and streaming can expose a partial opening tag or an unclosed block. This parser
+ * deliberately treats every supported reasoning block as non-answer text until it is closed.
+ * The raw content is retained for the collapsible reasoning card, while [answer] is safe for the
+ * normal chat renderer.
  */
 object ThinkingParser {
-    data class Parsed(val reasoning: String?, val answer: String)
-
-    private val COMPLETE = Regex(
-        "<\\s*(thinking|think)\\s*>([\\s\\S]*?)<\\s*/\\s*\\1\\s*>",
-        RegexOption.IGNORE_CASE
+    data class Parsed(
+        val reasoning: String?,
+        val answer: String,
+        val hasThinking: Boolean = reasoning != null,
+        val thinkingInProgress: Boolean = false
     )
-    private val STREAMING = Regex("<\\s*(thinking|think)\\s*>([\\s\\S]*)$", RegexOption.IGNORE_CASE)
+
+    private const val TAGS = "(?:think(?:ing)?|analysis|reasoning|thought)"
+
+    private val OPEN = Regex(
+        "(?is)<\\s*$TAGS(?:\\s+[^>]*)?>|<\\|(?:$TAGS|begin_of_thought)\\|>"
+    )
+    private val CLOSE = Regex(
+        "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>"
+    )
+    private val PARTIAL_OPEN_CANDIDATES = listOf(
+        "<think>", "<thinking>", "<analysis>", "<reasoning>", "<thought>",
+        "<|think|>", "<|thinking|>", "<|analysis|>", "<|reasoning|>", "<|thought|>",
+        "<|begin_of_thought|>"
+    )
 
     fun parse(content: String): Parsed {
-        val match = COMPLETE.find(content)
-        if (match != null) {
-            val reasoning = match.groupValues[2].trim()
-            val answer = content.removeRange(match.range).trim()
-            return Parsed(reasoning.ifBlank { null }, answer)
+        if (content.isEmpty()) return Parsed(null, content)
+
+        val visible = StringBuilder()
+        val reasoning = StringBuilder()
+        var cursor = 0
+        var foundThinking = false
+        var thinkingInProgress = false
+
+        while (cursor < content.length) {
+            val open = OPEN.find(content, cursor) ?: break
+            foundThinking = true
+            visible.append(content, cursor, open.range.first)
+
+            val reasoningStart = open.range.last + 1
+            val close = CLOSE.find(content, reasoningStart)
+            if (close == null) {
+                if (reasoning.isNotEmpty()) reasoning.append('\n')
+                reasoning.append(content, reasoningStart, content.length)
+                thinkingInProgress = true
+                cursor = content.length
+                break
+            }
+
+            if (reasoning.isNotEmpty()) reasoning.append('\n')
+            reasoning.append(content, reasoningStart, close.range.first)
+            cursor = close.range.last + 1
         }
-        val streaming = STREAMING.find(content)
-        if (streaming != null) {
-            val reasoning = streaming.groupValues[2].trim()
-            val answer = content.substring(0, streaming.range.first).trim()
-            return Parsed(reasoning.ifBlank { null }, answer)
+
+        if (foundThinking) {
+            if (cursor < content.length) visible.append(content, cursor, content.length)
+            return Parsed(
+                reasoning = reasoning.toString().trim().ifBlank { null },
+                answer = visible.toString().trim(),
+                hasThinking = true,
+                thinkingInProgress = thinkingInProgress
+            )
         }
-        val trimmed = content.trimStart()
-        if (trimmed.startsWith("<") && listOf("<think>", "<thinking>").any { it.startsWith(trimmed, ignoreCase = true) }) {
-            return Parsed(null, "")
+
+        // A streamed opening tag can arrive over several callbacks. Hide the incomplete suffix
+        // instead of briefly rendering "<thi" or similar parser noise in the chat bubble.
+        val partialStart = content.lastIndexOf('<')
+        if (partialStart >= 0) {
+            val partial = content.substring(partialStart).trim().lowercase()
+            if (!partial.contains('>') && PARTIAL_OPEN_CANDIDATES.any { it.startsWith(partial) }) {
+                return Parsed(
+                    reasoning = null,
+                    answer = content.substring(0, partialStart).trim(),
+                    hasThinking = true,
+                    thinkingInProgress = true
+                )
+            }
         }
+
         return Parsed(null, content)
     }
 }

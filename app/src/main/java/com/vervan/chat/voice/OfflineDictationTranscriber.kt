@@ -55,16 +55,17 @@ object OfflineDictationTranscriber {
                             prompt = TRANSCRIBE_PROMPT,
                             imagePath = null,
                             audioPath = wavFile.absolutePath,
-                            temperature = params.temperature,
+                            temperature = 0f,
                             topP = params.topP,
                             topK = params.topK,
                             seed = params.seed,
                             minP = params.minP,
                             repetitionPenalty = params.repetitionPenalty,
-                            maxOutputTokens = params.maxOutputTokens,
-                            stopSequences = params.stopSequences
+                            maxOutputTokens = params.maxOutputTokens.coerceAtMost(MAX_TRANSCRIPT_TOKENS),
+                            stopSequences = (params.stopSequences + TRANSCRIBE_STOP_SEQUENCES).distinct(),
+                            systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
                         ).collect { text.append(it) }
-                        text.toString().trim().takeIf { it.isNotEmpty() }
+                        ModelAudioTranscriptSanitizer.clean(text.toString(), durationMs)
                             ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
                     }
                     SttEngineChoice.ANDROID -> {
@@ -84,6 +85,10 @@ object OfflineDictationTranscriber {
     }
 
     private const val MODEL_AUDIO_MAX_MS = 30_000L
-    private const val TRANSCRIBE_PROMPT =
-        "Transcribe exactly what was said in this audio. Output only the raw transcript, nothing else — no commentary, no translation."
+    private const val MAX_TRANSCRIPT_TOKENS = 128
+    private val TRANSCRIBE_STOP_SEQUENCES = listOf("\n\n", "\nAssistant:", "\nassistant:")
+      private const val TRANSCRIBE_SYSTEM_PROMPT =
+          "STT mode. Output only the exact spoken words in the language spoken. Never translate, answer, or explain."
+      private const val TRANSCRIBE_PROMPT =
+          "Transcribe audio only. Preserve the spoken language; do not translate."
 }

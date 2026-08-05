@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "5ceec3daad2979e5cb4936788d954002",
+    "identityHash": "b0bd5273be506dafa2fb57baea508fef",
     "entities": [
       {
         "tableName": "chats",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `workspaceId` TEXT NOT NULL, `personaId` TEXT, `modelId` TEXT, `projectId` TEXT, `folderId` TEXT, `draft` TEXT NOT NULL, `pinned` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `sourceGrounded` INTEGER NOT NULL, `toolsEnabled` INTEGER NOT NULL, `profile` TEXT NOT NULL, `thinkingMode` TEXT NOT NULL, `activeLeafId` TEXT, `knowledgeBaseIds` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER, `temperature` REAL, `topP` REAL, `topK` INTEGER, `scrollAnchorMessageId` TEXT, `scrollAnchorOffsetPx` INTEGER NOT NULL, `titleIsCustom` INTEGER NOT NULL, `previousTitle` TEXT, `screenshotBlocked` INTEGER NOT NULL, `isTemporary` INTEGER NOT NULL, `toolOverrides` TEXT NOT NULL, `contextSummary` TEXT, `summaryCoversUpToMessageId` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `workspaceId` TEXT NOT NULL, `personaId` TEXT, `modelId` TEXT, `projectId` TEXT, `folderId` TEXT, `draft` TEXT NOT NULL, `pinned` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `sourceGrounded` INTEGER NOT NULL, `toolsEnabled` INTEGER NOT NULL, `profile` TEXT NOT NULL, `thinkingMode` TEXT, `activeLeafId` TEXT, `knowledgeBaseIds` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `deletedAt` INTEGER, `temperature` REAL, `topP` REAL, `topK` INTEGER, `scrollAnchorMessageId` TEXT, `scrollAnchorOffsetPx` INTEGER NOT NULL, `titleIsCustom` INTEGER NOT NULL, `previousTitle` TEXT, `screenshotBlocked` INTEGER NOT NULL, `isTemporary` INTEGER NOT NULL, `toolOverrides` TEXT NOT NULL, `contextSummary` TEXT, `summaryCoversUpToMessageId` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -85,8 +85,7 @@
           {
             "fieldPath": "thinkingMode",
             "columnName": "thinkingMode",
-            "affinity": "TEXT",
-            "notNull": true
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "activeLeafId",
@@ -479,7 +478,7 @@
       },
       {
         "tableName": "models",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `displayName` TEXT NOT NULL, `filePath` TEXT NOT NULL, `fileSizeBytes` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `role` TEXT NOT NULL, `engine` TEXT NOT NULL, `lastWorkingBackend` TEXT NOT NULL, `isActive` INTEGER NOT NULL, `importedAt` INTEGER NOT NULL, `lastLoadedAt` INTEGER, `licenseAcknowledged` INTEGER NOT NULL, `supportsVision` INTEGER, `supportsAudio` INTEGER, `supportsTools` INTEGER, `supportsThinking` INTEGER, `temperature` REAL, `topP` REAL, `topK` INTEGER, `maxNumImages` INTEGER, `contextTokens` INTEGER, `preferredBackend` TEXT NOT NULL, `mtpSupported` INTEGER, `mtpEnabled` INTEGER NOT NULL, `seed` INTEGER, `toolApprovalMode` TEXT NOT NULL, `tokenizerPath` TEXT, `mmprojPath` TEXT, `minP` REAL, `repetitionPenalty` REAL, `maxOutputTokens` INTEGER, `stopSequences` TEXT, `gpuLayerCount` INTEGER, `cpuThreads` INTEGER, `nBatch` INTEGER, `nUbatch` INTEGER, `useMlock` INTEGER, `flashAttention` INTEGER, `kvCacheType` TEXT, `vulkanDeviceIndex` INTEGER, `ropeFreqBase` REAL, `ropeFreqScale` REAL, `chatTemplateOverride` TEXT, `loraPath` TEXT, `loraScale` REAL, `modelDesc` TEXT, `nativeMaxContext` INTEGER, `layerCount` INTEGER, `origin` TEXT NOT NULL, `catalogModelId` TEXT, `catalogVersion` TEXT, `sourceUrl` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `displayName` TEXT NOT NULL, `filePath` TEXT NOT NULL, `fileSizeBytes` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `role` TEXT NOT NULL, `engine` TEXT NOT NULL, `lastWorkingBackend` TEXT NOT NULL, `isActive` INTEGER NOT NULL, `importedAt` INTEGER NOT NULL, `lastLoadedAt` INTEGER, `licenseAcknowledged` INTEGER NOT NULL, `supportsVision` INTEGER, `supportsAudio` INTEGER, `supportsTools` INTEGER, `supportsThinking` INTEGER, `defaultThinkingMode` TEXT, `temperature` REAL, `topP` REAL, `topK` INTEGER, `maxNumImages` INTEGER, `contextTokens` INTEGER, `preferredBackend` TEXT NOT NULL, `mtpSupported` INTEGER, `mtpEnabled` INTEGER NOT NULL, `seed` INTEGER, `toolApprovalMode` TEXT NOT NULL, `tokenizerPath` TEXT, `mmprojPath` TEXT, `minP` REAL, `repetitionPenalty` REAL, `maxOutputTokens` INTEGER, `stopSequences` TEXT, `gpuLayerCount` INTEGER, `cpuThreads` INTEGER, `nBatch` INTEGER, `nUbatch` INTEGER, `useMlock` INTEGER, `flashAttention` INTEGER, `kvCacheType` TEXT, `vulkanDeviceIndex` INTEGER, `ropeFreqBase` REAL, `ropeFreqScale` REAL, `chatTemplateOverride` TEXT, `loraPath` TEXT, `loraScale` REAL, `modelDesc` TEXT, `nativeMaxContext` INTEGER, `layerCount` INTEGER, `origin` TEXT NOT NULL, `catalogModelId` TEXT, `catalogVersion` TEXT, `sourceUrl` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -571,6 +570,11 @@
             "fieldPath": "supportsThinking",
             "columnName": "supportsThinking",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "defaultThinkingMode",
+            "columnName": "defaultThinkingMode",
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "temperature",
@@ -930,7 +934,7 @@
       },
       {
         "tableName": "chunks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `documentId` TEXT NOT NULL, `knowledgeBaseId` TEXT NOT NULL, `sectionPath` TEXT NOT NULL, `text` TEXT NOT NULL, `tokenCount` INTEGER NOT NULL, `embedding` BLOB, `embeddingModelId` TEXT, `pageNumber` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `documentId` TEXT NOT NULL, `knowledgeBaseId` TEXT NOT NULL, `sectionPath` TEXT NOT NULL, `text` TEXT NOT NULL, `tokenCount` INTEGER NOT NULL, `embedding` BLOB, `embeddingModelId` TEXT, `pageNumber` INTEGER, `chunkIndex` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -982,6 +986,12 @@
             "fieldPath": "pageNumber",
             "columnName": "pageNumber",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "chunkIndex",
+            "columnName": "chunkIndex",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -2673,7 +2683,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5ceec3daad2979e5cb4936788d954002')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b0bd5273be506dafa2fb57baea508fef')"
     ]
   }
 }

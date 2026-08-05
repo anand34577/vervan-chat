@@ -16,6 +16,22 @@ import com.vervan.chat.data.db.entities.ModelEngine
  */
 object ThinkingPolicy {
 
+    /** Valid thinking-mode values, in escalating order. */
+    val MODES = listOf("OFF", "FAST", "BALANCED", "DEEP")
+
+    /**
+     * Resolves the capability → model-default → chat-override hierarchy into the single mode
+     * actually used for a generation: a chat override wins if set, otherwise the model's own
+     * default, otherwise OFF — but a model whose Thinking capability is off is always OFF
+     * regardless of what either level requests, and an unrecognized/stale mode value falls back
+     * to OFF rather than being sent to the engine.
+     */
+    fun effectiveThinkingMode(chatOverride: String?, modelDefault: String?, supportsThinking: Boolean?): String {
+        if (supportsThinking == false) return "OFF"
+        val mode = chatOverride ?: modelDefault ?: "OFF"
+        return if (mode in MODES) mode else "OFF"
+    }
+
     /**
      * The instruction text appended to the prompt. Empty for OFF on a non-reasoning model, so a
      * chat that never touches thinking pays no prompt cost. For a llama.cpp model it also appends

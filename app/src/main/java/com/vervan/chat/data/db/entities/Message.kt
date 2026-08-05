@@ -37,7 +37,7 @@ data class Message(
     // playback provenance only and is never forwarded to the generation model.
     val voiceRecordingPath: String? = null,
     // Modality provenance keeps spoken turns first-class inside ordinary chat history.
-    // TEXT, VOICE_DICTATION, HANDS_FREE, AUDIO_ATTACHMENT, or MIXED.
+    // TEXT, VOICE_DICTATION, HANDS_FREE, PUSH_TO_TALK, AUDIO_ATTACHMENT, or MIXED.
     val inputModality: String = "TEXT",
     // Lightweight JSON metadata: original transcript, edited flag, language/STT label and
     // duration when known. Optional so existing text messages remain compact.

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -141,6 +142,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     }
 
     Scaffold(
+        // The navigation shell already reserves the bottom navigation and gesture area.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (!selectionMode) MediumTopAppBar(
                 title = {

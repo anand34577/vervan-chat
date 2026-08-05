@@ -28,7 +28,12 @@ data class Chunk(
     // 1-based PDF page this chunk came from — only set for a PDF with a real text layer (see
     // com.vervan.chat.model.Chunker.chunkPaginated). Null for every other source format and for
     // an OCR'd/scanned PDF, which has no per-page text boundary to preserve.
-    val pageNumber: Int? = null
+    val pageNumber: Int? = null,
+    // Position of this chunk within its document's own chunk list, in reading order (0 = first).
+    // `id` is a random UUID, not sequential, so this is the only stable way to reconstruct
+    // document order later — see RetrievalEngine.retrieveOverviewFallback, which needs a
+    // representative skim across the whole document rather than a relevance-ranked set.
+    val chunkIndex: Int = 0
 ) {
     override fun equals(other: Any?) = other is Chunk && id == other.id
     override fun hashCode() = id.hashCode()

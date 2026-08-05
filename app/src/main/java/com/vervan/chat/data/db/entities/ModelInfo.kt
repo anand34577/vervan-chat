@@ -65,6 +65,9 @@ data class ModelInfo(
     val supportsAudio: Boolean? = null,
     val supportsTools: Boolean? = null,
     val supportsThinking: Boolean? = null,
+    // Default thinking mode (OFF/FAST/BALANCED/DEEP) for a new chat on this model, and for any
+    // existing chat left on "use model default" — null means OFF. See ThinkingPolicy.effectiveThinkingMode.
+    val defaultThinkingMode: String? = null,
     val temperature: Float? = null,
     val topP: Float? = null,
     val topK: Int? = null,
