@@ -20,7 +20,12 @@ data class SourcePassage(
     val sectionPath: String,
     val excerpt: String,
     val score: Float,
-    val pageNumber: Int? = null
+    val pageNumber: Int? = null,
+    // True only for a passage from retrieveOverviewFallback — a positional skim, not a
+    // relevance match. ChatViewModel's prompt-building phrases these differently (an overview
+    // to summarize from, not a scored citation) so the model isn't nudged to hedge about
+    // whether an arbitrarily-sampled passage "answers" the question.
+    val isOverview: Boolean = false
 )
 
 /**
@@ -134,10 +139,51 @@ class RetrievalEngine(
             }
     }
 
+    /**
+     * Fallback for when [retrieve] finds nothing above [MIN_RELEVANCE_SCORE]. A broad
+     * "describe/summarize this document" question scores low against every individual chunk —
+     * it's not *about* any one passage — even though a document is plainly attached, so the
+     * caller would otherwise tell the model "no relevant passages found", which reads to the
+     * user as the app claiming no document exists at all. Evenly sampling the document's own
+     * chunk order (see [Chunk.chunkIndex]) instead gives the model real, representative content
+     * spanning the whole document.
+     *
+     * Capped at [OVERVIEW_MAX_DOCUMENTS] documents in scope — this is meant for the common
+     * "attached this chat one (or a couple of) documents" case, not a broad knowledge base,
+     * where a handful of arbitrary sampled chunks would be a much weaker and more misleading
+     * stand-in for "nothing matched" than the honest "no relevant passages" response.
+     */
+    suspend fun retrieveOverviewFallback(kbIds: List<String>, topK: Int): List<SourcePassage> {
+        if (kbIds.isEmpty() || topK <= 0) return emptyList()
+        if (chunkDao.countDocumentsForKnowledgeBases(kbIds) !in 1..OVERVIEW_MAX_DOCUMENTS) return emptyList()
+
+        val chunks = chunkDao.getForKnowledgeBasesOrdered(kbIds, MAX_CHUNKS_PER_QUERY)
+        if (chunks.isEmpty()) return emptyList()
+        val byDocument = chunks.groupBy { it.documentId }.values.toList()
+        val perDocumentBudget = (topK / byDocument.size).coerceAtLeast(1)
+        val docNames = mutableMapOf<String, String>()
+        return byDocument.flatMap { evenlySample(it, perDocumentBudget) }
+            .take(topK)
+            .map { chunk ->
+                val docName = docNames.getOrPut(chunk.documentId) { documentDao.get(chunk.documentId)?.displayName ?: "Unknown" }
+                SourcePassage(chunk.id, chunk.documentId, docName, chunk.sectionPath, chunk.text, score = 0f, chunk.pageNumber, isOverview = true)
+            }
+    }
+
+    /** [count] positions spread evenly across [items] (already in document order), so a handful
+     * of samples still span beginning/middle/end instead of clustering at the start — a skim of
+     * the whole document rather than just its opening. */
+    private fun <T> evenlySample(items: List<T>, count: Int): List<T> {
+        if (items.size <= count) return items
+        val step = items.size.toDouble() / count
+        return (0 until count).map { items[(it * step).toInt().coerceAtMost(items.size - 1)] }
+    }
+
     companion object {
         private const val MAX_CHUNKS_PER_QUERY = 4000
         private const val MIN_RELEVANCE_SCORE = 0.15f
         private const val MAX_CHUNKS_PER_DOCUMENT = 2
+        private const val OVERVIEW_MAX_DOCUMENTS = 2
     }
 
     private fun extractTerms(query: String): Set<String> =

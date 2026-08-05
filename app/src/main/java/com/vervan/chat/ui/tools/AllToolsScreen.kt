@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -264,6 +265,8 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val visibleCount = visibleCategories.sumOf { it.entries.size }
 
     Scaffold(
+        // The navigation shell already reserves the bottom navigation and gesture area.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {

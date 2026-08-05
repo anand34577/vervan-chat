@@ -154,10 +154,24 @@ class RealtimeVoiceController(
     val speechOutputEnabled: StateFlow<Boolean> = _speechOutputEnabled
 
     /** True while the UI's push-to-talk button is physically held down. Only consulted by
-     * [captureUntilSilence] when [SettingsRepository.voicePushToTalkEnabled] is on for the
-     * current utterance — see [pushToTalkPress]/[pushToTalkRelease]. */
+     * [captureUntilSilence] when the active session mode is push-to-talk — see
+     * [pushToTalkPress]/[pushToTalkRelease]. */
     private val _pushToTalkHeld = MutableStateFlow(false)
     val pushToTalkHeld: StateFlow<Boolean> = _pushToTalkHeld
+    @Volatile private var pushToTalkMode = false
+    @Volatile private var pushToTalkModeInitialized = false
+
+    /** Switches the active session's endpointing mode without requiring a restart. */
+    fun setPushToTalkEnabled(enabled: Boolean) {
+        if (pushToTalkMode == enabled) return
+        pushToTalkMode = enabled
+        pushToTalkModeInitialized = true
+        _pushToTalkHeld.value = false
+        if (_state.value == VoiceControllerState.LISTENING) {
+            // Wake the current capture so the next loop reads the new mode immediately.
+            finishListeningRequested = true
+        }
+    }
 
     /** Call from the UI's press gesture on the mic button. A no-op outside push-to-talk mode or
      * outside [VoiceControllerState.LISTENING] — harmless if a stray press lands during another
@@ -173,6 +187,9 @@ class RealtimeVoiceController(
      * silent no-op that just re-enters LISTENING. */
     fun pushToTalkRelease() {
         _pushToTalkHeld.value = false
+        if (pushToTalkMode && _state.value == VoiceControllerState.LISTENING) {
+            finishListeningRequested = true
+        }
     }
 
     fun start(scope: CoroutineScope) {
@@ -230,6 +247,8 @@ class RealtimeVoiceController(
         _microphoneMuted.value = false
         _sttUnavailable.value = false
         _pushToTalkHeld.value = false
+        pushToTalkMode = false
+        pushToTalkModeInitialized = false
         finishListeningRequested = false
         cancelListeningRequested = false
         responseInterrupted = true
@@ -388,12 +407,18 @@ class RealtimeVoiceController(
             controllerScope?.launch(Dispatchers.Default) { runCatching { pickInbuiltStt() } }
         }
 
+        if (!pushToTalkModeInitialized) {
+            pushToTalkMode = app.container.settingsRepository.voicePushToTalkEnabled.first()
+            pushToTalkModeInitialized = true
+        }
+
         while (true) {
             _liveTranscript.value = ""
             // Reset before publishing LISTENING. Resetting later inside a recognizer created a
             // race where a fast tap on X/Stop was accepted by the UI and then silently erased.
             finishListeningRequested = false
             cancelListeningRequested = false
+            _modelLoadError.value = null
             _state.value = VoiceControllerState.LISTENING
             val currentModel = model?.id?.let { app.container.db.modelDao().get(it) }
             val modelCanHear = currentModel?.let {
@@ -461,7 +486,7 @@ class RealtimeVoiceController(
                 } else {
                     configuredMax
                 }
-                val pushToTalk = app.container.settingsRepository.voicePushToTalkEnabled.first()
+                val pushToTalk = pushToTalkMode
                 val captured = captureUntilSilence(maxDurationMs, pushToTalk)
                 if (cancelListeningRequested) {
                     cancelListeningRequested = false
@@ -499,7 +524,11 @@ class RealtimeVoiceController(
                     wavFile.delete()
                     _liveTranscript.value = ""
                     _turns.update { turns -> turns.filterNot { it.id == turnId } }
-                    _modelLoadError.value = "Speech could not be transcribed. Try again or choose another STT engine."
+                    _modelLoadError.value = if (pushToTalk) {
+                        "I couldn’t hear clear speech. Hold the mic while speaking, then release to send."
+                    } else {
+                        "I couldn’t hear clear speech. Try again a little closer to the microphone."
+                    }
                     continue
                 }
                 val keepRecording = app.container.settingsRepository.storeVoiceRecordings.first()
@@ -536,16 +565,26 @@ class RealtimeVoiceController(
         val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
         if (!loaded.success || !app.container.audioEnabled(model)) return@runCatching null
         val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+        val durationMs = runCatching {
+            val decoded = WavPcmDecoder.decode(File(audioPath).readBytes())
+            decoded.samples.size * 1_000L / decoded.sampleRateHz
+        }.getOrDefault(0L)
         val builder = StringBuilder()
         app.container.generate(
             model, TRANSCRIBE_PROMPT, null, audioPath,
-            params.temperature, params.topP, params.topK, params.seed,
-            params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+            temperature = 0f,
+            topP = params.topP,
+            topK = params.topK,
+            seed = params.seed,
+            minP = params.minP,
+            repetitionPenalty = params.repetitionPenalty,
+            maxOutputTokens = params.maxOutputTokens.coerceAtMost(MAX_TRANSCRIPT_TOKENS),
+            stopSequences = (params.stopSequences + TRANSCRIBE_STOP_SEQUENCES).distinct(),
+            systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
         ).collect { token ->
             builder.append(token)
-            _liveTranscript.value = builder.toString().trimStart()
         }
-        builder.toString().trim().takeIf { it.isNotEmpty() }
+        ModelAudioTranscriptSanitizer.clean(builder.toString(), durationMs)
     }.getOrNull()
 
     private suspend fun respondAndSpeak(userInput: VoiceInputTurn) {
@@ -710,11 +749,8 @@ class RealtimeVoiceController(
      *    [TRAILING_SILENCE_MS] of quiet after it — when it ends. This is the original behavior,
      *    unchanged for anyone who never turns push-to-talk on.
      *  - on: the UI's hold gesture ([pushToTalkPress]/[pushToTalkRelease], reflected in
-     *    [_pushToTalkHeld]) decides both edges instead of the VAD — recording only accumulates
-     *    while held, and release ends the utterance immediately rather than waiting out a
-     *    trailing-silence timer. The VAD is not consulted at all in this mode; a deliberately
-     *    held-then-silent button press should still count as intentional speech, not get
-     *    endpointed early just because the room is quiet.
+     *    [_pushToTalkHeld]) decides the endpoint, while the VAD still confirms speech actually
+     *    happened. This keeps an empty press from being sent to STT as microphone noise.
      */
     private suspend fun captureUntilSilence(maxDurationMs: Int, pushToTalk: Boolean = false): CapturedUtterance {
         // Clear any VAD state left over from the previous turn (or the barge-in watcher) before
@@ -757,7 +793,7 @@ class RealtimeVoiceController(
                 _liveElapsedMs.value = elapsedMs
                 return@takeWhile elapsedMs < maxDurationMs
             }
-            val speaking = if (pushToTalk) held else vad.isSpeech(frame)
+            val speaking = vad.isSpeech(frame) && (!pushToTalk || held)
             if (speaking) {
                 if (!sawSpeech) {
                     preRoll.forEach { collected.addAll(it.toList()) }
@@ -840,7 +876,11 @@ class RealtimeVoiceController(
         private const val BARGE_IN_TRIGGER_MS = 300
         private const val NO_STT_RETRY_DELAY_MS = 400L
         private const val LIVE_WAVEFORM_BARS = 40
+        private const val MAX_TRANSCRIPT_TOKENS = 128
+        private val TRANSCRIBE_STOP_SEQUENCES = listOf("\n\n", "\nAssistant:", "\nassistant:")
+        private const val TRANSCRIBE_SYSTEM_PROMPT =
+            "STT mode. Output only the exact spoken words in the language spoken. Never translate, answer, or explain."
         private const val TRANSCRIBE_PROMPT =
-            "Transcribe exactly what was said in this audio. Output only the raw transcript, nothing else — no commentary, no translation."
+            "Transcribe audio only. Preserve the spoken language; do not translate."
     }
 }

@@ -148,7 +148,7 @@ class Converters {
         StoreInstallSession::class, StoreInstallArtifact::class, TranscriptionProject::class,
         TtsProject::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)

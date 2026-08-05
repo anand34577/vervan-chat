@@ -31,9 +31,10 @@ data class Chat(
     // Model profile id (ModelProfileType.id) — shapes context budget, retrieval depth, output
     // length and default thinking mode. Defaults to BALANCED. See llm.ModelProfiles.
     val profile: String = "BALANCED",
-    // OFF/FAST/BALANCED/DEEP — prompt-engineered, not a native reasoning-mode API (tasks-genai
-    // doesn't expose one). See ChatViewModel.reasoningInstruction / llm/ThinkingParser.
-    val thinkingMode: String = "OFF",
+    // OFF/FAST/BALANCED/DEEP override for this chat — null means "use the model's default
+    // thinking mode" (ModelInfo.defaultThinkingMode). Prompt-engineered, not a native
+    // reasoning-mode API (tasks-genai doesn't expose one). See ThinkingPolicy.effectiveThinkingMode.
+    val thinkingMode: String? = null,
     // Tip of the currently active branch. Null means empty chat (no messages yet).
     val activeLeafId: String? = null,
     // comma-separated KB ids instead of a join table — a chat only ever

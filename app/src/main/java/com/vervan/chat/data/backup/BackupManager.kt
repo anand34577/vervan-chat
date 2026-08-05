@@ -220,7 +220,7 @@ object BackupManager {
         put("folderId", c.folderId ?: JSONObject.NULL)
         put("draft", c.draft); put("pinned", c.pinned); put("archived", c.archived)
         put("sourceGrounded", c.sourceGrounded); put("toolsEnabled", c.toolsEnabled)
-        put("thinkingMode", c.thinkingMode); put("profile", c.profile)
+        put("thinkingMode", c.thinkingMode ?: JSONObject.NULL); put("profile", c.profile)
         put("activeLeafId", c.activeLeafId ?: JSONObject.NULL); put("knowledgeBaseIds", c.knowledgeBaseIds)
         put("createdAt", c.createdAt); put("updatedAt", c.updatedAt)
         put("temperature", c.temperature ?: JSONObject.NULL)
@@ -241,7 +241,7 @@ object BackupManager {
         folderId = o.optStringOrNull("folderId"),
         draft = o.optString("draft"),
         pinned = o.optBoolean("pinned"), archived = o.optBoolean("archived"), sourceGrounded = o.optBoolean("sourceGrounded"),
-        toolsEnabled = o.optBoolean("toolsEnabled"), thinkingMode = o.optString("thinkingMode", "OFF"),
+        toolsEnabled = o.optBoolean("toolsEnabled"), thinkingMode = o.optStringOrNull("thinkingMode"),
         profile = o.optString("profile", "BALANCED"),
         activeLeafId = o.optStringOrNull("activeLeafId"),
         knowledgeBaseIds = o.optString("knowledgeBaseIds"), createdAt = o.getLong("createdAt"), updatedAt = o.getLong("updatedAt"),

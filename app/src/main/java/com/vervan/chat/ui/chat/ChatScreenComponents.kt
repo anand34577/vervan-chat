@@ -642,6 +642,8 @@ internal fun ChatContextStrip(
     modelName: String?,
     thinkingMode: String?,
     sourceCount: Int?,
+    contextTokens: Int,
+    contextLimit: Int,
     contextPercent: Int,
     onWorkspaceClick: () -> Unit,
     onFolderClick: () -> Unit,
@@ -652,38 +654,66 @@ internal fun ChatContextStrip(
 ) {
     if (workspaceName == null && folderName == null && personaName == null && modelName == null && sourceCount == null) return
     var showDetails by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val summary = listOfNotNull(
-            folderName ?: workspaceName,
-            modelName,
-            sourceCount?.let { "$it source${if (it == 1) "" else "s"}" }
-        ).joinToString(" · ").ifBlank { "Chat settings" }
-        AssistChip(
-            onClick = { showDetails = true },
-            label = { Text(summary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-            leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            modifier = Modifier.weight(1f, fill = false)
-        )
-        // Exceptional state only — the normal case (a model is loaded, context has room) adds
-        // nothing here; the summary chip above already covers it.
-        if (modelName == null) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val summary = listOfNotNull(
+                folderName ?: workspaceName,
+                modelName,
+                sourceCount?.let { "$it source${if (it == 1) "" else "s"}" }
+            ).joinToString(" · ").ifBlank { "Chat settings" }
             AssistChip(
-                onClick = onModelClick,
-                label = { Text("No model", color = MaterialTheme.colorScheme.error) },
-                leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
+                onClick = { showDetails = true },
+                label = { Text(summary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.weight(1f, fill = false)
             )
+            // Exceptional state only — the normal case (a model is loaded, context has room) adds
+            // nothing here; the summary chip above already covers it.
+            if (modelName == null) {
+                AssistChip(
+                    onClick = onModelClick,
+                    label = { Text("No model", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
+                )
+            }
+            if (contextPercent > 80) {
+                val warn = MaterialTheme.colorScheme.vervanWarning
+                AssistChip(
+                    onClick = onContextClick,
+                    label = { Text("Context high · ~$contextPercent%", color = warn) },
+                    leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = warn, modifier = Modifier.size(18.dp)) },
+                    border = BorderStroke(1.dp, warn.copy(alpha = 0.5f))
+                )
+            }
         }
-        if (contextPercent > 80) {
-            val warn = MaterialTheme.colorScheme.vervanWarning
-            AssistChip(
-                onClick = onContextClick,
-                label = { Text("Context high · ~$contextPercent%", color = warn) },
-                leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = warn, modifier = Modifier.size(18.dp)) },
-                border = BorderStroke(1.dp, warn.copy(alpha = 0.5f))
+        val contextColor = when {
+            contextPercent >= 90 -> MaterialTheme.colorScheme.error
+            contextPercent > 75 -> MaterialTheme.colorScheme.vervanWarning
+            else -> MaterialTheme.colorScheme.primary
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = Space.xs).clickable(onClick = onContextClick),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Context",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            LinearProgressIndicator(
+                progress = { (contextPercent / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier.weight(1f).padding(horizontal = Space.sm).height(4.dp),
+                color = contextColor,
+                trackColor = contextColor.copy(alpha = 0.16f)
+            )
+            Text(
+                "${compactTokenCount(contextTokens)} / ${compactTokenCount(contextLimit)} · $contextPercent%",
+                style = MaterialTheme.typography.labelSmall,
+                color = contextColor
             )
         }
     }
@@ -756,6 +786,12 @@ internal fun ChatContextDetailsSheet(
             )
         }
     }
+}
+
+private fun compactTokenCount(tokens: Int): String = when {
+    tokens >= 1_000_000 -> "${tokens / 1_000_000}.${tokens / 100_000 % 10}M"
+    tokens >= 1_000 -> "${tokens / 1_000}.${tokens / 100 % 10}k"
+    else -> tokens.toString()
 }
 
 /**
@@ -855,7 +891,7 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
                     if (stacked) {
                         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                             siblings.forEachIndexed { index, sibling ->
-                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm).heightIn(min = 120.dp))
+                                CompareBranchCard(index, sibling, onUse, modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm).height(180.dp))
                             }
                         }
                     } else {
@@ -881,14 +917,22 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
 internal fun CompareBranchCard(index: Int, sibling: Message, onUse: (String) -> Unit, modifier: Modifier) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
-        Column(Modifier.padding(Space.sm)) {
+        Column(Modifier.fillMaxSize().padding(Space.sm)) {
             Text("Branch ${index + 1}", style = MaterialTheme.typography.labelMedium)
             Text(
                 sibling.content.ifBlank { "(empty)" },
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = Space.xs)
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = Space.xs)
             )
             TextButton(onClick = { onUse(sibling.id) }) { Text("Use this") }
         }
@@ -900,10 +944,11 @@ internal fun CompareBranchCard(index: Int, sibling: Message, onUse: (String) -> 
  * picker — the same choices, far less scanning to find the current selection. */
 @Composable
 internal fun ModeSettingsDialog(
-    thinkingMode: String,
+    thinkingMode: String?,
+    modelDefaultThinkingMode: String?,
     thinkingAvailable: Boolean,
     currentProfile: String,
-    onThinkingChange: (String) -> Unit,
+    onThinkingChange: (String?) -> Unit,
     onProfileChange: (String) -> Unit,
     onOpenModelPicker: () -> Unit,
     onOpenPersonaPicker: () -> Unit,
@@ -923,9 +968,22 @@ internal fun ModeSettingsDialog(
         title = { Text("Mode & model") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Thinking", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Thinking — ${
+                        if (thinkingMode == null)
+                            "using model default (${(modelDefaultThinkingMode ?: "OFF").lowercase().replaceFirstChar { it.uppercase() }})"
+                        else "override"
+                    }",
+                    style = MaterialTheme.typography.labelLarge
+                )
                 Row(Modifier.padding(top = Space.sm, bottom = Space.lg).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    listOf("OFF", "FAST", "BALANCED", "DEEP").forEach { mode ->
+                    VervanFilterChip(
+                        selected = thinkingMode == null,
+                        enabled = true,
+                        onClick = { onThinkingChange(null) },
+                        label = { Text("Default") }
+                    )
+                    com.vervan.chat.llm.ThinkingPolicy.MODES.forEach { mode ->
                         VervanFilterChip(
                             selected = thinkingMode == mode,
                             enabled = thinkingAvailable || mode == "OFF",

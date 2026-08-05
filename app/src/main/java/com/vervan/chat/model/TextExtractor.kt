@@ -68,6 +68,13 @@ object TextExtractor {
         return try {
             PDDocument.load(file).use { doc ->
                 val stripper = PDFTextStripper()
+                // PDFTextStripper's default walks the PDF's internal content stream order, which
+                // is frequently NOT visual reading order — multi-column layouts, sidebars, and
+                // text boxes come out interleaved/garbled without this. sortByPosition re-orders
+                // by on-page Y-then-X position, approximating how a person actually reads the
+                // page. The one real cost is speed (an extra sort pass per page), negligible next
+                // to what it fixes for exactly the "extraction isn't precise" complaint.
+                stripper.sortByPosition = true
                 val pages = (1..doc.numberOfPages).map { pageNumber ->
                     stripper.startPage = pageNumber
                     stripper.endPage = pageNumber

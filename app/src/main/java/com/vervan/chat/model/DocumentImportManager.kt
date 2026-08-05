@@ -261,7 +261,7 @@ class DocumentImportManager(
         // switch can be told apart from "still current" (see Chunk.embeddingModelId).
         val activeEmbeddingModelId = if (embeddingEngine.isLoaded) modelDao.getActiveModel(ModelRole.EMBEDDING)?.id else null
         var embedFailures = 0
-        val chunks = raw.map { rc ->
+        val chunks = raw.mapIndexed { index, rc ->
             val embedding = if (embeddingEngine.isLoaded) embeddingEngine.embed(rc.text, title = rc.sectionPath)?.toBytes() else null
             if (embeddingEngine.isLoaded && embedding == null) embedFailures++
             Chunk(
@@ -272,7 +272,8 @@ class DocumentImportManager(
                 tokenCount = rc.tokenCount,
                 embedding = embedding,
                 embeddingModelId = if (embedding != null) activeEmbeddingModelId else null,
-                pageNumber = rc.pageNumber
+                pageNumber = rc.pageNumber,
+                chunkIndex = index
             )
         }
         ensureJobActive(jobId)

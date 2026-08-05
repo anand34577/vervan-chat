@@ -696,7 +696,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
-    fun setThinkingMode(mode: String) {
+    // null = "use model default" (see ThinkingPolicy.effectiveThinkingMode).
+    fun setThinkingMode(mode: String?) {
         viewModelScope.launch {
             db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(thinkingMode = mode)) }
         }
@@ -971,7 +972,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.chatDao().getChat(chatId)?.let {
                 db.chatDao().update(
                     it.copy(
-                        personaId = null, modelId = null, profile = "BALANCED", thinkingMode = "OFF",
+                        personaId = null, modelId = null, profile = "BALANCED", thinkingMode = null,
                         sourceGrounded = false, toolsEnabled = false, knowledgeBaseIds = "",
                         temperature = null, topP = null, topK = null,
                         updatedAt = System.currentTimeMillis()
@@ -1311,9 +1312,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 imagePath = original.imagePath,
                 documentId = original.documentId,
                 audioPath = original.audioPath,
-                voiceRecordingPath = original.voiceRecordingPath,
-                inputModality = if (expandedText == original.content) original.inputModality else "MIXED",
-                transcriptMetadataJson = original.transcriptMetadataJson
+                // An edit is a new manually-authored text turn. Do not inherit the original
+                // voice provenance: doing so incorrectly rendered ordinary edits as
+                // "Typed + dictated" and kept the old transcription badge on the new branch.
+                voiceRecordingPath = null,
+                inputModality = "TEXT",
+                transcriptMetadataJson = null
             )
             db.messageDao().upsert(branchMessage)
             setActiveLeaf(branchMessage.id)
@@ -1536,6 +1540,22 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             _error.value = "Could not load ${model.displayName}: ${loadResult.errorMessage ?: "unknown error"}"
             return
         }
+        if (imagePath != null && audioPath != null && (!activeEngine.visionEnabled || !activeEngine.audioEnabled)) {
+            val missing = buildList {
+                if (!activeEngine.visionEnabled) add("images")
+                if (!activeEngine.audioEnabled) add("audio")
+            }.joinToString(" and ")
+            val assistantMessage = Message(
+                chatId = chatId,
+                parentId = chatRow.activeLeafId,
+                role = MessageRole.ASSISTANT,
+                content = "This model cannot process image and audio together because it does not support $missing. Choose a multimodal model or remove one attachment and resend.",
+                state = MessageState.COMPLETE
+            )
+            db.messageDao().upsert(assistantMessage)
+            setActiveLeaf(assistantMessage.id)
+            return
+        }
         if (audioPath != null && !activeEngine.audioEnabled) {
             val assistantMessage = Message(
                 chatId = chatId,
@@ -1624,7 +1644,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
             val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
             val enabledToolIds = if (toolsEnabled) effectiveToolIds(chatRow) else emptySet()
-            val effectiveThinkingMode = if (model?.supportsThinking == false) "OFF" else chatRow.thinkingMode
+            val effectiveThinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
             val modelEngine = model?.engine ?: com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM
             // A native reasoner (supportsThinking) told OFF must have its reasoning actively
             // suppressed and stripped — see suppressReasoning below. Non-reasoning models pay no
@@ -1982,20 +2002,28 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             runCatching { com.vervan.chat.retrieval.QueryExpander.expand(app, queryModel, query) }.getOrDefault(listOf(query))
         } else listOf(query)
 
-        if (queries.size == 1) {
-            return app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
-        }
-        // Merge each variant's results by chunk, keeping the best score any phrasing found for
-        // it — a chunk that only one reformulation surfaced is still real evidence, not noise.
-        val best = LinkedHashMap<String, SourcePassage>()
-        for (q in queries) {
-            val results = app.container.withEmbedding { retrievalEngine.retrieve(kbIds, q, mode, topK) }
-            for (passage in results) {
-                val existing = best[passage.chunkId]
-                if (existing == null || passage.score > existing.score) best[passage.chunkId] = passage
+        val results = if (queries.size == 1) {
+            app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
+        } else {
+            // Merge each variant's results by chunk, keeping the best score any phrasing found
+            // for it — a chunk that only one reformulation surfaced is still real evidence, not
+            // noise.
+            val best = LinkedHashMap<String, SourcePassage>()
+            for (q in queries) {
+                val variantResults = app.container.withEmbedding { retrievalEngine.retrieve(kbIds, q, mode, topK) }
+                for (passage in variantResults) {
+                    val existing = best[passage.chunkId]
+                    if (existing == null || passage.score > existing.score) best[passage.chunkId] = passage
+                }
             }
+            best.values.sortedByDescending { it.score }.take(topK)
         }
-        return best.values.sortedByDescending { it.score }.take(topK)
+        // A broad "describe/summarize this document" question naturally scores low against every
+        // individual chunk — it isn't about any one passage — so normal retrieval empty-handed
+        // doesn't mean there's nothing to say, just that nothing matched by relevance. See
+        // retrieveOverviewFallback's own doc comment for why this only applies to a small
+        // attached-document scope, not a broad knowledge base.
+        return results.ifEmpty { app.container.withEmbedding { retrievalEngine.retrieveOverviewFallback(kbIds, topK) } }
     }
 
     private suspend fun recallMemories(chatRow: Chat, query: String): com.vervan.chat.data.repo.MemoryRecall {
@@ -2196,8 +2224,19 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
         if (passages.isNotEmpty()) {
             val text = buildString {
-                appendLine("Use the following sources to answer the next question. Cite them as [1], [2], etc. " +
-                    "If the sources don't contain the answer, say so instead of guessing.")
+                if (passages.any { it.isOverview }) {
+                    // Overview-fallback passages (see RetrievalEngine.retrieveOverviewFallback)
+                    // are a positional skim of the document, not a relevance match for this
+                    // specific question — telling the model to "cite sources / say if the answer
+                    // isn't there" would wrongly nudge it to hedge on a plain "describe this
+                    // document" request instead of just describing it.
+                    appendLine("The following are excerpts sampled across the whole attached document " +
+                        "(beginning to end, not matched to the question's exact wording). Use them to " +
+                        "describe, summarize, or answer about the document as a whole.")
+                } else {
+                    appendLine("Use the following sources to answer the next question. Cite them as [1], [2], etc. " +
+                        "If the sources don't contain the answer, say so instead of guessing.")
+                }
                 passages.forEachIndexed { i, p -> appendLine("[${i + 1}] (${p.documentName}) ${p.excerpt}") }
                 appendLine()
             }
@@ -2278,7 +2317,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
         val sections = buildPromptSections(
             persona, projectInstructions, memories, history, promptPassages, chatRow?.toolsEnabled == true,
-            stylePreferenceText(profile.maxOutputHint), ThinkingPolicy.reasoningInstruction(chatRow?.thinkingMode ?: "OFF"),
+            stylePreferenceText(profile.maxOutputHint),
+            ThinkingPolicy.reasoningInstruction(
+                ThinkingPolicy.effectiveThinkingMode(chatRow?.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking),
+                model?.engine ?: com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM,
+                model?.supportsThinking == true
+            ),
             app.container.settingsRepository.userProfilePrompt(),
             historyTrimmed = history.size < postSummaryHistory.size,
             enabledToolIds = chatRow?.let { effectiveToolIds(it) } ?: emptySet(),

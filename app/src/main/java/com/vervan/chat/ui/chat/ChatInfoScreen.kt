@@ -294,11 +294,15 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                     )
                                 },
                                 {
-                                    val mode = chat?.thinkingMode ?: "OFF"
+                                    val chatModel = models.find { it.id == chat?.modelId } ?: activeModel
+                                    val mode = com.vervan.chat.llm.ThinkingPolicy.effectiveThinkingMode(
+                                        chat?.thinkingMode, chatModel?.defaultThinkingMode, chatModel?.supportsThinking
+                                    )
+                                    val modeLabel = mode.lowercase().replaceFirstChar { it.uppercase() }
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
                                         title = "Thinking",
-                                        subtitle = if (mode == "OFF") "Off" else mode.lowercase().replaceFirstChar { it.uppercase() }
+                                        subtitle = if (chat?.thinkingMode == null) "$modeLabel · model default" else modeLabel
                                     )
                                 },
                                 {

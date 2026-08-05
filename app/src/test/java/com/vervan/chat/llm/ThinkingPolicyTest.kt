@@ -71,4 +71,31 @@ class ThinkingPolicyTest {
         assertEquals(-1, ThinkingPolicy.reasoningBudgetFor("DEEP", ModelEngine.LITERT_LM, true))
         assertEquals(-1, ThinkingPolicy.reasoningBudgetFor("DEEP", ModelEngine.LLAMA_CPP, false))
     }
+
+    // --- effectiveThinkingMode ---------------------------------------------------------------
+
+    @Test
+    fun `chat override wins over model default`() {
+        assertEquals("DEEP", ThinkingPolicy.effectiveThinkingMode("DEEP", "FAST", supportsThinking = true))
+    }
+
+    @Test
+    fun `falls back to model default when chat has no override`() {
+        assertEquals("BALANCED", ThinkingPolicy.effectiveThinkingMode(null, "BALANCED", supportsThinking = true))
+    }
+
+    @Test
+    fun `falls back to OFF when neither chat nor model set a mode`() {
+        assertEquals("OFF", ThinkingPolicy.effectiveThinkingMode(null, null, supportsThinking = true))
+    }
+
+    @Test
+    fun `capability off forces OFF regardless of overrides`() {
+        assertEquals("OFF", ThinkingPolicy.effectiveThinkingMode("DEEP", "DEEP", supportsThinking = false))
+    }
+
+    @Test
+    fun `unrecognized mode value falls back to OFF instead of being sent to the engine`() {
+        assertEquals("OFF", ThinkingPolicy.effectiveThinkingMode("ULTRA", null, supportsThinking = true))
+    }
 }

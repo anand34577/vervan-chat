@@ -68,4 +68,28 @@ class ThinkingParserTest {
         assertEquals("reasoning", parsed.reasoning)
         assertEquals("Answer.", parsed.answer)
     }
+
+    @Test
+    fun `analysis tags are hidden from the visible answer`() {
+        val parsed = ThinkingParser.parse("<analysis>private work</analysis>Visible answer")
+        assertEquals("private work", parsed.reasoning)
+        assertEquals("Visible answer", parsed.answer)
+        assertEquals(true, parsed.hasThinking)
+        assertEquals(false, parsed.thinkingInProgress)
+    }
+
+    @Test
+    fun `partial opening tag after visible text is hidden while streaming`() {
+        val parsed = ThinkingParser.parse("Visible answer <thi")
+        assertEquals("Visible answer", parsed.answer)
+        assertEquals(true, parsed.hasThinking)
+        assertEquals(true, parsed.thinkingInProgress)
+    }
+
+    @Test
+    fun `multiple reasoning blocks are removed from the answer`() {
+        val parsed = ThinkingParser.parse("<think>one</think>Answer<analysis>two</analysis>.")
+        assertEquals("one\ntwo", parsed.reasoning)
+        assertEquals("Answer.", parsed.answer)
+    }
 }
