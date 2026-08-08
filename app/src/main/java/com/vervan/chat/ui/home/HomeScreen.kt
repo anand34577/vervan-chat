@@ -327,7 +327,7 @@ private fun HomeHero(
                 QuickAskField(fg = heroFg, onAsk = onAsk)
                 Spacer(Modifier.height(Space.md))
                 ResponsiveActions {
-                    HeroChip(Icons.Outlined.Memory, model.displayName, heroFg, onOpenModels)
+                    HeroChip(Icons.Outlined.Memory, "Model ready", heroFg, onOpenModels)
                     HeroChip(Icons.Filled.Description, "Ask documents", heroFg, onOpenKnowledge)
                 }
             } else {
@@ -385,7 +385,7 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (text.isEmpty()) {
-                            Text("Ask anything…", style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
+                            Text("Ask anything or start a new chat…", style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
                         }
                         inner()
                     }
@@ -710,7 +710,7 @@ private fun ToolsSection(
     onOpenAllTools: () -> Unit,
 ) {
     val toolGroups = listOf(
-        "Popular now" to listOf(
+        "Common tasks" to listOf(
             ModernHomeTool(Icons.Filled.RecordVoiceOver, "Voice chat", "Talk naturally with your local model", onOpenVoiceChat),
             ModernHomeTool(Icons.Filled.EditNote, "Writing assistant", "Rewrite, refine, or change tone", onOpenWritingAssistant),
             ModernHomeTool(Icons.Filled.DocumentScanner, "Document scanner", "Capture pages and extract useful text", onOpenDocScanner),
@@ -719,13 +719,13 @@ private fun ToolsSection(
     )
     Column {
         VervanSectionHeader(
-            "Choose a mode",
+            "Quick tools",
             actionLabel = "See all",
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )
         Text(
-                    "Choose a task below, or browse the full toolkit in Tools.",
+            "Start a common task, or browse the full toolkit in Tools.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

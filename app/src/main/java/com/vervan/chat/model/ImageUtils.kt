@@ -92,7 +92,9 @@ object ImageUtils {
      */
     fun copyNormalizedPng(context: Context, uri: Uri, dest: File, maxDimension: Int = MODEL_MAX_DIMENSION): Boolean {
         val bytes = runCatching {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            context.contentResolver.openInputStream(uri)?.use {
+                it.readBytesLimited(ImportLimits.MAX_IMAGE_SOURCE_BYTES)
+            }
         }.getOrNull() ?: return false
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

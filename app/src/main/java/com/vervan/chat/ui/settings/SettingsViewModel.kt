@@ -19,7 +19,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     private val settings = app.container.settingsRepository
 
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.DARK)
     val defaultRetrievalMode: StateFlow<String> = settings.defaultRetrievalMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "HYBRID")
     val queryExpansionEnabled: StateFlow<Boolean> = settings.queryExpansionEnabled
@@ -183,7 +183,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
     val allowLowMemoryModelLoads = settings.allowLowMemoryModelLoads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
     val minP = settings.minP.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.05f)
@@ -199,7 +199,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val oledTrueBlack: StateFlow<Boolean> = settings.oledTrueBlack
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val accentTheme: StateFlow<AccentTheme> = settings.accentTheme
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AccentTheme.AMBER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AccentTheme.GREEN)
     val hapticsEnabled: StateFlow<Boolean> = settings.hapticsEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val expertMode: StateFlow<Boolean> = settings.expertMode
@@ -252,32 +252,55 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
 
     // ---- Local API server ----
     val apiServerEnabled: StateFlow<Boolean> = settings.apiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val lanApiServerEnabled: StateFlow<Boolean> = settings.lanApiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerPort: StateFlow<Int> = settings.apiServerPort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 8080)
-    val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val apiServerFullMode: StateFlow<Boolean> = settings.apiServerFullMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val apiServerAutoStart: StateFlow<Boolean> = settings.apiServerAutoStart.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val apiModelTtlSeconds: StateFlow<Int> = settings.apiModelTtlSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 300)
     val apiServerToken: String get() = app.container.apiServerAuth.tokenOrGenerate()
     fun regenerateApiServerToken(): String = app.container.apiServerAuth.regenerate()
 
-    /** Any change here — including LAN/port while already running — needs a restart to take
+    /** Any change here — including port while already running — needs a restart to take
      * effect, since NanoHTTPD binds host/port at construction. Simplest correct behavior:
      * always restart the service on any settings change made while it's on, rather than
      * silently leaving it serving the old configuration. */
     fun setApiServerEnabled(v: Boolean) {
-        viewModelScope.launch { settings.setApiServerEnabled(v) }
-        if (v) com.vervan.chat.server.ApiServerService.start(app) else com.vervan.chat.server.ApiServerService.stop(app)
-    }
-    private fun restartIfRunning() {
-        // ApiServerService.onStartCommand() no-ops if a server instance already exists, so a
-        // config change while running needs an explicit stop before the restart actually picks
-        // up the new host/port/auth settings.
-        if (apiServerEnabled.value) {
-            com.vervan.chat.server.ApiServerService.stop(app)
-            com.vervan.chat.server.ApiServerService.start(app)
+        viewModelScope.launch {
+            settings.setApiServerEnabled(v)
+            if (v) com.vervan.chat.server.ApiServerService.start(app)
+            else com.vervan.chat.server.ApiServerService.stop(app)
         }
     }
-    fun setLanApiServerEnabled(v: Boolean) { viewModelScope.launch { settings.setLanApiServerEnabled(v) }; restartIfRunning() }
-    fun setApiServerPort(v: Int) { viewModelScope.launch { settings.setApiServerPort(v) }; restartIfRunning() }
-    fun setApiServerRequireAuth(v: Boolean) { viewModelScope.launch { settings.setApiServerRequireAuth(v) }; restartIfRunning() }
+    private fun updateApiServerSetting(update: suspend () -> Unit) {
+        viewModelScope.launch {
+            update()
+            if (settings.apiServerEnabled.first()) com.vervan.chat.server.ApiServerService.restart(app)
+        }
+    }
+    fun setApiServerPort(v: Int) = updateApiServerSetting { settings.setApiServerPort(v) }
+    fun setApiServerRequireAuth(v: Boolean) = updateApiServerSetting { settings.setApiServerRequireAuth(v) }
+    fun setApiServerFullMode(v: Boolean) = updateApiServerSetting { settings.setApiServerFullMode(v) }
+    /** Not routed through [updateApiServerSetting]: this changes what happens at the *next* app
+     * start, so restarting the running server (and dropping any in-flight stream) would achieve
+     * nothing. Turning it on while the server is off also starts it now, because otherwise
+     * "start automatically" would appear to do nothing until the app was restarted. */
+    fun setApiServerAutoStart(v: Boolean) {
+        viewModelScope.launch {
+            settings.setApiServerAutoStart(v)
+            if (v && !settings.apiServerEnabled.first()) {
+                settings.setApiServerEnabled(true)
+                com.vervan.chat.server.ApiServerService.start(app)
+            }
+        }
+    }
+    // Deliberately NOT routed through updateApiServerSetting: the TTL is read live by the load
+    // coordinator on every arm/touch, so it takes effect immediately — restarting the HTTP server
+    // (and dropping any in-flight stream with it) to apply it would be pure collateral damage.
+    fun setApiModelTtlSeconds(v: Int) { viewModelScope.launch { settings.setApiModelTtlSeconds(v) } }
+    val apiServerAppTools: StateFlow<Boolean> = settings.apiServerAppTools.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    fun setApiServerAppTools(v: Boolean) { viewModelScope.launch { settings.setApiServerAppTools(v) } }
+    val apiServerAllowWriteTools: StateFlow<Boolean> = settings.apiServerAllowWriteTools.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    fun setApiServerAllowWriteTools(v: Boolean) { viewModelScope.launch { settings.setApiServerAllowWriteTools(v) } }
 
     // ---- On-device data sources ----
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)

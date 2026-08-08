@@ -84,7 +84,7 @@ class StoreInstallRecoveryTest {
     private suspend fun seedArtifact(partBytes: Long?, recordedBytes: Long, sha: String = "a".repeat(64)): File {
         val part = File(temp.newFolder(), "w.part")
         if (partBytes != null) {
-            part.parentFile.mkdirs()
+            part.parentFile?.mkdirs()
             part.writeBytes(ByteArray(partBytes.toInt()))
         }
         artifactDao.upsert(

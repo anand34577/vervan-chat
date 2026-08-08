@@ -33,6 +33,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.ModelRole
+import java.lang.ref.WeakReference
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ValidationLimits
 import java.io.File
@@ -90,7 +91,7 @@ class BubbleService : Service() {
             return START_STICKY
         }
         val started = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
                 startForeground(NOTIFICATION_ID, buildNotification())
@@ -99,13 +100,13 @@ class BubbleService : Service() {
         if (started.isFailure) { stopSelf(); return START_NOT_STICKY }
         if (!addBubble()) return START_NOT_STICKY
         setBubbleVisible(showBubble)
-        instance = this
+        instanceRef = WeakReference(this)
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (instance == this) instance = null
+        if (instance === this) instanceRef.clear()
         serviceScope.cancel()
         removeBubble()
     }
@@ -130,11 +131,7 @@ class BubbleService : Service() {
             setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
         }
         val sizePx = (56 * density).toInt()
-        val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val overlayType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -443,6 +440,7 @@ class BubbleService : Service() {
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 y = (48 * density).toInt()
+                @Suppress("DEPRECATION")
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             }
             runCatching { wm.addView(panel, params) }.onFailure { owner.onDestroy(); return }
@@ -508,7 +506,7 @@ class BubbleService : Service() {
      * is backgrounded (see VervanApp's lifecycle observer), which isn't what "off" means to
      * the user who just tapped it. */
     private fun closeFeature() {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        (applicationContext as VervanApp).applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             // A bare, unguarded launch here used to crash the app if the settings DataStore
             // write threw (disk pressure, a concurrent corrupt-file recovery) — tapping "Close"
             // on the bubble menu is exactly the kind of routine action that shouldn't be able
@@ -529,10 +527,8 @@ class BubbleService : Service() {
     }
 
     private fun buildNotification(): android.app.Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val mgr = getSystemService(NotificationManager::class.java)
-            mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Quick-action bubble", NotificationManager.IMPORTANCE_LOW))
-        }
+        val mgr = getSystemService(NotificationManager::class.java)
+        mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Quick-action bubble", NotificationManager.IMPORTANCE_LOW))
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
@@ -553,7 +549,8 @@ class BubbleService : Service() {
         private const val NOTIFICATION_ID = 43
         private const val EXTRA_SHOW_BUBBLE = "show_bubble"
 
-        @Volatile private var instance: BubbleService? = null
+        @Volatile private var instanceRef = WeakReference<BubbleService>(null)
+        private val instance: BubbleService? get() = instanceRef.get()
         @Volatile private var captureUiActive = false
 
         fun start(context: Context, showBubble: Boolean = true) {
@@ -615,7 +612,13 @@ class BubbleService : Service() {
         fun endCapture() {
             val svc = instance ?: return
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-            runCatching { svc.startForeground(NOTIFICATION_ID, svc.buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                runCatching {
+                    svc.startForeground(NOTIFICATION_ID, svc.buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                }
+            } else {
+                runCatching { svc.startForeground(NOTIFICATION_ID, svc.buildNotification()) }
+            }
         }
     }
 }

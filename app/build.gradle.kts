@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.PathSensitivity
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
 import java.util.Properties
@@ -18,6 +19,13 @@ val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
+val catalogPublicKeys = localProperties.getProperty("catalog.publicKeys")
+    ?: System.getenv("VERVAN_CATALOG_PUBLIC_KEYS")
+    ?: ""
+val catalogEndpoints = localProperties.getProperty("catalog.endpoints")
+    ?: System.getenv("VERVAN_CATALOG_ENDPOINTS")
+    ?: ""
+fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
 
 // Availability is decided by the *source* checkout, not by build outputs: the libraries may not
@@ -110,11 +118,11 @@ android {
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
         buildConfigField("boolean", "WHISPER_CPP_AVAILABLE", whisperCppAvailable.toString())
+        buildConfigField("String", "CATALOG_PUBLIC_KEYS_BASE64", catalogPublicKeys.asBuildConfigString())
+        buildConfigField("String", "CATALOG_ENDPOINTS", catalogEndpoints.asBuildConfigString())
 
-        // armeabi-v7a is always packaged so 32-bit devices can install; on them LiteRT-LM is
-        // unavailable (MediaPipe ships no 32-bit libs) and GGUF works only if a 32-bit llama.cpp
-        // build was supplied via llamacpp.dir32.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // ABI packaging is controlled by android.splits.abi below. Native bridges still apply
+        // their narrower CMake filters when the corresponding local backend source is present.
         if (llamaCppAvailable || whisperCppAvailable) {
             externalNativeBuild {
                 cmake {
@@ -164,6 +172,17 @@ android {
         }
     }
 
+    // MigrationsTest reads the exported Room schemas (see `room.schemaLocation` below) to derive
+    // the expected migration chain. Gradle doesn't know a test reads that directory, so without
+    // declaring it the test task stays UP-TO-DATE across a schema change — exactly the commit
+    // where a missing migration needs catching. Verified: adding a schema version with no
+    // matching Migration is only detected once this input is tracked.
+    tasks.withType<Test>().configureEach {
+        inputs.dir(layout.projectDirectory.dir("schemas"))
+            .withPropertyName("roomExportedSchemas")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -176,10 +195,25 @@ android {
 
     packaging {
         jniLibs {
+            // llama.cpp discovers backend plugins through nativeLibraryDir, so these libraries
+            // must be extracted at install time. Legacy packaging also compresses them in direct
+            // APK downloads; Play app bundles still deliver ABI-specific native assets.
+            useLegacyPackaging = true
             // LiteRT-LM bundles LiteRT native libs for generation, and the standalone LiteRT
             // runtime bundles the newer copies needed by raw EmbeddingGemma. Package the first
             // resolved set; assemble verification checks libLiteRt.so stays the 2.1.6 library.
             pickFirsts += "**/libLiteRt*.so"
+        }
+    }
+
+    // Produce ABI-specific APKs. Play-distributed app bundles already split by ABI; this keeps
+    // direct APK builds from making every user download both native stacks too.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
         }
     }
 
@@ -222,8 +256,19 @@ val verifyLlamaCppRelease by tasks.registering {
         }
     }
 }
+val verifyCatalogRelease by tasks.registering {
+    doLast {
+        check(catalogPublicKeys.split(',').any { it.isNotBlank() }) {
+            "Release builds require at least one catalogue signing key. Set catalog.publicKeys in local.properties or VERVAN_CATALOG_PUBLIC_KEYS in CI."
+        }
+        check(catalogEndpoints.split(',').any { it.trim().startsWith("https://") }) {
+            "Release builds require an HTTPS catalogue endpoint. Set catalog.endpoints in local.properties or VERVAN_CATALOG_ENDPOINTS in CI."
+        }
+    }
+}
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     dependsOn(verifyLlamaCppRelease)
+    dependsOn(verifyCatalogRelease)
 }
 
 kotlin {

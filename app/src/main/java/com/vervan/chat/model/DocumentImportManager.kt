@@ -21,6 +21,7 @@ import com.vervan.chat.system.toUserMessage
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /** Result of [DocumentImportManager.import] — a name+content conflict with an existing,
@@ -51,6 +52,14 @@ class DocumentImportManager(
     suspend fun import(kbId: String, uri: Uri): DocumentImportOutcome = withContext(Dispatchers.IO) {
         val name = safeFileName(queryDisplayName(uri) ?: uri.lastPathSegment ?: "document")
         val sourceSize = queryFileSize(uri)
+        if (sourceSize != null && sourceSize > ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) {
+            return@withContext DocumentImportOutcome.Imported(
+                Document(
+                    knowledgeBaseId = kbId, displayName = name, filePath = "", mimeType = "",
+                    status = DocumentStatus.FAILED, failureReason = "Document is too large to process safely (max 256 MB)"
+                ).also { documentDao.upsert(it) }
+            )
+        }
         val freeBytes = docsDir.usableSpace
         if (sourceSize != null && freeBytes < sourceSize + STORAGE_SAFETY_MARGIN_BYTES) {
             return@withContext DocumentImportOutcome.Imported(
@@ -67,9 +76,14 @@ class DocumentImportManager(
             context.contentResolver.openInputStream(uri)?.use { input ->
                 dest.outputStream().use { output ->
                     val buffer = ByteArray(1 shl 16)
+                    var copiedBytes = 0L
                     while (true) {
                         val read = input.read(buffer)
                         if (read == -1) break
+                        copiedBytes += read
+                        if (copiedBytes > ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) {
+                            throw InputLimitExceededException("Document exceeds 256 MB")
+                        }
                         output.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                     }
@@ -78,6 +92,14 @@ class DocumentImportManager(
                 Document(
                     knowledgeBaseId = kbId, displayName = name, filePath = "", mimeType = "",
                     status = DocumentStatus.FAILED, failureReason = "Could not open selected file"
+                ).also { documentDao.upsert(it) }
+            )
+        } catch (e: InputLimitExceededException) {
+            dest.delete()
+            return@withContext DocumentImportOutcome.Imported(
+                Document(
+                    knowledgeBaseId = kbId, displayName = name, filePath = "", mimeType = "",
+                    status = DocumentStatus.FAILED, failureReason = "Document is too large to process safely (max 256 MB)"
                 ).also { documentDao.upsert(it) }
             )
         } catch (e: java.io.IOException) {
@@ -117,6 +139,16 @@ class DocumentImportManager(
      * the normal pipeline (chunk -> embed -> persist). Written to a real .txt file so the
      * document viewer and re-index still work on it like any other import. */
     suspend fun importRawText(kbId: String, name: String, content: String): Document = withContext(Dispatchers.IO) {
+        if (content.length > ImportLimits.MAX_EXTRACTED_CHARS) {
+            return@withContext Document(
+                knowledgeBaseId = kbId,
+                displayName = safeFileName(name),
+                filePath = "",
+                mimeType = "text/plain",
+                status = DocumentStatus.FAILED,
+                failureReason = "Text is too large to process safely"
+            ).also { documentDao.upsert(it) }
+        }
         val safeName = safeFileName(name)
         val dest = File(docsDir, "${System.currentTimeMillis()}_$safeName.txt")
         dest.writeText(content)
@@ -192,7 +224,13 @@ class DocumentImportManager(
                     ensureJobActive(jobId)
                     document = document.copy(status = DocumentStatus.OCR_RUNNING, failureReason = null)
                     documentDao.update(document)
-                    val ocrText = try { runOcr(name, dest) } catch (t: Throwable) { "" }
+                    val ocrText = try {
+                        runOcr(name, dest)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (t: Throwable) {
+                        ""
+                    }
                     document = if (ocrText.isBlank()) {
                         document.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")
                     } else {
@@ -209,8 +247,8 @@ class DocumentImportManager(
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             val failed = document.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped")
-            documentDao.update(failed)
-            failed
+            withContext(NonCancellable) { documentDao.update(failed) }
+            throw cancelled
         } catch (t: Throwable) {
             val failed = document.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage())
             documentDao.update(failed)
@@ -311,7 +349,13 @@ class DocumentImportManager(
             when (val extracted = TextExtractor.extract(file, doc.displayName)) {
                 is ExtractResult.Unsupported -> documentDao.update(doc.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason))
                 ExtractResult.NeedsOcr -> {
-                    val ocrText = try { runOcr(doc.displayName, file) } catch (t: Throwable) { "" }
+                    val ocrText = try {
+                        runOcr(doc.displayName, file)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (t: Throwable) {
+                        ""
+                    }
                     if (ocrText.isBlank()) {
                         documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text"))
                     } else {
@@ -323,7 +367,10 @@ class DocumentImportManager(
                 }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped"))
+            withContext(NonCancellable) {
+                documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped"))
+            }
+            throw cancelled
         } catch (t: Throwable) {
             documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage()))
         }

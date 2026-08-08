@@ -137,7 +137,7 @@ import kotlinx.coroutines.launch
 
 private data class Tab(
     val route: String,
-    @StringRes val labelRes: Int,
+    @param:StringRes val labelRes: Int,
     val icon: ImageVector,
     val selectedIcon: ImageVector
 )

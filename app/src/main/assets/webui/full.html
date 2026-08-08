@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0D14">
+<title>Vervan · Private local workspace</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'%3E%3Cdefs%3E%3CradialGradient id='bg' cx='38' cy='32' r='98' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%232A2A33'/%3E%3Cstop offset='1' stop-color='%23131318'/%3E%3C/radialGradient%3E%3ClinearGradient id='v' x1='27' y1='33' x2='82' y2='79' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23F6B24E'/%3E%3Cstop offset='.5' stop-color='%23ECA56A'/%3E%3Cstop offset='1' stop-color='%237C9AFF'/%3E%3C/linearGradient%3E%3ClinearGradient id='s' x1='60.8' y1='58.8' x2='71.2' y2='69.2' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23FFE1B0'/%3E%3Cstop offset='1' stop-color='%23F6B24E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='108' height='108' rx='24' fill='url(%23bg)'/%3E%3Cpath d='M27.4,33 C30.3,31.3 33.6,32.2 35.4,35.3 L54,61.6 L72.6,35.3 C74.4,32.2 77.7,31.3 80.6,33 C83.3,34.6 84,37.8 82.4,40.5 L63.8,73.8 C62.1,76.9 59.1,78.7 54,78.7 C48.9,78.7 45.9,76.9 44.2,73.8 L25.6,40.5 C24,37.8 24.7,34.6 27.4,33 Z' fill='url(%23v)'/%3E%3Ccircle cx='66' cy='64' r='5.2' fill='url(%23s)'/%3E%3Cpath d='M76,25 L81.5,30.5 L76,36 L70.5,30.5 Z' fill='%23FFE1B0' fill-opacity='.94'/%3E%3C/svg%3E">
+<script>
+// Applies the theme the server injected (see LocalApiServer.themeInjectionScript()) before the
+// stylesheet ever paints — an explicit Light/Dark choice in the native app wins over the browser's
+// OS preference the same way it does inside the app itself; SYSTEM leaves the data-theme attribute
+// unset and defers entirely to prefers-color-scheme. Runs synchronously in <head> specifically to
+// avoid a flash of the wrong theme/accent.
+(function () {
+  var theme = window.__VERVAN_THEME;
+  if (!theme) return;
+  var root = document.documentElement;
+  if (theme.mode === "LIGHT") { root.dataset.theme = "light"; root.style.colorScheme = "light"; }
+  else if (theme.mode === "DARK") { root.dataset.theme = "dark"; root.style.colorScheme = "dark"; }
+  if (theme.accentLight) root.style.setProperty("--accent-light", theme.accentLight);
+  if (theme.accentDark) root.style.setProperty("--accent-dark", theme.accentDark);
+})();
+</script>
+<link rel="stylesheet" href="/webui-assets/app.css">
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail" id="rail">
+    <div class="rail-brand" id="brandMark"></div>
+    <button class="rail-btn" type="button" data-section="home" aria-label="Home">
+      <svg viewBox="0 0 24 24"><path d="M3 10.2 12 3l9 7.2V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span>
+    </button>
+    <button class="rail-btn" type="button" data-section="chats" aria-label="Chats">
+      <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/></svg><span>Chats</span>
+    </button>
+    <button class="rail-btn" type="button" data-section="library" aria-label="Library">
+      <svg viewBox="0 0 24 24"><path d="M4 5h5l2 2h9v12H4z"/></svg><span>Library</span>
+    </button>
+    <button class="rail-btn" type="button" data-section="knowledge" aria-label="Knowledge">
+      <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z"/><path d="M8 3v18"/></svg><span>Knowledge</span>
+    </button>
+    <button class="rail-btn" type="button" data-section="tools" aria-label="Tools">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Tools</span>
+    </button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" type="button" data-section="models" aria-label="Models">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>Models</span>
+    </button>
+    <button class="rail-btn" type="button" data-section="recycle" aria-label="Recycle bin">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg><span>Bin</span>
+    </button>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn only-narrow" type="button" id="listToggle" aria-label="Show list" aria-expanded="false">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="topbar-heading">
+        <span class="eyebrow">Private local workspace</span>
+        <h1 id="pageTitle">Home</h1>
+      </div>
+      <div class="grow"></div>
+      <div class="local-badge"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/><path d="M12 14v2"/></svg><span>On device</span></div>
+      <div class="status" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><span id="statusLabel">Connecting…</span></div>
+      <span class="chip" id="ramChip" hidden></span>
+      <button class="icon-btn" type="button" id="keyBtn" aria-label="API key" title="API key">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3"/><path d="m10.2 12.8 7.8-7.8 2 2-1.8 1.8 1.6 1.6-2 2-1.6-1.6-3.8 3.8"/></svg>
+      </button>
+      <div class="topbar-progress" id="topProgress" hidden></div>
+    </header>
+
+    <!-- Home ------------------------------------------------------------- -->
+    <section class="section" id="section-home">
+      <div class="detail-col">
+        <div class="detail-scroll">
+          <div class="detail-inner">
+            <div class="home-intro">
+              <div class="home-intro-mark" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m12 3 1.5 6.5L20 12l-6.5 1.5L12 20l-1.5-6.5L4 12l6.5-2.5z"/><path d="m19 3 .5 2.5L22 6l-2.5.5L19 9l-.5-2.5L16 6l2.5-.5z"/></svg></div>
+              <div>
+                <span class="eyebrow">Your data, your device</span>
+                <h2>Make space for better thinking.</h2>
+                <p>Chat, search, and work with your local models. Nothing in this workspace needs to leave the phone.</p>
+              </div>
+            </div>
+            <div class="card home-search-card">
+              <div class="card-heading"><div><h3>Find anything</h3><p>Search chats, notes, memories, personas, and documents.</p></div><svg class="ui-icon heading-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></div>
+              <label class="field" style="margin:0">
+                <input type="search" id="globalSearch" placeholder="Search your local workspace" autocomplete="off">
+              </label>
+              <div id="searchResults"></div>
+            </div>
+            <div class="card-grid" id="homeStats"></div>
+            <div class="card"><h3>Model status</h3><div id="homeModels"></div></div>
+            <div class="card"><h3>Recent chats</h3><div id="homeChats"></div></div>
+            <div class="card"><h3>Recent notes</h3><div id="homeNotes"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chats ------------------------------------------------------------ -->
+    <section class="section" id="section-chats">
+      <div class="cols">
+        <aside class="list-col" id="chatListCol">
+          <div class="list-col-head">
+            <input type="search" id="chatSearch" placeholder="Search chats">
+            <button class="primary button-with-icon" type="button" id="newChatBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
+          </div>
+          <div class="list-scroll" id="chatList"></div>
+        </aside>
+        <div class="chat-main">
+          <div class="chat-bar">
+            <div class="chat-bar-title">
+              <strong id="chatTitle">New chat</strong>
+              <span class="chip" id="incognitoChip" hidden>Incognito</span>
+            </div>
+            <div class="chat-bar-controls">
+              <select id="modelSelect" aria-label="Model"></select>
+              <select id="thinkingSelect" aria-label="Thinking level">
+                <option value="">Thinking: default</option>
+                <option value="OFF">Thinking: off</option>
+                <option value="FAST">Thinking: fast</option>
+                <option value="BALANCED">Thinking: balanced</option>
+                <option value="DEEP">Thinking: deep</option>
+              </select>
+              <span class="chip" id="capChip"></span>
+              <button class="icon-btn" type="button" id="optsToggle" aria-label="Chat settings" title="Chat settings" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></svg></button>
+              <div class="menu-wrap">
+                <button class="icon-btn" type="button" id="chatMenuBtn" aria-label="Chat actions" title="Chat actions" aria-haspopup="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></svg></button>
+                <div class="menu" id="chatMenu" hidden>
+                  <button type="button" data-act="rename">Rename</button>
+                  <button type="button" data-act="generate-title">Generate title with AI</button>
+                  <button type="button" data-act="restore-title">Restore previous title</button>
+                  <hr>
+                  <button type="button" data-act="pin">Pin / unpin</button>
+                  <button type="button" data-act="incognito">Toggle incognito</button>
+                  <button type="button" data-act="duplicate">Duplicate</button>
+                  <hr>
+                  <button type="button" data-act="export-md">Export as Markdown</button>
+                  <button type="button" data-act="export-txt">Export as text</button>
+                  <button type="button" data-act="copy-all">Copy transcript</button>
+                  <button type="button" data-act="to-kb">Add to knowledge base</button>
+                  <hr>
+                  <button type="button" data-act="stats">Chat info</button>
+                  <button type="button" data-act="reset">Reset chat settings</button>
+                  <button type="button" data-act="delete" class="destructive">Move to recycle bin</button>
+                </div>
+              </div>
+            </div>
+          </div>
+           <div class="messages" id="messages"><div class="thread" id="thread"></div></div>
+           <div class="composer-wrap">
+             <div class="composer">
+               <div class="attachments" id="attachments"></div>
+               <div class="generation-state" id="generationState" hidden role="status" aria-live="polite">
+                 <div class="generation-copy">
+                   <span class="generation-pulse" aria-hidden="true"></span>
+                   <span id="generationLabel">Preparing your request…</span>
+                   <span class="generation-detail" id="generationDetail">The model is getting ready on this device.</span>
+                 </div>
+                 <div class="progress-track" aria-hidden="true"><span class="progress-indeterminate"></span></div>
+               </div>
+               <div class="composer-box">
+                <div class="menu-wrap">
+                  <button class="icon-btn" type="button" id="attachBtn" aria-label="Attach" title="Attach" aria-haspopup="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.4-8.4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 1 1-2.8-2.8l7.8-7.8"/></svg></button>
+                  <div class="menu menu-up" id="attachMenu" hidden>
+                    <button type="button" data-attach="image"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 6"/></svg>Image</button>
+                    <button type="button" data-attach="audio"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7v8a4 4 0 0 0 8 0V7M5 11v4a7 7 0 0 0 14 0v-4M12 22v-3"/></svg>Audio clip</button>
+                    <button type="button" data-attach="document"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Document</button>
+                    <button type="button" data-attach="ocr"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8M12 8v8"/></svg>Extract text from an image</button>
+                  </div>
+                </div>
+                <textarea id="input" rows="1" placeholder="Message Vervan…"></textarea>
+                <button class="send-btn" type="button" id="sendBtn" aria-label="Send" title="Send message">
+                  <svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+                </button>
+                <button class="send-btn" type="button" id="stopBtn" aria-label="Stop" title="Stop generating" style="display:none;background:var(--danger)">
+                  <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
+                </button>
+              </div>
+              <div class="composer-hint">
+                <span>Enter to send · Shift+Enter for a new line</span>
+                <span id="ragHint"></span>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="fileInput" hidden>
+        </div>
+        <aside class="opts-col hidden" id="optsCol">
+          <div class="opts-head">
+            <strong>Chat settings</strong>
+            <span class="row-sub" id="optsSaved"></span>
+            <button class="icon-btn only-narrow" type="button" id="optsClose" aria-label="Close" title="Close"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+          <div id="optsBody">
+            <div class="opt-group">
+              <h4>Behaviour</h4>
+              <label class="field"><span>Persona</span><select id="personaSelect"></select></label>
+              <label class="field"><span>Response profile</span>
+                <select id="profileSelect">
+                  <option value="FAST">Fast — short answers</option>
+                  <option value="BALANCED">Balanced</option>
+                  <option value="QUALITY">Quality — deeper answers</option>
+                  <option value="BATTERY_SAVER">Battery saver</option>
+                </select>
+              </label>
+              <label class="field"><span>System prompt (this message only)</span><textarea id="systemPrompt" rows="3" placeholder="Optional"></textarea></label>
+            </div>
+            <div class="opt-group">
+              <h4>Knowledge</h4>
+              <div class="switch-row"><span>Answer from my documents</span><input type="checkbox" id="ragToggle"></div>
+              <div class="check-list" id="kbCheckList"></div>
+            </div>
+            <div class="opt-group">
+              <h4>Tools</h4>
+              <div class="switch-row"><span>Let the model use tools</span><input type="checkbox" id="toolsToggle"></div>
+              <div class="check-list" id="toolCheckList"></div>
+            </div>
+            <div class="opt-group">
+              <h4>Organise</h4>
+              <label class="field"><span>Project</span><select id="projectSelect"></select></label>
+              <label class="field"><span>Folder</span><select id="folderSelect"></select></label>
+              <div class="switch-row"><span>Archived</span><input type="checkbox" id="archivedToggle"></div>
+            </div>
+            <div class="opt-group">
+              <h4>Sampling</h4>
+              <div class="range-row"><label for="temperature">Temp</label><input type="range" id="temperature" min="0" max="2" step="0.05" value="0.8"><b id="temperatureValue">0.80</b></div>
+              <div class="range-row"><label for="topP">Top-p</label><input type="range" id="topP" min="0" max="1" step="0.01" value="0.95"><b id="topPValue">0.95</b></div>
+              <label class="field" style="margin-top:10px"><span>Top-k</span><input type="number" id="topK" min="1" placeholder="Model default"></label>
+              <label class="field"><span>Max output tokens (this message only)</span><input type="number" id="maxTokens" min="1" placeholder="Model default"></label>
+              <p class="row-sub">Temperature and top-p are saved on this chat, the same as in the app.</p>
+            </div>
+          </div>
+          <div class="empty-note" id="optsNoChat">Start or open a chat to change its settings.</div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Library ---------------------------------------------------------- -->
+    <!-- The kinds are tabs rather than a dropdown: Projects, Workspaces and Folders were real
+         destinations hidden one interaction deep inside a picker, which read as "not there". -->
+    <section class="section section-stack" id="section-library">
+      <div class="subnav" id="libTabs">
+        <button type="button" data-kind="notes">Notes</button>
+        <button type="button" data-kind="memories">Memories</button>
+        <button type="button" data-kind="personas">Personas</button>
+        <button type="button" data-kind="templates">Prompts</button>
+        <button type="button" data-kind="saved-outputs">Saved</button>
+        <button type="button" data-kind="projects">Projects</button>
+        <button type="button" data-kind="workspaces">Workspaces</button>
+        <button type="button" data-kind="folders">Folders</button>
+      </div>
+      <div class="cols">
+        <aside class="list-col" id="libListCol">
+          <div class="list-col-head">
+            <select id="libKind" aria-label="Library section" hidden>
+              <option value="notes">Notes</option>
+              <option value="memories">Memories</option>
+              <option value="personas">Personas</option>
+              <option value="templates">Prompt templates</option>
+              <option value="saved-outputs">Saved outputs</option>
+              <option value="projects">Projects</option>
+              <option value="workspaces">Workspaces</option>
+              <option value="folders">Folders</option>
+            </select>
+            <button class="primary button-with-icon" type="button" id="libNewBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
+          </div>
+          <div class="list-scroll" id="libList"></div>
+        </aside>
+        <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="libDetail"></div></div></div>
+      </div>
+    </section>
+
+    <!-- Knowledge -------------------------------------------------------- -->
+    <section class="section" id="section-knowledge">
+      <div class="cols">
+        <aside class="list-col" id="kbListCol">
+          <div class="list-col-head">
+            <input type="search" id="kbSearch" placeholder="Search knowledge bases">
+            <button class="primary button-with-icon" type="button" id="newKbBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
+          </div>
+          <div class="list-scroll" id="kbList"></div>
+        </aside>
+        <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="kbDetail"></div></div></div>
+      </div>
+    </section>
+
+    <!-- Tools ------------------------------------------------------------ -->
+    <section class="section" id="section-tools">
+      <div class="cols">
+        <aside class="list-col" id="toolListCol">
+          <div class="list-col-head">
+            <input type="search" id="toolSearch" placeholder="Search tools">
+            <button class="secondary button-with-icon" type="button" id="toolHistoryBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 5v5h5M12 8v4l3 2"/></svg>History</button>
+          </div>
+          <div class="list-scroll" id="toolList"></div>
+        </aside>
+        <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="toolDetail"></div></div></div>
+      </div>
+    </section>
+
+    <!-- Models ----------------------------------------------------------- -->
+    <section class="section" id="section-models">
+      <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="modelsPane"></div></div></div>
+    </section>
+
+    <!-- Recycle bin ------------------------------------------------------ -->
+    <section class="section section-stack" id="section-recycle">
+      <div class="subnav" id="recycleTabs"></div>
+      <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="recyclePane"></div></div></div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="modal-back" id="modalBack"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+window.VERVAN_ICON_SVG = "<svg viewBox='0 0 108 108' xmlns='http://www.w3.org/2000/svg'><defs>" +
+  "<radialGradient id='vbg' cx='38' cy='32' r='98' gradientUnits='userSpaceOnUse'><stop offset='0' stop-color='#2A2A33'/><stop offset='1' stop-color='#131318'/></radialGradient>" +
+  "<linearGradient id='vv' x1='27' y1='33' x2='82' y2='79' gradientUnits='userSpaceOnUse'><stop offset='0' stop-color='#F6B24E'/><stop offset='.5' stop-color='#ECA56A'/><stop offset='1' stop-color='#7C9AFF'/></linearGradient>" +
+  "<linearGradient id='vs' x1='60.8' y1='58.8' x2='71.2' y2='69.2' gradientUnits='userSpaceOnUse'><stop offset='0' stop-color='#FFE1B0'/><stop offset='1' stop-color='#F6B24E'/></linearGradient>" +
+  "</defs><rect width='108' height='108' rx='24' fill='url(#vbg)'/>" +
+  "<path d='M27.4,33 C30.3,31.3 33.6,32.2 35.4,35.3 L54,61.6 L72.6,35.3 C74.4,32.2 77.7,31.3 80.6,33 C83.3,34.6 84,37.8 82.4,40.5 L63.8,73.8 C62.1,76.9 59.1,78.7 54,78.7 C48.9,78.7 45.9,76.9 44.2,73.8 L25.6,40.5 C24,37.8 24.7,34.6 27.4,33 Z' fill='url(#vv)'/>" +
+  "<circle cx='66' cy='64' r='5.2' fill='url(#vs)'/>" +
+  "<path d='M76,25 L81.5,30.5 L76,36 L70.5,30.5 Z' fill='#FFE1B0' fill-opacity='.94'/></svg>";
+document.getElementById("brandMark").innerHTML = window.VERVAN_ICON_SVG;
+</script>
+<script src="/webui-assets/render.js"></script>
+<script src="/webui-assets/app.js"></script>
+</body>
+</html>

@@ -42,7 +42,9 @@ object TitleGenerator {
         // Pass the chat's resolved model (honoring a per-chat Chat.modelId override), not the
         // app-wide active one — titling runs right after that model generated the reply, so this
         // reuses the resident model instead of swapping to the global default.
-        val raw = OneShotLlm.run(app, prompt, model = model) ?: return null
+        // A title is ~3-8 words; cap generation well below the chat-reply-sized default
+        // budget so this doesn't run any longer than it has to.
+        val raw = OneShotLlm.run(app, prompt, model = model, maxOutputTokensOverride = 24) ?: return null
         val title = raw.trim().trim('"', '“', '”').lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().take(80)
         return title.ifBlank { null }
     }

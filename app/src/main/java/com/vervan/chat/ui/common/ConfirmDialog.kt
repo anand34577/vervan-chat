@@ -3,18 +3,12 @@ package com.vervan.chat.ui.common
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.vervan.chat.R
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.Unarchive
 
 /**
  * The one shared confirmation-dialog shape — every destructive/reset/conflict
@@ -66,9 +60,6 @@ fun ArchiveMenuItem(archived: Boolean, onClick: () -> Unit) {
                 )
             )
         },
-        leadingIcon = {
-            Icon(if (archived) Icons.Filled.Unarchive else Icons.Filled.Archive, contentDescription = null)
-        },
         onClick = onClick
     )
 }
@@ -83,13 +74,6 @@ fun DeleteMenuItem(permanent: Boolean = false, onClick: () -> Unit) {
                     if (permanent) R.string.action_delete_forever else R.string.action_recycle
                 ),
                 color = MaterialTheme.colorScheme.error
-            )
-        },
-        leadingIcon = {
-            Icon(
-                if (permanent) Icons.Filled.DeleteForever else Icons.Filled.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error
             )
         },
         onClick = onClick

@@ -1,5 +1,6 @@
 package com.vervan.chat.voice
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -69,6 +70,7 @@ import kotlinx.coroutines.withContext
  * most recent successful load actually used, for the "STT: whisper.cpp (CPU/GPU)" UI badge — see
  * [RealtimeVoiceController.sttLabel] and [VoiceSettingsScreen][com.vervan.chat.ui.settings.VoiceSettingsScreen].
  */
+@SuppressLint("ApplySharedPref") // crash-sentinel writes must reach disk before native GPU init
 class WhisperCppSttEngine(
     private val context: Context,
     private val voiceModelDao: TtsVoiceModelDao,

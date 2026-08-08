@@ -5,8 +5,6 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.ContinuousAudioCapture
 import com.vervan.chat.audio.VoiceActivityDetector
 import com.vervan.chat.data.db.entities.ModelRole
-import com.vervan.chat.data.db.entities.ToolRun
-import com.vervan.chat.data.db.entities.ToolRunState
 import com.vervan.chat.modelload.LoadTrigger
 import java.io.File
 import java.util.UUID
@@ -19,8 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -44,19 +40,6 @@ data class VoiceTurn(
 
 enum class VoiceControllerState { IDLE, LOADING_MODEL, LISTENING, TRANSCRIBING, THINKING, SPEAKING }
 
-/**
- * Connects the realtime audio session to the ordinary chat pipeline.
- *
- * The bridge deliberately sits above every engine: capture, VAD, STT and TTS remain owned by
- * [RealtimeVoiceController], while the normal chat ViewModel owns message persistence, context
- * assembly, retrieval, attachments, tools, branching and LLM selection. This is what lets voice
- * remain a modality of an existing conversation instead of becoming a second chat system.
- */
-interface VoiceConversationBridge {
-    suspend fun respond(input: VoiceInputTurn, onAssistantUpdate: (String) -> Unit): String
-    fun cancelResponse()
-}
-
 data class VoiceInputTurn(
     val text: String,
     val recordingPath: String?,
@@ -77,7 +60,14 @@ data class VoiceInputTurn(
  */
 class RealtimeVoiceController(
     private val app: VervanApp,
-    private val conversationBridge: VoiceConversationBridge? = null,
+    // Connects the realtime audio session to the ordinary chat pipeline as two plain callbacks
+    // instead of a named single-implementation interface: capture, VAD, STT and TTS remain owned
+    // by this controller, while the normal chat ViewModel (the one real caller, wired in
+    // ChatScreen) owns message persistence, context assembly, retrieval, attachments, tools,
+    // branching and LLM selection. This is what lets voice remain a modality of an existing
+    // conversation instead of becoming a second chat system.
+    private val respond: (suspend (input: VoiceInputTurn, onAssistantUpdate: (String) -> Unit) -> String)? = null,
+    private val cancelResponse: (() -> Unit)? = null,
     private val generationModelId: String? = null,
 ) {
     private val audioCapture = ContinuousAudioCapture()
@@ -97,8 +87,6 @@ class RealtimeVoiceController(
     // it used to be a plain local that stop() never touched at all, so calling it while the
     // watcher was still mid-frame raced vad.release() below into a native use-after-free crash.
     private var bargeInWatcher: Job? = null
-    private var persistenceJob: Job? = null
-    private val historyRun = ToolRun(toolRoute = "tools/voice-chat", toolName = "Voice chat", input = "")
     @Volatile private var finishListeningRequested = false
     @Volatile private var cancelListeningRequested = false
     @Volatile private var responseInterrupted = false
@@ -198,17 +186,6 @@ class RealtimeVoiceController(
         _sttUnavailable.value = false
         controllerScope = scope
         playbackQueue = TtsPlaybackQueue(app, engineSelector, scope)
-        if (persistenceJob?.isActive != true) {
-            persistenceJob = scope.launch(Dispatchers.IO) {
-                combine(_turns, _state) { turns, state -> turns to state }.collectLatest { (turns, state) ->
-                    if (turns.isEmpty()) return@collectLatest
-                    // Coalesce streaming token updates; the quiet point after each turn writes the
-                    // complete session snapshot without hammering Room for every token.
-                    delay(350)
-                    persistHistory(turns, if (state == VoiceControllerState.IDLE) ToolRunState.COMPLETED else ToolRunState.RUNNING)
-                }
-            }
-        }
         sessionJob = scope.launch(Dispatchers.Default) { runSession() }
     }
 
@@ -216,17 +193,11 @@ class RealtimeVoiceController(
         // A controller that never had start() called (e.g. one that's remembered anew and torn
         // down before hands-free was ever toggled on — see ChatScreen's
         // DisposableEffect(voiceController)/onDispose) has nothing of its own to tear down. Doing
-        // the full teardown anyway used to call conversationBridge?.cancelResponse() unconditionally,
+        // the full teardown anyway used to call cancelResponse?.invoke() unconditionally,
         // which cancels whatever the chat is currently generating (voice or plain text) even though
         // this controller instance was never the one generating it — e.g. it fired mid-send right
         // after Home's "Ask anything" quick-ask, cancelling the reply before it started.
         if (sessionJob == null && _state.value == VoiceControllerState.IDLE) return
-        val beforeStop = _turns.value
-        val interrupted = beforeStop.any { it.isStreaming } || _state.value in setOf(
-            VoiceControllerState.THINKING,
-            VoiceControllerState.TRANSCRIBING,
-            VoiceControllerState.LOADING_MODEL,
-        )
         // cancel() only *requests* cancellation and returns immediately — it does not wait for a
         // coroutine currently blocked inside a native call (e.g. bargeInWatcher mid-frame inside
         // Vad.acceptWaveform) to actually stop. Releasing vad/the STT engines right after a bare
@@ -253,38 +224,16 @@ class RealtimeVoiceController(
         cancelListeningRequested = false
         responseInterrupted = true
         AndroidSystemSttRecognizer.cancelActiveRecognition()
-        conversationBridge?.cancelResponse()
+        cancelResponse?.invoke()
         _turns.update { turns -> turns.map { it.copy(isStreaming = false, audioPending = false) } }
-        CoroutineScope(Dispatchers.Default).launch {
+        app.applicationScope.launch(Dispatchers.Default) {
             jobsToJoin.forEach { runCatching { it.cancelAndJoin() } }
             if (::playbackQueue.isInitialized) playbackQueue.release()
             audioCapture.stop()
             vad.release()
             whisperCppStt.release()
             engineSelector.releaseAll()
-            if (beforeStop.isNotEmpty()) {
-                persistHistory(_turns.value, if (interrupted) ToolRunState.INTERRUPTED else ToolRunState.COMPLETED)
-            }
         }
-    }
-
-    private suspend fun persistHistory(turns: List<VoiceTurn>, state: ToolRunState) {
-        val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
-        val userInput = turns.filter { it.fromUser }.joinToString("\n") { it.text }
-        val transcript = turns.joinToString("\n\n") { turn ->
-            (if (turn.fromUser) "You" else "Vervan") + ": " + turn.text
-        }
-        app.container.db.toolRunDao().upsert(
-            historyRun.copy(
-                input = userInput,
-                output = transcript,
-                state = state,
-                modelId = model?.id,
-                modelName = model?.displayName,
-                backend = model?.lastWorkingBackend?.name,
-                updatedAt = System.currentTimeMillis(),
-            )
-        )
     }
 
     /** Finishes only the current user turn; [stop] ends the whole voice session. */
@@ -334,7 +283,7 @@ class RealtimeVoiceController(
     fun manualInterrupt() {
         if (_state.value !in setOf(VoiceControllerState.THINKING, VoiceControllerState.SPEAKING)) return
         responseInterrupted = true
-        conversationBridge?.cancelResponse()
+        cancelResponse?.invoke()
         generationJob?.cancel()
         if (::playbackQueue.isInitialized) playbackQueue.stop()
         _playbackPaused.value = false
@@ -645,8 +594,8 @@ class RealtimeVoiceController(
                 if (delta.isNotEmpty()) chunker.append(delta)
             }
 
-            if (conversationBridge != null) {
-                val finalText = conversationBridge.respond(userInput, ::acceptAssistantUpdate)
+            if (respond != null) {
+                val finalText = respond.invoke(userInput, ::acceptAssistantUpdate)
                 if (finalText != replyText) acceptAssistantUpdate(finalText)
             } else {
                 val model = app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
@@ -733,7 +682,7 @@ class RealtimeVoiceController(
                 val triggered = speechFrames * CAPTURE_FRAME_MS >= BARGE_IN_TRIGGER_MS
                 if (triggered) {
                     responseInterrupted = true
-                    conversationBridge?.cancelResponse()
+                    cancelResponse?.invoke()
                     generationJob?.cancel()
                     playbackQueue.stop()
                 }

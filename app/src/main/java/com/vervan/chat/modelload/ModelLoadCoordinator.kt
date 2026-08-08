@@ -134,6 +134,23 @@ class ModelLoadCoordinator(
     private val inFlight = mutableMapOf<ModelRole, InFlightLoad>()
     private val lastSuccessfulRequest = mutableMapOf<ModelRole, LoadRequest>()
 
+    /** Wall-clock deadline (epoch ms) after which a JIT-loaded role gets unloaded by [ttlReaper].
+     * A role is *absent* here whenever it isn't TTL-managed — either nothing loaded it via
+     * [LoadTrigger.API_REQUEST], or a later user-driven load pinned it (see [armOrDisarmTtl]).
+     * Concurrent map rather than one guarded by [coordinatorMutex]: [touchTtl] is called on every
+     * inbound API request and the reaper ticks independently, and neither has any reason to
+     * contend with an in-progress native load for the coordinator lock. */
+    private val ttlDeadlines = java.util.concurrent.ConcurrentHashMap<ModelRole, Long>()
+
+    /** True while the role's *current* residency was established by an [LoadTrigger.API_REQUEST]
+     * load — the only case the TTL reaper is allowed to unload it. Without this, an API request
+     * hitting an already-resident model that the *user* loaded in Model Manager would arm a TTL
+     * against it (see [armOrDisarmTtl]'s `freshLoad` parameter) and the reaper would then unload
+     * a model the user explicitly pinned, out from under the app UI. Cleared by
+     * [publishUnloaded], so every unload path — TTL, manual, memory pressure — resets ownership
+     * rather than leaving a stale flag for the next residency to inherit. */
+    private val apiOwnedResidency = java.util.concurrent.ConcurrentHashMap<ModelRole, Boolean>()
+
     private val _state = MutableStateFlow(
         mapOf(
             ModelRole.GENERATION to ModelLoadInfo(ModelRole.GENERATION),
@@ -164,7 +181,85 @@ class ModelLoadCoordinator(
                 }
             }
         }
+        scope.launch { ttlReaper() }
     }
+
+    /** Unloads a JIT-loaded role once it has been idle past its TTL. Polls rather than scheduling
+     * one timer per load: the deadline moves on every single API request (see [touchTtl]), so a
+     * timer would be cancelled and rescheduled constantly, and a wakeup every [TTL_TICK_MS] on a
+     * server that is by definition already awake serving HTTP costs nothing measurable. The
+     * granularity that buys — a model can outlive its TTL by up to one tick — is irrelevant for a
+     * setting whose smallest sensible value is tens of seconds. */
+    private suspend fun ttlReaper() {
+        while (true) {
+            kotlinx.coroutines.delay(TTL_TICK_MS)
+            val now = System.currentTimeMillis()
+            for (role in ROLES) {
+                val deadline = ttlDeadlines[role] ?: continue
+                if (now < deadline) continue
+                // Don't yank a model out from under work that's actually running. `unload()` calls
+                // cancelActiveGeneration() before taking the engine mutex, so without this check a
+                // TTL expiring mid-stream would kill a response the client is still receiving —
+                // generate()/embed() hold their engine's mutex for the whole call, which makes
+                // isLocked the cheap, accurate "busy right now" signal. A still-busy role keeps its
+                // deadline and gets re-examined next tick; the request's own touchTtl() on
+                // completion is what actually moves it forward.
+                if (isRoleBusy(role)) continue
+                // A load in flight for this role means something wants it — including a *different*
+                // model about to replace it, which doLoad handles itself.
+                if (coordinatorMutex.withLock { inFlight.containsKey(role) }) continue
+                ttlDeadlines.remove(role)
+                Log.i(TAG, "TTL expired for $role after ${defaults.apiModelTtlSeconds()}s idle — unloading")
+                runCatching { unload(role) }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            }
+        }
+    }
+
+    private fun isRoleBusy(role: ModelRole): Boolean = when (role) {
+        ModelRole.GENERATION -> litertMutex.isLocked || llamaCppMutex.isLocked
+        ModelRole.EMBEDDING -> embeddingMutex.isLocked
+        else -> false
+    }
+
+    /** Called after every successful load, and on the already-resident fast path. An API-triggered
+     * load arms (or re-arms) the TTL; any other trigger means a human is driving, so the role is
+     * pinned resident until they say otherwise.
+     *
+     * [freshLoad] distinguishes "this call actually loaded the model" from "the model was already
+     * resident and this call just used it". Only a fresh API load may *take* TTL ownership of a
+     * role — an API request that merely reuses an already-resident model keeps whatever ownership
+     * that residency already had, so a model the user loaded in Model Manager stays pinned instead
+     * of becoming reapable the first time an API client touches it (see [apiOwnedResidency]). */
+    private suspend fun armOrDisarmTtl(role: ModelRole, trigger: LoadTrigger, freshLoad: Boolean) {
+        if (trigger != LoadTrigger.API_REQUEST) {
+            // A human is driving: pin the role and hand ownership back to them, even if the API
+            // was the one that originally loaded it.
+            apiOwnedResidency[role] = false
+            ttlDeadlines.remove(role)
+            return
+        }
+        if (freshLoad) apiOwnedResidency[role] = true
+        else if (apiOwnedResidency[role] != true) return
+        val ttlSeconds = defaults.apiModelTtlSeconds()
+        if (ttlSeconds <= 0) ttlDeadlines.remove(role)
+        else ttlDeadlines[role] = System.currentTimeMillis() + ttlSeconds * 1000L
+    }
+
+    /** Pushes [role]'s idle deadline out by a full TTL — for the API server to call when a request
+     * *finishes*, so a long stream isn't reaped the moment it ends. Deliberately a no-op for a role
+     * that isn't TTL-managed: touching must never turn a user-pinned model into a reapable one. */
+    suspend fun touchTtl(role: ModelRole) {
+        if (!ttlDeadlines.containsKey(role)) return
+        val ttlSeconds = defaults.apiModelTtlSeconds()
+        if (ttlSeconds <= 0) ttlDeadlines.remove(role)
+        else ttlDeadlines[role] = System.currentTimeMillis() + ttlSeconds * 1000L
+    }
+
+    /** Epoch-ms deadline after which [role] will be auto-unloaded, or null when it isn't
+     * TTL-managed (user-loaded, or nothing loaded). Read by `/v1/models` to report per-model TTL
+     * state the way LM Studio's own model listing does. */
+    fun ttlDeadlineAt(role: ModelRole): Long? = ttlDeadlines[role]
 
     suspend fun ensureLoaded(role: ModelRole, trigger: LoadTrigger, contextTokensOverride: Int? = null): EnsureLoadResult {
         return requestLoad(role, modelDao.getActiveModel(role), trigger, contextTokensOverride)
@@ -188,6 +283,11 @@ class ModelLoadCoordinator(
         coordinatorMutex.withLock {
             if (lastSuccessfulRequest[role] == request && isResident(request)) {
                 publishReady(role, model!!.id)
+                // Still an arm/disarm point even though no load happened: this is the hot path for
+                // the second and every later API request against an already-resident model (which
+                // must keep its TTL ticking), and equally the path a user's own chat send takes to
+                // pin a model the API had left TTL-managed.
+                armOrDisarmTtl(role, trigger, freshLoad = false)
                 return EnsureLoadResult(role, success = true, loadedModelId = model.id, loadRequired = false)
             }
         }
@@ -252,6 +352,7 @@ class ModelLoadCoordinator(
                     configHash = loadConfigHash(persisted, contextTokensOverride)
                 ) else request
                 coordinatorMutex.withLock { lastSuccessfulRequest[role] = successfulRequest }
+                armOrDisarmTtl(role, trigger, freshLoad = result.loadRequired)
             }
             return if (joined || joinedAny) result.copy(joinedInFlight = true) else result
         }
@@ -264,7 +365,9 @@ class ModelLoadCoordinator(
      * acting on their behalf) dealing with one specific, deliberately-chosen model instance. */
     private fun triggerPriority(trigger: LoadTrigger): Int = when (trigger) {
         LoadTrigger.MANUAL_MODEL_MANAGER, LoadTrigger.VALIDATION -> 0
-        LoadTrigger.CHAT_SEND, LoadTrigger.VOICE_SESSION -> 1
+        // API_REQUEST sits with CHAT_SEND: an inbound HTTP request is a real client actively
+        // waiting on a response, same as a user who just hit send.
+        LoadTrigger.CHAT_SEND, LoadTrigger.VOICE_SESSION, LoadTrigger.API_REQUEST -> 1
         LoadTrigger.CHAT_AUTOLOAD -> 2
         LoadTrigger.RAG_RETRIEVAL -> 3
     }
@@ -275,6 +378,9 @@ class ModelLoadCoordinator(
             ModelRole.GENERATION -> when (request.engine) {
                 ModelEngine.LLAMA_CPP -> llamaCppEngine.loadedModelPath == path
                 ModelEngine.LITERT_LM -> litertEngine.loadedModelPath == path
+                // Stateless HTTP, nothing to be "resident" — always already ready once the first
+                // doLoad() call has validated its config once (lastSuccessfulRequest gate above).
+                ModelEngine.REMOTE_API -> true
                 else -> false
             }
             ModelRole.EMBEDDING -> embeddingEngine.loadedModelPath == path
@@ -457,6 +563,28 @@ class ModelLoadCoordinator(
             )
             publishFailure(role, result)
             return result
+        }
+        if (model.engine == ModelEngine.REMOTE_API) {
+            // No native session, no local file, no hardware backend — "loading" a remote model is
+            // just confirming it's actually configured. Skip every check below this point (file
+            // existence, poisoned-engine, memory budget) that only makes sense for an on-device
+            // engine; RemoteOpenAiEngine validates the base URL/model id again at generate() time,
+            // this is purely so the UI can report a clear error before the user even sends a
+            // message rather than only on first send.
+            if (model.remoteBaseUrl.isNullOrBlank() || model.remoteApiModelId.isNullOrBlank()) {
+                val result = EnsureLoadResult(
+                    role, success = false, loadedModelId = model.id,
+                    errorCategory = ModelLoadErrorCategory.FILE_MISSING,
+                    errorMessage = "${model.displayName} is missing its API base URL or model id — edit it in Model Manager.",
+                    retryable = false
+                )
+                publishFailure(role, result)
+                return result
+            }
+            publishLoading(role, model.id)
+            modelDao.upsert(model.copy(lastLoadedAt = System.currentTimeMillis()))
+            publishReady(role, model.id)
+            return EnsureLoadResult(role, success = true, loadedModelId = model.id, loadRequired = true)
         }
         if (!File(model.filePath).exists()) {
             // : a *default* model whose file vanished outside the app (moved, deleted, SD
@@ -676,6 +804,11 @@ class ModelLoadCoordinator(
         return model.copy(lastWorkingBackend = dbBackend) to false
     }
 
+    // A REMOTE_API model has no native GenerationLoadable of its own (see doLoad()'s REMOTE_API
+    // short-circuit, which returns before ever calling this) — the litertEngine fallback below
+    // only matters for the couple of call sites reached for a remote model regardless
+    // (forceUnloadIfLoaded's pre-delete cleanup), where it's inert: loadedModelPath can never
+    // equal a remote model's synthetic filePath, so it's always a harmless no-op there.
     private fun generationEngineFor(model: ModelInfo): GenerationLoadable =
         if (model.engine == ModelEngine.LLAMA_CPP) llamaCppEngine else litertEngine
 
@@ -714,6 +847,11 @@ class ModelLoadCoordinator(
     }
 
     private fun publishUnloaded(role: ModelRole) {
+        // Whatever residency existed is gone, so its TTL bookkeeping must go with it — otherwise a
+        // stale deadline outlives the model it was set for and the next residency inherits an
+        // ownership flag it never earned.
+        ttlDeadlines.remove(role)
+        apiOwnedResidency.remove(role)
         _state.update { it + (role to it.getValue(role).copy(phase = ModelLoadPhase.UNLOADED, currentModelId = null, loadingModelId = null)) }
     }
 
@@ -800,6 +938,7 @@ class ModelLoadCoordinator(
         private const val TAG = "ModelLoadCoordinator"
         private val ROLES = listOf(ModelRole.GENERATION, ModelRole.EMBEDDING)
         private const val MIN_CONTEXT_RETRY_TOKENS = 2048
+        private const val TTL_TICK_MS = 15_000L
         // watchdog — generous on purpose. Observed real loads (worst case: GPU shader
         // recompilation across a multi-attempt capability probe) taking up to ~30s; this exists
         // to catch a genuinely stuck native call (corrupted file, wedged delegate), not to

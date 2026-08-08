@@ -41,7 +41,7 @@ private data class PermissionInfo(val permission: String, val label: String, val
 private val PERMISSIONS = listOf(
     PermissionInfo(Manifest.permission.RECORD_AUDIO, "Microphone", "Record voice messages and use offline dictation."),
     PermissionInfo(Manifest.permission.CAMERA, "Camera", "Take photos and scan documents locally."),
-    PermissionInfo(Manifest.permission.POST_NOTIFICATIONS, "Notifications", "Show generation, import, job, and quick-action bubble status."),
+    PermissionInfo("android.permission.POST_NOTIFICATIONS", "Notifications", "Show generation, import, job, and quick-action bubble status."),
     PermissionInfo(Manifest.permission.READ_CALENDAR, "Calendar", "Let enabled tools search upcoming events locally."),
     PermissionInfo(Manifest.permission.ACCESS_COARSE_LOCATION, "Location", "Share approximate coordinates with enabled local tools."),
     PermissionInfo("android.permission.SYSTEM_ALERT_WINDOW", "Draw over other apps", "Show the optional bubble above other apps. Screen capture is approved separately each time.")

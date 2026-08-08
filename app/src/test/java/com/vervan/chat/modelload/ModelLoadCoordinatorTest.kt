@@ -8,12 +8,14 @@ import com.vervan.chat.retrieval.EmbeddingBackend
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,7 +94,11 @@ private class FakeModelDao(initial: List<ModelInfo> = emptyList()) : ModelDao {
     }
 }
 
-private class FakeGenerationDefaults(private val allowLowMemoryLoads: Boolean = false) : GenerationDefaults {
+private class FakeGenerationDefaults(
+    private val allowLowMemoryLoads: Boolean = false,
+    private val ttlSeconds: Int = 300
+) : GenerationDefaults {
+    override suspend fun apiModelTtlSeconds() = ttlSeconds
     override suspend fun contextTokenLimit() = 4096
     override suspend fun maxNumImages() = 1
     override suspend fun preferredBackend() = "AUTO"
@@ -142,6 +148,91 @@ private class FakeEmbeddingEngine : EmbeddingLoadable {
     override val activeBackend = EmbeddingBackend.CPU
     override fun loadModel(modelPath: String, tokenizerPath: String?) { loadedModelPath = modelPath }
     override fun close() { loadedModelPath = null }
+}
+
+/** The JIT model-TTL rules the local API server depends on. Exercises the arm/disarm/touch
+ * bookkeeping directly rather than waiting on the reaper's own 15s tick — the branchy part is
+ * "which loads become reapable", not the `delay()` loop that acts on the answer. */
+class ModelLoadCoordinatorTtlTest {
+    private fun coordinator(dao: FakeModelDao, ttlSeconds: Int = 300) = ModelLoadCoordinator(
+        dao, FakeGenerationEngine(CompletableDeferred(Unit)), FakeGenerationEngine(CompletableDeferred(Unit)),
+        FakeEmbeddingEngine(),
+        kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
+        FakeGenerationDefaults(ttlSeconds = ttlSeconds), CoroutineScope(Dispatchers.Default)
+    )
+
+    @Test
+    fun apiRequestLoadArmsTtlAndUserLoadDisarmsIt() = runBlocking {
+        val c = coordinator(FakeModelDao(listOf(model("m1").copy(isActive = true))))
+
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.API_REQUEST).success)
+        assertNotNull("an API-triggered load must be TTL-managed", c.ttlDeadlineAt(ModelRole.GENERATION))
+
+        // Same model, already resident — takes requestLoad's fast path, which must still repin it.
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.CHAT_SEND).success)
+        assertNull(
+            "a model the user loaded in the app must never be reaped out from under them",
+            c.ttlDeadlineAt(ModelRole.GENERATION)
+        )
+    }
+
+    @Test
+    fun touchExtendsAnArmedRoleAndIgnoresAnUnarmedOne() = runBlocking {
+        val c = coordinator(FakeModelDao(listOf(model("m1").copy(isActive = true))))
+
+        c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.API_REQUEST)
+        val armed = c.ttlDeadlineAt(ModelRole.GENERATION)!!
+        kotlinx.coroutines.delay(5)
+        c.touchTtl(ModelRole.GENERATION)
+        assertTrue("touch must push the deadline out", c.ttlDeadlineAt(ModelRole.GENERATION)!! > armed)
+
+        // EMBEDDING was never API-loaded, so touching it must not invent a deadline — otherwise a
+        // request that only used the generation model would start a TTL on an app-loaded embedder.
+        c.touchTtl(ModelRole.EMBEDDING)
+        assertNull(c.ttlDeadlineAt(ModelRole.EMBEDDING))
+    }
+
+    @Test
+    fun apiRequestAgainstAUserLoadedModelDoesNotMakeItReapable() = runBlocking {
+        val c = coordinator(FakeModelDao(listOf(model("m1").copy(isActive = true))))
+
+        // The user loads a model in Model Manager: pinned, no TTL.
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.MANUAL_MODEL_MANAGER).success)
+        assertNull(c.ttlDeadlineAt(ModelRole.GENERATION))
+
+        // An API request then uses that already-resident model. It must *use* it without taking
+        // TTL ownership — otherwise the reaper unloads a model the user deliberately pinned,
+        // minutes later, with the app still open on it.
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.API_REQUEST).success)
+        assertNull(
+            "an API request must not convert a user-pinned model into a TTL-managed one",
+            c.ttlDeadlineAt(ModelRole.GENERATION)
+        )
+        c.touchTtl(ModelRole.GENERATION)
+        assertNull("touching must not arm it either", c.ttlDeadlineAt(ModelRole.GENERATION))
+    }
+
+    @Test
+    fun unloadingClearsTtlOwnershipSoTheNextResidencyStartsClean() = runBlocking {
+        val c = coordinator(FakeModelDao(listOf(model("m1").copy(isActive = true))))
+
+        c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.API_REQUEST)
+        assertNotNull(c.ttlDeadlineAt(ModelRole.GENERATION))
+        c.unload(ModelRole.GENERATION)
+        assertNull("an unloaded role has no deadline to reap", c.ttlDeadlineAt(ModelRole.GENERATION))
+
+        // Reloaded by the user this time — the previous API ownership must not carry over.
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.MANUAL_MODEL_MANAGER).success)
+        assertNull(c.ttlDeadlineAt(ModelRole.GENERATION))
+    }
+
+    @Test
+    fun zeroTtlNeverArms() = runBlocking {
+        val c = coordinator(FakeModelDao(listOf(model("m1").copy(isActive = true))), ttlSeconds = 0)
+
+        assertTrue(c.ensureLoaded(ModelRole.GENERATION, LoadTrigger.API_REQUEST).success)
+        assertNull("TTL 0 means keep loaded indefinitely", c.ttlDeadlineAt(ModelRole.GENERATION))
+    }
 }
 
 class ModelLoadCoordinatorConcurrencyTest {
@@ -226,21 +317,20 @@ class ModelLoadCoordinatorConcurrencyTest {
             kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(), kotlinx.coroutines.sync.Mutex(),
             FakeGenerationDefaults(), CoroutineScope(Dispatchers.Default)
         )
-        val scope = CoroutineScope(Dispatchers.Default)
+        val scope = this
 
-        // a's load starts and blocks on the gate — the "currently in flight" load.
-        // Generous settling delays: on a loaded machine 100ms was occasionally not enough for the
-        // async launches on Dispatchers.Default to reach their queue registration, which let two
-        // requests race past dedupe and produced a flaky fourth engine load.
-        val aResult = scope.async { coordinator.ensureLoaded(a, LoadTrigger.CHAT_AUTOLOAD) }
-        kotlinx.coroutines.delay(300) // let a actually become the in-flight load first
+        // UNDISPATCHED runs each request synchronously until its first suspension, making queue
+        // registration deterministic without timing sleeps that become flaky under build load.
+        val aResult = scope.async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.ensureLoaded(a, LoadTrigger.CHAT_AUTOLOAD)
+        }
 
         // While a is in flight, b (low-priority automatic) and c (high-priority manual) both
         // queue up for the same role — b first, to prove priority beats arrival order.
-        val bResult = scope.async { coordinator.ensureLoaded(b, LoadTrigger.CHAT_AUTOLOAD) }
-        kotlinx.coroutines.delay(150)
-        val cResult = scope.async { coordinator.loadManually(c) }
-        kotlinx.coroutines.delay(300) // let both b and c actually register as waiters
+        val bResult = scope.async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.ensureLoaded(b, LoadTrigger.CHAT_AUTOLOAD)
+        }
+        val cResult = scope.async(start = CoroutineStart.UNDISPATCHED) { coordinator.loadManually(c) }
 
         gate.complete(Unit) // let a finish; b and c now race to go next
 

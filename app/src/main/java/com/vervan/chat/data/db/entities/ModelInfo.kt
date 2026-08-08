@@ -36,10 +36,13 @@ enum class BackendChoice { AUTO, GPU, CPU, NPU }
 enum class ToolApprovalMode { ALWAYS_ASK, AUTO_APPROVE_REVERSIBLE, AUTO_APPROVE_ALL }
 
 /** Which native runtime a GENERATION model loads through — LiteRT-LM (the original, MediaPipe/
- * .task-.litertlm-.litert based) or llama.cpp (GGUF). Irrelevant for EMBEDDING (always
- * LiteRT-LM/MediaPipe in this app) but stored on every row for schema simplicity; existing rows
- * default to LITERT_LM. See ModelLoadCoordinator, which routes load/unload per-engine. */
-enum class ModelEngine { LITERT_LM, LLAMA_CPP }
+ * .task-.litertlm-.litert based), llama.cpp (GGUF), or a [REMOTE_API] call to an external
+ * OpenAI-compatible HTTP endpoint (no on-device weights at all). Irrelevant for EMBEDDING
+ * (always LiteRT-LM/MediaPipe in this app) but stored on every row for schema simplicity;
+ * existing rows default to LITERT_LM. See ModelLoadCoordinator, which routes load/unload
+ * per-engine — REMOTE_API skips native loading entirely (see its short-circuit there) since
+ * there is no local weight file or hardware backend to select. */
+enum class ModelEngine { LITERT_LM, LLAMA_CPP, REMOTE_API }
 
 @Entity(tableName = "models")
 data class ModelInfo(
@@ -129,7 +132,17 @@ data class ModelInfo(
     val origin: ModelOrigin = ModelOrigin.LOCAL_IMPORT,
     val catalogModelId: String? = null,
     val catalogVersion: String? = null,
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+    // REMOTE_API only, both null for every other engine. remoteBaseUrl is the API's base URL
+    // (e.g. "https://api.openai.com/v1" or a self-hosted llama.cpp/Ollama/LM Studio endpoint's
+    // OpenAI-compatible base) — RemoteOpenAiEngine appends "/chat/completions" itself, so this
+    // is stored without a trailing slash or endpoint suffix. remoteApiModelId is the `model`
+    // field sent in the request body (the provider's own model name, e.g. "gpt-4o-mini"), kept
+    // distinct from [id]/[displayName] which are this app's own local identifiers. The bearer
+    // API key is deliberately NOT a column here — see RemoteApiKeyStore, same reasoning as
+    // AppLockManager's PIN: never in the plain Room row, only in Keystore-backed encrypted prefs.
+    val remoteBaseUrl: String? = null,
+    val remoteApiModelId: String? = null
 )
 
 /**
@@ -188,6 +201,9 @@ fun ModelInfo.reconcileCapabilities(
 fun ModelInfo.canSupportVision(): Boolean = when (engine) {
     ModelEngine.LLAMA_CPP -> !mmprojPath.isNullOrBlank() && File(mmprojPath).isFile
     ModelEngine.LITERT_LM -> true
+    // Text-only for v1 — RemoteOpenAiEngine sends plain chat/completions messages with no
+    // image_url content parts, even though many OpenAI-compatible providers support them.
+    ModelEngine.REMOTE_API -> false
 }
 
 /** Whether this model *can* support native audio input at all — same hard-limit reasoning as
@@ -196,4 +212,5 @@ fun ModelInfo.canSupportVision(): Boolean = when (engine) {
 fun ModelInfo.canSupportAudio(): Boolean = when (engine) {
     ModelEngine.LLAMA_CPP -> false
     ModelEngine.LITERT_LM -> true
+    ModelEngine.REMOTE_API -> false
 }

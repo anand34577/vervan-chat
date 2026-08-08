@@ -235,7 +235,7 @@ fun VervanTheme(
     oledTrueBlack: Boolean = false,
     dynamicColor: Boolean = false,
     highContrast: Boolean = false,
-    accent: com.vervan.chat.data.settings.AccentTheme = com.vervan.chat.data.settings.AccentTheme.AMBER,
+    accent: com.vervan.chat.data.settings.AccentTheme = com.vervan.chat.data.settings.AccentTheme.GREEN,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current

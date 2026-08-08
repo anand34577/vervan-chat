@@ -48,11 +48,15 @@ class AppContainer(app: Application) {
     // on a missing Migration. MIGRATIONS starts real again once this app ships — see Migrations.kt.
     val db: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "vervan.db")
         .addMigrations(*MIGRATIONS)
-        .fallbackToDestructiveMigration(true)
         .build()
     val llmEngine = LlmEngine(app)
     val llamaCppEngine = LlamaCppEngine(app)
     val embeddingEngine = EmbeddingEngine(app)
+    // External OpenAI-compatible API support (see ModelEngine.REMOTE_API) — remoteOpenAiEngine
+    // is stateless (no native session to own), so unlike llmEngine/llamaCppEngine it needs no
+    // dedicated mutex; concurrent HTTP calls for different remote models are safe as-is.
+    val remoteApiKeyStore = com.vervan.chat.llm.RemoteApiKeyStore(app)
+    val remoteOpenAiEngine = com.vervan.chat.llm.RemoteOpenAiEngine()
     // one global native-engine lock; split per model instance if parallel native
     // sessions become a measured need.
     val llmMutex = Mutex()
@@ -85,6 +89,7 @@ class AppContainer(app: Application) {
             override suspend fun maxNumImages() = settingsRepository.maxNumImages.first()
             override suspend fun preferredBackend() = settingsRepository.preferredBackend.first()
             override suspend fun allowLowMemoryModelLoads() = settingsRepository.allowLowMemoryModelLoads.first()
+            override suspend fun apiModelTtlSeconds() = settingsRepository.apiModelTtlSeconds.first()
             override suspend fun cpuThreads() = settingsRepository.cpuThreads.first()
             override suspend fun nBatch() = settingsRepository.nBatch.first()
             override suspend fun nUbatch() = settingsRepository.nUbatch.first()
@@ -209,6 +214,10 @@ class AppContainer(app: Application) {
     )
 
     val apiServerAuth = com.vervan.chat.server.ApiServerAuth(app)
+
+    // Owned here rather than by LocalApiServer so the "who is connected" view survives the server
+    // being torn down and rebuilt when a setting changes (see ApiServerService's restart path).
+    val apiClientRegistry = com.vervan.chat.server.ApiClientRegistry()
     val workspaceManager = WorkspaceManager(db, documentImportManager, settingsRepository)
     val appLockManager = AppLockManager(app)
     // Reason-keyed set instead of a single boolean so app-wide lock and a per-chat
@@ -231,11 +240,13 @@ class AppContainer(app: Application) {
     fun visionEnabled(model: ModelInfo): Boolean = when (model.engine) {
         ModelEngine.LITERT_LM -> llmEngine.visionEnabled
         ModelEngine.LLAMA_CPP -> llamaCppEngine.visionEnabled
+        ModelEngine.REMOTE_API -> false
     }
 
     fun audioEnabled(model: ModelInfo): Boolean = when (model.engine) {
         ModelEngine.LITERT_LM -> llmEngine.audioEnabled
         ModelEngine.LLAMA_CPP -> llamaCppEngine.audioEnabled
+        ModelEngine.REMOTE_API -> false
     }
 
     /** Single generation entry point for callers (Chat, Voice) that don't want to hand-roll a
@@ -270,7 +281,14 @@ class AppContainer(app: Application) {
         systemPrompt: String? = null,
         // llama.cpp-only hard reasoning-token cap; -1 = unlimited/not applicable. Ignored by the
         // LiteRT-LM branch (its SDK has no native reasoning-budget hook).
-        reasoningBudget: Int = -1
+        reasoningBudget: Int = -1,
+        /** Full conversation as ordered (role, content) turns, for a caller that genuinely has one
+         * — today that's the OpenAI-compatible server, whose clients send a real `messages` array.
+         * Non-null makes the llama.cpp path template each turn separately instead of receiving one
+         * pre-flattened [prompt]; the other two engines ignore it (LiteRT-LM keeps its own
+         * Conversation object, and the remote engine forwards to a server that does its own
+         * templating), so [prompt]/[systemPrompt] must still be filled in as the fallback. */
+        messages: List<Pair<String, String>>? = null
     ): Flow<String> = flow {
         when (model.engine) {
             // llama.cpp already gets an exact native output-token cap (nativeGenerate's maxTokens
@@ -300,7 +318,29 @@ class AppContainer(app: Application) {
                         prompt, imagePath, temperature, topP, topK, seed, maxOutputTokens, minP,
                         repetitionPenalty, chatTemplateOverride = model.chatTemplateOverride,
                         assistantPrefill = assistantPrefill, systemPrompt = systemPrompt,
-                        reasoningBudget = reasoningBudget
+                        reasoningBudget = reasoningBudget, messages = messages
+                    ).stoppingAt(stopSequences)
+                )
+            }
+            // No engine mutex: RemoteOpenAiEngine holds no native session, so nothing here needs
+            // exclusive access the way the two on-device engines do — concurrent remote calls
+            // (e.g. this chat plus a background title-generation call) are safe as separate HTTP
+            // requests. imagePath/audioPath aren't supported yet (see ModelInfo.canSupportVision/
+            // canSupportAudio's REMOTE_API branches, which already keep the UI from offering them
+            // for a remote model) — reject explicitly rather than silently dropping the attachment.
+            ModelEngine.REMOTE_API -> {
+                require(imagePath == null) { "${model.displayName} does not support image input yet" }
+                require(audioPath == null) { "${model.displayName} does not support audio input yet" }
+                val baseUrl = model.remoteBaseUrl?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("${model.displayName} has no API base URL configured")
+                val remoteModelId = model.remoteApiModelId?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("${model.displayName} has no remote model id configured")
+                val apiKey = remoteApiKeyStore.get(model.id).orEmpty()
+                networkAuditLog.record("Remote API generation: ${model.displayName}")
+                emitAll(
+                    remoteOpenAiEngine.generate(
+                        baseUrl, apiKey, remoteModelId, prompt, systemPrompt,
+                        temperature, topP, maxOutputTokens, stopSequences
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -309,10 +349,39 @@ class AppContainer(app: Application) {
 }
 
 class VervanApp : Application() {
+    /** Process-owned scope for cleanup and housekeeping that must outlive a screen/ViewModel. */
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     lateinit var container: AppContainer
         private set
     lateinit var crashLogManager: com.vervan.chat.system.CrashLogManager
         private set
+
+    /**
+     * Brings the local API server back up when the app is opened, if the user asked for that.
+     *
+     * Deliberately hung off the process's *foreground* transition rather than [onCreate]: since
+     * Android 12 a background process may not call `startForegroundService`, and `onCreate` also
+     * runs for background process starts (a widget update, a share target). Foregrounding is the
+     * one moment the start is both wanted and permitted.
+     *
+     * Running on every foreground rather than only the first is intentional — the service is
+     * START_NOT_STICKY and the system can reclaim it, so this doubles as a repair: if the server
+     * is already up [ApiServerService] sees a live instance and does nothing.
+     *
+     * Both flags are required. `apiServerEnabled` alone must never open a socket on its own, or
+     * turning the server on once would silently make it permanent.
+     */
+    private suspend fun maybeAutoStartApiServer() {
+        val settings = container.settingsRepository
+        if (!settings.apiServerAutoStart.first() || !settings.apiServerEnabled.first()) return
+        withContext(Dispatchers.Main.immediate) {
+            // A foreground-service start can still be refused (battery restrictions, an edge case
+            // in the foregrounding race). That is not worth crashing the app over — the user can
+            // start it from Settings, where the toggle still reflects the stored preference.
+            runCatching { com.vervan.chat.server.ApiServerService.start(this@VervanApp) }
+                .onFailure { Log.w(TAG, "auto-start of the local API server was refused", it) }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -330,7 +399,7 @@ class VervanApp : Application() {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
                 // Quick stays available while the app process is running, in foreground or background.
-                CoroutineScope(Dispatchers.IO).launch {
+                applicationScope.launch(Dispatchers.IO) {
                     runCatching {
                         if (container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
@@ -345,7 +414,7 @@ class VervanApp : Application() {
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
-                CoroutineScope(Dispatchers.IO).launch {
+                applicationScope.launch(Dispatchers.IO) {
                     runCatching {
                         if (container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
@@ -359,6 +428,7 @@ class VervanApp : Application() {
                         if (container.settingsRepository.appLockEnabled.first()) {
                             container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
                         }
+                        maybeAutoStartApiServer()
                     }.onFailure { Log.e(TAG, "onAppForegrounded housekeeping failed", it) }
                 }
             }
@@ -375,7 +445,7 @@ class VervanApp : Application() {
         // own. A SQLiteException/disk hiccup here previously ran on an unsupervised coroutine and
         // crashed the whole process even though it's background housekeeping; each step below
         // still can't do that, since it's caught and logged individually.
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch(Dispatchers.IO) {
             // Native crashes, ANRs, and low-memory kills never reach the in-process handler —
             // ApplicationExitInfo on the next launch is the only way to learn about them. Bundled
             // with interrupted-message marking since both are the same "recover from process
@@ -547,6 +617,7 @@ class VervanApp : Application() {
      * severe tier, so without this override the app never learns about pressure building up
      * *before* it's already critical, and the "moderate: stop speculative preloading" tier the
      * spec calls out has nothing to trigger it. */
+    @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         val mapped = when (level) {
@@ -570,7 +641,7 @@ class VervanApp : Application() {
     }
 
     private fun notifyModelUnloadedBySystem(filePath: String) {
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch(Dispatchers.IO) {
             val name = runCatching {
                 container.db.modelDao().observeModels().first().find { it.filePath == filePath }?.displayName
             }.getOrNull() ?: java.io.File(filePath).nameWithoutExtension

@@ -65,7 +65,16 @@ data class ModelLoadInfo(
 
 /** Why an `ensureLoaded` call is happening — descriptive only today (logging), kept as a real
  * parameter so a future UI distinction has a hook without another signature change. */
-enum class LoadTrigger { CHAT_SEND, CHAT_AUTOLOAD, RAG_RETRIEVAL, VOICE_SESSION, MANUAL_MODEL_MANAGER, VALIDATION }
+enum class LoadTrigger {
+    CHAT_SEND, CHAT_AUTOLOAD, RAG_RETRIEVAL, VOICE_SESSION, MANUAL_MODEL_MANAGER, VALIDATION,
+    /** A just-in-time load driven by an inbound local-API request ([com.vervan.chat.server.LocalApiServer]).
+     * The one trigger that is *not* descriptive-only: a role whose most recent load came from here is
+     * TTL-managed and gets auto-unloaded once idle (see [ModelLoadCoordinator]'s TTL reaper), because
+     * nobody is sitting in front of the app to unload it themselves. Any user-driven load on the same
+     * role afterwards (chat, voice, Model Manager) disarms that TTL again — a model the user loaded
+     * deliberately must never disappear under them. */
+    API_REQUEST
+}
 
 /** Model Loading Strategy — abstracts the real `ActivityManager` memory query so tests can
  * supply fixed values, same reasoning as [GenerationDefaults] below. Neither native runtime
@@ -151,6 +160,10 @@ interface GenerationDefaults {
     suspend fun maxNumImages(): Int
     suspend fun preferredBackend(): String
     suspend fun allowLowMemoryModelLoads(): Boolean = false
+    /** Seconds a JIT ([LoadTrigger.API_REQUEST]) model stays resident after its last request
+     * before the coordinator unloads it; `0` disables the reaper entirely. Defaulted here so the
+     * coordinator's existing unit-test fakes keep compiling unchanged. */
+    suspend fun apiModelTtlSeconds(): Int = 300
     // llama.cpp-only load-time fallbacks — irrelevant for a LiteRT-LM model, only read when
     // routing a load through LlamaCppEngine (see ModelLoadCoordinator.doLoadGeneration).
     suspend fun cpuThreads(): Int

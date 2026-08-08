@@ -14,7 +14,10 @@ enum class MessageState { STREAMING, COMPLETE, CANCELLED, INTERRUPTED, FAILED, A
 // chatId is the single busiest lookup column in the whole schema — every message list load, the
 // chat-list screen's own EXISTS-has-messages subquery, and delete-for-chat all filter on it. See
 // Migration(36, 37).
-@Entity(tableName = "messages", indices = [Index("chatId")])
+@Entity(
+    tableName = "messages",
+    indices = [Index("chatId"), Index(value = ["chatId", "createdAt"])]
+)
 data class Message(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val chatId: String,

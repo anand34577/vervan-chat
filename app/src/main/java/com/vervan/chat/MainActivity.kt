@@ -47,13 +47,13 @@ class MainActivity : FragmentActivity() {
         incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
         val app = application as VervanApp
         setContent {
-            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.DARK)
             val fontScale by app.container.settingsRepository.fontScale.collectAsStateWithLifecycle(initialValue = 1.0f)
             val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsStateWithLifecycle(initialValue = false)
             val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsStateWithLifecycle(initialValue = false)
             val highContrast by app.container.settingsRepository.highContrast.collectAsStateWithLifecycle(initialValue = false)
             val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
-            val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.AMBER)
+            val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.GREEN)
             val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
             val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
             val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()

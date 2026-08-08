@@ -816,8 +816,9 @@ internal fun ModelInfo.runtimeSummary(): String {
     val runtime = when (engine) {
         ModelEngine.LITERT_LM -> "LiteRT-LM"
         ModelEngine.LLAMA_CPP -> "llama.cpp"
+        ModelEngine.REMOTE_API -> "Remote API"
     }
-    val hardware = when (preferredBackend) {
+    val hardware = if (engine == ModelEngine.REMOTE_API) "Network" else when (preferredBackend) {
         BackendChoice.AUTO -> if (engine == ModelEngine.LLAMA_CPP) "Auto: Vulkan → CPU" else "Auto: NPU → GPU → CPU"
         BackendChoice.GPU -> if (engine == ModelEngine.LLAMA_CPP) "Vulkan GPU" else "GPU"
         BackendChoice.CPU -> "CPU"

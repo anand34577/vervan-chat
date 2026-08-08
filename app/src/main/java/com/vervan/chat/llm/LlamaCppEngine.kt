@@ -219,7 +219,10 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         // acts when [assistantPrefill] left an open `<think>` block. -1 = no cap (see
         // nativeGenerate). This is the real reasoning-budget control llama.cpp's raw
         // (non-Jinja) template path otherwise can't express.
-        reasoningBudget: Int = -1
+        reasoningBudget: Int = -1,
+        /** Full conversation as ordered (role, content) turns. Non-null replaces [prompt] and
+         * [systemPrompt] with real per-turn chat templating — see [LlamaCppJni.nativeGenerate]. */
+        messages: List<Pair<String, String>>? = null
     ): Flow<String> = callbackFlow flow@{
         // Labeled + this@flow.close() throughout, not bare close() — this class has its own
         // close() (GenerationLoadable conformance), which would otherwise shadow/collide with
@@ -242,7 +245,9 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
                 val error = LlamaCppJni.nativeGenerate(
                     activeHandle, prompt, imagePath, temperature, topP, topK, minP,
                     repeatPenalty, repeatLastN, randomSeed ?: DEFAULT_SEED, maxTokens, chatTemplateOverride,
-                    assistantPrefill, systemPrompt, reasoningBudget, callback
+                    assistantPrefill, systemPrompt, reasoningBudget,
+                    messages?.flatMap { listOf(it.first, it.second) }?.toTypedArray(),
+                    callback
                 )
                 if (error != null) throw IllegalStateException(error)
                 this@flow.close()

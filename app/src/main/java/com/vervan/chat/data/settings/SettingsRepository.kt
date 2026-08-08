@@ -115,7 +115,6 @@ class SettingsRepository(context: Context) {
         val USER_EXPERTISE = stringPreferencesKey("user_expertise")
         val USER_INTERESTS = stringPreferencesKey("user_interests")
         val USER_LANGUAGES = stringSetPreferencesKey("user_languages")
-        val USER_CODING_LANGUAGES = stringSetPreferencesKey("user_coding_languages")
         val USER_UNITS = stringPreferencesKey("user_units")
         val USER_TOPICS_AVOID = stringPreferencesKey("user_topics_avoid")
         val USER_GOALS = stringPreferencesKey("user_goals")
@@ -140,9 +139,13 @@ class SettingsRepository(context: Context) {
         // local OpenAI-compatible API server. The bearer token itself is NOT here —
         // see ApiServerAuth's EncryptedSharedPreferences, same reasoning as the app-lock PIN.
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
-        val LAN_API_SERVER_ENABLED = booleanPreferencesKey("lan_api_server_enabled")
         val API_SERVER_PORT = intPreferencesKey("api_server_port")
         val API_SERVER_REQUIRE_AUTH = booleanPreferencesKey("api_server_require_auth")
+        val API_SERVER_FULL_MODE = booleanPreferencesKey("api_server_full_mode")
+        val API_SERVER_AUTO_START = booleanPreferencesKey("api_server_auto_start")
+        val API_SERVER_APP_TOOLS = booleanPreferencesKey("api_server_app_tools")
+        val API_SERVER_ALLOW_WRITE_TOOLS = booleanPreferencesKey("api_server_allow_write_tools")
+        val API_MODEL_TTL_SECONDS = intPreferencesKey("api_model_ttl_seconds")
         // Tool catalog — globally disabled tool ids (see ToolRegistry). Storing "what's off"
         // instead of "what's on" means a newly added tool is enabled by default without needing
         // a migration or a new key every time one is added.
@@ -164,13 +167,15 @@ class SettingsRepository(context: Context) {
         store.edit { it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] = (it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] ?: emptySet()) + key }
     }
 
+    // Default is dark + green, not system/amber — the app's own "green dark theme" is the
+    // intended out-of-the-box look; a user who never opens Settings should already see it.
     val themeMode: Flow<ThemeMode> = store.data.map { prefs ->
-        prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM
+        prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK
     }
     suspend fun setThemeMode(mode: ThemeMode) { store.edit { it[Keys.THEME_MODE] = mode.name } }
 
     val accentTheme: Flow<AccentTheme> = store.data.map { prefs ->
-        prefs[Keys.ACCENT_THEME]?.let { runCatching { AccentTheme.valueOf(it) }.getOrNull() } ?: AccentTheme.AMBER
+        prefs[Keys.ACCENT_THEME]?.let { runCatching { AccentTheme.valueOf(it) }.getOrNull() } ?: AccentTheme.GREEN
     }
     suspend fun setAccentTheme(theme: AccentTheme) { store.edit { it[Keys.ACCENT_THEME] = theme.name } }
 
@@ -190,9 +195,9 @@ class SettingsRepository(context: Context) {
     val hapticsEnabled: Flow<Boolean> = store.data.map { it[Keys.HAPTICS_ENABLED] ?: true }
     suspend fun setHapticsEnabled(enabled: Boolean) { store.edit { it[Keys.HAPTICS_ENABLED] = enabled } }
 
-    // Per-message generation stats (time/tokens/tok-per-sec) shown when an assistant bubble is
-    // expanded — optional since it's noise for anyone who doesn't care about performance.
-    val showGenerationStats: Flow<Boolean> = store.data.map { it[Keys.SHOW_GENERATION_STATS] ?: false }
+    // Per-message generation stats (time/tokens/tok-per-sec) shown below every assistant reply.
+    // On by default — still a toggle for anyone who'd rather not see it.
+    val showGenerationStats: Flow<Boolean> = store.data.map { it[Keys.SHOW_GENERATION_STATS] ?: true }
     suspend fun setShowGenerationStats(enabled: Boolean) { store.edit { it[Keys.SHOW_GENERATION_STATS] = enabled } }
 
     val deviceAwarePerformance: Flow<Boolean> = store.data.map { it[Keys.DEVICE_AWARE_PERFORMANCE] ?: true }
@@ -377,11 +382,11 @@ class SettingsRepository(context: Context) {
     suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
 
     /** UI text scale multiplier, 0.85x-1.3x — font-scale accessibility setting. */
-    val fontScale: Flow<Float> = store.data.map { it[Keys.FONT_SCALE] ?: 1.0f }
-    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale } }
+    val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.3f) }
+    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.3f) } }
 
-    val contextTokenLimit: Flow<Int> = store.data.map { it[Keys.CONTEXT_TOKEN_LIMIT] ?: 4096 }
-    suspend fun setContextTokenLimit(limit: Int) { store.edit { it[Keys.CONTEXT_TOKEN_LIMIT] = limit } }
+    val contextTokenLimit: Flow<Int> = store.data.map { (it[Keys.CONTEXT_TOKEN_LIMIT] ?: 4096).coerceIn(512, 32_768) }
+    suspend fun setContextTokenLimit(limit: Int) { store.edit { it[Keys.CONTEXT_TOKEN_LIMIT] = limit.coerceIn(512, 32_768) } }
 
     /**
      * Declared, not inferred — the user picks these explicitly in Settings, the
@@ -433,18 +438,18 @@ class SettingsRepository(context: Context) {
     val repetitionPenalty: Flow<Float> = store.data.map { it[Keys.REPETITION_PENALTY] ?: 1.1f }
     suspend fun setRepetitionPenalty(value: Float) { store.edit { it[Keys.REPETITION_PENALTY] = value.coerceIn(1f, 2f) } }
 
-    val maxOutputTokens: Flow<Int> = store.data.map { it[Keys.MAX_OUTPUT_TOKENS] ?: 512 }
-    suspend fun setMaxOutputTokens(value: Int) { store.edit { it[Keys.MAX_OUTPUT_TOKENS] = value } }
+    val maxOutputTokens: Flow<Int> = store.data.map { (it[Keys.MAX_OUTPUT_TOKENS] ?: 512).coerceIn(16, 32_768) }
+    suspend fun setMaxOutputTokens(value: Int) { store.edit { it[Keys.MAX_OUTPUT_TOKENS] = value.coerceIn(16, 32_768) } }
 
     /** 0/null means "auto" (`Runtime.getRuntime().availableProcessors()`), llama.cpp-only. */
-    val cpuThreads: Flow<Int> = store.data.map { it[Keys.CPU_THREADS] ?: 0 }
-    suspend fun setCpuThreads(value: Int) { store.edit { it[Keys.CPU_THREADS] = value } }
+    val cpuThreads: Flow<Int> = store.data.map { (it[Keys.CPU_THREADS] ?: 0).coerceIn(0, 128) }
+    suspend fun setCpuThreads(value: Int) { store.edit { it[Keys.CPU_THREADS] = value.coerceIn(0, 128) } }
 
-    val nBatch: Flow<Int> = store.data.map { it[Keys.N_BATCH] ?: 2048 }
-    suspend fun setNBatch(value: Int) { store.edit { it[Keys.N_BATCH] = value } }
+    val nBatch: Flow<Int> = store.data.map { (it[Keys.N_BATCH] ?: 2048).coerceIn(32, 8_192) }
+    suspend fun setNBatch(value: Int) { store.edit { it[Keys.N_BATCH] = value.coerceIn(32, 8_192) } }
 
-    val nUbatch: Flow<Int> = store.data.map { it[Keys.N_UBATCH] ?: 512 }
-    suspend fun setNUbatch(value: Int) { store.edit { it[Keys.N_UBATCH] = value } }
+    val nUbatch: Flow<Int> = store.data.map { (it[Keys.N_UBATCH] ?: 512).coerceIn(16, 4_096) }
+    suspend fun setNUbatch(value: Int) { store.edit { it[Keys.N_UBATCH] = value.coerceIn(16, 4_096) } }
 
     val useMlock: Flow<Boolean> = store.data.map { it[Keys.USE_MLOCK] ?: false }
     suspend fun setUseMlock(value: Boolean) { store.edit { it[Keys.USE_MLOCK] = value } }
@@ -457,8 +462,8 @@ class SettingsRepository(context: Context) {
     val kvCacheType: Flow<String> = store.data.map { it[Keys.KV_CACHE_TYPE] ?: "f16" }
     suspend fun setKvCacheType(value: String) { store.edit { it[Keys.KV_CACHE_TYPE] = value } }
 
-    val vulkanDeviceIndex: Flow<Int> = store.data.map { it[Keys.VULKAN_DEVICE_INDEX] ?: 0 }
-    suspend fun setVulkanDeviceIndex(value: Int) { store.edit { it[Keys.VULKAN_DEVICE_INDEX] = value } }
+    val vulkanDeviceIndex: Flow<Int> = store.data.map { (it[Keys.VULKAN_DEVICE_INDEX] ?: 0).coerceIn(0, 15) }
+    suspend fun setVulkanDeviceIndex(value: Int) { store.edit { it[Keys.VULKAN_DEVICE_INDEX] = value.coerceIn(0, 15) } }
 
     /** Default model profile for new chats. One of ModelProfileType.id. */
     val defaultProfile: Flow<String> = store.data.map { it[Keys.DEFAULT_PROFILE] ?: "BALANCED" }
@@ -486,9 +491,6 @@ class SettingsRepository(context: Context) {
 
     val userLanguages: Flow<Set<String>> = store.data.map { it[Keys.USER_LANGUAGES] ?: emptySet() }
     suspend fun setUserLanguages(v: Set<String>) { store.edit { it[Keys.USER_LANGUAGES] = v } }
-
-    val userCodingLanguages: Flow<Set<String>> = store.data.map { it[Keys.USER_CODING_LANGUAGES] ?: emptySet() }
-    suspend fun setUserCodingLanguages(v: Set<String>) { store.edit { it[Keys.USER_CODING_LANGUAGES] = v } }
 
     val userUnits: Flow<String> = store.data.map { it[Keys.USER_UNITS] ?: "metric" }
     suspend fun setUserUnits(v: String) { store.edit { it[Keys.USER_UNITS] = v } }
@@ -521,12 +523,45 @@ class SettingsRepository(context: Context) {
     // ---- Local API server ----
     val apiServerEnabled: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ENABLED] ?: false }
     suspend fun setApiServerEnabled(v: Boolean) { store.edit { it[Keys.API_SERVER_ENABLED] = v } }
-    val lanApiServerEnabled: Flow<Boolean> = store.data.map { it[Keys.LAN_API_SERVER_ENABLED] ?: false }
-    suspend fun setLanApiServerEnabled(v: Boolean) { store.edit { it[Keys.LAN_API_SERVER_ENABLED] = v } }
+    // Whether the server comes back by itself when the app is opened. Without this, "Local API
+    // server: on" survived a restart as a *setting* but the service did not — the toggle read as
+    // enabled while nothing was listening, which is a confusing state to leave someone in. Off by
+    // default so an existing install's behaviour does not change until the user asks for it: a
+    // server that starts itself is a listening socket the user did not open this time.
+    val apiServerAutoStart: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_AUTO_START] ?: false }
+    suspend fun setApiServerAutoStart(v: Boolean) { store.edit { it[Keys.API_SERVER_AUTO_START] = v } }
     val apiServerPort: Flow<Int> = store.data.map { it[Keys.API_SERVER_PORT] ?: 8080 }
     suspend fun setApiServerPort(v: Int) { store.edit { it[Keys.API_SERVER_PORT] = v.coerceIn(1024, 65535) } }
-    val apiServerRequireAuth: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_REQUIRE_AUTH] ?: true }
+    // Off by default — the API key is opt-in, something the user turns on themselves if they
+    // want it (e.g. before exposing the server beyond this one device), not forced.
+    val apiServerRequireAuth: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_REQUIRE_AUTH] ?: false }
     suspend fun setApiServerRequireAuth(v: Boolean) { store.edit { it[Keys.API_SERVER_REQUIRE_AUTH] = v } }
+    // Off by default — the web UI starts as a bare OpenAI-compatible surface (matches what the
+    // server has always been); the full browser app (chat/RAG/documents/vision/audio) is
+    // something the user opts into, same reasoning as apiServerRequireAuth defaulting off. See
+    // LocalApiServer's fullMode branch.
+    val apiServerFullMode: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_FULL_MODE] ?: false }
+    suspend fun setApiServerFullMode(v: Boolean) { store.edit { it[Keys.API_SERVER_FULL_MODE] = v } }
+    // How long a model auto-loaded to serve an API request stays resident once requests stop —
+    // the same "JIT model TTL" LM Studio exposes, and the reason an idle phone doesn't sit there
+    // holding several GB of weights. Only ever applies to loads the API server itself triggered
+    // (see LoadTrigger.API_REQUEST); a model the user loaded in the app is never reaped. 0 = keep
+    // loaded indefinitely. Upper bound is 24h — past that "never unload" is the honest setting.
+    val apiModelTtlSeconds: Flow<Int> = store.data.map { (it[Keys.API_MODEL_TTL_SECONDS] ?: 300).coerceIn(0, 86_400) }
+    suspend fun setApiModelTtlSeconds(v: Int) { store.edit { it[Keys.API_MODEL_TTL_SECONDS] = v.coerceIn(0, 86_400) } }
+    // Whether an API caller can reach this device's own tools (notes, expenses, device state, the
+    // rest of ToolRegistry) — separate from the client declaring its own `tools`, which never
+    // needs permission because the client executes those itself. Off by default: in the app a
+    // tool call surfaces as a card the user can see and, for anything risky, approve; an API
+    // request has no such moment, so running the phone's tools for a remote caller has to be a
+    // deliberate choice.
+    val apiServerAppTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_APP_TOOLS] ?: false }
+    suspend fun setApiServerAppTools(v: Boolean) { store.edit { it[Keys.API_SERVER_APP_TOOLS] = v } }
+    // Second gate, on top of apiServerAppTools: without it only ToolRisk.READ_ONLY tools run.
+    // Writes (create a note, log an expense) and external actions (open another app) are exactly
+    // what the native tool card asks the user to confirm per call, so they stay opt-in here too.
+    val apiServerAllowWriteTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] ?: false }
+    suspend fun setApiServerAllowWriteTools(v: Boolean) { store.edit { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = v } }
 
     // ---- Retention policy ----
     val autoDeleteAfterDays: Flow<Int> = store.data.map { it[Keys.AUTO_DELETE_AFTER_DAYS] ?: 0 }
@@ -541,10 +576,24 @@ class SettingsRepository(context: Context) {
     suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
 
     // ---- Tool catalog (Settings → Tools) ----
-    val disabledToolIds: Flow<Set<String>> = store.data.map { it[Keys.DISABLED_TOOL_IDS] ?: emptySet() }
+    /**
+     * Off until the user explicitly opts in (Settings → Tools). read_clipboard is READ_ONLY, so
+     * runGenerationLoop executes it with no confirmation prompt, and it has no Android permission
+     * to gate it the way current_location has ACCESS_COARSE_LOCATION — the model could pull
+     * whatever is on the clipboard (passwords, 2FA codes, anything just copied) straight into the
+     * conversation, which for a remote model means off-device. Now that Chat.toolsEnabled defaults
+     * to true, "nobody turns tools on anyway" is no longer the thing keeping that shut.
+     *
+     * MUST be the fallback in both the getter and [setToolEnabled] below: if only the getter
+     * defaulted to it, the first toggle of any unrelated tool would persist a set built from
+     * emptySet() and silently re-enable these.
+     */
+    private val defaultDisabledToolIds = setOf("read_clipboard")
+
+    val disabledToolIds: Flow<Set<String>> = store.data.map { it[Keys.DISABLED_TOOL_IDS] ?: defaultDisabledToolIds }
     suspend fun setToolEnabled(toolId: String, enabled: Boolean) {
         store.edit { prefs ->
-            val current = prefs[Keys.DISABLED_TOOL_IDS] ?: emptySet()
+            val current = prefs[Keys.DISABLED_TOOL_IDS] ?: defaultDisabledToolIds
             prefs[Keys.DISABLED_TOOL_IDS] = if (enabled) current - toolId else current + toolId
         }
     }
