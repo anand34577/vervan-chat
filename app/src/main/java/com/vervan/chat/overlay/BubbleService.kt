@@ -181,7 +181,10 @@ class BubbleService : Service() {
             }
         }
 
-        runCatching { wm.addView(bubble, params) }.onFailure { stopSelf(); return false }
+        runCatching { wm.addView(bubble, params) }.onFailure {
+            android.util.Log.w(TAG, "addBubble: wm.addView failed", it)
+            stopSelf(); return false
+        }
         bubbleView = bubble
         return true
     }
@@ -235,7 +238,10 @@ class BubbleService : Service() {
             x = bubbleParams.x
             y = bubbleParams.y + (64 * density).toInt()
         }
-        runCatching { wm.addView(menu, menuParams) }.onFailure { owner.onDestroy(); return }
+        runCatching { wm.addView(menu, menuParams) }.onFailure {
+            android.util.Log.w(TAG, "toggleMenu: wm.addView failed", it)
+            owner.onDestroy(); return
+        }
         menuView = menu
         menuOwner = owner
         bubbleView?.contentDescription = "Close Vervan Quick actions"
@@ -276,6 +282,7 @@ class BubbleService : Service() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }.onFailure {
+            android.util.Log.w(TAG, "launchCapture: startActivity(ScreenCaptureActivity) failed", it)
             captureUiActive = false
             continueConversationAfterCapture = false
             bubbleView?.visibility = View.VISIBLE
@@ -443,7 +450,10 @@ class BubbleService : Service() {
                 @Suppress("DEPRECATION")
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             }
-            runCatching { wm.addView(panel, params) }.onFailure { owner.onDestroy(); return }
+            runCatching { wm.addView(panel, params) }.onFailure {
+                android.util.Log.w(TAG, "showResult: wm.addView failed", it)
+                owner.onDestroy(); return
+            }
             resultView = panel
             resultOwner = owner
         }

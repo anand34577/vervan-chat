@@ -9,6 +9,7 @@ import android.media.AudioFormat
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -108,6 +109,7 @@ object AndroidSystemSttRecognizer {
                         override fun onPartialResults(partialResults: Bundle?) = Unit
                         override fun onEvent(eventType: Int, params: Bundle?) = Unit
                         override fun onError(error: Int) {
+                            Log.w(TAG, "Android speech recognition error: $error (${errorMessage(error)})")
                             finish(Result.failure(IllegalStateException(errorMessage(error))))
                         }
 
@@ -186,4 +188,6 @@ object AndroidSystemSttRecognizer {
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech was heard"
         else -> "Device speech recognition failed"
     }
+
+    private const val TAG = "AndroidSystemStt"
 }

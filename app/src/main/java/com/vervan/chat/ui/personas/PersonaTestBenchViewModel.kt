@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.personas
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -55,11 +56,16 @@ class PersonaTestBenchViewModel(private val app: VervanApp, private val personaI
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { sb.append(it) }
                 _response.value = sb.toString()
             } catch (t: Throwable) {
+                Log.e(TAG, "run() failed for persona=$personaId", t)
                 _error.value = t.toUserMessage()
             } finally {
                 _running.value = false
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "PersonaTestBenchViewModel"
     }
 
     fun reset() {

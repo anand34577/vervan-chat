@@ -537,7 +537,7 @@ private fun LegacyHandsFreeListening(
                     )
                 }
             }
-            OutlinedIconButton(onClick = onCancelUtterance, modifier = Modifier.padding(start = Space.sm).size(42.dp).clip(CircleShape)) {
+            OutlinedIconButton(onClick = onCancelUtterance, modifier = Modifier.padding(start = Space.sm).size(48.dp).clip(CircleShape)) {
                 Icon(Icons.Filled.Close, contentDescription = "Discard recording", modifier = Modifier.size(18.dp))
             }
             FilledIconButton(onClick = onFinishUtterance, modifier = Modifier.padding(start = Space.xs).size(48.dp).clip(CircleShape)) {
@@ -729,7 +729,7 @@ private fun HandsFreeListeningLayout(
             )
             OutlinedIconButton(
                 onClick = onCancelUtterance,
-                modifier = Modifier.size(44.dp).clip(CircleShape)
+                modifier = Modifier.size(48.dp).clip(CircleShape)
             ) {
                 Icon(Icons.Filled.Close, contentDescription = "Discard recording", modifier = Modifier.size(18.dp))
             }
@@ -1051,7 +1051,10 @@ private fun VoiceControlDock(
     onMore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(modifier.fillMaxWidth(), shape = VervanExtraShapes.pill, color = MaterialTheme.colorScheme.surfaceContainer) {
+    // Was VervanExtraShapes.pill (100dp, fully stadium) — nested inside the panel's own
+    // 20dp-radius `hero` Card, a full pill read as visually mismatched against the card
+    // it sits in rather than as one coherent surface.
+    Surface(modifier.fillMaxWidth(), shape = VervanExtraShapes.hero, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
             verticalAlignment = Alignment.Top
@@ -1090,11 +1093,11 @@ private fun VoicePanelAction(
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         if (selected) {
-            FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(42.dp).clip(CircleShape)) {
+            FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape)) {
                 Icon(icon, contentDescription = label, modifier = Modifier.size(19.dp))
             }
         } else {
-            IconButton(onClick = onClick, modifier = Modifier.size(42.dp).clip(CircleShape)) {
+            IconButton(onClick = onClick, modifier = Modifier.size(48.dp).clip(CircleShape)) {
                 Icon(icon, contentDescription = label, modifier = Modifier.size(19.dp))
             }
         }

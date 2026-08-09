@@ -63,6 +63,7 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -136,6 +137,20 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                 )
             }
             item { VervanSectionHeader("Active workspaces", count = workspaces.size, actionLabel = "New", onAction = { showCreate = true }) }
+            if (workspaces.isEmpty()) {
+                // Defensive — the Default Workspace always exists in practice, but every other
+                // list screen in the app falls back to EmptyState instead of rendering nothing,
+                // so this stays consistent if that ever changes (e.g. mid-archive/delete race).
+                item {
+                    EmptyState(
+                        icon = Icons.Filled.Dashboard,
+                        title = "No workspaces yet",
+                        body = "Create a workspace to separate personal, work, and research content.",
+                        actionLabel = "New workspace",
+                        onAction = { showCreate = true }
+                    )
+                }
+            }
             items(workspaces, key = { it.id }) { workspace ->
                 WorkspaceCard(
                     workspace = workspace,

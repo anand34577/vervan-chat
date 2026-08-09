@@ -17,6 +17,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -60,6 +63,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
 
     var original by remember { mutableStateOf("") }
     var targetLanguage by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         topBar = {
@@ -67,7 +71,8 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                 title = { Text("Writing workspace") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(contentPadding = padding, modifier = Modifier.imePadding(), maxContentWidth = 840.dp) {
             BoundedTextField(
@@ -109,11 +114,20 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                     original = original,
                     transformed = revision,
                     onReplace = { original = revision },
-                    onCopy = { clipboard.setText(revision, scope) }
+                    onCopy = {
+                        clipboard.setText(revision, scope)
+                        scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
+                    }
                 )
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                    TextButton(onClick = { vm.saveAsNote(original.take(60)) }) { Text("Add to note") }
-                    TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
+                    TextButton(onClick = {
+                        vm.saveAsNote(original.take(60))
+                        scope.launch { snackbarHostState.showSnackbar("Added to notes") }
+                    }) { Text("Add to note") }
+                    TextButton(onClick = {
+                        vm.saveToLibrary()
+                        scope.launch { snackbarHostState.showSnackbar("Saved to library") }
+                    }) { Text("Save to library") }
                 }
             }
         }

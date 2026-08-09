@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.study
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -90,6 +91,7 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 _generationStage.value = "Creating $cardCount focused cards"
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { raw += it }
             } catch (t: Throwable) {
+                Log.e(TAG, "generateSet($setName) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
                 _generating.value = false
                 return@launch
@@ -139,5 +141,9 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 db.flashcardSetDao().deleteByName(setName)
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "StudyWorkspaceViewModel"
     }
 }

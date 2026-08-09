@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,6 +42,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.theme.VervanMono
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +54,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
     val reindexing by vm.reindexing.collectAsState()
     val error by vm.error.collectAsState()
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -57,21 +62,24 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 title = { Text("Document preview", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
-                    IconButton(
-                        enabled = document?.filePath?.let { java.io.File(it).exists() } == true,
-                        onClick = {
-                            val doc = document ?: return@IconButton
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                java.io.File(doc.filePath)
-                            )
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                                .setDataAndType(uri, doc.mimeType)
-                                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Open with…")) }
-                        }
-                    ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open with another app") }
+                    // "Open externally" lives on the document card below (tap the whole card) —
+                    // this used to also have its own copy of the same action in the top bar,
+                    // two buttons doing the identical thing on one small screen.
+                    if (chunks.isNotEmpty()) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val file = vm.exportExtractedText()
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, document?.displayName ?: "Extracted text")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(send, "Export extracted text"))
+                            }
+                        }) { Icon(Icons.Filled.Share, contentDescription = "Export extracted text") }
+                    }
                     if (reindexing) {
                         androidx.compose.foundation.layout.Box(Modifier.size(48.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -86,8 +94,11 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
+                val fileExists = java.io.File(doc.filePath).exists()
                 Card(
-                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+                    onClick = { if (fileExists) com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)
+                        .semantics { contentDescription = "${doc.displayName}. Open original document." },
                     colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -116,10 +127,11 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                 Text("Private on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
-                        IconButton(
-                            enabled = java.io.File(doc.filePath).exists(),
-                            onClick = { com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) }
-                        ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original document") }
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = if (fileExists) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        )
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {

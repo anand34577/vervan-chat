@@ -128,6 +128,7 @@ class RemoteOpenAiEngine {
         // implementation that 400s on an unrecognized field never sees it.
         topK: Int? = null
     ): Flow<String> = flow {
+        Log.i(TAG, "generate(): starting request to model=$remoteModelId")
         val url = URL(endpointUrl(baseUrl))
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -175,6 +176,12 @@ class RemoteOpenAiEngine {
                 }
             }
             merger.finish().forEach { emit(it) }
+            Log.i(TAG, "generate(): request to model=$remoteModelId completed")
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            Log.e(TAG, "generate(): request to model=$remoteModelId failed", t)
+            throw t
         } finally {
             // Unblocks any read still parked in `r.readLine()` on cancellation — mirrors
             // HttpRangeDownloader's own connection.disconnect()-in-finally pattern.

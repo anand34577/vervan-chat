@@ -386,7 +386,14 @@ fun ModelManagerScreen(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.sm))
                 }
 
-                if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
+                if (!modelsLoaded) {
+                    // Cold-start gap between compose-in and Room's first emission — the previous
+                    // behavior showed "no models installed" here for a frame even with models
+                    // present, same class of bug ChatListScreen's isLoading gate already fixed.
+                    Box(Modifier.fillMaxWidth().padding(top = Space.xl), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
                     EmptyModelLibrary(
                         onDiscover = { showingDiscover = true },
                         onImport = { showImportOptions = true }

@@ -339,6 +339,7 @@ class ModelDownloadRepository(
             handleStop(pkgId)
             throw c
         } catch (e: ModelDownloadException) {
+            Log.w(TAG, "executePackage($pkgId) failed: ${e.code}", e)
             failPackage(pkgId, e.code, e.message ?: "Download failed")
         } catch (t: Throwable) {
             Log.e(TAG, "executePackage($pkgId) failed", t)
@@ -379,19 +380,41 @@ class ModelDownloadRepository(
 
     private suspend fun verifyAndImport(pkgId: String, catalog: CatalogModel) {
         val files = fileDao.getForPackage(pkgId)
+        // A validation failure here (checksum mismatch, corrupt/truncated model) can leave the
+        // on-disk file deleted or unusable while its DownloadFile row still says COMPLETED —
+        // downloadOneFile's `if (status == COMPLETED) skip` would then never re-fetch it, and
+        // resumeDownload only resets rows already marked FAILED, so the package would fail
+        // verification forever with no way to recover short of deleting it. Mark the offending
+        // file FAILED (bytes reset to what's actually left on disk) before rethrowing so the
+        // existing resume path re-downloads it like any other failed file.
+        suspend fun failFile(fileId: String, e: ModelDownloadException): Nothing {
+            fileDao.get(fileId)?.let { f ->
+                val remaining = File(f.tempPath).takeIf { it.isFile }?.length() ?: 0L
+                fileDao.upsert(f.copy(status = FileDownloadStatus.FAILED, downloadedBytes = remaining, errorMessage = e.message))
+            }
+            throw e
+        }
         for (spec in catalog.files.filter { it.required }) {
             val f = files.find { it.fileId == spec.fileId }
                 ?: throw ModelDownloadException(ModelErrorCode.TOKENIZER_MISSING.takeIf { spec.role == ModelFileRole.TOKENIZER } ?: ModelErrorCode.INVALID_MODEL_FILE, "Missing required file ${spec.fileName}")
-            validator.validateFile(File(f.tempPath), spec)
+            try {
+                validator.validateFile(File(f.tempPath), spec)
+            } catch (e: ModelDownloadException) {
+                failFile(f.id, e)
+            }
         }
         val modelFile = files.first { it.role == ModelFileRole.MODEL }
-        when (catalog.format) {
-            ModelFormat.LITERTLM -> validator.validateLitertlm(File(modelFile.tempPath))
-            ModelFormat.TFLITE -> {
-                validator.validateTflite(File(modelFile.tempPath))
-                files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
+        try {
+            when (catalog.format) {
+                ModelFormat.LITERTLM -> validator.validateLitertlm(File(modelFile.tempPath))
+                ModelFormat.TFLITE -> {
+                    validator.validateTflite(File(modelFile.tempPath))
+                    files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
+                }
+                ModelFormat.ONNX_TTS, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
             }
-            ModelFormat.ONNX_TTS, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
+        } catch (e: ModelDownloadException) {
+            failFile(modelFile.id, e)
         }
 
         setStatus(pkgId, ModelStatus.IMPORTING)

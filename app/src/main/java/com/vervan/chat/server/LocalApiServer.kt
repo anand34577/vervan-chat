@@ -1712,6 +1712,7 @@ class LocalApiServer(
                 return@runBlocking errorResponse(Response.Status.BAD_REQUEST, "Unknown knowledge_base_id")
             }
             val safeName = name.replace(Regex("[/\\\\]"), "_").ifBlank { "document" }
+                .let { if (it == ".." || it == ".") "document" else it }
             val uploadDir = File(app.cacheDir, "server-uploads/${UUID.randomUUID()}").apply { mkdirs() }
             val tempFile = File(uploadDir, safeName)
             try {

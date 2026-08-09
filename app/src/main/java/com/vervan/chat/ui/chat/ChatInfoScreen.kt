@@ -400,7 +400,12 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         icon = Icons.Filled.Link,
                         title = link,
                         subtitle = null,
-                        onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) } }
+                        onClick = {
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
+                                .onFailure {
+                                    android.widget.Toast.makeText(context, "No app can open this link.", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                        }
                     )
                 }
             }
@@ -683,13 +688,6 @@ private fun EmptyLine(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.sm)
     )
-}
-
-private fun openFile(context: android.content.Context, file: java.io.File, mimeType: String) {
-    if (!file.exists()) return
-    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching { context.startActivity(Intent.createChooser(intent, "Open with…")) }
 }
 
 private val URL = Regex("""https?://[^\s<>\"]+""", RegexOption.IGNORE_CASE)

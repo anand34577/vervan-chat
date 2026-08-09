@@ -15,6 +15,11 @@ import kotlinx.coroutines.launch
 class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
+    // Guards accept() against a fast double-tap inserting the same suggestion's Memory twice —
+    // the DB write it's racing against has no unique constraint to catch that itself. Checked and
+    // mutated only from the Main-confined viewModelScope, so a plain Set is enough.
+    private val acceptingIds = mutableSetOf<String>()
+
     val pending: StateFlow<List<MemorySuggestion>> = db.memorySuggestionDao().observePending()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -31,27 +36,38 @@ class MemorySuggestionsViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun accept(suggestion: MemorySuggestion, overwriteConflict: Boolean) {
+        if (!acceptingIds.add(suggestion.id)) return
         viewModelScope.launch {
-            // If a same-key memory exists in the same scope and the user chose to overwrite,
-            // replace it; otherwise add (canonical-key dedup ).
-            val conflict = conflictFor(suggestion)
-            if (conflict != null && overwriteConflict) {
-                db.memoryDao().delete(conflict)
-            }
-            app.container.memoryRepository.upsert(
-                Memory(
-                    text = suggestion.text,
-                    key = suggestion.key,
-                    scope = suggestion.scope,
-                    scopeRefId = suggestion.scopeRefId
+            try {
+                // If a same-key memory exists in the same scope and the user chose to overwrite,
+                // replace it; otherwise add (canonical-key dedup ).
+                val conflict = conflictFor(suggestion)
+                if (conflict != null && overwriteConflict) {
+                    db.memoryDao().delete(conflict)
+                }
+                app.container.memoryRepository.upsert(
+                    Memory(
+                        text = suggestion.text,
+                        key = suggestion.key,
+                        scope = suggestion.scope,
+                        scopeRefId = suggestion.scopeRefId
+                    )
                 )
-            )
-            db.memorySuggestionDao().update(suggestion.copy(status = MemorySuggestionStatus.ACCEPTED))
+                db.memorySuggestionDao().update(suggestion.copy(status = MemorySuggestionStatus.ACCEPTED))
+            } finally {
+                acceptingIds.remove(suggestion.id)
+            }
         }
     }
 
     fun reject(suggestion: MemorySuggestion) {
         viewModelScope.launch { db.memorySuggestionDao().update(suggestion.copy(status = MemorySuggestionStatus.REJECTED)) }
+    }
+
+    /** Undo counterpart to [reject]'s snackbar — the suggestion is only marked REJECTED, never
+     * deleted, so putting it back to PENDING is enough to make it reappear. */
+    fun unreject(suggestion: MemorySuggestion) {
+        viewModelScope.launch { db.memorySuggestionDao().update(suggestion.copy(status = MemorySuggestionStatus.PENDING)) }
     }
 
     /** Accepts [suggestion] with user-edited text/key instead of the detector's raw capture. */

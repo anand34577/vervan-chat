@@ -651,6 +651,7 @@ fun VervanNavGraph(
                     com.vervan.chat.ui.chats.ChatsTwoPaneScreen(
                         onOpenBranchTree = { chatId -> navController.navigate("chat/$chatId/tree") },
                         onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
+                        onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
                         onOpenChatInfo = { chatId -> navController.navigate("chat/$chatId/info") },
                         onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                         onOpenModels = { navController.navigate("models") }
@@ -677,6 +678,7 @@ fun VervanNavGraph(
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                     onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
+                    onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },
@@ -701,6 +703,7 @@ fun VervanNavGraph(
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
                     onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
+                    onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
                     onOpenFolders = { navController.navigate("folders") },
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },

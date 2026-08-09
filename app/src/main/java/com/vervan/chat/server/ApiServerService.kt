@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.vervan.chat.MainActivity
@@ -36,7 +37,8 @@ class ApiServerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Android requires foreground promotion promptly after startForegroundService(). Never
         // block the service main thread on DataStore, Keystore, or socket setup first.
-        if (runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }.isFailure) {
+        runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }.onFailure {
+            Log.e(TAG, "startForeground failed, stopping ApiServerService", it)
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
@@ -83,6 +85,7 @@ class ApiServerService : Service() {
                     true
                 }.getOrElse { failure ->
                     if (failure is CancellationException) throw failure
+                    Log.e(TAG, "API server failed to start", failure)
                     false
                 }
 
@@ -122,6 +125,7 @@ class ApiServerService : Service() {
     }
 
     companion object {
+        private const val TAG = "ApiServerService"
         private const val CHANNEL_ID = "vervan_api_server"
         private const val NOTIFICATION_ID = 44
         private const val ACTION_RESTART = "com.vervan.chat.server.RESTART"
@@ -129,16 +133,18 @@ class ApiServerService : Service() {
         fun start(context: Context) {
             runCatching {
                 ContextCompat.startForegroundService(context, Intent(context, ApiServerService::class.java))
-            }
+            }.onFailure { Log.e(TAG, "Failed to start ApiServerService", it) }
         }
 
         fun stop(context: Context) {
             runCatching { context.stopService(Intent(context, ApiServerService::class.java)) }
+                .onFailure { Log.e(TAG, "Failed to stop ApiServerService", it) }
         }
 
         fun restart(context: Context) {
             val intent = Intent(context, ApiServerService::class.java).setAction(ACTION_RESTART)
             runCatching { ContextCompat.startForegroundService(context, intent) }
+                .onFailure { Log.e(TAG, "Failed to restart ApiServerService", it) }
         }
     }
 }

@@ -189,6 +189,12 @@ private fun matchStrength(score: Double): String = when {
 internal fun SourceCards(
     sourcesJson: String,
     onOpenPassage: (String) -> Unit = {},
+    // A citation whose chunk carries a pageNumber came from a PDF with a real text layer (see
+    // Chunk.pageNumber's doc comment) — for those, jump straight into the PDF page viewer
+    // instead of forcing a stop at Source Passage first just to tap its own "view PDF page"
+    // button. Source Passage (onOpenPassage) stays available for the neighbors/context view,
+    // and remains the only option for a non-PDF source, which has no page to jump to.
+    onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> },
     // Small-model recovery (P1): shown only in the "grounding was attempted, found nothing"
     // empty state below — a plain missing-KB-selection case has nothing to recover from here.
     onRetryWithQuality: () -> Unit = {},
@@ -297,6 +303,13 @@ internal fun SourceCards(
                         }) { Text("Copy citation", style = MaterialTheme.typography.labelSmall) }
                         TextButton(onClick = { hiddenIndices.add(index); selected = null }) {
                             Text("Mark irrelevant", style = MaterialTheme.typography.labelSmall)
+                        }
+                        val page = source.optInt("pageNumber", -1)
+                        val documentId = source.optString("documentId").takeIf { it.isNotBlank() }
+                        if (page > 0 && documentId != null) {
+                            TextButton(onClick = { selected = null; onOpenPdfPage(documentId, page) }) {
+                                Text("Open PDF page $page", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }

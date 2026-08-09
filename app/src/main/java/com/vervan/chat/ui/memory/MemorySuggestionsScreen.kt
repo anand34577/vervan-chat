@@ -24,6 +24,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -32,10 +35,12 @@ import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -56,6 +61,8 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
     var conflictDialog by remember { mutableStateOf<Pair<MemorySuggestion, com.vervan.chat.data.db.entities.Memory>?>(null) }
     var editDialog by remember { mutableStateOf<MemorySuggestion?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -63,7 +70,8 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                 title = { Text("Memory suggestions") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         if (pending.isEmpty()) {
@@ -94,7 +102,14 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                                     if (conflict != null) conflictDialog = suggestion to conflict
                                     else vm.accept(suggestion, overwriteConflict = false)
                                 }) { Icon(Icons.Filled.Check, contentDescription = "Accept", tint = MaterialTheme.colorScheme.primary) }
-                                IconButton(onClick = { vm.reject(suggestion) }) { Icon(Icons.Filled.Close, contentDescription = "Reject") }
+                                IconButton(onClick = {
+                                    vm.reject(suggestion)
+                                    scope.launch {
+                                        if (snackbarHostState.showSnackbar("Suggestion dismissed", "Undo") == SnackbarResult.ActionPerformed) {
+                                            vm.unreject(suggestion)
+                                        }
+                                    }
+                                }) { Icon(Icons.Filled.Close, contentDescription = "Reject") }
                                 IconButton(onClick = { editDialog = suggestion }) { Icon(Icons.Filled.Edit, contentDescription = "Edit and accept") }
                                 IconButton(onClick = { menuFor = suggestion.id }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
                                 DropdownMenu(expanded = menuFor == suggestion.id, onDismissRequest = { menuFor = null }) {

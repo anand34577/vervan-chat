@@ -208,6 +208,7 @@ import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.SavedOutput
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -259,6 +260,7 @@ fun ChatScreen(
     onOpenDocument: (String) -> Unit = {},
     onOpenBranchTree: () -> Unit = {},
     onOpenPassage: (String) -> Unit = {},
+    onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> },
     onOpenFolders: () -> Unit = {},
     onOpenModels: () -> Unit = {},
     onOpenVoiceSettings: () -> Unit = {},
@@ -511,6 +513,7 @@ fun ChatScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showSavedResponses by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var isRunningOcr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -940,7 +943,15 @@ fun ChatScreen(
         )
     }
     val autoReadQueue = remember { com.vervan.chat.voice.TtsPlaybackQueue(app, ttsEngineSelector, scope) }
-    DisposableEffect(Unit) { onDispose { autoReadQueue.release() } }
+    DisposableEffect(Unit) {
+        onDispose {
+            // release() is suspend (it joins the playback coroutine before releasing the native
+            // AudioTrack — see its doc comment) and onDispose isn't a suspend context; `scope`
+            // (rememberCoroutineScope, tied to this same composable) would itself be cancelling
+            // right now, so use the app-lifetime scope instead to let this actually finish.
+            app.applicationScope.launch(Dispatchers.Default) { autoReadQueue.release() }
+        }
+    }
     fun speakAloud(text: String) {
         autoReadQueue.startTurn()
         val chunker = com.vervan.chat.voice.SentenceChunker { sentence ->
@@ -1094,25 +1105,39 @@ fun ChatScreen(
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1
                         )
-                        Text(
-                            when {
-                                isRetrieving -> "Searching knowledge base…"
-                                isRecallingMemory -> "Recalling memories…"
-                                chat?.isTemporary == true -> "Incognito · deletes when you leave"
-                                // Saying "on device" for an engine that runs off it would claim the
-                                // opposite of what's happening — this is a privacy statement, not
-                                // decoration.
-                                modelLoadState is ChatViewModel.ModelLoadState.Ready -> {
-                                    val ready = modelLoadState as ChatViewModel.ModelLoadState.Ready
-                                    if (modelRunsOnDevice) "Ready · ${ready.backend} · on device" else "Ready · via API"
-                                }
-                                modelRunsOnDevice -> "Private · on device"
-                                else -> "Private · via API"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isGenerating || isRetrieving || isRecallingMemory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // A subtitle-colored line of text alone was too easy to miss as
+                            // "something is happening" — a knowledge-base search can take a
+                            // moment, and without a spinner the only signal was small text that
+                            // looked identical in weight to the normal "Private · on device" idle
+                            // subtitle it replaces.
+                            if (isRetrieving || isRecallingMemory) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp).padding(end = Space.xs),
+                                    strokeWidth = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Text(
+                                when {
+                                    isRetrieving -> "Searching knowledge base…"
+                                    isRecallingMemory -> "Recalling memories…"
+                                    chat?.isTemporary == true -> "Incognito · deletes when you leave"
+                                    // Saying "on device" for an engine that runs off it would claim the
+                                    // opposite of what's happening — this is a privacy statement, not
+                                    // decoration.
+                                    modelLoadState is ChatViewModel.ModelLoadState.Ready -> {
+                                        val ready = modelLoadState as ChatViewModel.ModelLoadState.Ready
+                                        if (modelRunsOnDevice) "Ready · ${ready.backend} · on device" else "Ready · via API"
+                                    }
+                                    modelRunsOnDevice -> "Private · on device"
+                                    else -> "Private · via API"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isGenerating || isRetrieving || isRecallingMemory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -1238,7 +1263,7 @@ fun ChatScreen(
                                 }
                             },
                             onResetSettings = { showMoreSheet = false; showResetConfirm = true },
-                            onDelete = { showMoreSheet = false; vm.moveToTrash(onDone = onBack) },
+                            onDelete = { showMoreSheet = false; showDeleteConfirm = true },
                         )
                     }
                     if (showModeSettings) {
@@ -1403,7 +1428,24 @@ fun ChatScreen(
                             // continuously growing item. Animating that growth is what read as
                             // flickering on a fast model — the item visibly overshoots and snaps
                             // back on every single update instead of just getting taller.
-                            modifier = if (message.state == MessageState.STREAMING) Modifier else Modifier.animateItem(),
+                            //
+                            // animateItem() itself must stay on this item's modifier chain every
+                            // frame regardless — disable the animation via placementSpec = null
+                            // instead of adding/removing the modifier between recompositions.
+                            // Toggling the modifier off then back on right as this exact item's
+                            // content changes the most (streaming finishes, citations attach, the
+                            // item's height jumps) corrupted LazyColumn's internal per-item
+                            // placement bookkeeping — its deferred placement callback for the
+                            // stale pre-toggle node fired on a later frame against an
+                            // already-detached LayoutNode, crashing with "LayoutNode should be
+                            // attached to an owner" (most visible in a document chat: source
+                            // citations attaching right as the message finishes is exactly this
+                            // "content jumps at the streaming→complete boundary" case).
+                            modifier = if (message.state == MessageState.STREAMING) {
+                                Modifier.animateItem(placementSpec = null)
+                            } else {
+                                Modifier.animateItem()
+                            },
                             message = message,
                             attachedDocument = message.documentId?.let { id -> documentsById[id] },
                             savedOutput = savedOutputsByLabel[message.id] ?: blankLabelSavedOutputsByContent[message.content],
@@ -1439,6 +1481,7 @@ fun ChatScreen(
                             onCompare = { compareMessageId = message.id },
                             onFork = { scope.launch { onForkChat(vm.forkChat(message.id)) } },
                             onOpenPassage = { chunkId -> onOpenPassage(chunkId) },
+                            onOpenPdfPage = { documentId, page -> onOpenPdfPage(documentId, page) },
                             onOpenDocument = onOpenDocument,
                             isLastAssistant = message.id == lastCompleteAssistantId,
                             clarificationEnabled = message.id == lastMessageId && !isGenerating,
@@ -2354,6 +2397,17 @@ fun ChatScreen(
         ResetChatSettingsDialog(
             onDismiss = { showResetConfirm = false },
             onConfirm = { vm.resetChatSettings(); showResetConfirm = false }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        com.vervan.chat.ui.common.ConfirmDialog(
+            title = "Move to recycle bin?",
+            body = "This chat will be moved to the recycle bin. You can restore it later.",
+            confirmLabel = "Recycle",
+            destructive = true,
+            onConfirm = { showDeleteConfirm = false; vm.moveToTrash(onDone = onBack) },
+            onDismiss = { showDeleteConfirm = false }
         )
     }
 

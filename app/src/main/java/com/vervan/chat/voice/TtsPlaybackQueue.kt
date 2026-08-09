@@ -50,6 +50,12 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     val isPlaying: Boolean get() = playbackJob?.isActive == true
     val isPaused: Boolean get() = paused
+    // Unlike [isPlaying] (true the instant startTurn() launches the loop, even while it's still
+    // blocked waiting for the first sentence to synthesize), this is true only while audio is
+    // actually being written to the AudioTrack — the real "TTS plays" signal barge-in detection
+    // needs, so it doesn't arm during the silent gap before the first sentence is ready.
+    @Volatile private var speaking = false
+    val isSpeaking: Boolean get() = speaking
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) stop()
@@ -126,8 +132,21 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
         return paused
     }
 
-    fun release() {
+    /** Session-teardown only (never followed by a new [startTurn] on this instance) — unlike
+     * [stop] (pause/flush/stop, all safe to call regardless of a concurrent writer),
+     * `AudioTrack.release()` while the playback loop coroutine is still mid-`write()` on its own
+     * thread is genuinely unsafe. `stop()`'s `playbackJob?.cancel()` only requests cancellation;
+     * a blocking native `write()` call doesn't observe it until that write returns. Both call
+     * sites (RealtimeVoiceController) are already suspend/coroutine contexts, so joining here
+     * (bounded, matching WavRecorder/ContinuousAudioCapture's own release-time join) is safe —
+     * it can't block the main thread. */
+    suspend fun release() {
+        val job = playbackJob
         stop()
+        if (job != null) {
+            kotlinx.coroutines.withTimeoutOrNull(RELEASE_JOIN_TIMEOUT_MS) { job.join() }
+                ?: Log.w(TAG, "playbackJob did not finish within ${RELEASE_JOIN_TIMEOUT_MS}ms; releasing AudioTrack anyway")
+        }
         audioTrack?.release()
         audioTrack = null
     }
@@ -154,6 +173,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
                 currentJob = prefetched ?: awaitNextSynthJob(channel)
             }
         } finally {
+            speaking = false
             runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
         }
     }
@@ -180,6 +200,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
         ensureAudioTrack(audio.sampleRateHz)
         val track = audioTrack ?: return
         if (!paused && track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
+        speaking = true
         track.write(audio.samples, 0, audio.samples.size, AudioTrack.WRITE_BLOCKING)
     }
 
@@ -210,5 +231,6 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     companion object {
         private const val TAG = "TtsPlaybackQueue"
+        private const val RELEASE_JOIN_TIMEOUT_MS = 2_000L
     }
 }

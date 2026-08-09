@@ -677,6 +677,19 @@ class RealtimeVoiceController(
             audioCapture.frames.takeWhile { frame ->
                 _hasEchoCancellation.value = audioCapture.hasEchoCancellation
                 if (!audioCapture.hasEchoCancellation) return@takeWhile false
+                // This watcher is launched the instant a reply starts generating — well before
+                // there's any TTS audio yet (the whole silent "Thinking" phase, plus however
+                // long the first sentence takes to synthesize). Without this gate, the mic was
+                // "armed" that entire time despite the class doc saying "while TTS plays": the
+                // user still trailing off, or plain room noise, during Thinking could rack up
+                // BARGE_IN_TRIGGER_MS of "speech" and cancel the reply before it ever produced
+                // anything — every voice turn, not just genuine interruptions. isSpeaking (real
+                // audio hitting the AudioTrack), not isPlaying (true the instant the loop job
+                // launches, before it's synthesized anything) is the correct gate here.
+                if (!playbackQueue.isSpeaking) {
+                    speechFrames = 0
+                    return@takeWhile true
+                }
                 val speaking = vad.isSpeech(frame)
                 speechFrames = if (speaking) speechFrames + 1 else 0
                 val triggered = speechFrames * CAPTURE_FRAME_MS >= BARGE_IN_TRIGGER_MS

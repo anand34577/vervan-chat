@@ -88,21 +88,24 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     fun setLanguage(value: String) { _language.value = value }
 
     /** Character card import (SillyTavern PNG cards) — fills the editor fields from the card,
-     * same as if the user had typed them in, so Save behaves identically either way. Runs
-     * synchronously on the calling coroutine (file read + JSON parse, no network/DB), same
-     * pattern as [com.vervan.chat.model.DocumentImportManager]'s picker call sites. */
+     * same as if the user had typed them in, so Save behaves identically either way. Off-main:
+     * these PNGs embed a JSON blob in metadata, and decoding a larger card would otherwise block
+     * the UI thread on an onClick, same reasoning as [importAvatar] below. */
     fun importCharacterCard(context: android.content.Context, uri: android.net.Uri) {
         _importError.value = null
-        try {
-            val card = com.vervan.chat.model.CharacterCardImporter.import(context, uri)
-            _name.value = card.name
-            _description.value = card.description
-            _systemInstruction.value = card.systemInstruction
-            card.avatarFile?.let { setScratchAvatar(it) } ?: run { discardPendingScratchAvatar(); _avatarPath.value = null }
-        } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
-            _importError.value = e.message
-        } catch (t: Throwable) {
-            _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
+        viewModelScope.launch {
+            try {
+                val card = withContext(Dispatchers.IO) { com.vervan.chat.model.CharacterCardImporter.import(context, uri) }
+                _name.value = card.name
+                _description.value = card.description
+                _systemInstruction.value = card.systemInstruction
+                card.avatarFile?.let { setScratchAvatar(it) } ?: run { discardPendingScratchAvatar(); _avatarPath.value = null }
+            } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
+                _importError.value = e.message
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "importCharacterCard failed for $uri", t)
+                _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
+            }
         }
     }
 
@@ -201,5 +204,9 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
      * the file becomes a real, persisted avatar, so anything still here was never saved. */
     override fun onCleared() {
         discardPendingScratchAvatar()
+    }
+
+    companion object {
+        private const val TAG = "PersonaEditorViewModel"
     }
 }

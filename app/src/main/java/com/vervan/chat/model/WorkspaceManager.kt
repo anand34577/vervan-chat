@@ -1,5 +1,6 @@
 package com.vervan.chat.model
 
+import android.util.Log
 import androidx.room.withTransaction
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.entities.Chat
@@ -73,6 +74,7 @@ class WorkspaceManager(
      */
     suspend fun delete(workspace: Workspace) {
         check(!workspace.isDefault) { "Default Workspace cannot be deleted" }
+        Log.i(TAG, "Permanently deleting workspace ${workspace.id}")
         // Document and message-attachment cleanup run outside the DB transaction below since
         // they also touch the filesystem (copied file + embedded chunks / imagePath-audioPath-
         // voiceRecordingPath) via DocumentImportManager / MessageAttachmentCleanup.
@@ -94,5 +96,9 @@ class WorkspaceManager(
         if (settingsRepository.activeWorkspaceId.first() == workspace.id) {
             db.workspaceDao().getDefault()?.let { setActive(it) }
         }
+    }
+
+    companion object {
+        private const val TAG = "WorkspaceManager"
     }
 }

@@ -66,6 +66,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: KnowledgeViewModel = viewModel(factory = viewModelFactory { initializer { KnowledgeViewModel(app) } })
     val kbs by vm.knowledgeBases.collectAsState()
+    val kbsLoading by vm.isLoading.collectAsState()
     val kbStats by vm.kbStats.collectAsState()
     val indexing by vm.indexingDocuments.collectAsState()
     val recentDocuments by vm.recentDocuments.collectAsState()
@@ -93,7 +94,11 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 body = "Organize documents for private search and cited answers."
             )
             VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
-            if (kbs.isEmpty()) {
+            if (kbsLoading) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 200.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            } else if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Build your first knowledge base",

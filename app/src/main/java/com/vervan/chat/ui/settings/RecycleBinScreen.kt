@@ -334,7 +334,11 @@ private fun BinRow(
             .padding(vertical = Space.xs)
             .selectableItem(
                 selectionMode = selectionMode,
-                onClick = {},
+                // A recycle-bin row has no "open" destination (its content is gone) — restore/
+                // delete are the only actions, both already reachable via the trailing icons.
+                // Tapping used to no-op while still showing a ripple, a dead affordance; tap now
+                // does the same thing long-press does (enter selection), so the ripple means something.
+                onClick = onEnterSelection,
                 onToggleSelected = onToggleSelection,
                 onEnterSelection = onEnterSelection
             ),

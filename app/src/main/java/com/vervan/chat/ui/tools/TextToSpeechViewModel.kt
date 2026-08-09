@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.tools
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -162,7 +163,8 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     /** Merges whatever sentences currently have audio, silently skipping any that still don't —
      * for a user who'd rather ship a document with one dropped sentence than keep retrying. */
     fun finishAnyway(sourceText: String, pauseMs: Int) {
-        viewModelScope.launch { finishMerge(sourceText, pauseMs) }
+        job?.cancel()
+        job = viewModelScope.launch { finishMerge(sourceText, pauseMs) }
     }
 
     private suspend fun finishMerge(sourceText: String, pauseMs: Int) {
@@ -181,6 +183,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
             )
             _phase.value = Phase.Done(outFile)
         } catch (t: Throwable) {
+            Log.e(TAG, "finishMerge failed", t)
             _phase.value = Phase.Failed(t.message ?: "Could not save audio.")
         } finally {
             restoreOverride()
@@ -226,5 +229,9 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
         piper.release()
         kokoro.release()
         supertonic.release()
+    }
+
+    companion object {
+        private const val TAG = "TextToSpeechViewModel"
     }
 }

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.writing
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -60,10 +61,15 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 com.vervan.chat.llm.OneShotLlm.stream(app, "$instruction\n\n$originalText")
                     ?.collect { chunk -> _revision.value += chunk }
             } catch (t: Throwable) {
+                Log.e(TAG, "run(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }
+    }
+
+    companion object {
+        private const val TAG = "WritingWorkspaceViewModel"
     }
 
     fun saveAsNote(title: String) {

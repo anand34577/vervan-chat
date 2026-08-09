@@ -246,6 +246,7 @@ internal fun MessageBubble(
     onCompare: () -> Unit,
     onFork: () -> Unit = {},
     onOpenPassage: (String) -> Unit = {},
+    onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> },
     onOpenDocument: (String) -> Unit = {},
     clarificationEnabled: Boolean = false,
     onClarificationReply: (String) -> Unit = {},
@@ -804,6 +805,7 @@ internal fun MessageBubble(
                     SourceCards(
                         it,
                         onOpenPassage = { chunkId -> onOpenPassage(chunkId) },
+                        onOpenPdfPage = { documentId, page -> onOpenPdfPage(documentId, page) },
                         onRetryWithQuality = onRetryWithQuality,
                         betterModelName = betterModelName
                     )

@@ -63,6 +63,7 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ProjectsListViewModel = viewModel(factory = viewModelFactory { initializer { ProjectsListViewModel(app) } })
     val projects by vm.projects.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Project?>(null) }
     var pendingDelete by remember { mutableStateOf<Project?>(null) }
@@ -81,7 +82,11 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
-          if (projects.isEmpty()) {
+          if (isLoading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator()
+            }
+          } else if (projects.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.Workspaces,
                 title = "No projects yet",

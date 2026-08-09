@@ -2,8 +2,11 @@ package com.vervan.chat.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+
+private const val TAG = "EncryptedPrefs"
 
 /** Creates a Keystore-backed [EncryptedSharedPreferences] file, self-healing once if the
  * backing Keystore key is corrupted/invalidated (OS upgrade, cloud restore, FRP re-provision) —
@@ -22,6 +25,7 @@ fun createEncryptedPrefs(context: Context, name: String): SharedPreferences {
     return try {
         create()
     } catch (t: Throwable) {
+        Log.w(TAG, "Encrypted prefs '$name' Keystore key invalid, recreating (values will be lost)", t)
         context.deleteSharedPreferences(name)
         create()
     }

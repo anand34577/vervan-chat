@@ -92,11 +92,14 @@ class WavRecorder(
         }.apply { start() }
     }
 
-    /** Blocks briefly until the recorder thread has flushed the WAV file to disk. */
+    /** Blocks briefly until the recorder thread has flushed the WAV file to disk.
+     * Bounded join (mirrors [ContinuousAudioCapture]) — an unbounded join on a wedged HAL's
+     * blocking [AudioRecord.read] would hang whatever thread calls this indefinitely; several
+     * call sites invoke stop/cancel straight from a Compose onClick on the main thread. */
     fun stop() {
         recording = false
         runCatching { audioRecord?.stop() }
-        recordThread?.join()
+        joinRecordThread()
         recordThread = null
         audioRecord?.release()
         audioRecord = null
@@ -105,11 +108,19 @@ class WavRecorder(
     fun cancel() {
         recording = false
         runCatching { audioRecord?.stop() }
-        recordThread?.join()
+        joinRecordThread()
         recordThread = null
         audioRecord?.release()
         audioRecord = null
         outputFile.delete()
+    }
+
+    private fun joinRecordThread() {
+        val thread = recordThread ?: return
+        thread.join(JOIN_TIMEOUT_MS)
+        if (thread.isAlive) {
+            Log.w(TAG, "recordThread did not finish within ${JOIN_TIMEOUT_MS}ms; abandoning it")
+        }
     }
 
     private fun writeWavFile(pcmFile: File, wavFile: File) {
@@ -130,5 +141,6 @@ class WavRecorder(
 
     companion object {
         private const val TAG = "WavRecorder"
+        private const val JOIN_TIMEOUT_MS = 2_000L
     }
 }

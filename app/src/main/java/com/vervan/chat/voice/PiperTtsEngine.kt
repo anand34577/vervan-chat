@@ -2,6 +2,8 @@ package com.vervan.chat.voice
 
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
 import java.io.File
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /**
  * Wraps sherpa-onnx offline TTS running Piper `hi_IN` and `en_IN` VITS voices — the fallback
@@ -24,6 +26,14 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
     private var hindiTts: com.k2fsa.sherpa.onnx.OfflineTts? = null
     private var englishTts: com.k2fsa.sherpa.onnx.OfflineTts? = null
     private var attemptedLoad = false
+    // Guards synthesize() (a reader, native OfflineTts.generate()) against release() (the
+    // writer, native OfflineTts.release()) — same pattern/reasoning as
+    // SupertonicTtsEngine.inferenceLock: without this, TtsPlaybackQueue's up-to-2 concurrent
+    // synth coroutines racing a release() (engine switch, RealtimeVoiceController teardown)
+    // could call generate() on an already-released native handle — undefined behavior in
+    // sherpa-onnx's native layer, up to a process crash. A plain lock, not a coroutine Mutex,
+    // because generate() itself never suspends.
+    private val ttsLock = java.util.concurrent.locks.ReentrantReadWriteLock()
 
     override suspend fun isReady(): Boolean {
         ensureLoaded()
@@ -76,19 +86,23 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
     }
 
     override suspend fun synthesize(text: String, lang: String): TtsAudio {
+        // Must run before (never inside) ttsLock.read below — it's a plain/blocking lock and
+        // must never be held across a suspension point.
         ensureLoaded()
-        val useHindi = when (lang) {
-            "hi" -> true
-            "en" -> false
-            else -> isDevanagariDominant(text)
+        return ttsLock.read {
+            val useHindi = when (lang) {
+                "hi" -> true
+                "en" -> false
+                else -> isDevanagariDominant(text)
+            }
+            val engine = (if (useHindi) hindiTts else englishTts) ?: englishTts ?: hindiTts
+                ?: throw IllegalStateException("No Piper voice available")
+            val audio = engine.generate(text, 0, 1.0f)
+            val samples = ShortArray(audio.samples.size) { i ->
+                (audio.samples[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+            }
+            TtsAudio(samples, audio.sampleRate)
         }
-        val engine = (if (useHindi) hindiTts else englishTts) ?: englishTts ?: hindiTts
-            ?: throw IllegalStateException("No Piper voice available")
-        val audio = engine.generate(text, 0, 1.0f)
-        val samples = ShortArray(audio.samples.size) { i ->
-            (audio.samples[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
-        }
-        return TtsAudio(samples, audio.sampleRate)
     }
 
     private fun isDevanagariDominant(text: String): Boolean {
@@ -103,7 +117,7 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
         return devanagari > latin
     }
 
-    fun release() {
+    fun release() = ttsLock.write {
         hindiTts?.release()
         englishTts?.release()
         hindiTts = null

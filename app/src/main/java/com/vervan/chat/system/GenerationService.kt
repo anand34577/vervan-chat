@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.vervan.chat.R
@@ -24,7 +25,10 @@ class GenerationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }
-            .onFailure { stopSelf() }
+            .onFailure {
+                Log.e(TAG, "startForeground failed, generation loses foreground priority", it)
+                stopSelf()
+            }
         return START_NOT_STICKY
     }
 
@@ -45,19 +49,20 @@ class GenerationService : Service() {
     }
 
     companion object {
+        private const val TAG = "GenerationService"
         private const val CHANNEL_ID = "vervan_generation"
         private const val NOTIFICATION_ID = 42
 
         fun start(context: Context) {
             runCatching {
                 ContextCompat.startForegroundService(context, Intent(context, GenerationService::class.java))
-            }
+            }.onFailure { Log.e(TAG, "Failed to start GenerationService", it) }
         }
 
         fun stop(context: Context) {
             runCatching {
                 context.stopService(Intent(context, GenerationService::class.java))
-            }
+            }.onFailure { Log.e(TAG, "Failed to stop GenerationService", it) }
         }
     }
 }

@@ -234,7 +234,11 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 OutlinedButton(onClick = { onTest(personaId) }, modifier = Modifier.padding(top = Space.sm)) { Text("Open test bench") }
             }
 
-            val withinLimits = name.length <= ValidationLimits.PERSONA_NAME &&
+            // Mirrors PersonaEditorViewModel.save()'s own requirement — disabling the button on
+            // the same condition that would otherwise make it silently no-op is the fix, not a
+            // dialog explaining a failure the user could never have triggered in the first place.
+            val withinLimits = name.isNotBlank() && systemInstruction.isNotBlank() &&
+                name.length <= ValidationLimits.PERSONA_NAME &&
                 description.length <= ValidationLimits.PERSONA_ROLE &&
                 systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
             ResponsiveActions(Modifier.padding(top = Space.lg)) {

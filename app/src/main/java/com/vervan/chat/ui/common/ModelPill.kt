@@ -74,7 +74,20 @@ fun ModelPill(
             .padding(horizontal = Space.md, vertical = 6.dp)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
-                contentDescription = label.ifBlank { "Choose a model" }
+                // mergeDescendants swallows EngineDot's own semantics entirely, and that dot's
+                // color is the ONLY place engine kind + loaded state are communicated — with no
+                // merged description, both facts were invisible to a screen reader (and the color
+                // alone is indistinguishable to colorblind users regardless). Spell them out here.
+                contentDescription = if (isCta) {
+                    "Choose a model"
+                } else {
+                    val engineName = when (engineKind) {
+                        ModelEngineKind.LiteRTLM -> "LiteRT-LM"
+                        ModelEngineKind.LlamaCpp -> "llama.cpp"
+                        ModelEngineKind.Embedding -> "Embedding"
+                    }
+                    "$label, $engineName${if (isLoaded) ", loaded" else ", not loaded"}"
+                }
             },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm)

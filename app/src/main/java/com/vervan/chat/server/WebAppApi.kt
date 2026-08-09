@@ -512,6 +512,8 @@ internal class WebAppApi(private val app: VervanApp) {
             val db = app.container.db
             val chat = db.chatDao().getChat(body.optString("chat_id")) ?: return@runBlocking notFound("chat")
             val name = body.optString("name").ifBlank { "document" }
+            // Untrusted request field — never let it dictate a filesystem path (path traversal via "../..").
+            val safeName = name.replace(Regex("[/\\\\]"), "_").let { if (it == ".." || it == ".") "document" else it }
             val base64 = body.optString("data").takeIf { it.isNotBlank() }
                 ?: return@runBlocking badRequest("data (base64) is required")
             val bytes = runCatching { android.util.Base64.decode(base64, android.util.Base64.DEFAULT) }
@@ -521,7 +523,7 @@ internal class WebAppApi(private val app: VervanApp) {
             }
 
             val kb = com.vervan.chat.data.db.entities.KnowledgeBase(name = "Attached: $name")
-            val temp = java.io.File(app.cacheDir, "webui-attach-${System.currentTimeMillis()}-$name")
+            val temp = java.io.File(app.cacheDir, "webui-attach-${System.currentTimeMillis()}-$safeName")
             try {
                 temp.writeBytes(bytes)
                 db.knowledgeBaseDao().upsert(kb)

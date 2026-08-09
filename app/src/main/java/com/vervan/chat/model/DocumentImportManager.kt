@@ -3,6 +3,7 @@ package com.vervan.chat.model
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
 import com.vervan.chat.data.db.dao.JobDao
@@ -270,6 +271,7 @@ class DocumentImportManager(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        Log.w(TAG, "OCR failed for $name", t)
                         ""
                     }
                     document = if (ocrText.isBlank()) {
@@ -423,6 +425,7 @@ class DocumentImportManager(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        Log.w(TAG, "OCR failed for ${doc.displayName}", t)
                         ""
                     }
                     if (ocrText.isBlank()) {
@@ -497,6 +500,7 @@ class DocumentImportManager(
     }
 
     companion object {
+        private const val TAG = "DocumentImportManager"
         private const val STORAGE_SAFETY_MARGIN_BYTES = 100L * 1024 * 1024 // 100MB headroom
         // ponytail: a fixed guess, not negotiated with the server. OpenAI's own /embeddings
         // accepts far more per request; a smaller self-hosted OpenAI-compatible server might not

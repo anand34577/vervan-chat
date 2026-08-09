@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.knowledge
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -13,13 +14,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
+    // Cold-start gate — without this, "Build your first knowledge base" could flash for a
+    // frame before Room's first emission lands, same fix as ChatListViewModel.isLoading.
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
     val knowledgeBases: StateFlow<List<KnowledgeBase>> = db.knowledgeBaseDao().observeAll()
+        .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentDocuments: StateFlow<List<Document>> = db.documentDao().observeAll()
@@ -40,9 +48,14 @@ class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
 
     fun delete(kb: KnowledgeBase) {
         viewModelScope.launch {
+            Log.i(TAG, "Deleting knowledge base ${kb.id}")
             db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
             db.knowledgeBaseDao().delete(kb)
         }
+    }
+
+    companion object {
+        private const val TAG = "KnowledgeViewModel"
     }
 }
 
@@ -65,6 +78,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
     val pendingVersionConflict: StateFlow<com.vervan.chat.model.DocumentImportOutcome.VersionConflict?> = _pendingVersionConflict
 
     fun importDocument(uri: Uri) {
+        if (_importing.value) return
         viewModelScope.launch {
             _importing.value = true
             _error.value = null
@@ -76,6 +90,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                     is com.vervan.chat.model.DocumentImportOutcome.Imported -> { /* observed via documents Flow */ }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "importDocument failed for kb=$kbId uri=$uri", e)
                 _error.value = "Import failed. ${e.toUserMessage()}"
             }
             _importing.value = false
@@ -158,10 +173,15 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
     fun deleteKnowledgeBase(onDone: () -> Unit) {
         viewModelScope.launch {
             db.knowledgeBaseDao().get(kbId)?.let { kb ->
+                Log.i(TAG, "Deleting knowledge base ${kb.id}")
                 db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
                 db.knowledgeBaseDao().delete(kb)
             }
             onDone()
         }
+    }
+
+    companion object {
+        private const val TAG = "KnowledgeBaseDetailVM"
     }
 }

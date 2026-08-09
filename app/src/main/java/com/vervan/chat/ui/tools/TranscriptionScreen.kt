@@ -54,6 +54,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.TranscriptionProject
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ResponsiveActions
@@ -136,19 +138,27 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                         }
                     }
                     if (installedWhisperVariants.isEmpty()) {
-                        Text(
-                            "No whisper.cpp model is downloaded yet — download one in Model Manager before transcribing.",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
+                        ErrorCard(
+                            title = "No whisper.cpp model downloaded",
+                            body = "Download one in Model Manager before transcribing.",
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     }
                     (phase as? TranscriptionViewModel.Phase.Failed)?.let {
-                        Text(it.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                        ErrorCard(
+                            title = "Transcription failed",
+                            body = it.message,
+                            modifier = Modifier.padding(top = Space.sm)
+                        )
                     }
 
                     Text("History", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
                     if (projects.isEmpty()) {
-                        Text("No transcriptions yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        EmptyState(
+                            icon = Icons.Filled.Mic,
+                            title = "No transcriptions yet",
+                            body = "Import an audio file or record directly to get started."
+                        )
                     } else {
                         LazyColumn(Modifier.weight(1f, fill = false)) {
                             items(projects, key = { it.id }) { p ->
@@ -291,7 +301,7 @@ private fun TranscriptionDetail(
                 }
             }
             (phase as? TranscriptionViewModel.Phase.Failed)?.let {
-                Text(it.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                ErrorCard(title = "Transcription failed", body = it.message, modifier = Modifier.padding(top = Space.sm))
             }
 
             if (segments.isNotEmpty()) {
@@ -369,7 +379,7 @@ private fun TranscriptionDetail(
                 }
             }
             (aiActionState as? TranscriptionViewModel.AiActionState.Failed)?.let {
-                Text(it.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+                ErrorCard(title = "Action failed", body = it.message, modifier = Modifier.padding(top = Space.sm))
             }
 
             OutlinedButton(
@@ -377,9 +387,18 @@ private fun TranscriptionDetail(
                 enabled = text.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             ) { Text("Save to Knowledge Base") }
-            when (saveState) {
-                TranscriptionViewModel.SaveState.Saved -> Text("Saved.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-                is TranscriptionViewModel.SaveState.Failed -> Text((saveState as TranscriptionViewModel.SaveState.Failed).message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+            when (val save = saveState) {
+                TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
+                    title = "Saved",
+                    body = "The transcript was saved to your knowledge base.",
+                    tone = com.vervan.chat.ui.common.StatusTone.Ready,
+                    modifier = Modifier.padding(top = Space.sm)
+                )
+                is TranscriptionViewModel.SaveState.Failed -> ErrorCard(
+                    title = "Couldn't save to Knowledge Base",
+                    body = save.message,
+                    modifier = Modifier.padding(top = Space.sm)
+                )
                 else -> {}
             }
         }

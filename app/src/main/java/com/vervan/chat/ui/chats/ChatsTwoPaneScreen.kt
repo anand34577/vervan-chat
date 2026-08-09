@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 fun ChatsTwoPaneScreen(
     onOpenBranchTree: (String) -> Unit,
     onOpenPassage: (String) -> Unit = {},
+    onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> },
     onOpenChatInfo: (String) -> Unit = {},
     onOpenDocument: (String) -> Unit = {},
     onOpenModels: () -> Unit = {}
@@ -76,6 +77,7 @@ fun ChatsTwoPaneScreen(
                     onOpenDocument = onOpenDocument,
                     onOpenBranchTree = { onOpenBranchTree(chatId) },
                     onOpenPassage = onOpenPassage,
+                    onOpenPdfPage = onOpenPdfPage,
                     onOpenModels = onOpenModels,
                     onForkChat = { forkedChatId -> selectedChatId = forkedChatId }
                 )

@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
@@ -82,10 +83,17 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = {
                         val count = selected.size
+                        val trashed = notes.filter { it.id in selected }
                         vm.deleteAll(selected)
                         selected = emptySet()
                         selectionMode = false
-                        scope.launch { snackbarHostState.showSnackbar("Moved $count note${if (count == 1) "" else "s"} to the recycle bin") }
+                        scope.launch {
+                            if (snackbarHostState.showSnackbar(
+                                    "Moved $count note${if (count == 1) "" else "s"} to the recycle bin",
+                                    "Undo"
+                                ) == SnackbarResult.ActionPerformed
+                            ) vm.restoreAll(trashed)
+                        }
                     },
                     deleteContentDescription = "Move selected to recycle bin"
                 )

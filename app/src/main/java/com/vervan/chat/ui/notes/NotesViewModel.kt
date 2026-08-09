@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.notes
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -38,6 +39,11 @@ class NotesListViewModel(app: VervanApp) : ViewModel() {
             val now = System.currentTimeMillis()
             notes.value.filter { it.id in ids }.forEach { db.noteDao().update(it.copy(deletedAt = now)) }
         }
+    }
+
+    /** Undo counterpart to [deleteAll]'s snackbar, mirroring ChatListViewModel.restoreFromTrash. */
+    fun restoreAll(notes: List<Note>) {
+        viewModelScope.launch { notes.forEach { db.noteDao().update(it.copy(deletedAt = null)) } }
     }
 }
 
@@ -129,9 +135,14 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { result += it }
                 onResult(result)
             } catch (t: Throwable) {
+                Log.e(TAG, "runAction(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }
+    }
+
+    companion object {
+        private const val TAG = "NoteEditorViewModel"
     }
 }

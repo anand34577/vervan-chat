@@ -12,16 +12,24 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ProjectsListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
+    // Cold-start gate — without this, the empty state could flash "No projects yet" for a
+    // frame before the workspace-scoped query's first real emission lands (same fix already
+    // applied to ChatListViewModel.isLoading).
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
     // Scoped to the active workspace — projects now live inside a workspace like chats and folders.
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val projects: StateFlow<List<Project>> = app.container.settingsRepository.activeWorkspaceId
         .flatMapLatest { db.projectDao().observeForWorkspace(it) }
+        .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun createProject(name: String) {

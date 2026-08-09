@@ -1,6 +1,8 @@
 package com.vervan.chat.voice
 
 import com.vervan.chat.data.db.dao.TtsVoiceModelDao
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /**
  * Wraps sherpa-onnx's `kokoro-multi-lang` model — an explicit "higher quality voice (slower)"
@@ -16,6 +18,8 @@ class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
 
     private var tts: com.k2fsa.sherpa.onnx.OfflineTts? = null
     private var attemptedLoad = false
+    // See PiperTtsEngine.ttsLock — same synthesize()-vs-release() native use-after-free guard.
+    private val ttsLock = java.util.concurrent.locks.ReentrantReadWriteLock()
 
     override suspend fun isReady(): Boolean {
         ensureLoaded()
@@ -53,19 +57,22 @@ class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
     }
 
     override suspend fun synthesize(text: String, lang: String): TtsAudio {
+        // Must run before (never inside) ttsLock.read below — see PiperTtsEngine.synthesize.
         ensureLoaded()
-        val engine = tts ?: throw IllegalStateException("Kokoro model not available")
-        // Kokoro's multi-lang voice bank picks language from the speaker id; language routing
-        // beyond the default English/multilingual voice isn't wired up for v1 — the quality
-        // tier is opt-in and secondary, not worth the same per-sentence routing as Piper yet.
-        val audio = engine.generate(text, 0, 1.0f)
-        val samples = ShortArray(audio.samples.size) { i ->
-            (audio.samples[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+        return ttsLock.read {
+            val engine = tts ?: throw IllegalStateException("Kokoro model not available")
+            // Kokoro's multi-lang voice bank picks language from the speaker id; language routing
+            // beyond the default English/multilingual voice isn't wired up for v1 — the quality
+            // tier is opt-in and secondary, not worth the same per-sentence routing as Piper yet.
+            val audio = engine.generate(text, 0, 1.0f)
+            val samples = ShortArray(audio.samples.size) { i ->
+                (audio.samples[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+            }
+            TtsAudio(samples, audio.sampleRate)
         }
-        return TtsAudio(samples, audio.sampleRate)
     }
 
-    fun release() {
+    fun release() = ttsLock.write {
         tts?.release()
         tts = null
         attemptedLoad = false

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -51,22 +52,34 @@ class ModelDownloadService : Service() {
         runCatching { startForeground(NOTIFICATION_ID, buildNotification(null)) }
             .onFailure { stopSelf(); return }
         val repository = (application as VervanApp).container.modelDownloadRepository
+        // SupervisorJob only isolates sibling coroutines from each other — it does NOT stop an
+        // unhandled exception in this coroutine itself from reaching the thread's default
+        // handler and crashing the whole process. recoverOnStartup()/uiStates.collect() do real
+        // DB/file work with no other guard, unlike ApiServerService's equivalent startup path
+        // (wrapped in runCatching) or GenerationService's.
         watchJob = scope.launch {
-            repository.recoverOnStartup()
-            repository.uiStates.collect { states ->
-                val active = states.firstOrNull { it.status in NOTIFY_STATUSES }
-                if (active == null) {
-                    stopSelf()
-                } else {
-                    val canPostNotifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                        ContextCompat.checkSelfPermission(
-                            this@ModelDownloadService,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                    if (canPostNotifications) runCatching {
-                        NotificationManagerCompat.from(this@ModelDownloadService).notify(NOTIFICATION_ID, buildNotification(active))
+            try {
+                repository.recoverOnStartup()
+                repository.uiStates.collect { states ->
+                    val active = states.firstOrNull { it.status in NOTIFY_STATUSES }
+                    if (active == null) {
+                        stopSelf()
+                    } else {
+                        val canPostNotifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(
+                                this@ModelDownloadService,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                        if (canPostNotifications) runCatching {
+                            NotificationManagerCompat.from(this@ModelDownloadService).notify(NOTIFICATION_ID, buildNotification(active))
+                        }
                     }
                 }
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                Log.e(TAG, "watchJob failed", t)
+                stopSelf()
             }
         }
     }
@@ -77,8 +90,14 @@ class ModelDownloadService : Service() {
         val version = intent?.getStringExtra(EXTRA_VERSION)
         if (modelId != null && version != null) {
             when (intent.action) {
-                ACTION_PAUSE -> scope.launch { repository.pauseDownload(modelId, version) }
-                ACTION_STOP -> scope.launch { repository.cancelDownload(modelId, version, keepPartial = false) }
+                ACTION_PAUSE -> scope.launch {
+                    runCatching { repository.pauseDownload(modelId, version) }
+                        .onFailure { Log.e(TAG, "pauseDownload($modelId, $version) failed", it) }
+                }
+                ACTION_STOP -> scope.launch {
+                    runCatching { repository.cancelDownload(modelId, version, keepPartial = false) }
+                        .onFailure { Log.e(TAG, "cancelDownload($modelId, $version) failed", it) }
+                }
             }
         }
         return START_STICKY
@@ -138,6 +157,7 @@ class ModelDownloadService : Service() {
     }
 
     companion object {
+        private const val TAG = "ModelDownloadService"
         private const val NOTIFICATION_ID = 4201
         private const val EXTRA_MODEL_ID = "modelId"
         private const val EXTRA_VERSION = "version"
