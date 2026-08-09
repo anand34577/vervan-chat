@@ -267,7 +267,7 @@ internal fun MessageBubble(
     )
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
-    val showGenerationStats by app.container.settingsRepository.showGenerationStats.collectAsState(initial = false)
+    val showGenerationStats by app.container.settingsRepository.showGenerationStats.collectAsState(initial = true)
     val scope = rememberCoroutineScope()
     val clipboard = androidx.compose.ui.platform.LocalClipboard.current
     var showRememberDialog by remember { mutableStateOf(false) }
@@ -937,6 +937,9 @@ internal fun MessageBubble(
                             Icon(Icons.Filled.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(18.dp))
                         }
                     }
+                    IconButton(onClick = onFork) {
+                        Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = "Fork chat from here", modifier = Modifier.size(18.dp))
+                    }
                 }
                 // Reply stays gesture-only here; copy is the visible gesture alternative.
                 if (message.content.isNotBlank()) {
@@ -952,15 +955,17 @@ internal fun MessageBubble(
                             Icon(Icons.Filled.MoreVert, contentDescription = "More message actions", modifier = Modifier.size(18.dp))
                         }
                         DropdownMenu(expanded = showMessageMenu, onDismissRequest = { showMessageMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Fork chat from here") },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null) },
-                                onClick = { onFork(); showMessageMenu = false }
-                            )
+                            // Assistant replies get a dedicated fork icon in the action row above;
+                            // keep it in this menu only for user messages, which have no such icon.
+                            if (isUser) {
+                                DropdownMenuItem(
+                                    text = { Text("Fork chat from here") },
+                                    onClick = { onFork(); showMessageMenu = false }
+                                )
+                            }
                             if (!isUser && message.state == MessageState.COMPLETE) {
                                 DropdownMenuItem(
                                     text = { Text("Remember this") },
-                                    leadingIcon = { Icon(Icons.Filled.Psychology, contentDescription = null) },
                                     onClick = { showRememberDialog = true; showMessageMenu = false }
                                 )
                             }

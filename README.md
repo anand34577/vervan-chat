@@ -21,7 +21,16 @@
 
 Most AI assistants send your prompt to a server, process it there, and ask you to trust the boundary between your phone and someone else’s infrastructure.
 
-Vervan takes a different approach: install a compatible model on your phone, then use it locally. Your chats, notes, documents, and memories can stay on the device. Network access is reserved for user-initiated model downloads and the optional local API server.
+Vervan takes a different approach: install a compatible model on your phone, then use it locally. Your chats, notes, documents, and memories can stay on the device.
+
+Every network path is opt-in and listed here, rather than described in general terms:
+
+- **Model downloads** you start yourself, including the signed Model Store catalogue and its model files.
+- **Voice model downloads** for offline speech-to-text and text-to-speech.
+- **The local API server**, off by default, and it stays off after you close the app unless you turn on "Start automatically". While it is on it listens on every network interface, so anything that can route to the device can reach it. "Require an API key" in Settings is the gate; it is optional, and Settings shows which clients have connected so you can see exactly what is talking to it. Full web app mode additionally exposes your chats, notes, memories, personas, documents and knowledge bases rather than only inference, so a key is strongly recommended there.
+- **Remote API models** — optional, off unless you add one. If you register an external OpenAI-compatible endpoint (your own key, your own provider), prompts sent to *that* model leave the device, exactly like any hosted assistant. On-device models are unaffected, and the model list shows which is which.
+
+Anything that reaches the network is written to the in-app network audit log, so the claim above is checkable rather than taken on trust.
 
 The goal is simple:
 
@@ -99,7 +108,8 @@ Vervan includes a growing toolkit for translation, rewriting, transcription, ema
 Vervan is designed around a clear boundary:
 
 - **On-device:** chat inference, local retrieval, notes, memories, document indexes, and supported speech features.
-- **User initiated:** downloading models or using the optional local API server.
+- **User initiated:** downloading models, using the optional local API server, or adding an external remote API model.
+- **Leaves the device (only if you opt in):** prompts sent to a remote API model you registered yourself. Nothing else about a remote model is shared with the provider beyond the request itself, and your API key is stored encrypted via the Android Keystore.
 - **Explicit permission:** microphone, camera, notifications, overlay/screen capture, calendar, and location-related features.
 - **Visible control:** privacy dashboard, network audit log, app lock, biometric unlock, secure-delete workflow, backup and restore.
 
@@ -119,6 +129,21 @@ Vervan is an Android application built with Kotlin and Jetpack Compose.
 | Storage         | Room database, local files, encrypted preferences, JSON backup/restore                    |
 | Documents       | PDF, Office, EPUB, HTML, CSV, text, image OCR, and scanner flows                          |
 | Integration     | Floating bubble, widgets, shortcuts, share-in, and optional local OpenAI-compatible API   |
+| Web app         | Optional second screen served from the device: chats, library, knowledge, tools, models   |
+
+### Use the app from a browser
+
+Turning on **Settings → Local API server → Full web app mode** serves a second screen for the app
+on the same device. It is a view of the phone, not a copy: chats you start in the browser are the
+chats the app opens, notes you edit are the notes on the phone, and generation runs on the device's
+model either way. Nothing is stored browser-side.
+
+It mirrors the app's own navigation — Home, Chats, Library, Knowledge, Tools and Models — and covers
+streaming replies, image and audio attachments, reasoning, tool calls, retrieval over your knowledge
+bases, document import, and notes, memories, personas, prompt templates, saved outputs, projects,
+workspaces and folders. Settings stay on the phone by design.
+
+Basic API mode leaves all of that off and serves only the OpenAI-compatible endpoints.
 
 ## Build locally
 
@@ -134,13 +159,24 @@ Vervan is an Android application built with Kotlin and Jetpack Compose.
 
 ```bash
 git clone <your-repository-url>
-cd ai-chat
+cd vervan-chat
 ./gradlew :app:assembleDebug
 ```
 
-Install the generated debug APK on a compatible device. Model downloads are intentionally separate from the app build because model size and hardware requirements vary.
+Install the generated ABI-specific debug APK on a compatible ARM device. Model downloads are intentionally separate from the app build because model size and hardware requirements vary.
 
 Native backends such as llama.cpp and whisper.cpp are optional source-driven integrations. Follow the project’s local setup notes before enabling them in a release build.
+
+Release builds also require signed Model Store configuration. Supply comma-separated public
+keys and HTTPS pointer endpoints through uncommitted `local.properties` values:
+
+```properties
+catalog.publicKeys=<base64-X509-P256-public-key>[,<rotated-key>]
+catalog.endpoints=https://example.com/api/v1/latest.json[,https://fallback.example.com/latest.json]
+```
+
+CI can use `VERVAN_CATALOG_PUBLIC_KEYS` and `VERVAN_CATALOG_ENDPOINTS` instead. These are public
+verification values; keep the corresponding private signing key off build machines.
 
 ## Project map
 
@@ -157,8 +193,8 @@ app_icon.svg         Application icon
 
 Vervan is an ambitious early-development project and should be treated accordingly. The core product direction and many UI flows are present, but several areas still need hardening before a production release:
 
-- The newer signed Model Store flow still needs its production catalog and key material.
-- Database migration coverage needs to replace the current early-stage fallback behavior.
+- The signed Model Store must be pointed at a maintained production catalog and signing key before release.
+- Database releases require an explicit Room migration; unknown schemas fail closed instead of deleting data.
 - Some native inference and voice integrations are optional and require local source/build setup.
 - Thermal management, cancellation races, retrieval performance, import errors, and a few tool-loop edge cases are still active engineering work.
 

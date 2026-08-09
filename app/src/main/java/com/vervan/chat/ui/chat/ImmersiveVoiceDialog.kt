@@ -51,7 +51,8 @@ import com.vervan.chat.voice.VoiceTurn
 /**
  * The voice chat screen: a full-screen, chat-bubble presentation of the same
  * controller-backed session [ChatScreen] already drives — voice is a modality of the ordinary
- * conversation (see [com.vervan.chat.voice.VoiceConversationBridge]'s doc comment), not a
+ * conversation (see [com.vervan.chat.voice.RealtimeVoiceController]'s `respond`/`cancelResponse`
+ * callbacks, wired in ChatScreen), not a
  * separate chat system, so this is deliberately styled like the normal message list rather than
  * inventing a different visual language: user turns right-aligned/filled, assistant turns
  * left-aligned/surfaced, both showing a tap-to-replay recorded-audio player

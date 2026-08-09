@@ -329,8 +329,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         ) != null
                     VoiceToggleRow(
                         "whisper.cpp",
-                        if (whisperAvailable) "Ready · private, on-device transcription."
-                        else "Unavailable · download or import a whisper.cpp model.",
+                        when {
+                            whisperAvailable -> "Ready · private, on-device transcription."
+                            // Distinct from "no model yet" — no model download fixes this; the
+                            // native library itself wasn't compiled into this build.
+                            !com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE -> "Unavailable · not built into this app."
+                            else -> "Unavailable · download or import a whisper.cpp model."
+                        },
                         inbuiltSttEnabled,
                         vm::setInbuiltSttEnabled
                     )
@@ -368,13 +373,18 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         else MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = Space.md)
                     )
-                    if (!com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
+                    // Detail block for the whisper.cpp row above — only worth showing (including
+                    // the "not built into this build" case) when the user actually has that
+                    // engine turned on. It used to render unconditionally, so anyone using Android
+                    // speech service or active-model audio successfully still saw a red
+                    // "whisper.cpp unavailable" banner that had nothing to do with their setup.
+                    if (inbuiltSttEnabled && !com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         Text(
                             "whisper.cpp is unavailable in this build. Use another speech engine.",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = Space.sm)
                         )
-                    } else {
+                    } else if (inbuiltSttEnabled) {
                         val whisperFile = com.vervan.chat.voice.WhisperCppSttEngine
                             .findInstalledModelFile(app, whisperModel?.filePath, whisperModelVariant)
                         val lastBackend = remember { vm.whisperLastKnownBackend() }

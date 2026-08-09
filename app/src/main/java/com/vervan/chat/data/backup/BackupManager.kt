@@ -23,10 +23,13 @@ import com.vervan.chat.data.db.entities.TranscriptionProject
 import com.vervan.chat.data.db.entities.TtsProject
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.system.toUserMessage
 import androidx.room.withTransaction
 import java.io.InputStream
 import java.io.OutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
@@ -44,6 +47,7 @@ import org.json.JSONObject
 object BackupManager {
     private const val FORMAT_VERSION = 2
     private const val MIN_SUPPORTED_FORMAT_VERSION = 1
+    private const val MAX_ITEMS_PER_COLLECTION = 100_000
 
     suspend fun export(db: AppDatabase, out: OutputStream) {
         val root = JSONObject()
@@ -117,13 +121,17 @@ object BackupManager {
         // the whole parse in one place makes that claim actually true.
         try {
             return importUnchecked(db, input)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
             throw IllegalArgumentException("This backup file couldn't be read — it may be corrupted or from an incompatible version. (${t.toUserMessage()})", t)
         }
     }
 
     private suspend fun importUnchecked(db: AppDatabase, input: InputStream): BackupSummary {
-        val root = JSONObject(input.bufferedReader().readText())
+        val bytes = input.readBytesLimited(ImportLimits.MAX_BACKUP_BYTES)
+        val root = JSONObject(bytes.toString(Charsets.UTF_8))
         val formatVersion = root.optInt("formatVersion", 0)
         require(formatVersion in MIN_SUPPORTED_FORMAT_VERSION..FORMAT_VERSION) {
             when {
@@ -186,7 +194,10 @@ object BackupManager {
 
     private suspend fun <T> Flow<List<T>>.firstList(): List<T> = first()
 
-    private fun JSONArray.toObjectList(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
+    private fun JSONArray.toObjectList(): List<JSONObject> {
+        require(length() <= MAX_ITEMS_PER_COLLECTION) { "Backup contains too many records in one collection" }
+        return (0 until length()).map { getJSONObject(it) }
+    }
 
     private fun workspaceToJson(w: Workspace) = JSONObject().apply {
         put("id", w.id); put("name", w.name); put("description", w.description); put("personaId", w.personaId)

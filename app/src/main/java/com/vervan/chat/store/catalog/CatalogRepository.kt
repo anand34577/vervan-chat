@@ -3,6 +3,7 @@ package com.vervan.chat.store.catalog
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.vervan.chat.BuildConfig
 import com.vervan.chat.store.model.StoreCatalog
 import com.vervan.chat.system.NetworkAuditLog
 import java.net.HttpURLConnection
@@ -278,14 +279,12 @@ class CatalogRepository(
         private const val MAX_SIGNATURE_BYTES = 4 * 1024
         private const val BOOTSTRAP_ASSET = "store/bootstrap-catalog.json"
 
-        // TODO(store): point at the real catalogue repo before shipping.
-        private val DEFAULT_ENDPOINTS = listOf(
-            "https://your-org.github.io/offline-model-catalog/api/v1/latest.json",
-            "https://raw.githubusercontent.com/your-org/offline-model-catalog/main/docs/api/v1/latest.json"
-        )
-        private val DEFAULT_ALLOWED_HOSTS = setOf(
-            "your-org.github.io",
-            "raw.githubusercontent.com"
-        )
+        private val DEFAULT_ENDPOINTS = BuildConfig.CATALOG_ENDPOINTS
+            .split(',')
+            .map(String::trim)
+            .filter { it.startsWith("https://") }
+        private val DEFAULT_ALLOWED_HOSTS = DEFAULT_ENDPOINTS.mapNotNull { endpoint ->
+            runCatching { URL(endpoint).host }.getOrNull()
+        }.toSet()
     }
 }

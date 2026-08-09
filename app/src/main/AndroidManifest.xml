@@ -31,11 +31,21 @@
 
     <!-- Phase J — the local OpenAI-compatible API server. This is the first and only reason
          this app ever declares INTERNET: opening any socket on Android, including a *server*
-         socket that only listens for inbound connections, requires it. Binds 127.0.0.1 by
-         default (unreachable from the network) unless the user separately turns on the LAN
-         toggle in Settings — see ApiServerService/LocalApiServer. Off by default; nothing here
-         runs until the user explicitly turns the server on. -->
+         socket that only listens for inbound connections, requires it. Binds all interfaces
+         (0.0.0.0) whenever it's on — reachable from the local network any time the server is
+         enabled, gated only by the "Require an API key" setting (see ApiServerService/
+         LocalApiServer). Off by default; nothing here runs until the user explicitly turns the
+         server on, and Settings/Privacy Dashboard both surface the exposure plainly. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Lets the explicit open_app tool discover launcher activities on Android 11+ without the
+         much broader QUERY_ALL_PACKAGES permission. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".VervanApp"
@@ -45,14 +55,11 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Vervan"
-        android:supportsRtl="true"
-        android:extractNativeLibs="true">
-        <!-- extractNativeLibs=true: without it (AGP's modern default), native libs run straight
-             out of the APK's zip and applicationInfo.nativeLibraryDir is never populated on disk
-             — but llama_bridge.cpp's nativeInit() passes that directory to
-             ggml_backend_load_all_from_path() to find the GGML_CPU_ALL_VARIANTS/Vulkan plugin
-             .so's (see scripts/build-llama-android-vulkan.ps1), which then finds nothing and
-             every model load fails with "no backends are loaded". -->
+        android:supportsRtl="true">
+        <!-- Native extraction is controlled by packaging.jniLibs.useLegacyPackaging in the app
+             Gradle configuration. This keeps
+             applicationInfo.nativeLibraryDir populated for dynamically loaded llama.cpp backend
+             plugins without using the deprecated source-manifest extractNativeLibs override. -->
 
         <!-- Without these, the linker can't dlopen the vendor OpenCL driver on some devices
              (seen as "Failed to load OpenCL library with dlopen: dlopen failed: library

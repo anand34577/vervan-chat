@@ -66,9 +66,13 @@ fun PrivacyDashboardScreen(
     val locationOn by vm.locationToolEnabled.collectAsState()
     val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
     val apiServerOn by vm.apiServerEnabled.collectAsState()
-    val lanExposed by vm.lanApiServerEnabled.collectAsState()
+    val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
 
-    val lanRisk = apiServerOn && lanExposed
+    // The server always binds every network interface while it's on (see ApiServerService) —
+    // there's no longer a separate "allow LAN" toggle gating that. The only thing standing
+    // between "on" and "anyone on this network can use it with no key" is whether an API key is
+    // required, so that's what actually drives the warning here now, not a bind-address flag.
+    val lanRisk = apiServerOn && !apiServerAuthOn
 
     Scaffold(
         topBar = {
@@ -158,8 +162,8 @@ fun PrivacyDashboardScreen(
                     Text(
                         when {
                             !apiServerOn -> "Off. No other app or device can reach this phone's models."
-                            lanRisk -> "On and reachable from other devices on this Wi-Fi network."
-                            else -> "On, localhost only — only apps on this phone can reach it."
+                            lanRisk -> "On and reachable from other devices on this Wi-Fi network — no API key required."
+                            else -> "On and reachable from other devices on this Wi-Fi network. An API key is required."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,

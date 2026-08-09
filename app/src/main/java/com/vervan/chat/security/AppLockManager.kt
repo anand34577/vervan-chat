@@ -2,6 +2,7 @@ package com.vervan.chat.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -73,7 +74,7 @@ class AppLockManager(context: Context) {
             if (failedAttempts >= MAX_PIN_ATTEMPTS) {
                 prefs.edit()
                     .remove(KEY_FAILED_ATTEMPTS)
-                    .putLong(KEY_LOCKED_UNTIL, System.currentTimeMillis() + PIN_LOCKOUT_MS)
+                    .putLong(KEY_LOCKED_UNTIL, SystemClock.elapsedRealtime() + PIN_LOCKOUT_MS)
                     .apply()
             } else {
                 prefs.edit().putInt(KEY_FAILED_ATTEMPTS, failedAttempts).apply()
@@ -82,21 +83,34 @@ class AppLockManager(context: Context) {
         return correct
     }
 
+    /** [SystemClock.elapsedRealtime], not [System.currentTimeMillis] — the lockout used to be
+     * measured against the wall clock, which anyone with the device unlocked can wind backward
+     * from Settings to erase the wait and keep brute-forcing the PIN with no lockout at all.
+     * elapsedRealtime can't be set by the user, but it does reset to ~0 on reboot while
+     * [KEY_LOCKED_UNTIL] stays on disk as an absolute elapsedRealtime value from before the
+     * reboot — so `stored - new elapsedRealtime` stays large instead of going negative, and an
+     * uncapped remaining time could then read as "locked out for hours" (however long the device
+     * had been up when the lockout was set) instead of clearing. Capping at [PIN_LOCKOUT_MS]
+     * bounds the worst case to the intended lockout length regardless of what elapsedRealtime did
+     * across a reboot. */
     fun pinLockoutRemainingMs(): Long =
-        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - System.currentTimeMillis()).coerceAtLeast(0)
+        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - SystemClock.elapsedRealtime()).coerceIn(0, PIN_LOCKOUT_MS)
 
     /** Locks immediately — cold start with lock enabled, or a manual "Lock now" action. */
     fun lockNow() { _isLocked.value = true }
 
     fun unlock() { _isLocked.value = false; backgroundedAt = null }
 
-    fun onAppBackgrounded() { backgroundedAt = System.currentTimeMillis() }
+    fun onAppBackgrounded() { backgroundedAt = SystemClock.elapsedRealtime() }
 
     /** Re-locks if the app was backgrounded for at least [timeoutSeconds]. Called from
-     * ProcessLifecycleOwner's ON_START, only meaningful when app lock is enabled. */
+     * ProcessLifecycleOwner's ON_START, only meaningful when app lock is enabled.
+     * [SystemClock.elapsedRealtime], not the wall clock — same reasoning as
+     * [pinLockoutRemainingMs]: winding the date forward used to let anyone skip straight past
+     * this timeout instead of actually waiting it out. */
     fun onAppForegrounded(timeoutSeconds: Int) {
         val since = backgroundedAt
-        if (since != null && System.currentTimeMillis() - since >= timeoutSeconds * 1000L) {
+        if (since != null && SystemClock.elapsedRealtime() - since >= timeoutSeconds * 1000L) {
             _isLocked.value = true
         }
         backgroundedAt = null

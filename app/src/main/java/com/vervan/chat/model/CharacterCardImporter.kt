@@ -45,8 +45,13 @@ object CharacterCardImporter {
      * persona's avatar. Throws [NotACharacterCardException] for anything that isn't a PNG with
      * an embedded `chara` chunk — callers show that message directly to the user. */
     fun import(context: Context, uri: Uri): ImportedCharacterCard {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw NotACharacterCardException("Could not read the selected file.")
+        val bytes = try {
+            context.contentResolver.openInputStream(uri)?.use {
+                it.readBytesLimited(ImportLimits.MAX_CHARACTER_CARD_BYTES)
+            } ?: throw NotACharacterCardException("Could not read the selected file.")
+        } catch (e: InputLimitExceededException) {
+            throw NotACharacterCardException("Character card is too large (max 16 MB).")
+        }
         if (bytes.size < PNG_SIGNATURE.size || !bytes.copyOfRange(0, PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)) {
             throw NotACharacterCardException("Not a PNG file — character cards are PNG images with the character data embedded inside.")
         }
@@ -110,7 +115,7 @@ object CharacterCardImporter {
             val length = readInt32BE(bytes, offset)
             val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
             val dataStart = offset + 8
-            if (length < 0 || dataStart + length > bytes.size) break
+            if (length < 0 || length > bytes.size - dataStart - 4) break
             if (type == "tEXt") {
                 val chunk = bytes.copyOfRange(dataStart, dataStart + length)
                 val nul = chunk.indexOf(0)

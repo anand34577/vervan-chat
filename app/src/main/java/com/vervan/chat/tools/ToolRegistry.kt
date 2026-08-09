@@ -511,11 +511,23 @@ object ToolRegistry {
                 if (name.isBlank()) return@ToolDefinition ToolResult(false, "open_app needs a non-empty 'name'")
                 withContext(Dispatchers.IO) {
                     val pm = app.packageManager
-                    val match = pm.getInstalledApplications(android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
-                        .firstOrNull { pm.getApplicationLabel(it).toString().contains(name, true) }
-                    val launchIntent = match?.let { pm.getLaunchIntentForPackage(it.packageName) }
+                    val launcherQuery = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                        .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                    val launchable = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        pm.queryIntentActivities(
+                            launcherQuery,
+                            android.content.pm.PackageManager.ResolveInfoFlags.of(0)
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        pm.queryIntentActivities(launcherQuery, 0)
+                    }
+                    val match = launchable.firstOrNull {
+                        it.loadLabel(pm).toString().contains(name, ignoreCase = true)
+                    }
+                    val launchIntent = match?.activityInfo?.packageName?.let(pm::getLaunchIntentForPackage)
                     if (launchIntent == null) ToolResult(false, "No installed app matched \"$name\".")
-                    else launch(app, launchIntent, pm.getApplicationLabel(match).toString())
+                    else launch(app, launchIntent, match.loadLabel(pm).toString())
                 }
             }
         ),
@@ -627,9 +639,19 @@ object ToolRegistry {
     fun catalogDescription(enabledIds: Set<String> = tools.map { it.name }.toSet()): String {
         val visible = tools.filter { it.name in enabledIds }
         if (visible.isEmpty()) return ""
+        // Naming the tools up front (cheap — just names, no descriptions/params) matters: a
+        // prompt that only says "call list_tools to see what's available" leaves a small
+        // on-device model with nothing concrete in context, and it routinely answers "I don't
+        // have tools" from parametric knowledge instead of actually emitting the discovery
+        // call. Listing names here is what stops that false negative; list_tools/tool_details
+        // still carry the full per-tool cost (see this function's doc comment) for descriptions
+        // and params.
+        val names = visible.filter { it.name !in META_TOOL_NAMES }.map { it.name }
+        val namesLine = if (names.isNotEmpty()) "Available tools: ${names.joinToString(", ")}.\n" else ""
         return "You have access to tools, called by emitting a block like this on its own: " +
             "<tool_call>{\"tool\": \"tool_name\", \"params\": {\"param\": \"value\"}}</tool_call>\n" +
-            "Call list_tools first to see what's available, then tool_details(name) for a specific " +
+            namesLine +
+            "Call list_tools for a one-line summary of each, then tool_details(name) for a specific " +
             "tool's parameters before calling it. Only reach for a tool when you actually need one.\n"
     }
 

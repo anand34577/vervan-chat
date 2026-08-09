@@ -75,7 +75,15 @@ internal object LlamaCppJni {
      * [reasoningBudget] is the hard cap on reasoning tokens: once the model has generated this many
      * tokens still inside an open `<think>` block (one left open by [assistantPrefill]), the native
      * loop force-injects `</think>` so the model must start answering. -1 disables the cap. It has
-     * no effect unless [assistantPrefill] actually opened a `<think>` block. */
+     * no effect unless [assistantPrefill] actually opened a `<think>` block.
+     *
+     * [messages] is the optional full conversation as a flat `[role0, content0, role1, content1,
+     * …]` array. When non-null it **replaces** [prompt]/[systemPrompt]: each pair becomes its own
+     * chat-template turn, so a real multi-turn conversation reaches the model with the turn
+     * boundaries it was trained on instead of being flattened into one `"user"` turn. Roles are
+     * passed to the template verbatim, so `"tool"`/`"function"` turns work without another
+     * signature change. Null keeps the original single-user-turn behavior for every caller that
+     * has genuinely assembled one prompt string (the native chat path, voice, tools). */
     external fun nativeGenerate(
         handle: Long,
         prompt: String,
@@ -92,6 +100,7 @@ internal object LlamaCppJni {
         assistantPrefill: String?,
         systemPrompt: String?,
         reasoningBudget: Int,
+        messages: Array<String>?,
         callback: TokenCallback
     ): String?
 

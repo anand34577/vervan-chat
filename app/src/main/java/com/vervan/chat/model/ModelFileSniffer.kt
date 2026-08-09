@@ -38,6 +38,21 @@ object ModelFileSniffer {
      * ArtifactFormatProbe's same finding — so callers must not sniff those against this. */
     fun looksLikeZipBundle(context: Context, uri: Uri): Boolean = magicMatches(context, uri, ZIP_MAGIC)
 
+    /** A bare TFLite graph (a raw `.tflite`/`.bin` embedding export, as opposed to a `.task`
+     * Task Bundle) is a FlatBuffer whose file_identifier — the 4 bytes right after the
+     * FlatBuffer root-table offset, i.e. file offset 4..8 — is the ASCII literal "TFL3" for
+     * every TFLite schema version in real-world use. Used to catch an embedding import's two
+     * files being handed in swapped (tokenizer file picked into the model slot): a SentencePiece
+     * `.model` protobuf never starts with this. */
+    fun looksLikeTflite(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val header = ByteArray(8)
+            input.read(header) == 8 &&
+                header[4] == 'T'.code.toByte() && header[5] == 'F'.code.toByte() &&
+                header[6] == 'L'.code.toByte() && header[7] == '3'.code.toByte()
+        } ?: false
+    }.getOrDefault(false)
+
     private fun magicMatches(context: Context, uri: Uri, magic: ByteArray): Boolean = runCatching {
         context.contentResolver.openInputStream(uri)?.use { input ->
             val header = ByteArray(magic.size)

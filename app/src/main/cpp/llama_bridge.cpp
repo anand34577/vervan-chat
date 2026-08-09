@@ -515,7 +515,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         jfloat repeatPenalty, jint repeatLastN,
         jint seed, jint maxTokens, jstring jChatTemplateOverride,
         jstring jAssistantPrefill, jstring jSystemPrompt, jint jReasoningBudget,
-        jobject callback) {
+        jobjectArray jMessages, jobject callback) {
     auto *session = reinterpret_cast<LlamaSession *>(handle);
     if (session == nullptr) {
         const std::string error = "nativeGenerate() called with a null/closed handle";
@@ -542,6 +542,53 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     const std::string assistantPrefill = jstring_to_std(env, jAssistantPrefill);
     const std::string systemPrompt = jstring_to_std(env, jSystemPrompt);
 
+    // Optional full conversation, as a flat [role0, content0, role1, content1, ...] String[].
+    // When present it REPLACES the systemPrompt/prompt pair below: an OpenAI-compatible caller
+    // (see LocalApiServer) has a real multi-turn message list, and folding it into one "user" turn
+    // as "User: …\nAssistant: …" text is a template violation the model was never trained on —
+    // exactly the failure the single-message path used to have, one level up. Roles are passed
+    // through verbatim rather than validated against a fixed set, so "tool"/"function" turns (and
+    // whatever a future spec adds) reach the template without another signature change here.
+    // Null/odd-length leaves every existing caller on the original two-message path untouched.
+    std::vector<std::string> messageStorage; // owns the text llama_chat_message points at
+    if (jMessages != nullptr) {
+        const jsize count = env->GetArrayLength(jMessages);
+        messageStorage.reserve(static_cast<size_t>(count));
+        for (jsize i = 0; i < count; ++i) {
+            auto element = static_cast<jstring>(env->GetObjectArrayElement(jMessages, i));
+            messageStorage.push_back(jstring_to_std(env, element));
+            if (element != nullptr) env->DeleteLocalRef(element);
+        }
+        // A trailing role with no content would leave a dangling pair; drop it rather than
+        // reading past the end.
+        if (messageStorage.size() % 2 != 0) messageStorage.pop_back();
+    }
+
+    // mtmd_tokenize needs exactly one media marker per bitmap somewhere in the tokenized text, and
+    // *where* it lands matters: a vision-capable chat template (e.g. Gemma3's
+    // "<start_of_turn>user\n{image}\n{text}<end_of_turn>...") was trained with the image inside the
+    // user turn, not ahead of the whole formatted prompt. Splicing the marker into the raw "user"
+    // turn's content here, before templating runs below, means llama_chat_apply_template places it
+    // exactly where the template puts that turn's text — the marker rides along with the turn
+    // instead of landing in front of the turn-boundary/role tokens (and the model's own <bos>),
+    // which is structurally wrong regardless of how well the model happens to tolerate it. Templated
+    // or not (the tmpl==nullptr raw-prompt fallback below still uses these same strings), the model
+    // sees the marker in the same place its training data would have had one.
+#ifdef VERVAN_HAS_MTMD
+    if (!imagePath.empty()) {
+        std::string *lastUserContent = nullptr;
+        for (size_t i = messageStorage.size(); i >= 2; i -= 2) {
+            if (messageStorage[i - 2] == "user") { lastUserContent = &messageStorage[i - 1]; break; }
+        }
+        if (lastUserContent != nullptr) {
+            *lastUserContent = std::string(mtmd_default_marker()) + "\n" + *lastUserContent;
+        } else {
+            // Legacy two-message shape (no messageStorage) — prompt itself becomes the "user" turn.
+            prompt = std::string(mtmd_default_marker()) + "\n" + prompt;
+        }
+    }
+#endif
+
     // Wrap the app's pre-assembled system/user text as real chat-template turns and apply a
     // template — either the user's own override (a llama_chat_builtin_templates() name, or raw
     // custom Jinja text) or, failing that, the GGUF's own embedded template (e.g. ChatML for
@@ -557,9 +604,20 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         : llama_model_chat_template(session->model, nullptr);
     if (tmpl != nullptr) {
         std::vector<llama_chat_message> messages;
-        if (!systemPrompt.empty()) messages.push_back({"system", systemPrompt.c_str()});
-        messages.push_back({"user", prompt.c_str()});
-        std::vector<char> buf((prompt.size() + systemPrompt.size()) * 2 + 256);
+        size_t textBytes = 0;
+        if (!messageStorage.empty()) {
+            // messageStorage is fully populated and never resized past this point, so c_str()
+            // pointers into it stay valid for the whole llama_chat_apply_template call.
+            for (size_t i = 0; i + 1 < messageStorage.size(); i += 2) {
+                messages.push_back({messageStorage[i].c_str(), messageStorage[i + 1].c_str()});
+                textBytes += messageStorage[i].size() + messageStorage[i + 1].size();
+            }
+        } else {
+            if (!systemPrompt.empty()) messages.push_back({"system", systemPrompt.c_str()});
+            messages.push_back({"user", prompt.c_str()});
+            textBytes = prompt.size() + systemPrompt.size();
+        }
+        std::vector<char> buf(textBytes * 2 + 256);
         auto apply = [&](const char *t) -> int32_t {
             int32_t needed = llama_chat_apply_template(t, messages.data(), messages.size(), /* add_ass */ true, buf.data(), static_cast<int32_t>(buf.size()));
             if (needed > static_cast<int32_t>(buf.size())) {
@@ -579,10 +637,16 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
             // turn folded in as user text, then fall back to ChatML — the de-facto default that
             // llama.cpp's own common code falls back to, and correct for the Qwen/MiniCPM family.
             LOGE("chat template unrecognized by llama_chat_apply_template(); retrying with chatml fallback");
-            if (!systemPrompt.empty()) {
-                messages.clear();
-                mergedSystemUser = systemPrompt + "\n\n" + jstring_to_std(env, jPrompt);
-                messages.push_back({"user", mergedSystemUser.c_str()});
+            // Same system-turn-rejection retry as before (Gemma-family templates refuse a "system"
+            // role outright), generalized to the multi-message path: fold the leading system turn
+            // into the message that follows it and re-apply, rather than only handling the
+            // two-message shape. Everything after that first turn is preserved as its own turn.
+            if (!messages.empty() && std::string(messages.front().role) == "system" && messages.size() > 1) {
+                mergedSystemUser = std::string(messages[0].content) + "\n\n" + messages[1].content;
+                std::vector<llama_chat_message> merged;
+                merged.push_back({messages[1].role, mergedSystemUser.c_str()});
+                for (size_t i = 2; i < messages.size(); ++i) merged.push_back(messages[i]);
+                messages = std::move(merged);
                 needed = apply(tmpl);
             }
             if (needed < 0) needed = apply("chatml");
@@ -658,17 +722,18 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
             set_last_error("Failed to load image: " + imagePath);
             ok = false;
         } else {
-            // mtmd_tokenize requires exactly one media marker per bitmap in the prompt text — the
-            // Kotlin side sends the raw user prompt with no marker, so splice it in here rather
-            // than pushing this API detail up to callers.
-            const std::string markedPrompt = std::string(mtmd_default_marker()) + "\n" + prompt;
+            // The media marker mtmd_tokenize requires was already spliced into the "user" turn's
+            // raw content above, before templating — not prepended here to the finished prompt.
+            // Doing it that way means the marker rides inside the templated turn structure (right
+            // where the model's own vision training put it) instead of landing ahead of the
+            // turn-boundary/role tokens templating just added.
             mtmd_input_chunks *chunks = mtmd_input_chunks_init();
             // mtmd_input_text gained a text_len field between text and add_special — a 3-arg
             // positional brace-init silently shifts add_special into text_len (truncating text
             // to 1 byte) and zero-inits parse_special to false. Field names required here.
             mtmd_input_text inputText{
-                    /* text */ markedPrompt.c_str(),
-                    /* text_len */ markedPrompt.size(),
+                    /* text */ prompt.c_str(),
+                    /* text_len */ prompt.size(),
                     /* add_special */ true,
                     /* parse_special */ true};
             const mtmd_bitmap *bitmaps[] = {wrapper.bitmap};

@@ -2,6 +2,7 @@ package com.vervan.chat.store.catalog
 
 import android.util.Base64
 import android.util.Log
+import com.vervan.chat.BuildConfig
 import java.security.KeyFactory
 import java.security.PublicKey
 import java.security.Signature
@@ -64,8 +65,8 @@ class CatalogSignatureVerifier(private val trustedKeys: List<PublicKey>) {
         /**
          * Base64 X.509 SubjectPublicKeyInfo blobs for every currently-trusted signing key.
          *
-         * TODO(store): replace with the real P-256 public key before the store ships. Generate the
-         * keypair offline and keep the private half off any build machine:
+         * Supplied through the release build's catalog.publicKeys/VERVAN_CATALOG_PUBLIC_KEYS
+         * configuration. Generate the keypair offline and keep the private half off build machines:
          *
          *   openssl ecparam -name prime256v1 -genkey -noout -out catalog-signing.pem
          *   openssl ec -in catalog-signing.pem -pubout -outform DER | base64 -w0
@@ -73,7 +74,10 @@ class CatalogSignatureVerifier(private val trustedKeys: List<PublicKey>) {
          * An empty list here means [verify] rejects everything, so a build that forgets this step
          * degrades to "store never syncs" rather than "store trusts anything".
          */
-        val EMBEDDED_PUBLIC_KEYS_BASE64: List<String> = emptyList()
+        val EMBEDDED_PUBLIC_KEYS_BASE64: List<String> = BuildConfig.CATALOG_PUBLIC_KEYS_BASE64
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
 
         fun fromEmbeddedKeys(
             encodedKeys: List<String> = EMBEDDED_PUBLIC_KEYS_BASE64

@@ -536,67 +536,66 @@ fun ChatScreen(
     val latestPendingQuote = rememberUpdatedState(pendingQuote)
     val latestVoiceReplyMode = rememberUpdatedState(voiceReplyMode)
     val latestVoicePushToTalk = rememberUpdatedState(voicePushToTalkEnabled)
-    val voiceBridge = remember(vm) {
-        object : com.vervan.chat.voice.VoiceConversationBridge {
-            override suspend fun respond(
-                input: com.vervan.chat.voice.VoiceInputTurn,
-                onAssistantUpdate: (String) -> Unit
-            ): String {
-                val typedPrefix = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                    val value = latestDraft.value.trim()
-                    draft = ""
-                    vm.saveDraft("")
-                    value
-                }
-                val quotePrefix = latestPendingQuote.value?.let { quoted ->
-                    quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
-                }.orEmpty()
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                    pendingQuote = null
-                }
-                val attached = vm.consumeAttachments()
-                val document = vm.pendingDocument.value as? ChatViewModel.DocumentAttachState.Ready
-                vm.clearPendingDocument()
-                val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
-                val mergedSpeech = listOf(typedPrefix, input.text.trim()).filter { it.isNotBlank() }.joinToString(" ")
-                val bodyBase = mergedSpeech.ifBlank {
-                    when {
-                        document != null -> "Describe this document."
-                        attached.imagePath != null && attached.audioPath != null ->
-                            "Analyze the attached image and audio together."
-                        attached.imagePath != null -> "Describe this image."
-                        attached.audioPath != null -> "Transcribe and respond to the attached audio."
-                        else -> ""
-                    }
-                }
-                val body = if (ocrText != null) {
-                    "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-                } else bodyBase
-                return vm.sendVoiceAndAwait(
-                    text = quotePrefix + body,
-                    imagePath = attached.imagePath,
-                    audioPath = attached.audioPath,
-                    documentId = document?.documentId,
-                    inputModality = when {
-                        typedPrefix.isNotBlank() -> "MIXED"
-                        latestVoicePushToTalk.value -> "PUSH_TO_TALK"
-                        else -> "HANDS_FREE"
-                    },
-                    outputModalities = if (latestVoiceReplyMode.value == "NEVER") "TEXT" else "TEXT,SPEECH",
-                    voiceRecordingPath = input.recordingPath,
-                    sttLabel = input.sttLabel,
-                    durationMs = input.durationMs,
-                    onAssistantUpdate = onAssistantUpdate
-                )
+    // Connects the realtime audio session to the ordinary chat pipeline: capture, VAD, STT and
+    // TTS remain owned by RealtimeVoiceController, while this (the only real caller) owns
+    // message persistence, context assembly, retrieval, attachments, tools, branching and LLM
+    // selection — what lets voice remain a modality of an existing conversation instead of
+    // becoming a second chat system.
+    val voiceRespond: suspend (com.vervan.chat.voice.VoiceInputTurn, (String) -> Unit) -> String = remember(vm) {
+        val callback: suspend (com.vervan.chat.voice.VoiceInputTurn, (String) -> Unit) -> String =
+            { input, onAssistantUpdate ->
+            val typedPrefix = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                val value = latestDraft.value.trim()
+                draft = ""
+                vm.saveDraft("")
+                value
             }
-
-            override fun cancelResponse() {
-                vm.cancelGeneration()
+            val quotePrefix = latestPendingQuote.value?.let { quoted ->
+                quoted.lineSequence().joinToString("\n") { "> $it" } + "\n\n"
+            }.orEmpty()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                pendingQuote = null
             }
-        }
+            val attached = vm.consumeAttachments()
+            val document = vm.pendingDocument.value as? ChatViewModel.DocumentAttachState.Ready
+            vm.clearPendingDocument()
+            val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+            val mergedSpeech = listOf(typedPrefix, input.text.trim()).filter { it.isNotBlank() }.joinToString(" ")
+            val bodyBase = mergedSpeech.ifBlank {
+                when {
+                    document != null -> "Describe this document."
+                    attached.imagePath != null && attached.audioPath != null ->
+                        "Analyze the attached image and audio together."
+                    attached.imagePath != null -> "Describe this image."
+                    attached.audioPath != null -> "Transcribe and respond to the attached audio."
+                    else -> ""
+                }
+            }
+            val body = if (ocrText != null) {
+                "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
+            } else bodyBase
+            vm.sendVoiceAndAwait(
+                text = quotePrefix + body,
+                imagePath = attached.imagePath,
+                audioPath = attached.audioPath,
+                documentId = document?.documentId,
+                inputModality = when {
+                    typedPrefix.isNotBlank() -> "MIXED"
+                    latestVoicePushToTalk.value -> "PUSH_TO_TALK"
+                    else -> "HANDS_FREE"
+                },
+                outputModalities = if (latestVoiceReplyMode.value == "NEVER") "TEXT" else "TEXT,SPEECH",
+                voiceRecordingPath = input.recordingPath,
+                sttLabel = input.sttLabel,
+                durationMs = input.durationMs,
+                onAssistantUpdate = onAssistantUpdate
+            )
+            }
+        callback
     }
-    val voiceController = remember(chatId, voiceSessionKey, voiceBridge, selectedGenerationModel?.id) {
-        com.vervan.chat.voice.RealtimeVoiceController(app, voiceBridge, selectedGenerationModel?.id)
+    val voiceCancel = remember(vm) { { vm.cancelGeneration() } }
+    val voiceController = remember(chatId, voiceSessionKey, voiceRespond, selectedGenerationModel?.id) {
+        com.vervan.chat.voice.RealtimeVoiceController(app, voiceRespond, voiceCancel, selectedGenerationModel?.id)
     }
     val voiceState by voiceController.state.collectAsState()
     val voiceTurns by voiceController.turns.collectAsState()
@@ -1163,11 +1162,10 @@ fun ChatScreen(
                         },
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            chat?.title ?: "New conversation",
+                        OverflowTooltipText(
+                            text = chat?.title ?: "New conversation",
                             style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            maxLines = 1
                         )
                         Text(
                             when {
@@ -1226,8 +1224,17 @@ fun ChatScreen(
                         // so it never runs off the screen. Everything else lives in an organized,
                         // sectioned "More options" bottom sheet one tap away.
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                            DropdownMenuItem(text = { Text("Chat details") }, leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showChatStats = true })
+                            // Search first, then incognito right below it (moved out of the "More
+                            // options" sheet — a per-session privacy switch is everyday enough to
+                            // live at the top level, not a tap further in), then the rest, then
+                            // "More options" last.
                             DropdownMenuItem(text = { Text("Find in conversation") }, leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showSearch = true })
+                            DropdownMenuItem(
+                                text = { Text(if (chat?.isTemporary == true) "Turn incognito off" else "Turn incognito on") },
+                                leadingIcon = { Icon(Icons.Filled.VisibilityOff, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = { vm.toggleTemporary(); showOverflow = false }
+                            )
+                            DropdownMenuItem(text = { Text("Chat details") }, leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showChatStats = true })
                             DropdownMenuItem(text = { Text("Mode & model") }, leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { showOverflow = false; showModeSettings = true })
                             DropdownMenuItem(text = { Text(if (chat?.pinned == true) "Unpin" else "Pin") }, leadingIcon = { Icon(if (chat?.pinned == true) Icons.Filled.PushPin else Icons.Outlined.PushPin, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { vm.togglePin(); showOverflow = false })
                             DropdownMenuItem(text = { Text(if (chat?.archived == true) "Unarchive" else "Archive") }, leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = { vm.toggleArchive(); showOverflow = false })
@@ -1241,7 +1248,6 @@ fun ChatScreen(
                             canGenerateTitle = generationModels.isNotEmpty() && !titleGenerating,
                             hasPreviousTitle = chat?.previousTitle != null,
                             savedResponsesCount = chatSavedOutputs.size,
-                            isIncognito = chat?.isTemporary == true,
                             onDismiss = { showMoreSheet = false },
                             onRename = { showMoreSheet = false; showRenameDialog = true },
                             onGenerateTitle = { showMoreSheet = false; vm.generateTitle() },
@@ -1251,7 +1257,6 @@ fun ChatScreen(
                             onContextInspector = { showMoreSheet = false; scope.launch { contextBreakdown = vm.inspectContext(draft) } },
                             toolsAvailable = activeModel?.supportsTools != false,
                             onChatTools = { showMoreSheet = false; showChatTools = true },
-                            onToggleIncognito = { showMoreSheet = false; vm.toggleTemporary() },
                             onAddToKnowledgeBase = { showMoreSheet = false; showKbPicker = true },
                             onManageFolders = { showMoreSheet = false; onOpenFolders() },
                             onDuplicate = { showMoreSheet = false; vm.duplicate(onDone = onBack) },

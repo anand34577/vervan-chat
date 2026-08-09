@@ -181,6 +181,12 @@ class ScreenCaptureActivity : ComponentActivity() {
             }
             if (BubbleService.explainCapturedScreen(file)) finish()
             else {
+                // The PNG is already on disk but never became a Message, so nothing else will
+                // ever reclaim it — MessageAttachmentCleanup only reference-counts paths that
+                // reached a row. A screenshot is the most sensitive image this app produces
+                // (it holds whatever app was on screen), so an orphan here is a privacy leak,
+                // not just wasted space.
+                runCatching { file.delete() }
                 BubbleService.captureFailed("The floating assistant stopped before generation could begin.")
                 finish()
             }

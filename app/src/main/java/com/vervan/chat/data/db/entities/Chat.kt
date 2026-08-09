@@ -10,7 +10,13 @@ import java.util.UUID
     // Every one of these backs a WHERE clause ChatDao actually runs (workspace/folder/project
     // scoped lists, plus the messages.chatId EXISTS subquery in the main chat-list query relies
     // on messages' own index, not this one) — see Migration(36, 37).
-    indices = [Index("workspaceId"), Index("folderId"), Index("projectId")]
+    indices = [
+        Index("workspaceId"),
+        Index("folderId"),
+        Index("projectId"),
+        Index(value = ["deletedAt", "archived", "pinned", "updatedAt"]),
+        Index(value = ["workspaceId", "deletedAt", "pinned", "updatedAt"])
+    ]
 )
 data class Chat(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
@@ -27,7 +33,14 @@ data class Chat(
     val pinned: Boolean = false,
     val archived: Boolean = false,
     val sourceGrounded: Boolean = false,
-    val toolsEnabled: Boolean = false,
+    // On by default: off-by-default meant the tool catalog was never put in the prompt, so the
+    // model truthfully answered "I have no tools" and the whole ToolRegistry was dead weight
+    // unless the user first found the per-chat toggle. Still per-chat switchable (ChatToolsDialog)
+    // and globally filterable (SettingsRepository.disabledToolIds); write/external-action tools
+    // keep their own confirmation gate regardless. No Room migration needed — the schema records
+    // no column default, so this Kotlin constructor default only governs newly inserted rows.
+    // Keep in sync with ChatViewModel.resetChatSettings().
+    val toolsEnabled: Boolean = true,
     // Model profile id (ModelProfileType.id) — shapes context budget, retrieval depth, output
     // length and default thinking mode. Defaults to BALANCED. See llm.ModelProfiles.
     val profile: String = "BALANCED",

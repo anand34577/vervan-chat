@@ -172,7 +172,7 @@ fun SettingsScreen(
                     listOf("interaction", "expert mode", "automatic", "battery", "thermal"), onOpenExperience
                 ),
                 SettingsDestination(
-                    Icons.Filled.AutoAwesome, "Responses & search", "Length, tone, context, and retrieval",
+                    Icons.Filled.AutoAwesome, "Responses & search", "Reply style, context, and document search",
                     listOf("generation", "sampling", "temperature", "top p", "semantic", "keyword", "summary"), onOpenGeneration
                 ),
                 SettingsDestination(

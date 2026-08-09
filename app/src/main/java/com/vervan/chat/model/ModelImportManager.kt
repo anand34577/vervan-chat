@@ -279,16 +279,60 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         val aIsModel = modelExtensions.any { nameA.endsWith(it, ignoreCase = true) }
         val bIsModel = modelExtensions.any { nameB.endsWith(it, ignoreCase = true) }
         val modelUri: Uri
+        val modelName: String
         val tokenizerUri: Uri
         val tokenizerName: String
         when {
-            aIsModel && !bIsModel -> { modelUri = fileA; tokenizerUri = fileB; tokenizerName = nameB }
-            bIsModel && !aIsModel -> { modelUri = fileB; tokenizerUri = fileA; tokenizerName = nameA }
+            aIsModel && !bIsModel -> { modelUri = fileA; modelName = nameA; tokenizerUri = fileB; tokenizerName = nameB }
+            bIsModel && !aIsModel -> { modelUri = fileB; modelName = nameB; tokenizerUri = fileA; tokenizerName = nameA }
             else -> return@withContext ImportResult.Rejected(
                 "Couldn't tell which file is the model and which is the tokenizer (\"$nameA\" and \"$nameB\") — " +
                     "the model should end in one of ${modelExtensions.joinToString()}, the tokenizer file " +
                     "(e.g. tokenizer.model) shouldn't."
             )
+        }
+
+        // Content-sniff the model slot before copying anything — extension alone doesn't catch
+        // the model/tokenizer files being handed in swapped when both extensions happen to be
+        // "plausible" for their slot by name alone (e.g. a renamed file, or a tokenizer that
+        // isn't named the conventional `tokenizer.model`). `.litert` has no published magic
+        // number (same gap as the GENERATION import path — see ModelFileSniffer), so it defers
+        // to the runtime's own load-time error instead of a false-positive rejection here.
+        val modelIsTaskBundle = modelName.endsWith(".task", ignoreCase = true)
+        if (modelIsTaskBundle) {
+            if (!ModelFileSniffer.looksLikeZipBundle(context, modelUri)) {
+                return@withContext ImportResult.Rejected(
+                    "This doesn't look like a valid MediaPipe Task Bundle (missing ZIP header) — check the model and tokenizer files weren't swapped."
+                )
+            }
+        } else if (!modelName.endsWith(".litert", ignoreCase = true)) {
+            if (!ModelFileSniffer.looksLikeTflite(context, modelUri)) {
+                return@withContext ImportResult.Rejected(
+                    "This doesn't look like a valid TFLite embedding graph (missing FlatBuffer header) — check the model and tokenizer files weren't swapped."
+                )
+            }
+        }
+        // The tokenizer slot only matters at runtime for a bare TFLite graph (a Task Bundle
+        // carries its own tokenizer and never reads tokenizerPath — see EmbeddingEngine.load()),
+        // so only that path needs the tokenizer content actually validated here. Reuses the real
+        // parser instead of a second, looser check that could disagree with what load-time
+        // actually accepts.
+        if (!modelIsTaskBundle) {
+            val tokenizerBytes = runCatching {
+                context.contentResolver.openInputStream(tokenizerUri)?.use {
+                    it.readBytesLimited(ImportLimits.MAX_TOKENIZER_BYTES)
+                }
+            }.getOrNull()
+            if (tokenizerBytes == null) {
+                return@withContext ImportResult.Rejected("Could not open selected tokenizer file")
+            }
+            try {
+                com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer(tokenizerBytes)
+            } catch (t: Throwable) {
+                return@withContext ImportResult.Rejected(
+                    "\"$tokenizerName\" doesn't look like a valid SentencePiece tokenizer.model file — check the model and tokenizer files weren't swapped. (${t.message})"
+                )
+            }
         }
 
         val modelResult = import(modelUri, ModelRole.EMBEDDING, onProgress = onProgress)

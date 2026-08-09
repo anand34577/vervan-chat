@@ -131,7 +131,6 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.window.Dialog
@@ -405,7 +404,6 @@ internal fun ChatMoreOptionsSheet(
     canGenerateTitle: Boolean,
     hasPreviousTitle: Boolean,
     savedResponsesCount: Int,
-    isIncognito: Boolean,
     onDismiss: () -> Unit,
     onRename: () -> Unit,
     onGenerateTitle: () -> Unit,
@@ -415,7 +413,6 @@ internal fun ChatMoreOptionsSheet(
     onContextInspector: () -> Unit,
     toolsAvailable: Boolean,
     onChatTools: () -> Unit,
-    onToggleIncognito: () -> Unit,
     onAddToKnowledgeBase: () -> Unit,
     onManageFolders: () -> Unit,
     onDuplicate: () -> Unit,
@@ -462,15 +459,6 @@ internal fun ChatMoreOptionsSheet(
             if (toolsAvailable) {
                 MoreOptionRow(Icons.Filled.Build, "Chat tools", onClick = onChatTools)
             }
-
-            MoreSheetSection("Session")
-            MoreOptionRow(
-                Icons.Filled.VisibilityOff,
-                if (isIncognito) "Turn incognito off" else "Turn incognito on",
-                subtitle = if (isIncognito) "Deletes when you leave" else null,
-                highlight = isIncognito,
-                onClick = onToggleIncognito
-            )
 
             MoreSheetSection("Organize")
             MoreOptionRow(Icons.Filled.Add, "Add to knowledge base", onClick = onAddToKnowledgeBase)
@@ -684,7 +672,7 @@ internal fun ChatContextStrip(
                 val warn = MaterialTheme.colorScheme.vervanWarning
                 AssistChip(
                     onClick = onContextClick,
-                    label = { Text("Context high · ~$contextPercent%", color = warn) },
+                    label = { Text("Context nearly full · ~$contextPercent%", color = warn) },
                     leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = warn, modifier = Modifier.size(18.dp)) },
                     border = BorderStroke(1.dp, warn.copy(alpha = 0.5f))
                 )
@@ -696,11 +684,18 @@ internal fun ChatContextStrip(
             else -> MaterialTheme.colorScheme.primary
         }
         Row(
-            Modifier.fillMaxWidth().padding(top = Space.xs).clickable(onClick = onContextClick),
+            Modifier
+                .fillMaxWidth()
+                .padding(top = Space.xs)
+                .clickable(onClick = onContextClick)
+                .semantics {
+                    contentDescription =
+                        "Estimated context: about $contextTokens of $contextLimit tokens, $contextPercent percent used"
+                },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Context",
+                "Estimated context",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -711,7 +706,7 @@ internal fun ChatContextStrip(
                 trackColor = contextColor.copy(alpha = 0.16f)
             )
             Text(
-                "${compactTokenCount(contextTokens)} / ${compactTokenCount(contextLimit)} · $contextPercent%",
+                "~${compactTokenCount(contextTokens)} of ${compactTokenCount(contextLimit)} tokens · $contextPercent%",
                 style = MaterialTheme.typography.labelSmall,
                 color = contextColor
             )

@@ -17,6 +17,7 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.Folder
 import com.vervan.chat.data.db.entities.ToolAudit
+import com.vervan.chat.data.audit.ToolAuditSanitizer
 import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.data.db.entities.displayName
@@ -287,7 +288,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     override fun onCleared() {
         val pending = _attachments.value
         if (leaveCleanupStarted.compareAndSet(false, true)) {
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            app.applicationScope.launch(Dispatchers.IO) {
                 cleanupChatOnLeave()
                 listOf(pending.imagePath, pending.ocrImagePath, pending.audioPath).forEach(::deleteFileQuietly)
             }
@@ -424,7 +425,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (model == null) return ModelLoadState.NoModel
         return when {
             info.currentModelId == model.id -> ModelLoadState.Ready(
-                model.displayName, activeEngineFor(model).activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
+                model.displayName,
+                // A REMOTE_API model has no on-device hardware backend to report — activeEngineFor
+                // would otherwise fall back to the LiteRT-LM engine's backend, which reflects
+                // whatever (unrelated) model that engine last happened to load, not this one.
+                if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) "Remote"
+                else activeEngineFor(model).activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
             )
             info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id ->
                 ModelLoadState.Loading(model.displayName, "Loading model into memory")
@@ -973,7 +979,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 db.chatDao().update(
                     it.copy(
                         personaId = null, modelId = null, profile = "BALANCED", thinkingMode = null,
-                        sourceGrounded = false, toolsEnabled = false, knowledgeBaseIds = "",
+                        // Matches Chat's own constructor default — "reset" must land on the same
+                        // state a brand-new chat starts in, not a stricter one.
+                        sourceGrounded = false, toolsEnabled = true, knowledgeBaseIds = "",
                         temperature = null, topP = null, topK = null,
                         updatedAt = System.currentTimeMillis()
                     )
@@ -1762,9 +1770,21 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val toolCall = parseResult.calls.firstOrNull()
             if (toolCall == null && parseResult.malformed.isEmpty()) {
                 val generationMs = android.os.SystemClock.elapsedRealtime() - genStartedAt
+                val visible = persistContent(output)
+                // The engine can complete its flow having emitted nothing usable — immediate EOS,
+                // or (suppressReasoning) an unclosed <think> block that eats the whole output —
+                // with no exception thrown, so the .catch{} above never fires. That used to persist
+                // as a silent blank COMPLETE bubble with no signal to the user ("no response" reports).
+                // Surface it the same way an actual generate() failure is surfaced.
+                if (visible.isBlank()) {
+                    Log.w(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() produced no content after ${generationMs}ms")
+                    db.messageDao().update(assistantMessage.copy(content = "", state = MessageState.FAILED))
+                    _error.value = "The model didn't return a response. Try regenerating, or check that it's still loaded in Settings → AI models."
+                    return
+                }
                 db.messageDao().update(
                     assistantMessage.copy(
-                        content = persistContent(output),
+                        content = visible,
                         state = MessageState.COMPLETE,
                         generationMs = generationMs,
                         tokenCount = com.vervan.chat.llm.estimateTokens(output)
@@ -1951,9 +1971,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.toolAuditDao().insert(
                 ToolAudit(
                     toolName = toolName,
-                    paramsJson = params.toString(),
+                    paramsJson = ToolAuditSanitizer.sanitize(params),
                     success = result.success,
-                    summary = result.summary,
+                    // Redacted for the same reason paramsJson is — see sanitizeSummary's doc
+                    // comment; a tool's summary is its output, which for read_clipboard/
+                    // search_notes/search_documents/recall_memory is the sensitive payload itself.
+                    summary = ToolAuditSanitizer.sanitizeSummary(result.summary),
                     risk = risk,
                     chatId = chatId
                 )
@@ -2340,8 +2363,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Memory readout is a binder call to ActivityManager — throttled separately (and
         // coarser) than the plain in-memory token-count/speed math above it.
         private const val LIVE_STATS_INTERVAL_MS = 500L
-        // "two or three meaningful user-assistant exchanges."
-        private const val AUTO_TITLE_TRIGGER_REPLIES = 2
+        // First assistant reply already gives enough topic signal; waiting longer just
+        // delays the sidebar update for no benefit (see TitleGenerator's own min-context guard).
+        private const val AUTO_TITLE_TRIGGER_REPLIES = 1
         // Long-chat context management (summarizeOlderHistoryIfNeeded): turns this far back
         // from the tip always stay raw, never folded into the summary.
         private const val KEEP_RAW_TURNS = 6

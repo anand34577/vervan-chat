@@ -279,7 +279,8 @@ internal fun ImportModelDialog(
     onDismiss: () -> Unit,
     onImport: (ModelRole) -> Unit,
     onImportGguf: () -> Unit,
-    onImportWhisper: () -> Unit
+    onImportWhisper: () -> Unit,
+    onImportRemote: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -326,10 +327,144 @@ internal fun ImportModelDialog(
                         onClick = onImportWhisper
                     )
                 }
+                HorizontalDivider(Modifier.padding(vertical = Space.xs))
+                ImportChoiceCard(
+                    title = "Remote API",
+                    subtitle = "OpenAI-compatible endpoint · your own key",
+                    icon = Icons.Filled.CloudDownload,
+                    enabled = !importing,
+                    horizontal = true,
+                    onClick = onImportRemote
+                )
             }
         },
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * Add/edit an external OpenAI-compatible [ModelInfo] (`engine == REMOTE_API`) — no file picker,
+ * since there's nothing on disk: just where to send requests, the provider's own model name, and
+ * a bearer key. [initial] non-null means editing an existing row (fields prefilled, API key field
+ * left blank — see its own supporting text); null means adding a new one. [onTestConnection]
+ * hits the endpoint's `/models` list before the user commits, so a typo'd URL or bad key is
+ * caught here rather than on first chat send.
+ */
+@Composable
+internal fun RemoteApiModelDialog(
+    initial: ModelInfo?,
+    saving: Boolean,
+    onDismiss: () -> Unit,
+    onTestConnection: suspend (baseUrl: String, apiKey: String) -> Result<Unit>,
+    onSave: (displayName: String, baseUrl: String, apiKey: String, remoteApiModelId: String) -> Unit
+) {
+    var displayName by remember { mutableStateOf(initial?.displayName ?: "") }
+    var baseUrl by remember { mutableStateOf(initial?.remoteBaseUrl ?: "") }
+    var apiKey by remember { mutableStateOf("") }
+    var remoteApiModelId by remember { mutableStateOf(initial?.remoteApiModelId ?: "") }
+    var testResult by remember { mutableStateOf<Result<Unit>?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // Only surfaced once the user has typed something, so an untouched field isn't pre-marked
+    // invalid — but it gates Save/Test either way (see `valid` below).
+    val baseUrlError = com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(baseUrl)
+    val shownBaseUrlError = baseUrlError?.takeIf { baseUrl.isNotBlank() }
+    val valid = displayName.isNotBlank() && baseUrlError == null && remoteApiModelId.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Add remote API model" else "Edit remote API model") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                Text(
+                    "Connects to any OpenAI-compatible /v1/chat/completions endpoint — OpenAI itself, " +
+                        "OpenRouter, or a self-hosted server. Generation leaves this device; the API key " +
+                        "is stored encrypted and only ever sent to the URL below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Display name") },
+                    placeholder = { Text("e.g. GPT-4o mini") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it; testResult = null },
+                    label = { Text("Base URL") },
+                    placeholder = { Text("https://api.openai.com/v1") },
+                    isError = shownBaseUrlError != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                shownBaseUrlError?.let { ValidationMessage(it) }
+                OutlinedTextField(
+                    value = remoteApiModelId,
+                    onValueChange = { remoteApiModelId = it },
+                    label = { Text("Model id") },
+                    placeholder = { Text("gpt-4o-mini") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it; testResult = null },
+                    label = { Text("API key") },
+                    placeholder = { Text(if (initial != null) "Leave blank to keep the current key" else "") },
+                    supportingText = if (initial != null) {
+                        { Text("Leave blank to keep the existing key") }
+                    } else null,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        // Same URL gate as Save — no point spending a round trip on a URL the
+                        // platform would refuse to connect to anyway.
+                        enabled = baseUrlError == null && !testing,
+                        onClick = {
+                            testing = true
+                            testResult = null
+                            scope.launch {
+                                testResult = onTestConnection(baseUrl, apiKey)
+                                testing = false
+                            }
+                        }
+                    ) { Text(if (testing) "Testing…" else "Test connection") }
+                    if (testing) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+                }
+                testResult?.let { result ->
+                    result.fold(
+                        onSuccess = {
+                            Text(
+                                "Connection OK",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        },
+                        onFailure = { ValidationMessage(it.message ?: "Connection failed") }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = valid && !saving,
+                onClick = { onSave(displayName.trim(), baseUrl.trim(), apiKey, remoteApiModelId.trim()) }
+            ) { Text(if (saving) "Saving…" else "Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } }
     )
 }
 

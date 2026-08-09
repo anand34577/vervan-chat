@@ -14,6 +14,12 @@ object OfflineDictationTranscriber {
         app: VervanApp,
         wavFile: File,
         generationModelId: String? = null,
+        /** Why this transcription is happening, for [com.vervan.chat.modelload.ModelLoadCoordinator]'s
+         * TTL bookkeeping on the MODEL_AUDIO path. Dictation in the app is a user action, so it
+         * pins the model as any other user-driven load does; the API server passes
+         * [LoadTrigger.API_REQUEST] instead, so a model loaded to serve `/v1/audio/transcriptions`
+         * stays TTL-managed rather than becoming permanently resident. */
+        loadTrigger: LoadTrigger = LoadTrigger.VOICE_SESSION,
     ): Result<TranscriptionResult> = runCatching {
         val decoded = WavPcmDecoder.decode(wavFile.readBytes())
         require(decoded.samples.isNotEmpty()) { "No speech was recorded" }
@@ -45,7 +51,7 @@ object OfflineDictationTranscriber {
                         model ?: continue
                         val durationMs = decoded.samples.size * 1_000L / decoded.sampleRateHz
                         if (durationMs > MODEL_AUDIO_MAX_MS) continue
-                        val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
+                        val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, loadTrigger)
                         val checkedModel = app.container.db.modelDao().get(model.id) ?: model
                         if (!loaded.success || !app.container.audioEnabled(checkedModel)) continue
                         val params = com.vervan.chat.llm.resolveGenerationParams(checkedModel, app.container.settingsRepository)

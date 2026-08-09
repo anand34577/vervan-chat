@@ -39,12 +39,19 @@ sealed class ExtractResult {
  */
 object TextExtractor {
     fun extract(file: File, displayName: String): ExtractResult {
+        if (file.length() > ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) {
+            return ExtractResult.Unsupported("Document is too large to process safely (max 256 MB)")
+        }
         val ext = displayName.substringAfterLast('.', "").lowercase()
         return when (ext) {
-            in PLAIN_TEXT_EXTENSIONS -> ExtractResult.Text(file.readText())
+            in PLAIN_TEXT_EXTENSIONS -> runCatching {
+                ExtractResult.Text(file.readTextLimited(ImportLimits.MAX_DOCUMENT_SOURCE_BYTES))
+            }.getOrElse { ExtractResult.Unsupported("Could not read text: ${it.message}") }
             "csv" -> extractCsv(file)
             "pdf" -> extractPdf(file)
-            "html", "htm" -> extractHtml(file.readText())
+            "html", "htm" -> runCatching {
+                extractHtml(file.readTextLimited(ImportLimits.MAX_DOCUMENT_SOURCE_BYTES))
+            }.getOrElse { ExtractResult.Unsupported("Could not read HTML: ${it.message}") }
             "docx" -> extractDocx(file)
             "xlsx" -> extractXlsx(file)
             "pptx" -> extractPptx(file)
@@ -75,10 +82,16 @@ object TextExtractor {
                 // page. The one real cost is speed (an extra sort pass per page), negligible next
                 // to what it fixes for exactly the "extraction isn't precise" complaint.
                 stripper.sortByPosition = true
+                var extractedChars = 0
                 val pages = (1..doc.numberOfPages).map { pageNumber ->
                     stripper.startPage = pageNumber
                     stripper.endPage = pageNumber
-                    stripper.getText(doc)
+                    stripper.getText(doc).also {
+                        extractedChars += it.length
+                        if (extractedChars > ImportLimits.MAX_EXTRACTED_CHARS) {
+                            throw InputLimitExceededException("Extracted PDF text is too large")
+                        }
+                    }
                 }
                 if (pages.all { it.isBlank() }) ExtractResult.NeedsOcr else ExtractResult.Paginated(pages)
             }
@@ -91,7 +104,7 @@ object TextExtractor {
         ZipFile(file).use { zip ->
             val entry = zip.getEntry("word/document.xml")
                 ?: return ExtractResult.Unsupported("DOCX has no word/document.xml")
-            val xml = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+            val xml = zip.readEntryTextLimited(entry)
                 .replace("</w:p>", "</w:p>\n")
                 .replace("<w:tab/>", "\t")
             ExtractResult.Text(Jsoup.parse(xml).text())
@@ -121,7 +134,7 @@ object TextExtractor {
     private fun extractXlsx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
             val sharedStrings = zip.getEntry("xl/sharedStrings.xml")?.let { entry ->
-                val xml = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                val xml = zip.readEntryTextLimited(entry)
                 Regex("<si>(.*?)</si>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { m ->
                     Regex("<t[^>]*>(.*?)</t>", RegexOption.DOT_MATCHES_ALL).findAll(m.groupValues[1])
                         .joinToString("") { it.groupValues[1] }
@@ -129,14 +142,14 @@ object TextExtractor {
                 }.toList()
             } ?: emptyList()
 
-            val sheetEntries = zip.entries().asSequence()
+            val sheetEntries = zip.checkedEntries().asSequence()
                 .filter { it.name.startsWith("xl/worksheets/sheet") && it.name.endsWith(".xml") }
                 .sortedBy { it.name }
                 .toList()
             if (sheetEntries.isEmpty()) return@use ExtractResult.Unsupported("XLSX has no worksheet parts")
 
             val sheets = sheetEntries.mapIndexed { i, entry ->
-                val xml = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+                val xml = zip.readEntryTextLimited(entry)
                 val rows = Regex("<row[^>]*>(.*?)</row>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { rowMatch ->
                     Regex("<c[^>]*?(?:\\s+t=\"(\\w+)\")?[^>]*>(.*?)</c>", RegexOption.DOT_MATCHES_ALL).findAll(rowMatch.groupValues[1]).map { cellMatch ->
                         val type = cellMatch.groupValues[1]
@@ -183,16 +196,16 @@ object TextExtractor {
      * StAX-avoidance reason as DOCX/XLSX. */
     private fun extractPptx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
-            val slideEntries = zip.entries().asSequence()
+            val slideEntries = zip.checkedEntries().asSequence()
                 .filter { Regex("ppt/slides/slide\\d+\\.xml").matches(it.name) }
                 .sortedBy { slideNumber(it.name) }
                 .toList()
             if (slideEntries.isEmpty()) return@use ExtractResult.Unsupported("PPTX has no slide parts")
             val slides = slideEntries.map { entry ->
                 val num = slideNumber(entry.name)
-                val body = extractDrawingMlText(zip.getInputStream(entry).bufferedReader().use { it.readText() })
+                val body = extractDrawingMlText(zip.readEntryTextLimited(entry))
                 val notes = zip.getEntry("ppt/notesSlides/notesSlide$num.xml")?.let { ne ->
-                    extractDrawingMlText(zip.getInputStream(ne).bufferedReader().use { it.readText() })
+                    extractDrawingMlText(zip.readEntryTextLimited(ne))
                 }
                 SlideText(num, body, notes?.takeIf { it.isNotBlank() })
             }
@@ -217,12 +230,20 @@ object TextExtractor {
 
     private fun extractEpub(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
-            val text = zip.entries().asSequence()
+            val htmlEntries = zip.checkedEntries().asSequence()
                 .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in setOf("html", "htm", "xhtml") }
                 .sortedBy { it.name }
-                .joinToString("\n\n") { entry ->
-                    Jsoup.parse(zip.getInputStream(entry).bufferedReader().use { it.readText() }).text()
+                .toList()
+            val text = buildString {
+                htmlEntries.forEach { entry ->
+                    val part = Jsoup.parse(zip.readEntryTextLimited(entry)).text()
+                    if (length + part.length + 2 > ImportLimits.MAX_EXTRACTED_CHARS) {
+                        throw InputLimitExceededException("Extracted EPUB text is too large")
+                    }
+                    if (isNotEmpty()) append("\n\n")
+                    append(part)
                 }
+            }
             if (text.isBlank()) ExtractResult.Unsupported("EPUB contains no readable HTML") else ExtractResult.Text(text)
         }
     } catch (e: Exception) {
@@ -260,7 +281,7 @@ object TextExtractor {
     /** RFC4180-ish quoted-field parsing (embedded commas/newlines, escaped `""`) — enough for
      * real-world CSV exports without pulling in a dedicated CSV library for it. */
     private fun extractCsv(file: File): ExtractResult {
-        val content = file.readText()
+        val content = file.readTextLimited(ImportLimits.MAX_DOCUMENT_SOURCE_BYTES)
         if (content.isBlank()) return ExtractResult.Unsupported("CSV is empty")
         val rows = parseCsv(content)
         if (rows.isEmpty()) return ExtractResult.Unsupported("CSV is empty")

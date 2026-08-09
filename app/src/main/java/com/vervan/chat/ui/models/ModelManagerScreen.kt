@@ -131,6 +131,7 @@ fun ModelManagerScreen(
         initializer { ModelManagerViewModel(app) }
     })
     val models by vm.models.collectAsStateWithLifecycle()
+    val modelsLoaded by vm.modelsLoaded.collectAsStateWithLifecycle()
     val defaults by vm.defaults.collectAsStateWithLifecycle()
     val expertMode by vm.expertMode.collectAsStateWithLifecycle()
     val useMlockDefault by vm.useMlockDefault.collectAsStateWithLifecycle()
@@ -190,6 +191,12 @@ fun ModelManagerScreen(
     val pickWhisperFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { pendingWhisperUri = it }
     }
+
+    // Remote OpenAI-compatible API model — no file picker, just endpoint/key/model-id fields.
+    // null editingRemoteModel + showRemoteApiDialog = adding a new one; non-null = editing an
+    // existing row (see the model card's own edit affordance further below).
+    var showRemoteApiDialog by remember { mutableStateOf(false) }
+    var editingRemoteModel by remember { mutableStateOf<ModelInfo?>(null) }
 
     // Press-and-hold selects one or more models for bulk delete; tapping a card while in
     // selection mode toggles it instead of doing its normal action.
@@ -291,7 +298,21 @@ fun ModelManagerScreen(
             // (recommended setup + Model Store + catalog) instead of an empty Library list —
             // that picker IS the single "one entry point" this screen already provides, it just
             // wasn't the default tab.
-            var showingDiscover by rememberSaveable { mutableStateOf(browseBudgetBytes != null || generationModels.isEmpty()) }
+            //
+            // The default can't be decided on the very first frame: `models` starts out as
+            // `vm.models`'s stateIn seed (empty) for at least one dispatch before Room's real
+            // query result arrives, and rememberSaveable's initializer only ever runs once — it
+            // used to latch onto that transient empty list and land on Discover even when the
+            // user already had a generation model installed (e.g. tapping the model name on
+            // Home). Wait for modelsLoaded before deciding, then decide exactly once.
+            var showingDiscover by rememberSaveable { mutableStateOf(browseBudgetBytes != null) }
+            var discoverDefaultDecided by rememberSaveable { mutableStateOf(browseBudgetBytes != null) }
+            LaunchedEffect(modelsLoaded) {
+                if (!discoverDefaultDecided && modelsLoaded) {
+                    showingDiscover = generationModels.isEmpty()
+                    discoverDefaultDecided = true
+                }
+            }
 
             if (downloadingStates.isNotEmpty()) {
                 SectionHeader("Active downloads", Icons.Filled.CloudDownload)
@@ -372,7 +393,18 @@ fun ModelManagerScreen(
                                 showSetActive = generationModels.size > 1,
                                 onSetActive = { vm.setActive(model) },
                                 onToggleLoad = { if (generationLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
-                                onEdit = { editingModel = model },
+                                // A REMOTE_API row has no llama.cpp/LiteRT-LM sliders to
+                                // configure — ModelEditDialog's fields (backend, context,
+                                // GPU layers, ...) are all meaningless for it, so it gets its own
+                                // endpoint/key/model-id editor instead.
+                                onEdit = {
+                                    if (model.engine == ModelEngine.REMOTE_API) {
+                                        editingRemoteModel = model
+                                        showRemoteApiDialog = true
+                                    } else {
+                                        editingModel = model
+                                    }
+                                },
                                 onBenchmark = { vm.benchmark(model) },
                                 onDelete = { vm.delete(model) },
                                 busy = busyModelId == model.id,
@@ -483,6 +515,42 @@ fun ModelManagerScreen(
                 showImportOptions = false
                 pendingWhisperUri = null
                 showWhisperImportDialog = true
+            },
+            onImportRemote = {
+                showImportOptions = false
+                editingRemoteModel = null
+                showRemoteApiDialog = true
+            }
+        )
+    }
+
+    if (showRemoteApiDialog) {
+        RemoteApiModelDialog(
+            initial = editingRemoteModel,
+            saving = importing,
+            onDismiss = { showRemoteApiDialog = false; editingRemoteModel = null },
+            onTestConnection = { baseUrl, apiKey ->
+                val effectiveKey = apiKey.ifBlank {
+                    editingRemoteModel?.let { app.container.remoteApiKeyStore.get(it.id) }.orEmpty()
+                }
+                // This leaves the device carrying the user's bearer key, so it belongs in the
+                // audit log like every other outbound request (model downloads, store catalogue,
+                // remote generation). Host only, never the full URL — a base URL a user pasted
+                // could carry a token in its query string, and the audit log is user-visible.
+                app.container.networkAuditLog.record(
+                    "Remote API connection test: ${runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: "invalid URL"}"
+                )
+                com.vervan.chat.llm.RemoteOpenAiEngine.testConnection(baseUrl, effectiveKey)
+            },
+            onSave = { name, baseUrl, apiKey, remoteModelId ->
+                val existing = editingRemoteModel
+                if (existing != null) {
+                    vm.updateRemoteApiModel(existing, name, baseUrl, apiKey, remoteModelId)
+                } else {
+                    vm.addRemoteApiModel(name, baseUrl, apiKey, remoteModelId)
+                }
+                showRemoteApiDialog = false
+                editingRemoteModel = null
             }
         )
     }
