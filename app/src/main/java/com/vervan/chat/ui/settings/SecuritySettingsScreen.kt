@@ -209,7 +209,10 @@ fun SecuritySettingsScreen(
             }
 
             Card(
-                Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
+                // Vertical-only padding, same as every other card on this screen: PageContainer
+                // already owns the horizontal gutter, so an extra horizontal padding here just
+                // inset this one card 24dp narrower than its siblings.
+                Modifier.fillMaxWidth().padding(vertical = Space.xs),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
                 Column(Modifier.padding(Space.lg)) {
@@ -344,10 +347,8 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     val context = LocalContext.current
     val calendar by vm.calendarToolEnabled.collectAsState()
     val deviceStatus by vm.deviceStatusToolEnabled.collectAsState()
-    val location by vm.locationToolEnabled.collectAsState()
 
     val requestCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setCalendarToolEnabled(granted) }
-    val requestLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setLocationToolEnabled(granted) }
 
     // Each toggle's own app-level "on" is independently checked at call time anyway (see
     // ToolRegistry.gatedResult), so a revoked permission never breaks a tool call — this just
@@ -357,7 +358,6 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     fun hasPermission(permission: String) = androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
     androidx.compose.runtime.LaunchedEffect(resumeTick) {
         if (calendar && !hasPermission(android.Manifest.permission.READ_CALENDAR)) vm.setCalendarToolEnabled(false)
-        if (location && !hasPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)) vm.setLocationToolEnabled(false)
     }
 
     Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
@@ -373,9 +373,6 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
                 if (turnOn) requestCalendar.launch(android.Manifest.permission.READ_CALENDAR) else vm.setCalendarToolEnabled(false)
             }
             DataSourceRow("Device status (battery, storage, network, Wi-Fi)", deviceStatus) { vm.setDeviceStatusToolEnabled(it) }
-            DataSourceRow("Location (coarse, no address lookup)", location) { turnOn ->
-                if (turnOn) requestLocation.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION) else vm.setLocationToolEnabled(false)
-            }
         }
     }
 }

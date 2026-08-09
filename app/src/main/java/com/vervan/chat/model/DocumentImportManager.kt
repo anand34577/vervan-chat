@@ -13,15 +13,23 @@ import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
+import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.toBytes
+import com.vervan.chat.llm.RemoteApiKeyStore
+import com.vervan.chat.llm.RemoteOpenAiEngine
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.retrieval.EmbeddingEngine
+import com.vervan.chat.retrieval.embedBatchWith
+import com.vervan.chat.retrieval.embeddingReady
+import com.vervan.chat.system.NetworkAuditLog
 import com.vervan.chat.system.NotificationHelper
 import com.vervan.chat.system.toUserMessage
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 
 /** Result of [DocumentImportManager.import] — a name+content conflict with an existing,
@@ -44,12 +52,38 @@ class DocumentImportManager(
     private val chunkDao: ChunkDao,
     private val embeddingEngine: EmbeddingEngine,
     private val modelDao: ModelDao,
-    private val jobDao: JobDao? = null
+    private val jobDao: JobDao? = null,
+    private val embeddingMutex: Mutex,
+    private val remoteOpenAiEngine: RemoteOpenAiEngine,
+    private val remoteApiKeyStore: RemoteApiKeyStore,
+    private val networkAuditLog: NetworkAuditLog
 ) {
     private val docsDir: File
         get() = File(context.filesDir, "documents").apply { mkdirs() }
 
-    suspend fun import(kbId: String, uri: Uri): DocumentImportOutcome = withContext(Dispatchers.IO) {
+    /** In-memory only (not persisted — this is a live progress readout for whatever import is
+     * actually running right now, not history) — see [persistChunks]'s doc comment for why this
+     * exists only for the EMBEDDING stage. A single field, not a per-document map: this manager
+     * only ever runs one import at a time from any UI entry point today, so there is never more
+     * than one document actually embedding. */
+    data class EmbedProgress(val documentId: String, val done: Int, val total: Int)
+    private val _embedProgress = kotlinx.coroutines.flow.MutableStateFlow<EmbedProgress?>(null)
+    val embedProgress: kotlinx.coroutines.flow.StateFlow<EmbedProgress?> = _embedProgress
+
+    /**
+     * @param reuseExistingByHash When true, a content-identical READY document *anywhere* (any
+     *   knowledge base, not just [kbId]) short-circuits to [DocumentImportOutcome.Duplicate]
+     *   instead of re-extracting/re-chunking/re-embedding the same bytes into a new document row.
+     *   Opt-in, off by default: the Knowledge Base library import (a user deliberately adding a
+     *   file to a KB *they picked*) keeps today's per-KB-only dedup, since silently redirecting
+     *   that to a copy living in some other KB would be surprising and would leave the file
+     *   unretrievable from the KB the user actually chose. The chat-attach flow (see
+     *   ChatViewModel.attachDocument) passes true: every attach creates its own disposable,
+     *   meaninglessly-named single-document KB, so there is no deliberate placement to respect —
+     *   reusing whichever KB the content already lives in serves the request identically, without
+     *   paying for (or storing) a duplicate copy.
+     */
+    suspend fun import(kbId: String, uri: Uri, reuseExistingByHash: Boolean = false): DocumentImportOutcome = withContext(Dispatchers.IO) {
         val name = safeFileName(queryDisplayName(uri) ?: uri.lastPathSegment ?: "document")
         val sourceSize = queryFileSize(uri)
         if (sourceSize != null && sourceSize > ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) {
@@ -114,6 +148,13 @@ class DocumentImportManager(
 
         val hash = digest.digest().joinToString("") { "%02x".format(it) }
         val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+
+        if (reuseExistingByHash) {
+            documentDao.findActiveByHash(hash)?.let { globalExisting ->
+                dest.delete()
+                return@withContext DocumentImportOutcome.Duplicate(globalExisting)
+            }
+        }
 
         val existing = documentDao.findActiveByNameInKb(kbId, name)
         if (existing != null) {
@@ -297,11 +338,38 @@ class DocumentImportManager(
         // Looked up once per document, not per chunk — the active embedding model can't change
         // mid-import, and this is what stamps every chunk's embeddingModelId so a later model
         // switch can be told apart from "still current" (see Chunk.embeddingModelId).
-        val activeEmbeddingModelId = if (embeddingEngine.isLoaded) modelDao.getActiveModel(ModelRole.EMBEDDING)?.id else null
+        val embeddingModel = modelDao.getActiveModel(ModelRole.EMBEDDING)
+        val embeddingIsReady = embeddingReady(embeddingModel, embeddingEngine)
+        val activeEmbeddingModelId = if (embeddingIsReady) embeddingModel?.id else null
         var embedFailures = 0
+        // This is also the one stage of the 5-stage progress card (see KnowledgeBaseDetailScreen's
+        // JobProgressCard) that can visibly sit still for a long time on a big document — the other
+        // four are near-instant. _embedProgress gives the UI a real "N of M chunks" figure to show
+        // during it instead of a flat, unmoving "Embedding…" for however long that takes.
+        if (embeddingIsReady) _embedProgress.value = EmbedProgress(doc.id, 0, raw.size)
+        val embeddings = arrayOfNulls<FloatArray>(raw.size)
+        if (embeddingIsReady) {
+            // A remote model batches into one HTTP round trip per REMOTE_EMBED_BATCH_SIZE chunks
+            // (see RemoteOpenAiEngine.embedBatch) instead of one request per chunk — the same
+            // handful of chunks is fine sequentially, a large document was genuinely slow. A local
+            // model gets no such economy (one native call either way), so it stays at batch size 1
+            // — same one-chunk-at-a-time progress granularity as before this change.
+            val batchSize = if (embeddingModel!!.engine == ModelEngine.REMOTE_API) REMOTE_EMBED_BATCH_SIZE else 1
+            var done = 0
+            for (indices in raw.indices.chunked(batchSize)) {
+                ensureJobActive(jobId)
+                val results = embedBatchWith(
+                    embeddingModel, indices.map { raw[it].text }, indices.map { raw[it].sectionPath },
+                    embeddingEngine, embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
+                )
+                indices.forEachIndexed { i, rawIndex -> embeddings[rawIndex] = results.getOrNull(i) }
+                done += indices.size
+                if (_embedProgress.value?.documentId == doc.id) _embedProgress.value = EmbedProgress(doc.id, done, raw.size)
+            }
+        }
         val chunks = raw.mapIndexed { index, rc ->
-            val embedding = if (embeddingEngine.isLoaded) embeddingEngine.embed(rc.text, title = rc.sectionPath)?.toBytes() else null
-            if (embeddingEngine.isLoaded && embedding == null) embedFailures++
+            val embedding = embeddings[index]?.toBytes()
+            if (embeddingIsReady && embedding == null) embedFailures++
             Chunk(
                 documentId = doc.id,
                 knowledgeBaseId = kbId,
@@ -314,6 +382,7 @@ class DocumentImportManager(
                 chunkIndex = index
             )
         }
+        if (_embedProgress.value?.documentId == doc.id) _embedProgress.value = null
         ensureJobActive(jobId)
         chunkDao.insertAll(chunks)
 
@@ -429,5 +498,10 @@ class DocumentImportManager(
 
     companion object {
         private const val STORAGE_SAFETY_MARGIN_BYTES = 100L * 1024 * 1024 // 100MB headroom
+        // ponytail: a fixed guess, not negotiated with the server. OpenAI's own /embeddings
+        // accepts far more per request; a smaller self-hosted OpenAI-compatible server might not
+        // — 32 chunks (~12K tokens at TARGET_TOKENS) is comfortably under what any real
+        // implementation rejects. Revisit if a specific provider's limit shows up as a complaint.
+        private const val REMOTE_EMBED_BATCH_SIZE = 32
     }
 }

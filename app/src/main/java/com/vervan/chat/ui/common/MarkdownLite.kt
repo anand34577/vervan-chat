@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +67,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -201,6 +203,28 @@ private fun MarkdownProse(markdown: String) {
             .usePlugin(LinkifyPlugin.create())
             .build()
     }
+    // Markwon's TablePlugin measures every row's column widths across the whole table on each
+    // setMarkdown() call — cheap for a paragraph, not for a table. A streaming message updates its
+    // content roughly every 80ms (ChatViewModel.STREAM_PERSIST_INTERVAL_MS), so a table growing row
+    // by row was getting fully re-measured and re-laid-out at that same cadence, which is what read
+    // as the screen flickering/glitching while a table streamed in. Throttling to one relayout per
+    // TABLE_RENDER_THROTTLE_MS fixes that without slowing down the far more common case of plain
+    // streaming prose, which still updates on every tick.
+    val containsTable = remember(markdown) { TABLE_ROW.containsMatchIn(markdown) }
+    // ponytail: a real throttle, not a debounce — the loop's own delay() cadence gates the
+    // update, decoupled from `markdown`'s key. Keying the effect on `markdown` (as a prior
+    // version of this did) restarts the delay on every streaming tick, and since ticks arrive
+    // faster than the throttle window, the wait never elapses and the table sits frozen mid-stream.
+    val latestMarkdown = rememberUpdatedState(markdown)
+    var throttled by remember { mutableStateOf(markdown) }
+    LaunchedEffect(containsTable) {
+        if (!containsTable) return@LaunchedEffect
+        while (true) {
+            throttled = latestMarkdown.value
+            delay(TABLE_RENDER_THROTTLE_MS)
+        }
+    }
+    val displayed = if (containsTable) throttled else markdown
     AndroidView(
         modifier = Modifier.fillMaxWidth(),
         factory = { ctx ->
@@ -216,10 +240,16 @@ private fun MarkdownProse(markdown: String) {
         update = { view ->
             view.setTextColor(colors.onSurface.toArgb())
             view.setLinkTextColor(colors.primary.toArgb())
-            markwon.setMarkdown(view, normalizeLatexDelimiters(markdown))
+            markwon.setMarkdown(view, normalizeLatexDelimiters(displayed))
         }
     )
 }
+
+/** Matches a GFM table row/separator line (`| a | b |`, `| --- | --- |`) — used only to decide
+ * whether the streaming throttle above applies, not for parsing (Markwon's TablePlugin does the
+ * real parsing). */
+private val TABLE_ROW = Regex("(?m)^\\s*\\|.*\\|\\s*$")
+private const val TABLE_RENDER_THROTTLE_MS = 300L
 
 @Composable
 private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {
@@ -284,6 +314,12 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
     var fixedSource by remember(source) { mutableStateOf<String?>(null) }
     var renderError by remember(source) { mutableStateOf<String?>(null) }
     var fixing by remember(source) { mutableStateOf(false) }
+    // A small on-device model invalidating its own Mermaid syntax (unquoted labels, raw HTML) is
+    // routine enough that making the user notice a small red line and tap a button is a dead end
+    // more often than a rescue — try once automatically, silently, the moment a render fails.
+    // Still keyed on `source` so a genuinely new diagram (streaming, branch switch, regenerate)
+    // gets its own fresh attempt rather than being stuck remembering an old one's outcome.
+    var autoFixAttempted by remember(source) { mutableStateOf(false) }
     var showFullscreen by remember { mutableStateOf(false) }
     val effectiveSource = fixedSource ?: source
     val currentErrorCallback by rememberUpdatedState<(String?) -> Unit>(newValue = { renderError = it })
@@ -297,6 +333,13 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
             }.getOrNull()
             fixing = false
             if (!fixed.isNullOrBlank()) fixedSource = stripCodeFence(fixed)
+        }
+    }
+
+    LaunchedEffect(renderError) {
+        if (renderError != null && !autoFixAttempted) {
+            autoFixAttempted = true
+            fixWithAi()
         }
     }
 

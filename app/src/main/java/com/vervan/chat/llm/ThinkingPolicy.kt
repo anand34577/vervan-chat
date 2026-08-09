@@ -48,11 +48,29 @@ object ThinkingPolicy {
         // (see suppressReasoning in ChatViewModel.runGenerationLoop) is the hard guarantee on top.
         isReasoningModel: Boolean = false
     ): String {
-        val base = when (mode) {
-            "FAST" -> "Before answering, briefly think through the problem in 1-2 sentences wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            "BALANCED" -> "Before answering, think through the problem step by step wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            "DEEP" -> "Before answering, think through the problem thoroughly, considering multiple angles and edge cases, wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
-            else -> if (isReasoningModel) "Answer directly and concisely. Do not produce any internal reasoning, analysis, or <think> sections — reply with only the final answer." else ""
+        // A native reasoner already has its own reasoning channel — a separate `reasoning_content`
+        // stream for REMOTE_API (see ReasoningStreamMerger), or its own unprompted <think> block
+        // for LiteRT-LM/llama.cpp — so telling it to ALSO wrap its visible answer in literal
+        // <thinking></thinking> tags is a second, redundant instruction on top of a channel it's
+        // already using correctly. A model trying to satisfy both ends up narrating the instruction
+        // itself ("the instructions say to wrap thinking in tags...") into the *answer* text instead
+        // of just answering — reasoning bleeding out past the collapsed thinking card, mid-reply.
+        // A non-reasoning model has no such channel, so asking it to role-play one via literal tags
+        // is still the only way to get any visible reasoning out of it at all.
+        val base = if (isReasoningModel) {
+            when (mode) {
+                "FAST" -> "Keep your reasoning brief before answering."
+                "BALANCED" -> "Think through the problem step by step before answering."
+                "DEEP" -> "Think through the problem thoroughly, considering multiple angles and edge cases, before answering."
+                else -> "Answer directly and concisely. Do not produce any internal reasoning, analysis, or <think> sections — reply with only the final answer."
+            }
+        } else {
+            when (mode) {
+                "FAST" -> "Before answering, briefly think through the problem in 1-2 sentences wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+                "BALANCED" -> "Before answering, think through the problem step by step wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+                "DEEP" -> "Before answering, think through the problem thoroughly, considering multiple angles and edge cases, wrapped in <thinking></thinking> tags, then give your final answer outside the tags."
+                else -> ""
+            }
         }
         if (engine != ModelEngine.LLAMA_CPP) return base
         return when (mode) {

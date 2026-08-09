@@ -92,6 +92,7 @@ import com.vervan.chat.ui.home.HomeScreen
 import com.vervan.chat.ui.knowledge.DocumentViewerScreen
 import com.vervan.chat.ui.knowledge.KnowledgeBaseDetailScreen
 import com.vervan.chat.ui.knowledge.KnowledgeScreen
+import com.vervan.chat.ui.knowledge.KnowledgeTwoPaneScreen
 import com.vervan.chat.ui.knowledge.SourcePassageScreen
 import com.vervan.chat.ui.library.LibraryScreen
 import com.vervan.chat.ui.memory.MemorySuggestionsScreen
@@ -335,7 +336,17 @@ fun VervanNavGraph(
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            // Compose Navigation's default transition is a plain crossfade — both the outgoing
+            // and incoming screen are partially transparent at the same time mid-animation, which
+            // reads as a jumbled "overlay" flash rather than one screen replacing another
+            // (most visible navigating into a screen with very different content density, e.g.
+            // Home's hero card -> Model Manager's warning/empty-state cards). A slide keeps both
+            // screens fully opaque throughout — offset, not blended — so nothing double-exposes.
+            enterTransition = { androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) },
+            exitTransition = { androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 4 }) },
+            popEnterTransition = { androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 4 }) },
+            popExitTransition = { androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) }
         ) {
             composable(AppRoutes.ONBOARDING) {
                 OnboardingScreen(
@@ -714,7 +725,13 @@ fun VervanNavGraph(
                 )
             }
             composable("knowledge") {
-                KnowledgeScreen(onOpenKb = { kbId -> navController.navigate("knowledge/$kbId") })
+                if (useTwoPane) {
+                    KnowledgeTwoPaneScreen(
+                        onOpenDocument = { documentId -> navController.navigate("document/$documentId") }
+                    )
+                } else {
+                    KnowledgeScreen(onOpenKb = { kbId -> navController.navigate("knowledge/$kbId") })
+                }
             }
             composable("knowledge/{kbId}") { entry ->
                 val kbId = entry.arguments?.getString("kbId") ?: return@composable

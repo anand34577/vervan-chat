@@ -17,9 +17,20 @@ object ToolCallParser {
      * call didn't go through, instead of silently dropping it. */
     data class ParseResult(val calls: List<ToolCall>, val malformed: List<String>)
 
-    private val COMPLETE = Regex("<\\s*tool_call\\s*>([\\s\\S]*?)<\\s*/\\s*tool_call\\s*>", RegexOption.IGNORE_CASE)
-    private val STREAMING = Regex("<\\s*tool_call\\s*>([\\s\\S]*)$", RegexOption.IGNORE_CASE)
+    // The `|` variants are not hypothetical: Gemma-class models emit their own native
+    // `<|tool_call>call:name{}<tool_call|>` shape no matter what the prompt asks for, and the old
+    // strict `<tool_call>` match skipped it entirely — so the block fell through to the answer and
+    // the user saw raw `<|tool_call>call:list_tools{}<tool_call|>` in the bubble instead of the
+    // tool running. Accept the pipe on either side, and `/` on either side of the closer, so every
+    // observed open/close permutation parses.
+    private const val OPEN = "<\\s*\\|?\\s*tool_call\\s*\\|?\\s*>"
+    private const val CLOSE = "<\\s*\\|?\\s*/?\\s*tool_call\\s*/?\\s*\\|?\\s*>"
+    private val COMPLETE = Regex("$OPEN([\\s\\S]*?)$CLOSE", RegexOption.IGNORE_CASE)
+    private val STREAMING = Regex("$OPEN([\\s\\S]*)$", RegexOption.IGNORE_CASE)
     private val CODE_FENCE = Regex("^```[a-zA-Z]*\\s*|\\s*```$")
+    /** `call:name{...}`, `name{...}`, or `name(...)` — the non-JSON call shapes small models fall
+     *  back to. Group 1 is the tool name, group 2 the argument blob (possibly empty). */
+    private val BARE_CALL = Regex("^(?:call\\s*:\\s*)?([A-Za-z_][A-Za-z0-9_]*)\\s*[({]([\\s\\S]*?)[)}]?$")
 
     /** First well-formed tool call in [text], or null if there isn't one. Kept for callers
      * that only ever act on a single call per turn; see [parseAll] for the full set. */
@@ -38,12 +49,36 @@ object ToolCallParser {
         return ParseResult(calls, malformed)
     }
 
-    private fun parseOne(body: String, rawBlock: String): ToolCall? = try {
-        val json = JSONObject(body)
-        val name = json.optString("tool").takeIf { it.isNotBlank() }
-        if (name == null) null else ToolCall(name, json.optJSONObject("params") ?: JSONObject(), rawBlock)
-    } catch (e: Exception) {
-        null
+    /**
+     * Accepts every call shape observed from on-device models, not just the one the prompt asks
+     * for — a small model that gets the name right but the envelope wrong has still made a real,
+     * unambiguous request, and dropping it produces the "tools don't work" failure.
+     *
+     *  - `{"tool": "x", "params": {...}}`  — this app's documented format
+     *  - `{"name": "x", "arguments": {...}}` — OpenAI's spelling, which tool-tuned models default to
+     *  - `call:x{...}` / `x{...}` / `x(...)` — Gemma's native bare-call shape
+     */
+    private fun parseOne(body: String, rawBlock: String): ToolCall? {
+        runCatching {
+            val json = JSONObject(body)
+            val name = json.optString("tool").ifBlank { json.optString("name") }.takeIf { it.isNotBlank() }
+            if (name != null) {
+                // `arguments` is a JSON *string* in OpenAI's wire format, an object in most local
+                // models' imitation of it — accept either rather than only the one we emit.
+                val params = json.optJSONObject("params")
+                    ?: json.optJSONObject("arguments")
+                    ?: json.optString("arguments").takeIf { it.isNotBlank() }
+                        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                    ?: JSONObject()
+                return ToolCall(name, params, rawBlock)
+            }
+        }
+        val bare = BARE_CALL.find(body.trim()) ?: return null
+        val name = bare.groupValues[1]
+        val argBlob = bare.groupValues[2].trim()
+        val params = if (argBlob.isBlank()) JSONObject() else
+            runCatching { JSONObject(if (argBlob.startsWith("{")) argBlob else "{$argBlob}") }.getOrNull() ?: JSONObject()
+        return ToolCall(name, params, rawBlock)
     }
 
     fun stripToolCall(text: String, call: ToolCall): String = text.replace(call.rawBlock, "").trim()

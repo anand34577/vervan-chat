@@ -5,6 +5,8 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipFile
+import org.apache.poi.hslf.usermodel.HSLFSlideShow
+import org.apache.poi.hslf.usermodel.HSLFTextShape
 import org.apache.poi.hssf.usermodel.HSSFWorkbook
 import org.apache.poi.hwpf.HWPFDocument
 import org.apache.poi.hwpf.extractor.WordExtractor
@@ -58,6 +60,7 @@ object TextExtractor {
             "epub" -> extractEpub(file)
             "doc" -> extractDoc(file)
             "xls" -> extractXls(file)
+            "ppt" -> extractPpt(file)
             // Images route through the OCR path — same NeedsOcr signal
             // DocumentImportManager already handles for scanned PDFs, but resolved via
             // OcrExtractor.extractFromImage instead of PDF page rendering.
@@ -100,17 +103,52 @@ object TextExtractor {
         }
     }
 
+    /** A flat `Jsoup.parse(xml).text()` call (the old behavior) reads a `<w:tbl>`'s cells as a
+     * run of paragraphs with no column boundary — a 3-column table comes out as one undivided
+     * stream of words, unusable for anything that actually needs the row/column shape. Tables
+     * are pulled out first, rendered as GFM pipe tables (which [Chunker]'s prose path already
+     * chunks coherently, and which read structure back at citation/answer time), and spliced
+     * back into the surrounding prose in place. ponytail: non-greedy `.*?` matches a table to its
+     * *first* `</w:tbl>`, which mis-parses a nested table (rare in real-world DOCX exports) — the
+     * nested case falls back to the old flattened text, not data loss, just unstructured again.
+     */
     private fun extractDocx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
             val entry = zip.getEntry("word/document.xml")
                 ?: return ExtractResult.Unsupported("DOCX has no word/document.xml")
-            val xml = zip.readEntryTextLimited(entry)
-                .replace("</w:p>", "</w:p>\n")
-                .replace("<w:tab/>", "\t")
-            ExtractResult.Text(Jsoup.parse(xml).text())
+            var xml = zip.readEntryTextLimited(entry)
+            val tables = mutableListOf<String>()
+            xml = Regex("<w:tbl>.*?</w:tbl>", RegexOption.DOT_MATCHES_ALL).replace(xml) { m ->
+                tables += docxTableToMarkdown(m.value)
+                "@@DOCXTBL${tables.size - 1}@@"
+            }
+            xml = xml.replace("</w:p>", "</w:p>\n").replace("<w:tab/>", "\t")
+            var text = Jsoup.parse(xml).text()
+            tables.forEachIndexed { i, md -> text = text.replace("@@DOCXTBL$i@@", "\n\n$md\n\n") }
+            ExtractResult.Text(text)
         }
     } catch (e: Exception) {
         ExtractResult.Unsupported("Could not read DOCX: ${e.message}")
+    }
+
+    private fun docxTableToMarkdown(tblXml: String): String {
+        val rows = Regex("<w:tr[ >].*?</w:tr>", RegexOption.DOT_MATCHES_ALL).findAll(tblXml).map { tr ->
+            Regex("<w:tc[ >].*?</w:tc>", RegexOption.DOT_MATCHES_ALL).findAll(tr.value).map { tc ->
+                // `<w:t(?:[\s/][^>]*)?>` — not `<w:t[^>]*>`, which also matches `<w:tc>`/`<w:tbl>`
+                // (any tag starting "w:t"): the next char after "t" must be end-of-tag or
+                // whitespace, never another letter.
+                Regex("<w:t(?:[\\s/][^>]*)?>(.*?)</w:t>", RegexOption.DOT_MATCHES_ALL).findAll(tc.value)
+                    .joinToString("") { unescapeXml(it.groupValues[1]) }
+                    .trim().replace("|", "\\|")
+            }.toList()
+        }.filter { it.isNotEmpty() }.toList()
+        if (rows.isEmpty()) return ""
+        val sb = StringBuilder()
+        rows.forEachIndexed { i, row ->
+            sb.append("| ").append(row.joinToString(" | ")).append(" |\n")
+            if (i == 0) sb.append("| ").append(row.joinToString(" | ") { "---" }).append(" |\n")
+        }
+        return sb.toString().trim()
     }
 
     /** Legacy binary Word (.doc) via Apache POI's HWPF reader — see build.gradle.kts for why
@@ -190,6 +228,28 @@ object TextExtractor {
         ExtractResult.Unsupported("Could not read XLS: ${e.message}")
     }
 
+    /** Legacy binary PowerPoint (.ppt) via Apache POI's HSLF reader — same OLE2 rationale as
+     * [extractDoc]/[extractXls]. Produces the same [ExtractResult.Slides] shape as [extractPptx]
+     * so [Chunker.chunkSlides] doesn't need to know which PowerPoint generation a deck came from. */
+    private fun extractPpt(file: File): ExtractResult = try {
+        HSLFSlideShow(FileInputStream(file)).use { ppt ->
+            val slides = ppt.slides.mapIndexed { i, slide ->
+                val body = slide.shapes.filterIsInstance<HSLFTextShape>()
+                    .joinToString("\n") { it.text.orEmpty() }.trim()
+                val notes = slide.notes?.shapes?.filterIsInstance<HSLFTextShape>()
+                    ?.joinToString("\n") { it.text.orEmpty() }?.trim()
+                SlideText(i + 1, body, notes?.takeIf { it.isNotBlank() })
+            }
+            if (slides.all { it.body.isBlank() && it.notes.isNullOrBlank() }) {
+                ExtractResult.Unsupported("PPT contains no readable text")
+            } else {
+                ExtractResult.Slides(slides)
+            }
+        }
+    } catch (e: Exception) {
+        ExtractResult.Unsupported("Could not read PPT: ${e.message}")
+    }
+
     /** PPTX is a zip of `ppt/slides/slideN.xml` (+ optional `ppt/notesSlides/notesSlideN.xml`
      * for speaker notes) — text runs live in DrawingML `<a:t>` tags inside each, read via
      * Jsoup's XML parser mode rather than hand-rolled regex/unescape. Not POI, for the same
@@ -253,16 +313,20 @@ object TextExtractor {
     /** Walks the DOM instead of a flat [Jsoup] `.text()` call so headings and list items keep
      * the markers [Chunker] already looks for (`# Heading`, `- item`) — a flat text() call
      * would collapse a page's whole structure into one undifferentiated blob. selects
-     * a fixed tag set (h1-h6/p/li/pre/blockquote) rather than a full block-model walk, so a
-     * `<p>` nested inside a matched `<li>` (or similar unusual nesting) can double-count — rare
-     * enough in real-world HTML exports not to be worth a proper DOM-block-model rewrite yet. */
+     * a fixed tag set (h1-h6/p/li/pre/blockquote/table) rather than a full block-model walk, so a
+     * `<p>` nested inside a matched `<li>` (or a `<p>` inside a `<table>` cell — same shape of
+     * issue) can double-count — rare enough in real-world HTML exports not to be worth a proper
+     * DOM-block-model rewrite yet. `table` used to be entirely absent from this selector, which
+     * meant a table with no other matched tag inside its cells (the common case: plain text in
+     * `<td>`) contributed nothing at all to the extracted text — not "unstructured", genuinely
+     * missing. */
     private fun extractHtml(html: String): ExtractResult {
         val doc = Jsoup.parse(html)
         val sb = StringBuilder()
         fun block(text: String) {
             if (text.isNotBlank()) sb.append(text.trim()).append("\n\n")
         }
-        doc.body().select("h1,h2,h3,h4,h5,h6,p,li,pre,blockquote").forEach { el ->
+        doc.body().select("h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,table").forEach { el ->
             when (el.tagName()) {
                 "h1" -> block("# ${el.text()}")
                 "h2" -> block("## ${el.text()}")
@@ -271,11 +335,29 @@ object TextExtractor {
                 "h5" -> block("##### ${el.text()}")
                 "h6" -> block("###### ${el.text()}")
                 "li" -> block("- ${el.text()}")
+                "table" -> block(htmlTableToMarkdown(el))
                 else -> block(el.text())
             }
         }
         val text = sb.toString().trim()
         return if (text.isBlank()) ExtractResult.Unsupported("HTML contains no readable text") else ExtractResult.Text(text)
+    }
+
+    /** Renders an HTML `<table>` as a GFM pipe table so column structure survives into chunked
+     * text instead of the cells reading as one undivided blob. `> th, > td` only picks up a
+     * row's direct cells — a nested table inside a cell gets its own top-level match from the
+     * outer `select("table")` walk instead of being flattened into the parent's row. */
+    private fun htmlTableToMarkdown(table: org.jsoup.nodes.Element): String {
+        val rows = table.select("tr").map { tr ->
+            tr.select("> th, > td").map { it.text().trim().replace("|", "\\|") }
+        }.filter { it.isNotEmpty() }
+        if (rows.isEmpty()) return ""
+        val sb = StringBuilder()
+        rows.forEachIndexed { i, row ->
+            sb.append("| ").append(row.joinToString(" | ")).append(" |\n")
+            if (i == 0) sb.append("| ").append(row.joinToString(" | ") { "---" }).append(" |\n")
+        }
+        return sb.toString().trim()
     }
 
     /** RFC4180-ish quoted-field parsing (embedded commas/newlines, escaped `""`) — enough for

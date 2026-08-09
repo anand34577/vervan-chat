@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
@@ -80,7 +81,14 @@ fun SectionRow(
     val base = modifier
         .fillMaxWidth()
         .heightIn(min = 64.dp)
-        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .then(
+            if (onClick != null) {
+                // Rows are navigation controls, not generic containers. Giving TalkBack the
+                // button role makes the action discoverable and keeps the whole row one target
+                // instead of forcing users to hunt for an icon or trailing affordance.
+                Modifier.clickable(role = Role.Button, onClick = onClick)
+            } else Modifier
+        )
         .padding(Space.lg)
     Row(base, verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {

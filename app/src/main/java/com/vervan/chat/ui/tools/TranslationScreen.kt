@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -42,12 +41,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.ResultActions
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
@@ -118,6 +119,32 @@ fun TranslationScreen(onBack: () -> Unit) {
             } finally {
                 isTranslating = false
             }
+        }
+    }
+
+    fun copyTranslation() {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setSensitiveText(translated, scope, "Translation")
+        scope.launch { snackbarHostState.showSnackbar("Copied") }
+    }
+
+    fun shareTranslation() {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "Translation to $targetLang")
+            putExtra(android.content.Intent.EXTRA_TEXT, translated)
+        }
+        context.startActivity(android.content.Intent.createChooser(send, "Share translation"))
+    }
+
+    fun saveTranslation() {
+        scope.launch {
+            val date = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            app.container.db.noteDao().upsert(
+                Note(title = "Translation · $targetLang · $date", content = translated)
+            )
+            snackbarHostState.showSnackbar("Saved to Notes")
         }
     }
 
@@ -251,15 +278,17 @@ fun TranslationScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                         minLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        label = { Text("Translation") },
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                context.getSystemService(android.content.ClipboardManager::class.java)
-                                    .setSensitiveText(translated, scope, "Translation")
-                                scope.launch { snackbarHostState.showSnackbar("Copied") }
-                            }) { Icon(Icons.Filled.ContentCopy, "Copy translation") }
-                        }
+                        label = { Text("Translation") }
                     )
+                    if (!isTranslating) {
+                        ResultActions(
+                            modifier = Modifier.padding(top = Space.sm),
+                            onCopy = ::copyTranslation,
+                            onShare = ::shareTranslation,
+                            onSave = ::saveTranslation,
+                            saveLabel = "Save as note"
+                        )
+                    }
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(

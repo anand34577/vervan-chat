@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.traits
 
 /** Shows what each installed model declares support for — the same [ModelInfo] fields that
  * already gate the composer's photo/camera/voice buttons and the Tools/Reasoning toggles
@@ -79,17 +81,35 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                     Column(Modifier.padding(Space.md)) {
                         Text(model.displayName, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "${model.fileSizeBytes / (1024 * 1024)} MB on disk · context ${model.contextTokens ?: "—"} tokens" +
+                            // No weights on disk for a remote model — same reasoning as ModelCard's
+                            // own size line — and lastWorkingBackend never advances past its
+                            // UNVERIFIED default for one either (see EngineTraits.runsOnDevice):
+                            // it never runs the native load path that would move it off that value,
+                            // so showing it verbatim reads as a warning about a model that's fine.
+                            (if (model.traits.storesWeightsLocally) "${model.fileSizeBytes / (1024 * 1024)} MB on disk"
+                             else model.traits.label) +
+                                " · context ${model.contextTokens ?: "—"} tokens" +
                                 (if (model.isActive) " · Active" else ""),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         FlowRow(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            CapBadge("Text", true)
-                            CapBadge("Vision", model.supportsVision)
-                            CapBadge("Audio", model.supportsAudio)
-                            CapBadge("Tools", model.supportsTools)
-                            CapBadge("Thinking", model.supportsThinking)
-                            CapBadge("Backend: ${model.lastWorkingBackend.name}", null, neutral = true)
+                            if (model.role == ModelRole.EMBEDDING) {
+                                // An embedding model only ever turns text into a vector — it never
+                                // sees an image, a tool catalog, or a reasoning instruction, so the
+                                // generation-only badges below are meaningless for it (same rule
+                                // ModelEditDialog/ModelCard use to hide those sections by role).
+                                CapBadge("Embedding", true)
+                            } else {
+                                CapBadge("Text", true)
+                                CapBadge("Vision", model.supportsVision)
+                                CapBadge("Audio", model.supportsAudio)
+                                CapBadge("Tools", model.supportsTools)
+                                CapBadge("Thinking", model.supportsThinking)
+                            }
+                            CapBadge(
+                                if (model.traits.runsOnDevice) "Backend: ${model.lastWorkingBackend.name}" else "Backend: Remote",
+                                null, neutral = true
+                            )
                         }
                     }
                 }

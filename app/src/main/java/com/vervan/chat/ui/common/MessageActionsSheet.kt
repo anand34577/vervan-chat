@@ -144,8 +144,11 @@ private fun ActionGrid(actions: List<MessageAction>, onClick: (MessageAction) ->
         verticalArrangement = Arrangement.spacedBy(Space.sm),
         maxItemsInEachRow = 4
     ) {
+        // weight(1f) so the four chips divide the row evenly. They used to size to their own
+        // content, which left a dead gap after "Share" — the row looked truncated rather than
+        // deliberately laid out, and the tap targets were narrower than they needed to be.
         actions.take(4).forEach { action ->
-            ActionChip(action, onClick = { onClick(action) })
+            ActionChip(action, modifier = Modifier.weight(1f), onClick = { onClick(action) })
         }
     }
     actions.drop(4).forEach { action ->
@@ -154,9 +157,9 @@ private fun ActionGrid(actions: List<MessageAction>, onClick: (MessageAction) ->
 }
 
 @Composable
-private fun ActionChip(action: MessageAction, onClick: () -> Unit) {
+private fun ActionChip(action: MessageAction, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick)

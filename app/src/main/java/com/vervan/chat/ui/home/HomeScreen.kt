@@ -305,8 +305,8 @@ private fun HomeHero(
                         color = heroFg,
                     )
                     Text(
-                        workspaceName?.let { "$it · conversations stay on this device" }
-                            ?: "Private · conversations stay on this device",
+                        workspaceName?.let { "$it · private on this device" }
+                            ?: "Private · on this device",
                         style = MaterialTheme.typography.bodyMedium,
                         color = heroFg.copy(alpha = 0.85f),
                         maxLines = 1,
@@ -347,7 +347,7 @@ private fun HomeHero(
                     }
                 }
                 Text(
-                    "Import a model or download one when connected. Conversations and inference stay on this device.",
+                    "Import or download a model. Inference stays on this device.",
                     style = MaterialTheme.typography.labelSmall,
                     color = heroFg.copy(alpha = 0.85f),
                     modifier = Modifier.padding(top = Space.sm)
@@ -725,7 +725,7 @@ private fun ToolsSection(
             topPadding = 0.dp
         )
         Text(
-            "Start a common task, or browse the full toolkit in Tools.",
+            "Start a task, or browse all tools.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -373,10 +373,10 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.chatDao()
             val chat = dao.getChat(body.optString("id")) ?: return@runBlocking notFound("chat")
-            val title = com.vervan.chat.llm.TitleGenerator.generate(app, chat.id)
+            val result = com.vervan.chat.llm.TitleGenerator.generate(app, chat.id)
                 ?: return@runBlocking badRequest("Not enough conversation yet to generate a title")
             val updated = chat.copy(
-                title = title, previousTitle = chat.title,
+                title = result.title, previousTitle = chat.title,
                 titleIsCustom = false, updatedAt = System.currentTimeMillis()
             )
             dao.upsert(updated)
@@ -525,25 +525,44 @@ internal class WebAppApi(private val app: VervanApp) {
             try {
                 temp.writeBytes(bytes)
                 db.knowledgeBaseDao().upsert(kb)
-                val outcome = app.container.documentImportManager.import(kb.id, android.net.Uri.fromFile(temp))
-                val document = when (outcome) {
-                    is com.vervan.chat.model.DocumentImportOutcome.Imported -> outcome.document
-                    is com.vervan.chat.model.DocumentImportOutcome.Duplicate -> outcome.existing
-                    is com.vervan.chat.model.DocumentImportOutcome.VersionConflict ->
-                        app.container.documentImportManager.resolveVersionConflict(
+                // reuseExistingByHash=true — same reasoning as ChatViewModel.attachDocument: this
+                // call always creates its own throwaway single-document KB, so a duplicate can
+                // only mean the content already lives in a *different* KB (this chat's own earlier
+                // attachment, or another chat's).
+                val outcome = app.container.documentImportManager.import(kb.id, android.net.Uri.fromFile(temp), reuseExistingByHash = true)
+                // The KB id every downstream step (grounding, the response body) must reference —
+                // the throwaway `kb` created above only when Imported actually used it. Reusing
+                // `kb.id` for a Duplicate (as this used to) grounded the chat against an empty KB
+                // with zero documents in it while the real content sat under a different id.
+                val document: com.vervan.chat.data.db.entities.Document
+                val effectiveKbId: String
+                when (outcome) {
+                    is com.vervan.chat.model.DocumentImportOutcome.Imported -> {
+                        document = outcome.document
+                        effectiveKbId = kb.id
+                    }
+                    is com.vervan.chat.model.DocumentImportOutcome.Duplicate -> {
+                        db.knowledgeBaseDao().delete(kb)
+                        document = outcome.existing
+                        effectiveKbId = outcome.existing.knowledgeBaseId
+                    }
+                    is com.vervan.chat.model.DocumentImportOutcome.VersionConflict -> {
+                        document = app.container.documentImportManager.resolveVersionConflict(
                             outcome.existing, outcome.tempFilePath, outcome.mimeType, outcome.newHash, replace = true
                         )
+                        effectiveKbId = kb.id
+                    }
                 }
                 if (document.status != com.vervan.chat.data.db.entities.DocumentStatus.READY) {
                     app.container.documentImportManager.delete(document)
-                    db.knowledgeBaseDao().get(kb.id)?.let { db.knowledgeBaseDao().delete(it) }
+                    db.knowledgeBaseDao().get(effectiveKbId)?.let { db.knowledgeBaseDao().delete(it) }
                     return@runBlocking badRequest(
                         document.failureReason ?: "That document could not be read (${document.status.name.lowercase()})"
                     )
                 }
                 db.chatDao().upsert(
                     chat.copy(
-                        knowledgeBaseIds = (chat.kbIdList() + kb.id).distinct().joinToString(","),
+                        knowledgeBaseIds = (chat.kbIdList() + effectiveKbId).distinct().joinToString(","),
                         sourceGrounded = true,
                         updatedAt = System.currentTimeMillis()
                     )
@@ -551,9 +570,15 @@ internal class WebAppApi(private val app: VervanApp) {
                 json(
                     JSONObject()
                         .put("document_id", document.id)
-                        .put("knowledge_base_id", kb.id)
+                        .put("knowledge_base_id", effectiveKbId)
                         .put("name", document.displayName)
-                        .put("grounded", app.container.embeddingEngine.isLoaded)
+                        .put(
+                            "grounded",
+                            com.vervan.chat.retrieval.embeddingReady(
+                                app.container.db.modelDao().getActiveModel(ModelRole.EMBEDDING),
+                                app.container.embeddingEngine
+                            )
+                        )
                 )
             } catch (t: Throwable) {
                 if (t is VirtualMachineError) throw t
@@ -678,6 +703,12 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.personaDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.getPersona(it) }
+            // Same rule as delete below, which the app's Library screen already enforces: a
+            // built-in is a fixed reference point, and editing one through the web app would
+            // silently redefine "Vervan" for every chat that inherits it. Duplicate it instead.
+            if (existing?.isBuiltIn == true) {
+                return@runBlocking badRequest("Built-in personas can't be edited — duplicate it and edit the copy")
+            }
             val name = body.optString("name", existing?.name.orEmpty()).trim()
             if (name.isBlank()) return@runBlocking badRequest("A persona needs a name")
             val persona = (existing ?: Persona(name = name, systemInstruction = "")).copy(
@@ -721,6 +752,12 @@ internal class WebAppApi(private val app: VervanApp) {
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
             val name = body.optString("name", existing?.name.orEmpty()).trim().removePrefix("/")
             val templateBody = body.optString("body", existing?.body.orEmpty())
+            // Mirrors the built-in persona rule above and the delete guard below: /shorten and
+            // friends are fixed built-ins, and silently rewriting one through the web app would
+            // change what that slash command does everywhere, including on the phone.
+            if (existing?.isBuiltIn == true) {
+                return@runBlocking badRequest("Built-in prompt templates can't be edited — duplicate it and edit the copy")
+            }
             if (name.isBlank()) return@runBlocking badRequest("A template needs a command name")
             if (templateBody.isBlank()) return@runBlocking badRequest("A template needs a body")
             val template = (existing ?: PromptTemplate(name = name, body = templateBody)).copy(
@@ -839,11 +876,19 @@ internal class WebAppApi(private val app: VervanApp) {
                 ?: dao.getDefault()?.personaId
                 ?: app.container.db.personaDao().observePersonas().first().firstOrNull()?.id
                 ?: return@runBlocking badRequest("No persona available to attach to a new workspace")
+            // The Default Workspace's identity is fixed — the app's own Workspaces screen hides
+            // "Edit workspace" and archive for it (only delete was blocked here before, so the web
+            // app could still rename it, repoint its persona, or archive it and strand every chat
+            // that lives there). Auto-title stays editable: the native screen leaves that switch
+            // outside its isDefault guard too, because it's a preference, not identity.
+            val isDefaultWorkspace = existing?.isDefault == true
             val workspace = (existing ?: Workspace(name = name, personaId = fallbackPersona)).copy(
-                name = name,
-                description = body.optString("description", existing?.description.orEmpty()),
-                personaId = body.optString("persona_id").takeIf { it.isNotBlank() } ?: fallbackPersona,
-                archived = body.optBoolean("archived", existing?.archived ?: false),
+                name = if (isDefaultWorkspace) existing.name else name,
+                description = if (isDefaultWorkspace) existing.description
+                    else body.optString("description", existing?.description.orEmpty()),
+                personaId = if (isDefaultWorkspace) existing.personaId
+                    else body.optString("persona_id").takeIf { it.isNotBlank() } ?: fallbackPersona,
+                archived = if (isDefaultWorkspace) false else body.optBoolean("archived", existing?.archived ?: false),
                 autoTitleGeneration = body.optBoolean("auto_title", existing?.autoTitleGeneration ?: false),
                 updatedAt = System.currentTimeMillis()
             )

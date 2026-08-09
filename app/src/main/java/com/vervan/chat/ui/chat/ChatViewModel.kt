@@ -13,6 +13,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.Folder
@@ -43,6 +44,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -426,13 +429,18 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return when {
             info.currentModelId == model.id -> ModelLoadState.Ready(
                 model.displayName,
-                // A REMOTE_API model has no on-device hardware backend to report — activeEngineFor
-                // would otherwise fall back to the LiteRT-LM engine's backend, which reflects
-                // whatever (unrelated) model that engine last happened to load, not this one.
-                if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) "Remote"
+                // An off-device model has no hardware backend to report — activeEngineFor would
+                // otherwise fall back to the LiteRT-LM engine's backend, which reflects whatever
+                // (unrelated) model that engine last happened to load, not this one.
+                if (!model.traits.runsOnDevice) REMOTE_BACKEND_LABEL
                 else activeEngineFor(model).activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
             )
-            info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id ->
+            // An off-device model has no memory to load into — ModelLoadCoordinator's own
+            // REMOTE_API short-circuit still technically passes through LOADING/READY for internal
+            // bookkeeping (see its doc comment), but nothing is actually happening on this device,
+            // so this chat should never claim otherwise even for the one synchronous frame it might
+            // be observed in.
+            info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id && model.traits.runsOnDevice ->
                 ModelLoadState.Loading(model.displayName, "Loading model into memory")
             info.error?.loadedModelId == model.id ->
                 ModelLoadState.Failed(model.displayName, info.error?.errorMessage.toUserMessage())
@@ -600,9 +608,30 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             try {
                 ensureEmbeddingModelLoaded()
                 db.knowledgeBaseDao().upsert(kb)
-                when (val outcome = app.container.documentImportManager.import(kb.id, uri)) {
+                // reuseExistingByHash=true: every attach here creates its own throwaway KB (just
+                // created above), so a duplicate can only ever be found somewhere else — this
+                // chat's own earlier attachment, or a different chat's — never a false-positive
+                // "duplicate" against the empty KB this call just made.
+                when (val outcome = app.container.documentImportManager.import(kb.id, uri, reuseExistingByHash = true)) {
                     is DocumentImportOutcome.Imported -> applyImportOutcome(outcome.document, kb.id)
-                    is DocumentImportOutcome.Duplicate -> _pendingDocument.value = DocumentAttachState.Failed(name, "Already attached to this chat")
+                    is DocumentImportOutcome.Duplicate -> {
+                        // The KB created above was never used — nothing was imported into it.
+                        db.knowledgeBaseDao().delete(kb)
+                        val existingKbId = outcome.existing.knowledgeBaseId
+                        val alreadyInThisChat = db.chatDao().getChat(chatId)?.kbIdList()?.contains(existingKbId) == true
+                        if (alreadyInThisChat) {
+                            _pendingDocument.value = DocumentAttachState.Failed(name, "Already attached to this chat")
+                        } else {
+                            // Same content already imported (this chat previously, or another
+                            // chat) — reuse it instead of re-extracting/re-chunking/re-embedding
+                            // identical bytes into a second copy.
+                            android.widget.Toast.makeText(
+                                app, "\"${outcome.existing.displayName}\" already exists — using the existing copy",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            applyImportOutcome(outcome.existing, existingKbId)
+                        }
+                    }
                     is DocumentImportOutcome.VersionConflict -> {
                         // Chat-composer flow has no version-conflict dialog of its own — a changed
                         // re-attach just replaces the previous chat-scoped copy outright.
@@ -636,7 +665,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 sourceGrounded = true
             )
         )
-        val grounded = app.container.embeddingEngine.isLoaded
+        val grounded = com.vervan.chat.retrieval.embeddingReady(db.modelDao().getActiveModel(ModelRole.EMBEDDING), app.container.embeddingEngine)
         _pendingDocument.value = DocumentAttachState.Ready(document.id, document.displayName, grounded)
     }
 
@@ -774,12 +803,27 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         viewModelScope.launch {
             _titleGenerating.value = true
             try {
-                val newTitle = TitleGenerator.generate(app, chatId)
-                if (newTitle != null) {
+                val currentTitle = db.chatDao().getChat(chatId)?.title
+                val result = TitleGenerator.generate(app, chatId, avoidTitle = currentTitle)
+                if (result != null) {
                     db.chatDao().getChat(chatId)?.let {
-                        db.chatDao().update(it.copy(title = newTitle, previousTitle = it.title, titleIsCustom = false, updatedAt = System.currentTimeMillis()))
+                        db.chatDao().update(it.copy(title = result.title, previousTitle = it.title, titleIsCustom = false, updatedAt = System.currentTimeMillis()))
                     }
-                    _confirmationMessage.value = "Title updated"
+                    _confirmationMessage.value = when {
+                        // The model spent its whole response budget on reasoning and never
+                        // actually answered — TitleGenerator's fallback (first message, trimmed)
+                        // filled in so the chat isn't left untitled, but this is NOT the AI's
+                        // judgment on the best title, so don't claim it is (see B: "hi" chats
+                        // reporting "still the best title" when the model never got a chance to
+                        // answer at all).
+                        result.isFallback -> "The model spent its reply on reasoning and didn't return a title — used the first message as a placeholder instead"
+                        // Told the model to avoid this exact title and it still landed here — a
+                        // thin/ambiguous conversation genuinely doesn't support a different one
+                        // right now, not a wiring bug. Say so plainly instead of a "Title updated"
+                        // that looks like nothing happened.
+                        result.title.equals(currentTitle, ignoreCase = true) -> "Regenerated, but this is still the best title for this conversation so far"
+                        else -> "Title updated"
+                    }
                 } else {
                     _confirmationMessage.value = "Not enough conversation content to generate a title"
                 }
@@ -819,9 +863,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 if (ws?.autoTitleGeneration != true) return@launch
                 val assistantReplies = getAllMessages().count { it.role == MessageRole.ASSISTANT && it.state == MessageState.COMPLETE }
                 if (assistantReplies != AUTO_TITLE_TRIGGER_REPLIES) return@launch
-                val newTitle = TitleGenerator.generate(app, chatId) ?: return@launch
+                val result = TitleGenerator.generate(app, chatId) ?: return@launch
                 db.chatDao().getChat(chatId)?.let {
-                    if (!it.titleIsCustom) db.chatDao().update(it.copy(title = newTitle, previousTitle = it.title, updatedAt = System.currentTimeMillis()))
+                    if (!it.titleIsCustom) db.chatDao().update(it.copy(title = result.title, previousTitle = it.title, updatedAt = System.currentTimeMillis()))
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "[$chatId] auto title generation failed", t)
@@ -1092,14 +1136,41 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }
     }
 
+    /**
+     * What one message contributes to an export/share, or null if it contributes nothing.
+     *
+     * Reasoning (`<think>`) and `<tool_call>` markup are internal mechanics, not transcript: they
+     * were previously exported verbatim, so sharing a chat leaked the model's private chain of
+     * thought and raw tool JSON into whatever the user sent it to. SYSTEM turns are dropped for the
+     * same reason — they're prompt plumbing the user never wrote or saw.
+     */
+    private fun exportBody(message: Message): String? {
+        if (message.role == MessageRole.SYSTEM) return null
+        val withoutThinking = com.vervan.chat.llm.ThinkingParser.parse(message.content).answer
+        val withoutTools = ToolCallParser.stripForDisplay(withoutThinking)
+        val clarified = com.vervan.chat.llm.ClarificationParser.parse(withoutTools)
+        val text = clarified.answer.ifBlank { clarified.request?.question.orEmpty() }.trim()
+        return text.ifBlank { null }
+    }
+
+    /** The messages an export covers: the active branch only, oldest first. [getAllMessages] spans
+     *  every branch, so an export used to include abandoned regenerations the user had moved on
+     *  from, interleaved by timestamp with the conversation they actually kept. */
+    private suspend fun exportableMessages(): List<Message> {
+        val chatRow = db.chatDao().getChat(chatId)
+        return BranchUtil.pathTo(getAllMessages(), chatRow?.activeLeafId)
+    }
+
     suspend fun exportText(): String {
         val chatRow = db.chatDao().getChat(chatId)
+        val messages = exportableMessages()
         return buildString {
             appendLine("# ${chatRow?.title ?: "Chat"}")
-            getAllMessages().forEach { message ->
+            messages.forEach { message ->
+                val body = exportBody(message) ?: return@forEach
                 appendLine()
                 appendLine("${message.role.name.lowercase().replaceFirstChar(Char::uppercase)}:")
-                appendLine(message.content)
+                appendLine(body)
             }
         }
     }
@@ -1117,13 +1188,14 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             appendLine(
                 "_Exported from Vervan on ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}_"
             )
-            getAllMessages().forEach { message ->
+            exportableMessages().forEach { message ->
+                val text = exportBody(message) ?: return@forEach
                 appendLine()
                 appendLine("---")
                 appendLine()
                 appendLine("**${message.role.name.lowercase().replaceFirstChar(Char::uppercase)}:**")
                 appendLine()
-                appendLine(message.content.trimEnd())
+                appendLine(text.trimEnd())
             }
         }
         val dir = java.io.File(app.filesDir, "exports").apply { mkdirs() }
@@ -1139,11 +1211,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val chatRow = db.chatDao().getChat(chatId)
         val title = chatRow?.title?.takeIf { it.isNotBlank() } ?: "Chat"
         val subtitle = "Exported from Vervan on ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}"
-        val entries = getAllMessages().map { message ->
+        val entries = exportableMessages().mapNotNull { message ->
             val label = message.role.name.lowercase().replaceFirstChar(Char::uppercase)
+            val body = exportBody(message) ?: return@mapNotNull null
             // Strip the Markdown emphasis/heading markers PDFBox has no renderer for, so the
             // PDF reads as plain prose instead of showing literal **/#/` characters.
-            val plain = message.content
+            val plain = body
                 .replace(Regex("^#{1,6}\\s*", RegexOption.MULTILINE), "")
                 .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
                 .replace(Regex("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)"), "$1")
@@ -1481,7 +1554,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 // updates by query instead of consulting UI state. NonCancellable guarantees
                 // the cleanup survives the cancellation that brought us here.
                 withContext(NonCancellable + Dispatchers.IO) {
-                    db.messageDao().cancelStreamingForChat(chatId)
+                    db.messageDao().cancelStreamingForChat(chatId, System.currentTimeMillis() - startedAt)
                 }
                 throw cancelled
             } catch (t: Throwable) {
@@ -1548,10 +1621,18 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             _error.value = "Could not load ${model.displayName}: ${loadResult.errorMessage ?: "unknown error"}"
             return
         }
-        if (imagePath != null && audioPath != null && (!activeEngine.visionEnabled || !activeEngine.audioEnabled)) {
+        // Model-level capability, not activeEngine's own property: activeEngineFor falls back to
+        // the shared LiteRT-LM engine object for anything that isn't llama.cpp, so a REMOTE_API
+        // model reading activeEngine.visionEnabled was actually reading whatever unrelated local
+        // model that engine last happened to load — never this model's own declared capability.
+        // AppContainer.visionEnabled/audioEnabled already resolve correctly per engine (see
+        // EngineTraits.capabilitiesUserDeclared).
+        val canSeeImages = app.container.visionEnabled(model)
+        val canHearAudio = app.container.audioEnabled(model)
+        if (imagePath != null && audioPath != null && (!canSeeImages || !canHearAudio)) {
             val missing = buildList {
-                if (!activeEngine.visionEnabled) add("images")
-                if (!activeEngine.audioEnabled) add("audio")
+                if (!canSeeImages) add("images")
+                if (!canHearAudio) add("audio")
             }.joinToString(" and ")
             val assistantMessage = Message(
                 chatId = chatId,
@@ -1564,7 +1645,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             setActiveLeaf(assistantMessage.id)
             return
         }
-        if (audioPath != null && !activeEngine.audioEnabled) {
+        if (audioPath != null && !canHearAudio) {
             val assistantMessage = Message(
                 chatId = chatId,
                 parentId = chatRow.activeLeafId,
@@ -1580,7 +1661,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Content.ImageBytes and sent to an engine loaded at Capability.TEXT_ONLY (no
         // visionBackend), which the native runtime just drops with no error surfaced
         // anywhere: the attachment looked sent but the model never actually saw it.
-        if (imagePath != null && !activeEngine.visionEnabled) {
+        if (imagePath != null && !canSeeImages) {
             val assistantMessage = Message(
                 chatId = chatId,
                 parentId = chatRow.activeLeafId,
@@ -1599,12 +1680,22 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         )
         val profile = ModelProfiles.resolve(effectiveProfileType)
         val groundingRequested = (forceGrounding || chatRow.sourceGrounded) && chatRow.kbIdList().isNotEmpty() && profile.retrievalTopK > 0
-        val passages = if (groundingRequested) retrieveSources(chatRow.kbIdList(), triggerText, profile.retrievalTopK, queryModel = model) else emptyList()
+        // retrieveSources and recallMemories don't depend on each other's output (memory recall
+        // only needs chatRow/triggerText), but used to run one after the other — each doing its
+        // own embedding call plus a DB scan, serially, before generation could even start. That
+        // was a real chunk of the "10-15s before anything happens" delay on a grounded send.
+        // Run them concurrently instead; wall-clock cost becomes whichever one is slower, not
+        // both added together.
+        val (passages, memoryRecall) = coroutineScope {
+            val passagesDeferred = async {
+                if (groundingRequested) retrieveSources(chatRow.kbIdList(), triggerText, profile.retrievalTopK, queryModel = model) else emptyList()
+            }
+            val memoryDeferred = async { recallMemories(chatRow, triggerText) }
+            passagesDeferred.await() to memoryDeferred.await()
+        }
         // Grounding was on but nothing matched — abstain/weak-evidence signal (B6)
         // instead of silently answering as if grounding were off.
         val noEvidenceFound = groundingRequested && passages.isEmpty()
-
-        val memoryRecall = recallMemories(chatRow, triggerText)
         runGenerationLoop(
             chatRow.toolsEnabled && model.supportsTools != false,
             imagePath,
@@ -1652,7 +1743,15 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
             val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
             val enabledToolIds = if (toolsEnabled) effectiveToolIds(chatRow) else emptySet()
-            val effectiveThinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
+            val requestedThinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
+            // A grounded turn floods the prompt with retrieved source passages — DEEP/BALANCED
+            // reasoning over that much material is exactly what was producing "thought for Ns,
+            // never answers" (the model spends its whole visible-time budget digesting sources
+            // and never reaches the answer, especially on a small/quantized model). Cap to FAST
+            // whenever this turn actually has grounded content in it; a turn with nothing
+            // retrieved (grounding off, or noEvidenceFound) keeps the user's chosen mode as-is —
+            // this is about the prompt being unusually large, not a blanket downgrade.
+            val effectiveThinkingMode = if (promptPassages.isNotEmpty() && requestedThinkingMode in setOf("BALANCED", "DEEP")) "FAST" else requestedThinkingMode
             val modelEngine = model?.engine ?: com.vervan.chat.data.db.entities.ModelEngine.LITERT_LM
             // A native reasoner (supportsThinking) told OFF must have its reasoning actively
             // suppressed and stripped — see suppressReasoning below. Non-reasoning models pay no
@@ -1673,7 +1772,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 noEvidenceFound,
                 historyTrimmed = history.size < postSummaryHistory.size,
                 enabledToolIds = enabledToolIds,
-                earlierSummary = earlierSummary
+                earlierSummary = earlierSummary,
+                includePastThinking = app.container.settingsRepository.includePastThinkingInContext.first()
             )
             val assistantPrefill = ThinkingPolicy.assistantPrefillFor(effectiveThinkingMode, modelEngine, isReasoningModel)
             // llama.cpp only: hard cap on reasoning tokens before </think> is force-injected
@@ -1689,7 +1789,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 memoryActivityJson = if (hop == 1) ChatFormatting.memoryRecallToJson(memoryRecall) else null,
                 modelId = model?.id,
                 modelName = model?.displayName,
-                backend = model?.lastWorkingBackend?.name,
+                // An off-device model never runs doLoadGeneration (see ModelLoadCoordinator's
+                // runsOnDevice short-circuit), so lastWorkingBackend on it never advances past its
+                // UNVERIFIED default — showing that label under a reply from a working remote
+                // model reads as a warning about a model that's actually fine.
+                backend = if (model?.traits?.runsOnDevice == false) REMOTE_BACKEND_LABEL else model?.lastWorkingBackend?.name,
                 profile = profileId,
                 thinkingMode = effectiveThinkingMode,
             )
@@ -1713,10 +1817,24 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             var lastLiveStatsAt = 0L
             val settings = app.container.settingsRepository
             val genStartedAt = android.os.SystemClock.elapsedRealtime()
-            val genParams = com.vervan.chat.llm.resolveGenerationParams(
+            val resolvedGenParams = com.vervan.chat.llm.resolveGenerationParams(
                 model, settings, chatRow.temperature, chatRow.topP, chatRow.topK,
                 personaTemperature = com.vervan.chat.data.repo.PersonaTraits.temperatureFor(persona, settings.temperature.first())
             )
+            // llama.cpp gets a native reasoning-token budget (ThinkingPolicy.reasoningBudgetFor)
+            // that force-injects </think> once spent, so its maxOutputTokens only ever has to cover
+            // the answer that follows. LiteRT-LM and REMOTE_API have no such hook — the model's own
+            // reasoning shares the exact same maxOutputTokens budget as its answer, so a non-trivial
+            // BALANCED/DEEP reasoning pass can exhaust the cap before ever reaching the answer,
+            // completing with a full <think> block and nothing after it. That used to look like a
+            // normal COMPLETE message with unreadable content; the blank-answer guard below now
+            // catches it, but the actual fix is giving reasoning its own headroom on top of the
+            // configured answer budget so it has room to actually finish, same size budget
+            // llama.cpp's native cap already uses per mode.
+            val genParams = if (isReasoningModel && effectiveThinkingMode != "OFF" && modelEngine != com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) {
+                val reasoningHeadroom = when (effectiveThinkingMode) { "FAST" -> 256; "BALANCED" -> 1024; "DEEP" -> 4096; else -> 0 }
+                resolvedGenParams.copy(maxOutputTokens = resolvedGenParams.maxOutputTokens + reasoningHeadroom)
+            } else resolvedGenParams
             // Routes to whichever engine `model` actually needs (LiteRT-LM or llama.cpp) — model
             // can be null if its row vanished mid-loop (rare; beginGeneration already validated
             // one existed), in which case fall back to the LiteRT-LM engine directly, same as
@@ -1772,11 +1890,16 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 val generationMs = android.os.SystemClock.elapsedRealtime() - genStartedAt
                 val visible = persistContent(output)
                 // The engine can complete its flow having emitted nothing usable — immediate EOS,
-                // or (suppressReasoning) an unclosed <think> block that eats the whole output —
-                // with no exception thrown, so the .catch{} above never fires. That used to persist
-                // as a silent blank COMPLETE bubble with no signal to the user ("no response" reports).
-                // Surface it the same way an actual generate() failure is surfaced.
-                if (visible.isBlank()) {
+                // an unclosed <think> block that eats the whole output, or (thinking left ON) a
+                // <think> block that closed but was never followed by an actual answer — with no
+                // exception thrown, so the .catch{} above never fires. Checking only
+                // `visible.isBlank()` caught the suppressReasoning case (visible IS the parsed
+                // answer there) but missed the other two whenever thinking was ON: `visible` is the
+                // *raw* unstripped output in that branch, so a message that was 100% reasoning and
+                // 0% answer still read as "non-blank" and got silently saved as a COMPLETE bubble
+                // with nothing readable in it — the "model gets stuck thinking, never responds"
+                // reports. Parsing out the real answer regardless of suppressReasoning catches both.
+                if (com.vervan.chat.llm.ThinkingParser.parse(output).answer.isBlank()) {
                     Log.w(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() produced no content after ${generationMs}ms")
                     db.messageDao().update(assistantMessage.copy(content = "", state = MessageState.FAILED))
                     _error.value = "The model didn't return a response. Try regenerating, or check that it's still loaded in Settings → AI models."
@@ -1831,7 +1954,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // instead of always stopping the loop for a tap — only meaningful once Tools is on.
             val approvalMode = model?.toolApprovalMode ?: com.vervan.chat.data.db.entities.ToolApprovalMode.ALWAYS_ASK
             val needsConfirmation = when (tool.risk) {
-                ToolRisk.READ_ONLY -> false
+                // "Always ask" now means always, read-only included. It previously hard-coded
+                // `false` here, so a user who deliberately picked the strictest mode still had
+                // read-only tools (list_tasks, search_notes, read_clipboard…) run with no prompt —
+                // the setting silently did nothing for the majority of the catalog. The two
+                // auto-approve modes keep skipping read-only, which is what they're for.
+                ToolRisk.READ_ONLY -> approvalMode == com.vervan.chat.data.db.entities.ToolApprovalMode.ALWAYS_ASK
                 ToolRisk.REVERSIBLE_WRITE -> approvalMode == com.vervan.chat.data.db.entities.ToolApprovalMode.ALWAYS_ASK
                 ToolRisk.EXTERNAL_ACTION -> approvalMode != com.vervan.chat.data.db.entities.ToolApprovalMode.AUTO_APPROVE_ALL
             }
@@ -2025,15 +2153,21 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             runCatching { com.vervan.chat.retrieval.QueryExpander.expand(app, queryModel, query) }.getOrDefault(listOf(query))
         } else listOf(query)
 
+        // Called directly, NOT wrapped in app.container.withEmbedding{} — retrieve() already takes
+        // embeddingMutex itself (see embedWith) for the one moment it actually needs it. Wrapping
+        // the whole call in that same mutex again here used to self-deadlock: Mutex isn't
+        // reentrant, so the inner lock attempt just hung forever waiting for the outer one (held
+        // by this same coroutine) to release — every grounded query with a local embedding model
+        // active hung with no error, no timeout, nothing.
         val results = if (queries.size == 1) {
-            app.container.withEmbedding { retrievalEngine.retrieve(kbIds, query, mode, topK) }
+            retrievalEngine.retrieve(kbIds, query, mode, topK)
         } else {
             // Merge each variant's results by chunk, keeping the best score any phrasing found
             // for it — a chunk that only one reformulation surfaced is still real evidence, not
             // noise.
             val best = LinkedHashMap<String, SourcePassage>()
             for (q in queries) {
-                val variantResults = app.container.withEmbedding { retrievalEngine.retrieve(kbIds, q, mode, topK) }
+                val variantResults = retrievalEngine.retrieve(kbIds, q, mode, topK)
                 for (passage in variantResults) {
                     val existing = best[passage.chunkId]
                     if (existing == null || passage.score > existing.score) best[passage.chunkId] = passage
@@ -2046,7 +2180,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // doesn't mean there's nothing to say, just that nothing matched by relevance. See
         // retrieveOverviewFallback's own doc comment for why this only applies to a small
         // attached-document scope, not a broad knowledge base.
-        return results.ifEmpty { app.container.withEmbedding { retrievalEngine.retrieveOverviewFallback(kbIds, topK) } }
+        return results.ifEmpty { retrievalEngine.retrieveOverviewFallback(kbIds, topK) }
     }
 
     private suspend fun recallMemories(chatRow: Chat, query: String): com.vervan.chat.data.repo.MemoryRecall {
@@ -2166,8 +2300,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * "now", the same way it always knows who it's talking to via the persona/user profile. */
     private suspend fun currentDateTimeText(): String? {
         if (!app.container.settingsRepository.alwaysIncludeDateTime.first()) return null
-        val fmt = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy, h:mm a", java.util.Locale.getDefault())
-        return fmt.format(java.util.Date())
+        // Zone name + offset + IANA id, matching ToolRegistry's current_datetime — without a zone
+        // the model can state the time but can't answer anything relative to another timezone.
+        val zone = java.util.TimeZone.getDefault()
+        val fmt = java.text.SimpleDateFormat("EEEE, MMMM d, yyyy, h:mm a zzz (XXX)", java.util.Locale.getDefault())
+            .apply { timeZone = zone }
+        return "${fmt.format(java.util.Date())} — timezone ${zone.id}"
     }
 
     private suspend fun buildPrompt(
@@ -2183,9 +2321,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         noEvidenceFound: Boolean = false,
         historyTrimmed: Boolean = false,
         enabledToolIds: Set<String> = ToolRegistry.tools.map { it.name }.toSet(),
-        earlierSummary: String? = null
+        earlierSummary: String? = null,
+        includePastThinking: Boolean = false
     ): Pair<String, String> {
-        val sections = buildPromptSections(persona, projectInstructions, memories, history, passages, toolsEnabled, stylePreference, reasoning, userProfile, noEvidenceFound, historyTrimmed, enabledToolIds, earlierSummary)
+        val sections = buildPromptSections(persona, projectInstructions, memories, history, passages, toolsEnabled, stylePreference, reasoning, userProfile, noEvidenceFound, historyTrimmed, enabledToolIds, earlierSummary, includePastThinking)
         // Split into a real "system" turn (persona/instructions/tools/memory — content every chat
         // template treats as higher-trust, model-behavior-shaping context) and a "user" turn
         // (sources/history/the actual question) instead of flattening everything into one "user"
@@ -2216,7 +2355,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         noEvidenceFound: Boolean = false,
         historyTrimmed: Boolean = false,
         enabledToolIds: Set<String> = ToolRegistry.tools.map { it.name }.toSet(),
-        earlierSummary: String? = null
+        earlierSummary: String? = null,
+        includePastThinking: Boolean = false
     ): List<Pair<String, String>> {
         val sections = mutableListOf<Pair<String, String>>()
         currentDateTimeText()?.let { sections += "Current date & time" to "Current date & time: $it\n\n" }
@@ -2232,6 +2372,17 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             "If an essential detail is missing and guessing would materially change the result, pause and ask one concise question. " +
                 "Return the question as <clarify>{\"question\":\"...\",\"options\":[\"...\",\"...\"]}</clarify> with 2 to 4 short, useful options. " +
                 "Do not use this for optional details or questions you can answer with a sensible default.\n\n"
+            )
+        // Both diagram and math rendering are real but narrow: the Mermaid renderer runs with
+        // htmlLabels off and strict security (raw <b>/<br/> tags in an unquoted label fail to
+        // parse — always quote node text), and math renders inline delimiters only, not a full
+        // document. Without this, a model asked for "sample questions" reasonably reaches for
+        // \documentclass{article}, which has nowhere to render and shows as a dead code block.
+        sections += "Formatting" to (
+            "Mermaid diagrams: quote every node's label text (e.g. A[\"Layer 7<br/>Application\"]), " +
+                "never leave raw HTML tags outside quotes, and never use markdown bold (**text**) inside a label. " +
+                "Math: use inline delimiters only (\$...\$ or \$\$...\$\$) — never a full LaTeX document " +
+                "(\\documentclass, \\usepackage, \\begin{document}), which cannot be rendered here.\n\n"
             )
         if (toolsEnabled) {
             val catalog = ToolRegistry.catalogDescription(enabledToolIds)
@@ -2294,10 +2445,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     MessageRole.ASSISTANT -> "Assistant"
                     MessageRole.SYSTEM -> "Tool result"
                 }
-                // Strip any <thinking> block from prior assistant turns — the model's own
-                // past reasoning doesn't need to keep re-entering context every future turn,
-                // just its actual answer (adjacent context hygiene for).
-                val text = if (m.role == MessageRole.ASSISTANT) {
+                // Strip any <thinking> block from prior assistant turns by default — the model's
+                // own past reasoning doesn't need to keep re-entering context every future turn,
+                // just its actual answer (adjacent context hygiene). includePastThinking (Settings
+                // → Generation & retrieval) opts back into sending it, for anyone who wants the
+                // model to see its own past reasoning rather than only the answer it settled on.
+                val text = if (m.role == MessageRole.ASSISTANT && !includePastThinking) {
                     val answer = com.vervan.chat.llm.ThinkingParser.parse(m.content).answer
                     val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
                     listOf(clarification.answer, clarification.request?.question).filterNotNull().filter { it.isNotBlank() }.joinToString("\n")
@@ -2358,6 +2511,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     companion object {
         private const val TAG = "ChatViewModel"
         private const val MAX_TOOL_HOPS = 3
+        /** Stands in for a hardware backend name on an engine that has none (see
+         *  EngineTraits.runsOnDevice) — shown in the model-ready pill and per-message stats. */
+        private const val REMOTE_BACKEND_LABEL = "Remote"
         private const val DRAFT_SAVE_DEBOUNCE_MS = 300L
         private const val STREAM_PERSIST_INTERVAL_MS = 80L
         // Memory readout is a binder call to ActivityManager — throttled separately (and

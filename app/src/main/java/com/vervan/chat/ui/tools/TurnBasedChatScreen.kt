@@ -31,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -48,13 +50,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ResultActions
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -78,6 +83,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var setup by remember { mutableStateOf("") }
     var started by remember { mutableStateOf(false) }
@@ -88,6 +94,32 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
     val listState = rememberLazyListState()
 
     fun transcriptText() = turns.joinToString("\n") { (if (it.fromUser) "User: " else "Assistant: ") + it.text }
+
+    fun copyTranscript() {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setSensitiveText(transcriptText(), scope, title)
+        scope.launch { snackbarHostState.showSnackbar("Copied") }
+    }
+
+    fun shareTranscript() {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+            putExtra(android.content.Intent.EXTRA_TEXT, transcriptText())
+        }
+        context.startActivity(android.content.Intent.createChooser(send, "Share session"))
+    }
+
+    fun saveTranscript() {
+        scope.launch {
+            val note = Note(
+                title = "$title · ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date())}",
+                content = transcriptText()
+            )
+            app.container.db.noteDao().upsert(note)
+            snackbarHostState.showSnackbar("Saved to Notes")
+        }
+    }
 
     fun send(userText: String?) {
         isThinking = true
@@ -151,7 +183,8 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                 title = { OverflowTooltipText(title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (!started) {
             PageContainer(Modifier.padding(padding)) {
@@ -236,6 +269,15 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             }
                         }
                     }
+                }
+                if (turns.isNotEmpty() && !isThinking) {
+                    ResultActions(
+                        modifier = Modifier.padding(horizontal = Space.md),
+                        onCopy = ::copyTranscript,
+                        onShare = ::shareTranscript,
+                        onSave = ::saveTranscript,
+                        saveLabel = "Save as note"
+                    )
                 }
                 Card(
                     Modifier.fillMaxWidth().padding(Space.md),

@@ -66,6 +66,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -213,7 +214,13 @@ import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
+import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.SavedOutput
+import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.data.db.entities.Chat
+import com.vervan.chat.data.db.entities.Folder
+import com.vervan.chat.ui.common.OverflowTooltipText
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -277,6 +284,11 @@ internal fun SavedResponsesDialog(
 @Composable
 internal fun ModelReadinessPanel(
     state: ChatViewModel.ModelLoadState,
+    // "not loaded"/"loading into memory" describes a local weights file — a REMOTE_API model has
+    // none, so NotLoaded here just means "hasn't confirmed its endpoint/key yet", not that
+    // anything is about to be pulled into RAM. Defaults true so a state reached before the model
+    // resolves doesn't flip the copy for a beat.
+    modelRunsOnDevice: Boolean = true,
     onLoad: () -> Unit,
     onOpenModels: () -> Unit
 ) {
@@ -302,8 +314,9 @@ internal fun ModelReadinessPanel(
                     Column(Modifier.weight(1f).padding(start = Space.md)) {
                         Text(
                             when (state) {
-                                ChatViewModel.ModelLoadState.NoModel -> "A local model is required"
-                                is ChatViewModel.ModelLoadState.NotLoaded -> "${state.modelName} is not loaded"
+                                ChatViewModel.ModelLoadState.NoModel -> "A model is required"
+                                is ChatViewModel.ModelLoadState.NotLoaded ->
+                                    if (modelRunsOnDevice) "${state.modelName} is not loaded" else "${state.modelName} is not confirmed yet"
                                 is ChatViewModel.ModelLoadState.Loading -> "Loading ${state.modelName}"
                                 is ChatViewModel.ModelLoadState.Failed -> "Could not load ${state.modelName}"
                                 is ChatViewModel.ModelLoadState.Ready -> "Ready"
@@ -313,7 +326,9 @@ internal fun ModelReadinessPanel(
                         Text(
                             when (state) {
                                 ChatViewModel.ModelLoadState.NoModel -> "Import or select a generation model to enable the composer."
-                                is ChatViewModel.ModelLoadState.NotLoaded -> "Load it now, or enable automatic loading in Generation settings."
+                                is ChatViewModel.ModelLoadState.NotLoaded ->
+                                    if (modelRunsOnDevice) "Load it now, or enable automatic loading in Generation settings."
+                                    else "Confirm its endpoint now, or enable automatic loading in Generation settings."
                                 is ChatViewModel.ModelLoadState.Loading -> state.stage
                                 is ChatViewModel.ModelLoadState.Failed -> state.reason
                                 is ChatViewModel.ModelLoadState.Ready -> ""
@@ -783,10 +798,18 @@ internal fun ChatContextDetailsSheet(
     }
 }
 
+// A trailing ".0" (4.0k, 32.0k) is noise when the value is exact — only show the decimal when
+// it's non-zero (4.2k), matching how anyone would actually write a round number by hand.
 private fun compactTokenCount(tokens: Int): String = when {
-    tokens >= 1_000_000 -> "${tokens / 1_000_000}.${tokens / 100_000 % 10}M"
-    tokens >= 1_000 -> "${tokens / 1_000}.${tokens / 100 % 10}k"
+    tokens >= 1_000_000 -> compactUnit(tokens, 1_000_000, "M")
+    tokens >= 1_000 -> compactUnit(tokens, 1_000, "k")
     else -> tokens.toString()
+}
+
+private fun compactUnit(tokens: Int, unit: Int, suffix: String): String {
+    val whole = tokens / unit
+    val tenth = (tokens / (unit / 10)) % 10
+    return if (tenth == 0) "$whole$suffix" else "$whole.$tenth$suffix"
 }
 
 /**
@@ -1177,3 +1200,524 @@ internal fun ChatToolsDialog(
 }
 
 
+
+// The dialogs below were previously inlined directly in ChatScreen()'s body. That single
+// composable had grown large enough (~2,450 lines) that ART's JIT refused to compile it at all
+// (logcat: "Method exceeds compiler instruction limit"), so it ran interpreted on every
+// recomposition — the measured cause of dropped frames every time a chat screen opened. Moving
+// each self-contained `if (show...) { ... }` block out to its own composable, matching every
+// other dialog already in this file, shrinks ChatScreen's own compiled method back toward that
+// limit without changing any behavior — Compose runs an extracted composable identically to an
+// inlined block.
+
+@Composable
+internal fun RenameChatDialog(initialTitle: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var title by remember { mutableStateOf(initialTitle) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename chat") },
+        text = {
+            BoundedTextField(value = title, onValueChange = { title = it }, maxLength = 120, singleLine = true, modifier = Modifier.fillMaxWidth())
+        },
+        confirmButton = {
+            TextButton(onClick = { onRename(title) }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ChatVoiceOptionsBottomSheet(
+    speechOutputEnabled: Boolean,
+    microphoneMuted: Boolean,
+    immersiveEnabled: Boolean,
+    pushToTalkEnabled: Boolean,
+    onToggleSpeechOutput: () -> Unit,
+    onToggleMute: () -> Unit,
+    onToggleImmersive: () -> Unit,
+    onTogglePushToTalk: () -> Unit,
+    onSwitchModel: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        VoiceSessionOptionsSheet(
+            speechOutputEnabled = speechOutputEnabled,
+            microphoneMuted = microphoneMuted,
+            immersiveEnabled = immersiveEnabled,
+            pushToTalkEnabled = pushToTalkEnabled,
+            onToggleSpeechOutput = onToggleSpeechOutput,
+            onToggleMute = onToggleMute,
+            onToggleImmersive = onToggleImmersive,
+            onTogglePushToTalk = onTogglePushToTalk,
+            onSwitchModel = onSwitchModel,
+            onOpenSettings = onOpenSettings,
+            onDismiss = onDismiss
+        )
+    }
+}
+
+/** Fetches its own sibling-workspace list (same pattern as [SourcePickerDialog]'s own
+ *  knowledge-base fetch) rather than taking it as a parameter — it's dialog-local data no other
+ *  caller needs. */
+@Composable
+internal fun WorkspaceOptionsDialog(
+    workspace: Workspace,
+    onDismiss: () -> Unit,
+    onOpen: () -> Unit,
+    onSetActive: () -> Unit,
+    onMoveTo: (Workspace) -> Unit
+) {
+    val app = LocalContext.current.applicationContext as VervanApp
+    val otherWorkspaces by app.container.db.workspaceDao().observeActive().collectAsState(initial = emptyList())
+    val activeWorkspaceId by app.container.settingsRepository.activeWorkspaceId.collectAsState(initial = "")
+    val isChatWorkspaceActive = workspace.id == activeWorkspaceId
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(workspace.name) },
+        text = {
+            Column {
+                Text("Open workspace", modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = Space.md))
+                if (!isChatWorkspaceActive) {
+                    Text(
+                        "Set as active workspace",
+                        modifier = Modifier.fillMaxWidth().clickable(onClick = onSetActive).padding(vertical = Space.md)
+                    )
+                }
+                HorizontalDivider()
+                Text("Move to another workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+                otherWorkspaces.filter { it.id != workspace.id }.forEach { ws ->
+                    Text(
+                        ws.name,
+                        modifier = Modifier.fillMaxWidth().clickable { onMoveTo(ws) }.padding(vertical = Space.md)
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+internal fun MoveToWorkspaceConfirmDialog(
+    targetName: String,
+    fromWorkspaceName: String,
+    folderName: String?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to \"$targetName\"?") },
+        text = {
+            Column {
+                Text("From: $fromWorkspaceName")
+                Text("To: $targetName")
+                if (folderName != null) Text("This chat will leave \"$folderName\" and become unfiled.")
+                Text("Messages, branches, attachments, and history are kept.")
+                Text("Chat-specific model and persona choices are also kept.")
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Move") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun ResetChatSettingsDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reset chat settings?") },
+        text = {
+            Column {
+                Text("Resets AI, source, tool, and knowledge settings to workspace defaults.")
+                Text("Messages, attachments, workspace, and folder stay unchanged.", modifier = Modifier.padding(top = Space.sm))
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Reset") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun ChatStatsDialog(stats: ChatViewModel.ChatStats, onDismiss: () -> Unit) {
+    val dateFormat = remember { java.text.SimpleDateFormat("MMM d, yyyy HH:mm", java.util.Locale.getDefault()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Chat details") },
+        text = {
+            Column {
+                Text("Messages: ${stats.totalMessages} (${stats.userMessages} user, ${stats.assistantMessages} assistant)")
+                Text("Attachments: ${stats.attachments}")
+                Text("Branches: ${stats.branchPoints}")
+                Text("Created: ${dateFormat.format(java.util.Date(stats.createdAt))}")
+                Text("Last updated: ${dateFormat.format(java.util.Date(stats.updatedAt))}")
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+internal fun AddToKnowledgeBaseDialog(knowledgeBases: List<KnowledgeBase>, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to knowledge base") },
+        text = {
+            Column {
+                if (knowledgeBases.isEmpty()) {
+                    Text("No knowledge bases yet. Create one in Knowledge.")
+                }
+                knowledgeBases.forEach { kb ->
+                    Text(
+                        kb.name,
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(kb.id) }.padding(vertical = Space.md)
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+internal fun PersonaPickerDialog(personas: List<Persona>, selectedPersonaId: String?, onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Persona") },
+        text = {
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(null) }) {
+                    androidx.compose.material3.RadioButton(selected = selectedPersonaId == null, onClick = null)
+                    Text("No persona", modifier = Modifier.padding(start = Space.sm))
+                }
+                personas.forEach { option ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(option.id) }) {
+                        androidx.compose.material3.RadioButton(selected = selectedPersonaId == option.id, onClick = null)
+                        OverflowTooltipText(text = option.name, modifier = Modifier.weight(1f).padding(start = Space.sm))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+internal fun ChatModelPickerDialog(models: List<ModelInfo>, selectedModelId: String?, onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Chat model") },
+        text = {
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(null) }) {
+                    androidx.compose.material3.RadioButton(selected = selectedModelId == null, onClick = null)
+                    Text("Use active default", modifier = Modifier.padding(start = Space.sm))
+                }
+                models.forEach { model ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(model.id) }) {
+                        androidx.compose.material3.RadioButton(selected = selectedModelId == model.id, onClick = null)
+                        OverflowTooltipText(text = model.displayName, modifier = Modifier.weight(1f).padding(start = Space.sm))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+internal fun ContextBreakdownDialog(breakdown: ContextBreakdown, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Context for the next message") },
+        text = {
+            Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                val palette = listOf(
+                    MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.vervanSuccess,
+                    MaterialTheme.colorScheme.vervanWarning, MaterialTheme.colorScheme.secondary,
+                    MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.error,
+                    MaterialTheme.colorScheme.outline
+                )
+                com.vervan.chat.ui.common.ContextUsageBar(
+                    usedTokens = breakdown.estimatedTotalTokens,
+                    totalTokens = breakdown.recommendedLimit,
+                    summary = "About ${breakdown.estimatedTotalTokens} of ${breakdown.recommendedLimit} recommended tokens used.",
+                    slices = breakdown.items.mapIndexed { i, item ->
+                        com.vervan.chat.ui.common.ContextSlice(item.label, item.estimatedTokens, palette[i % palette.size])
+                    }
+                )
+                if (breakdown.estimatedTotalTokens > breakdown.recommendedLimit) {
+                    Text(
+                        "Over the recommended limit. Older context will be trimmed before sending.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = Space.sm)
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+// The three bundles below fix the *real* cause of ChatScreen()'s oversized compiled method — see
+// the dexdump analysis: not the dialog blocks (moved out above), but ~50 individual
+// `collectAsState()`/`remember` calls sitting directly in ChatScreen's own body, each one costing
+// its own Compose skip-check scaffolding (startReplaceGroup/rememberedValue/changed/
+// endReplaceGroup) *inline in ChatScreen's own method* regardless of how small the read itself is.
+// Bundling a group of reads into one `@Composable` helper moves that scaffolding into the helper's
+// own compiled method — ChatScreen then pays for one call site instead of a dozen. Destructuring
+// the result back into identically-named locals (`val (a, b, c) = rememberX(...)`) means none of
+// the hundreds of existing usages elsewhere in ChatScreen need to change.
+
+/** Every plain 1:1 [ChatViewModel] StateFlow read ChatScreen makes before it needs any of them for
+ *  actual logic — no computation, just data. */
+internal data class ChatVmState(
+    val messages: List<Message>,
+    val allMessages: List<Message>,
+    val isGenerating: Boolean,
+    val isRetrieving: Boolean,
+    val isRecallingMemory: Boolean,
+    val error: String?,
+    val chat: Chat?,
+    val workspace: Workspace?,
+    val folder: Folder?,
+    val isWorkspaceArchived: Boolean,
+    val titleGenerating: Boolean,
+    val confirmationMessage: String?,
+    val pendingDocument: ChatViewModel.DocumentAttachState?,
+    val attachEmbedProgress: com.vervan.chat.model.DocumentImportManager.EmbedProgress?,
+    val documents: List<Document>,
+    val savedOutputs: List<SavedOutput>,
+    val persona: Persona?,
+    val personas: List<Persona>,
+    val activeModelName: String?,
+    val selectedGenerationModel: ModelInfo?,
+    val generationModels: List<ModelInfo>,
+    val modelLoadState: ChatViewModel.ModelLoadState,
+    val visionAvailable: Boolean?,
+    val audioAvailable: Boolean?
+)
+
+@Composable
+internal fun rememberChatVmState(vm: ChatViewModel, app: VervanApp): ChatVmState {
+    val messages by vm.messages.collectAsState()
+    val allMessages by vm.allMessages.collectAsState()
+    val isGenerating by vm.isGenerating.collectAsState()
+    val isRetrieving by vm.isRetrieving.collectAsState()
+    val isRecallingMemory by vm.isRecallingMemory.collectAsState()
+    val error by vm.error.collectAsState()
+    val chat by vm.chat.collectAsState()
+    val workspace by vm.workspace.collectAsState()
+    val folder by vm.folder.collectAsState()
+    val isWorkspaceArchived by vm.isWorkspaceArchived.collectAsState()
+    val titleGenerating by vm.titleGenerating.collectAsState()
+    val confirmationMessage by vm.confirmationMessage.collectAsState()
+    val pendingDocument by vm.pendingDocument.collectAsState()
+    val attachEmbedProgress by app.container.documentImportManager.embedProgress.collectAsState()
+    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
+    val savedOutputs by app.container.db.savedOutputDao().observeAll().collectAsState(initial = emptyList())
+    val persona by vm.persona.collectAsState()
+    val personas by vm.personas.collectAsState()
+    val activeModelName by vm.activeModelName.collectAsState()
+    val selectedGenerationModel by vm.selectedGenerationModel.collectAsState()
+    val generationModels by vm.generationModels.collectAsState()
+    val modelLoadState by vm.modelLoadState.collectAsState()
+    val visionAvailable by vm.visionAvailable.collectAsState()
+    val audioAvailable by vm.audioAvailable.collectAsState()
+    return ChatVmState(
+        messages, allMessages, isGenerating, isRetrieving, isRecallingMemory, error, chat, workspace,
+        folder, isWorkspaceArchived, titleGenerating, confirmationMessage, pendingDocument,
+        attachEmbedProgress, documents, savedOutputs, persona, personas, activeModelName,
+        selectedGenerationModel, generationModels, modelLoadState, visionAvailable, audioAvailable
+    )
+}
+
+/** Settings-repository flags this screen reads once up front — mostly to feed
+ *  [com.vervan.chat.voice.SttEnginePolicy.resolve] and gate voice/auto-read behavior later. */
+internal data class ChatVoiceSettingsState(
+    val hapticsEnabled: Boolean,
+    val speechInputEnabled: Boolean,
+    val modelAudioSttEnabled: Boolean,
+    val whisperSttEnabled: Boolean,
+    val androidSttEnabled: Boolean,
+    val sttEnginePreference: String,
+    val sttFallbackEnabled: Boolean,
+    val installedVoiceModels: List<com.vervan.chat.data.db.entities.TtsVoiceModel>,
+    val voiceReplyMode: String,
+    val transcriptReviewEnabled: Boolean,
+    val voicePushToTalkEnabled: Boolean,
+    val autoReadAloud: Boolean
+) {
+    // ponytail: 12-field data class read back via component1..12 destructuring at the call
+    // site — no arity limit in Kotlin, just a lot of positions; the alternative (field access
+    // at every one of the ~15 scattered use sites) is the same line count with more diff noise.
+}
+
+@Composable
+internal fun rememberChatVoiceSettingsState(app: VervanApp): ChatVoiceSettingsState {
+    val hapticsEnabled by app.container.settingsRepository.hapticsEnabled.collectAsState(initial = true)
+    val speechInputEnabled by app.container.settingsRepository.speechInputEnabled.collectAsState(initial = true)
+    val modelAudioSttEnabled by app.container.settingsRepository.modelAudioSttEnabled.collectAsState(initial = true)
+    val whisperSttEnabled by app.container.settingsRepository.inbuiltSttEnabled.collectAsState(initial = true)
+    val androidSttEnabled by app.container.settingsRepository.androidSttEnabled.collectAsState(initial = true)
+    val sttEnginePreference by app.container.settingsRepository.sttEnginePreference.collectAsState(initial = "AUTO")
+    val sttFallbackEnabled by app.container.settingsRepository.sttFallbackEnabled.collectAsState(initial = true)
+    val installedVoiceModels by app.container.db.ttsVoiceModelDao().observeAll().collectAsState(initial = emptyList())
+    val voiceReplyMode by app.container.settingsRepository.voiceReplyMode.collectAsState(initial = "MANUAL")
+    val transcriptReviewEnabled by app.container.settingsRepository.transcriptReviewEnabled.collectAsState(initial = true)
+    val voicePushToTalkEnabled by app.container.settingsRepository.voicePushToTalkEnabled.collectAsState(initial = false)
+    val autoReadAloud by app.container.settingsRepository.autoReadAloud.collectAsState(initial = false)
+    return ChatVoiceSettingsState(
+        hapticsEnabled, speechInputEnabled, modelAudioSttEnabled, whisperSttEnabled, androidSttEnabled,
+        sttEnginePreference, sttFallbackEnabled, installedVoiceModels, voiceReplyMode,
+        transcriptReviewEnabled, voicePushToTalkEnabled, autoReadAloud
+    )
+}
+
+/** Every [com.vervan.chat.voice.RealtimeVoiceController] StateFlow ChatScreen reads to drive the
+ *  hands-free/immersive voice UI — read here in one call instead of 15 separate ones. */
+internal data class VoiceControllerUiState(
+    val voiceState: com.vervan.chat.voice.VoiceControllerState,
+    val voiceTurns: List<com.vervan.chat.voice.VoiceTurn>,
+    val voiceWaveform: List<Float>,
+    val voiceElapsedMs: Int,
+    val voiceLiveTranscript: String,
+    val voiceSttLabel: String,
+    val voiceTtsLabel: String,
+    val voiceHasEchoCancellation: Boolean,
+    val voicePlaybackPaused: Boolean,
+    val voiceMicrophoneMuted: Boolean,
+    val voiceSpeechOutputEnabled: Boolean,
+    val voiceModelLoadError: String?,
+    val voiceSttUnavailable: Boolean,
+    val voiceLoadingModelName: String?,
+    val voicePushToTalkHeld: Boolean
+)
+
+@Composable
+internal fun rememberVoiceControllerUiState(voiceController: com.vervan.chat.voice.RealtimeVoiceController): VoiceControllerUiState {
+    val voiceState by voiceController.state.collectAsState()
+    val voiceTurns by voiceController.turns.collectAsState()
+    val voiceWaveform by voiceController.liveWaveform.collectAsState()
+    val voiceElapsedMs by voiceController.liveElapsedMs.collectAsState()
+    val voiceLiveTranscript by voiceController.liveTranscript.collectAsState()
+    val voiceSttLabel by voiceController.sttLabel.collectAsState()
+    val voiceTtsLabel by voiceController.ttsLabel.collectAsState()
+    val voiceHasEchoCancellation by voiceController.hasEchoCancellation.collectAsState()
+    val voicePlaybackPaused by voiceController.playbackPaused.collectAsState()
+    val voiceMicrophoneMuted by voiceController.microphoneMuted.collectAsState()
+    val voiceSpeechOutputEnabled by voiceController.speechOutputEnabled.collectAsState()
+    val voiceModelLoadError by voiceController.modelLoadError.collectAsState()
+    val voiceSttUnavailable by voiceController.sttUnavailable.collectAsState()
+    val voiceLoadingModelName by voiceController.loadingModelName.collectAsState()
+    val voicePushToTalkHeld by voiceController.pushToTalkHeld.collectAsState()
+    return VoiceControllerUiState(
+        voiceState, voiceTurns, voiceWaveform, voiceElapsedMs, voiceLiveTranscript, voiceSttLabel,
+        voiceTtsLabel, voiceHasEchoCancellation, voicePlaybackPaused, voiceMicrophoneMuted,
+        voiceSpeechOutputEnabled, voiceModelLoadError, voiceSttUnavailable, voiceLoadingModelName,
+        voicePushToTalkHeld
+    )
+}
+
+// Same rationale as the state bundles above, applied to attach-picker launchers: each
+// rememberLauncherForActivityResult call (and its callback body) is another direct call site in
+// ChatScreen's own compiled method. These take callback params instead of touching ChatScreen's
+// mutable state directly, matching the pattern the dialog extraction above already established.
+
+internal data class ImageAttachLaunchers(
+    val pickImage: androidx.activity.compose.ManagedActivityResultLauncher<androidx.activity.result.PickVisualMediaRequest, Uri?>,
+    val requestCameraPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>
+)
+
+@Composable
+internal fun rememberImageAttachLaunchers(
+    vm: ChatViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onPreviewReady: (Boolean) -> Unit,
+    onError: (String) -> Unit
+): ImageAttachLaunchers {
+    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val copied = vm.copyImage(uri)
+            vm.setPendingImage(copied)
+            onPreviewReady(copied != null)
+            if (copied == null) onError("Couldn’t prepare that image. Choose another photo and try again.")
+        }
+    }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            pendingCameraFile?.let { com.vervan.chat.model.ImageUtils.fixOrientation(it) }
+            pendingCameraFile?.absolutePath?.let { vm.setPendingImage(it) }
+            onPreviewReady(pendingCameraFile != null)
+        } else {
+            pendingCameraFile?.delete()
+        }
+        pendingCameraFile = null
+    }
+    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val (file, uri) = vm.newCameraImageFile()
+            pendingCameraFile = file
+            takePicture.launch(uri)
+        } else {
+            onError("Camera access is off. Choose a photo, or allow it in Android Settings → Apps → Vervan → Permissions.")
+        }
+    }
+    return ImageAttachLaunchers(pickImage, requestCameraPermission)
+}
+
+internal data class OcrAttachLaunchers(
+    val pickOcrImage: androidx.activity.compose.ManagedActivityResultLauncher<androidx.activity.result.PickVisualMediaRequest, Uri?>,
+    val requestOcrCameraPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>
+)
+
+@Composable
+internal fun rememberOcrAttachLaunchers(
+    vm: ChatViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onRunningChange: (Boolean) -> Unit,
+    onOcrResult: (Result<ChatViewModel.OcrResult>) -> Unit,
+    onError: (String) -> Unit
+): OcrAttachLaunchers {
+    var pendingOcrCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val pickOcrImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            onRunningChange(true)
+            scope.launch { onOcrResult(vm.extractOcr(uri)) }
+        }
+    }
+    val takeOcrPicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = pendingOcrCameraFile
+        pendingOcrCameraFile = null
+        if (success && file != null) {
+            onRunningChange(true)
+            scope.launch { onOcrResult(vm.extractOcrFromFile(file)) }
+        } else {
+            file?.delete()
+        }
+    }
+    val requestOcrCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val (file, uri) = vm.newCameraImageFile()
+            pendingOcrCameraFile = file
+            takeOcrPicture.launch(uri)
+        } else {
+            onError("Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions.")
+        }
+    }
+    return OcrAttachLaunchers(pickOcrImage, requestOcrCameraPermission)
+}
+
+@Composable
+internal fun rememberDocumentAttachLauncher(
+    context: Context,
+    onSelected: (PendingDocumentSelection) -> Unit
+): androidx.activity.compose.ManagedActivityResultLauncher<Array<String>, Uri?> =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onSelected(inspectDocument(context, uri))
+    }

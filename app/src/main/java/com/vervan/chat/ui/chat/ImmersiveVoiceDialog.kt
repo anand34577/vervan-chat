@@ -355,8 +355,10 @@ private fun ThinkingDots(modifier: Modifier = Modifier) {
     }
 }
 
+// Kept local rather than folded into VervanExtraShapes: these mirror the tail to the opposite
+// corner per speaker, which the chat bubbles don't do. Radii track VervanExtraShapes.userBubble.
 private fun bubbleShape(isUser: Boolean) = if (isUser) {
-    androidx.compose.foundation.shape.RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
+    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
 } else {
-    androidx.compose.foundation.shape.RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
+    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp)
 }

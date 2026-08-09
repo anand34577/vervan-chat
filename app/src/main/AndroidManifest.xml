@@ -10,8 +10,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <uses-permission android:name="android.permission.READ_CALENDAR" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <!-- Phase I — floating quick-action bubble. SYSTEM_ALERT_WINDOW is granted via a system
@@ -38,17 +36,53 @@
          server on, and Settings/Privacy Dashboard both surface the exposure plainly. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Lets the explicit open_app tool discover launcher activities on Android 11+ without the
-         much broader QUERY_ALL_PACKAGES permission. -->
+    <!-- Android 11+ package-visibility: without a matching entry here, startActivity() on an
+         implicit intent throws ActivityNotFoundException even when a perfectly good app IS
+         installed — the OS just won't let this app see it. open_app's launcher query needed the
+         first entry below; the rest cover every other ToolRegistry EXTERNAL_ACTION tool
+         (set_timer, set_alarm, draft_email, open_map, create_calendar_event), which were all
+         silently broken the same way ("No app can handle timer" etc. even on a device with a
+         Clock app) until each tool's specific action/data got its own declaration. share_text
+         is exempt: Intent.createChooser()'s system chooser UI is excluded from this filtering. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- set_timer -->
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <!-- set_alarm -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <!-- draft_email -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <!-- open_map -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <!-- create_calendar_event -->
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
     </queries>
 
+    <!-- Cleartext is permitted for one reason: a user-added Remote API model pointed at their own
+         machine (llama.cpp/Ollama/vLLM on the LAN) serves plain HTTP and has no certificate to
+         present, so an https-only policy made the most common self-hosted case impossible. It does
+         not downgrade anything else — every built-in endpoint (model catalogue, downloads) is a
+         hardcoded https URL — and the add-model dialog warns whenever the URL the user typed is
+         http://. See RemoteOpenAiEngine.baseUrlError. -->
     <application
         android:name=".VervanApp"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

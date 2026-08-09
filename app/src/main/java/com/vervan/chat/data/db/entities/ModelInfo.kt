@@ -35,14 +35,77 @@ enum class BackendChoice { AUTO, GPU, CPU, NPU }
  * ChatViewModel.runGenerationLoop). Only meaningful when the model's Tools capability is on. */
 enum class ToolApprovalMode { ALWAYS_ASK, AUTO_APPROVE_REVERSIBLE, AUTO_APPROVE_ALL }
 
-/** Which native runtime a GENERATION model loads through — LiteRT-LM (the original, MediaPipe/
+/** Which runtime a model executes through — LiteRT-LM (the original, MediaPipe/
  * .task-.litertlm-.litert based), llama.cpp (GGUF), or a [REMOTE_API] call to an external
- * OpenAI-compatible HTTP endpoint (no on-device weights at all). Irrelevant for EMBEDDING
- * (always LiteRT-LM/MediaPipe in this app) but stored on every row for schema simplicity;
- * existing rows default to LITERT_LM. See ModelLoadCoordinator, which routes load/unload
+ * OpenAI-compatible HTTP endpoint (no on-device weights at all). Stored on every row regardless
+ * of role; existing rows default to LITERT_LM. See ModelLoadCoordinator, which routes load/unload
  * per-engine — REMOTE_API skips native loading entirely (see its short-circuit there) since
- * there is no local weight file or hardware backend to select. */
+ * there is no local weight file or hardware backend to select.
+ *
+ * Behavioral differences between engines belong in [EngineTraits], NOT in scattered
+ * `engine == SOME_ENGINE` checks — see that class. */
 enum class ModelEngine { LITERT_LM, LLAMA_CPP, REMOTE_API }
+
+/**
+ * The behavioral differences between [ModelEngine]s, in one table.
+ *
+ * Everything the rest of the app needs to know about "how is this engine different" is answered
+ * here by name, so adding a fourth engine is one new entry plus whatever runtime it needs — not a
+ * grep for `== REMOTE_API`. This exists because that grep is exactly what went wrong: the same
+ * REMOTE_API case was independently missed in the model card (showed "0 B"), the message stats
+ * (showed "UNVERIFIED"), the streaming indicator and chat header (both claimed "on device"), and
+ * the capability defaults (silently disabled tool calling).
+ *
+ * Several of these flags happen to agree across today's three engines. They are kept as separate
+ * questions on purpose: a future engine (an on-device NPU service, a sidecar process, a remote
+ * runtime that does report hardware) can answer them differently, and the compiler will force a
+ * deliberate answer to each one instead of letting it inherit a coincidence.
+ */
+data class EngineTraits(
+    /** Human-readable runtime name for UI ("llama.cpp", "Remote API"). */
+    val label: String,
+    /** There is a real weights file on disk: file-size display, file-existence checks, and
+     *  delete-time cleanup only make sense when true. */
+    val storesWeightsLocally: Boolean,
+    /** Inference happens on this device: drives the privacy wording ("on device" vs "via API"),
+     *  and whether [ModelInfo.lastWorkingBackend] means anything (a remote model never runs the
+     *  native load path that would ever advance it past UNVERIFIED). */
+    val runsOnDevice: Boolean,
+    /** Has llama.cpp-style load-time tuning (threads, batch sizes, mlock, flash attention, KV
+     *  cache type, Vulkan device): both the load config and the Configure UI sections. */
+    val hasNativeTuningKnobs: Boolean,
+    /** Vision/audio support is declared by the user rather than probed from a loaded engine —
+     *  true when there is no local runtime to interrogate. */
+    val capabilitiesUserDeclared: Boolean
+)
+
+val ModelEngine.traits: EngineTraits
+    get() = when (this) {
+        ModelEngine.LITERT_LM -> EngineTraits(
+            label = "LiteRT-LM",
+            storesWeightsLocally = true,
+            runsOnDevice = true,
+            hasNativeTuningKnobs = false,
+            capabilitiesUserDeclared = false
+        )
+        ModelEngine.LLAMA_CPP -> EngineTraits(
+            label = "llama.cpp",
+            storesWeightsLocally = true,
+            runsOnDevice = true,
+            hasNativeTuningKnobs = true,
+            capabilitiesUserDeclared = false
+        )
+        ModelEngine.REMOTE_API -> EngineTraits(
+            label = "Remote API",
+            storesWeightsLocally = false,
+            runsOnDevice = false,
+            hasNativeTuningKnobs = false,
+            capabilitiesUserDeclared = true
+        )
+    }
+
+/** Shorthand for the overwhelmingly common `model.engine.traits` read. */
+val ModelInfo.traits: EngineTraits get() = engine.traits
 
 @Entity(tableName = "models")
 data class ModelInfo(
@@ -201,16 +264,20 @@ fun ModelInfo.reconcileCapabilities(
 fun ModelInfo.canSupportVision(): Boolean = when (engine) {
     ModelEngine.LLAMA_CPP -> !mmprojPath.isNullOrBlank() && File(mmprojPath).isFile
     ModelEngine.LITERT_LM -> true
-    // Text-only for v1 — RemoteOpenAiEngine sends plain chat/completions messages with no
-    // image_url content parts, even though many OpenAI-compatible providers support them.
-    ModelEngine.REMOTE_API -> false
+    // RemoteOpenAiEngine sends a standard image_url data-URI content part when asked to — there's
+    // no local prerequisite (no mmproj to check) the way llama.cpp has, only whether the endpoint's
+    // chosen model actually accepts one, which nothing on this device can verify. So "can support"
+    // is unconditionally true here, same as LiteRT-LM; supportsVision (set by hand in Model
+    // Manager, since the user is the only source of truth on this) is what actually gates it.
+    ModelEngine.REMOTE_API -> true
 }
 
 /** Whether this model *can* support native audio input at all — same hard-limit reasoning as
  * [canSupportVision]. llama.cpp has no audio-input JNI in this app (see `LlamaCppEngine`'s
- * hardcoded `audioEnabled = false`); a LiteRT-LM model may bundle an audio encoder. */
+ * hardcoded `audioEnabled = false`); a LiteRT-LM model may bundle an audio encoder; a remote model
+ * can be sent an `input_audio` content part the same way vision is, gated by supportsAudio. */
 fun ModelInfo.canSupportAudio(): Boolean = when (engine) {
     ModelEngine.LLAMA_CPP -> false
     ModelEngine.LITERT_LM -> true
-    ModelEngine.REMOTE_API -> false
+    ModelEngine.REMOTE_API -> true
 }

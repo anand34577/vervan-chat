@@ -46,14 +46,19 @@ fun EmptyState(
             title,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = Space.lg).semantics { heading() }
+            modifier = Modifier
+                .widthIn(max = VervanContentWidth.reading)
+                .padding(top = Space.lg)
+                .semantics { heading() }
         )
         Text(
             body,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = Space.xs)
+            modifier = Modifier
+                .widthIn(max = VervanContentWidth.reading)
+                .padding(top = Space.xs)
         )
         if (actionLabel != null && onAction != null) {
             Button(

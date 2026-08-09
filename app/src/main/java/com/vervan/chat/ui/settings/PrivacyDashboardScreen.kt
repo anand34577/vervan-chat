@@ -63,7 +63,6 @@ fun PrivacyDashboardScreen(
     val networkEntries by app.container.networkAuditLog.entries.collectAsState()
 
     val calendarOn by vm.calendarToolEnabled.collectAsState()
-    val locationOn by vm.locationToolEnabled.collectAsState()
     val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
     val apiServerOn by vm.apiServerEnabled.collectAsState()
     val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
@@ -133,7 +132,6 @@ fun PrivacyDashboardScreen(
 
             PrivacySection("What the model can access") {
                 PrivacyRow("Calendar", if (calendarOn) "On" else "Off")
-                PrivacyRow("Location", if (locationOn) "On" else "Off")
                 PrivacyRow("Device status", if (deviceStatusOn) "On" else "Off")
                 OutlinedButton(onClick = onOpenSecurity, modifier = Modifier.padding(top = Space.sm)) {
                     Text("Manage in Privacy & security")

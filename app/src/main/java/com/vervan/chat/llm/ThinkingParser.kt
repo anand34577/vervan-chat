@@ -20,15 +20,20 @@ object ThinkingParser {
     private const val TAGS = "(?:think(?:ing)?|analysis|reasoning|thought)"
 
     private val OPEN = Regex(
-        "(?is)<\\s*$TAGS(?:\\s+[^>]*)?>|<\\|(?:$TAGS|begin_of_thought)\\|>"
+        // Last alternative: Gemma's own template on LM Studio/vLLM emits a literal
+        // "<|channel>thought" open marker — no pipe before the closing angle bracket, and
+        // "thought" glued directly on rather than being the tag name itself.
+        "(?is)<\\s*$TAGS(?:\\s+[^>]*)?>|<\\|(?:$TAGS|begin_of_thought)\\|>|<\\|channel>thought"
     )
     private val CLOSE = Regex(
-        "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>"
+        // Gemma's matching close marker is bare "<channel|>", not "<|channel|>" — deliberately
+        // asymmetric with its own open marker above.
+        "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>|<channel\\|>"
     )
     private val PARTIAL_OPEN_CANDIDATES = listOf(
         "<think>", "<thinking>", "<analysis>", "<reasoning>", "<thought>",
         "<|think|>", "<|thinking|>", "<|analysis|>", "<|reasoning|>", "<|thought|>",
-        "<|begin_of_thought|>"
+        "<|begin_of_thought|>", "<|channel>thought"
     )
 
     fun parse(content: String): Parsed {

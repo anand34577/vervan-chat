@@ -102,6 +102,7 @@ import com.vervan.chat.data.db.entities.ToolApprovalMode
 import com.vervan.chat.data.db.entities.canSupportAudio
 import com.vervan.chat.data.db.entities.canSupportVision
 import com.vervan.chat.data.db.entities.displayName
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
@@ -131,12 +132,15 @@ internal fun ModelEditDialog(
     flashAttentionModeDefault: String,
     kvCacheTypeDefault: String,
     onDismiss: () -> Unit,
-    onSave: (ModelInfo) -> Unit
+    // apiKey is non-null only for a REMOTE_API model whose key field was touched — see the
+    // `isRemote` state above. Null/blank on save means "keep whatever key is already stored".
+    onSave: (ModelInfo, apiKey: String?) -> Unit
 ) {
     var displayName by remember(model.id) { mutableStateOf(model.displayName) }
-    // True for GGUF/llama.cpp models — used both inside the Configure dialog body and in the
-    // Save action (which lives in a separate scope), so declared at the top of the composable.
-    val isLlamaCpp = model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP
+    // Gates the load-time tuning sections (threads, batch sizes, mlock, KV cache, Vulkan device).
+    // Used both inside the Configure dialog body and in the Save action (which lives in a separate
+    // scope), so declared at the top of the composable.
+    val isLlamaCpp = model.traits.hasNativeTuningKnobs
     // Toggle instead of Auto/On/Off (user ask): a model's capability is simply on or off,
     // defaulting to on until the model actually proves otherwise (see reconcileCapabilities).
     // A toggle is only meaningful when the engine can physically deliver the capability —
@@ -155,13 +159,21 @@ internal fun ModelEditDialog(
     // (and re-saved) as AUTO, which is what the load coordinator resolves it to anyway.
     var backend by remember(model.id) {
         mutableStateOf(
-            if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP &&
-                model.preferredBackend == BackendChoice.NPU
-            ) BackendChoice.AUTO
+            if (model.traits.hasNativeTuningKnobs && model.preferredBackend == BackendChoice.NPU) BackendChoice.AUTO
             else model.preferredBackend
         )
     }
     var approvalMode by remember(model.id) { mutableStateOf(model.toolApprovalMode) }
+
+    // REMOTE_API only — connection fields a local model has no equivalent of. Left blank/unset,
+    // the API key means "keep the existing one" (same convention the old dedicated remote dialog
+    // used); it's never read back from RemoteApiKeyStore to prefill, same reasoning as never
+    // showing a stored password back in plaintext.
+    val isRemote = !model.traits.runsOnDevice
+    var remoteBaseUrl by remember(model.id) { mutableStateOf(model.remoteBaseUrl.orEmpty()) }
+    var remoteApiModelId by remember(model.id) { mutableStateOf(model.remoteApiModelId.orEmpty()) }
+    var remoteApiKey by remember(model.id) { mutableStateOf("") }
+    val remoteBaseUrlError = if (isRemote) com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(remoteBaseUrl) else null
 
     // Every generation-default field is "use the app-wide Settings value" until the user
     // flips its own override switch — that's the default-then-customize-per-model model the
@@ -261,9 +273,10 @@ internal fun ModelEditDialog(
                         IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
                     },
                     actions = {
-                        TextButton(onClick = {
-                            onSave(
-                                if (isGeneration) {
+                        TextButton(
+                            enabled = !isRemote || remoteBaseUrlError == null,
+                            onClick = {
+                                val finalModel = if (isGeneration) {
                                     model.copy(
                                         displayName = displayName.ifBlank { model.displayName }.trim(),
                                         supportsVision = vision,
@@ -296,13 +309,20 @@ internal fun ModelEditDialog(
                                         ropeFreqScale = ropeFreqScale.toFloatOrNull().takeIf { ropeFreqScaleOn },
                                         chatTemplateOverride = chatTemplateOverride.takeIf { chatTemplateOverrideOn && chatTemplateOverride.isNotBlank() },
                                         loraPath = loraPath,
-                                        loraScale = loraScale.takeIf { loraScaleOn }
+                                        loraScale = loraScale.takeIf { loraScaleOn },
+                                        remoteBaseUrl = if (isRemote) remoteBaseUrl.trim().trimEnd('/') else model.remoteBaseUrl,
+                                        remoteApiModelId = if (isRemote) remoteApiModelId.trim() else model.remoteApiModelId
                                     )
                                 } else {
-                                    model.copy(displayName = displayName.ifBlank { model.displayName }.trim())
+                                    model.copy(
+                                        displayName = displayName.ifBlank { model.displayName }.trim(),
+                                        remoteBaseUrl = if (isRemote) remoteBaseUrl.trim().trimEnd('/') else model.remoteBaseUrl,
+                                        remoteApiModelId = if (isRemote) remoteApiModelId.trim() else model.remoteApiModelId
+                                    )
                                 }
-                            )
-                        }) { Text("Save") }
+                                onSave(finalModel, if (isRemote) remoteApiKey else null)
+                            }
+                        ) { Text("Save") }
                     }
                 )
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -311,19 +331,55 @@ internal fun ModelEditDialog(
                         maxLength = com.vervan.chat.ui.common.ValidationLimits.MODEL_DISPLAY_NAME,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                     )
-                    Text(
-                        "Storage: ${model.filePath}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = VervanMono,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
+                    if (isRemote) {
+                        Text(
+                            "Connects to an OpenAI-compatible endpoint. Requests leave this device.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        SectionDivider()
+                        SectionLabel("Connection")
+                        com.vervan.chat.ui.common.BoundedTextField(
+                            value = remoteBaseUrl, onValueChange = { remoteBaseUrl = it }, label = "Base URL", singleLine = true,
+                            maxLength = 512,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        )
+                        remoteBaseUrlError?.takeIf { remoteBaseUrl.isNotBlank() }?.let { ValidationMessage(it) }
+                        com.vervan.chat.ui.common.BoundedTextField(
+                            value = remoteApiModelId, onValueChange = { remoteApiModelId = it }, label = "Model id", singleLine = true,
+                            maxLength = 256,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        )
+                        OutlinedTextField(
+                            value = remoteApiKey,
+                            onValueChange = { remoteApiKey = it },
+                            label = { Text("API key") },
+                            supportingText = { Text("Leave blank to keep the existing key") },
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        )
+                    } else {
+                        Text(
+                            "Storage: ${model.filePath}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = VervanMono,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                     // Capabilities/generation defaults/tool approval are all properties of text
                     // generation — an embedding model only ever turns text into a vector, so
                     // none of these apply and showing them was pure confusion.
                     if (isGeneration) {
+                        // No hardware to pick between for a stateless HTTP call — see EngineTraits.
+                        // runsOnDevice.
+                        if (!isRemote) {
+                        SectionDivider()
                         SectionLabel("Performance mode")
                         if (expertMode) {
                             // llama.cpp offloads via Vulkan and has no NPU backend, so GGUF
@@ -373,6 +429,7 @@ internal fun ModelEditDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 6.dp)
                             )
+                        }
                         }
 
                         SectionDivider()
@@ -437,8 +494,9 @@ internal fun ModelEditDialog(
                             }
                         }
 
-                        // No MTP equivalent wired up for llama.cpp in this pass.
-                        if (!isLlamaCpp) {
+                        // No MTP equivalent wired up for llama.cpp, and none exists at all for a
+                        // remote model — speculative decoding is an on-device inference trick.
+                        if (!isLlamaCpp && !isRemote) {
                             SectionDivider()
                             SectionLabel("Speculative decoding (MTP)")
                             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -468,10 +526,26 @@ internal fun ModelEditDialog(
                         OverrideSlider("Temperature", temperatureOn, { temperatureOn = it }, temperature, { temperature = it }, defaults.temperature, "%.2f", 0f..2f)
                         OverrideSlider("Top-p", topPOn, { topPOn = it }, topP, { topP = it }, defaults.topP, "%.2f", 0.1f..1f)
                         OverrideSlider("Top-k", topKOn, { topKOn = it }, topK, { topK = it }, defaults.topK.toFloat(), "%.0f", 1f..64f)
+                        if (isRemote) {
+                            Text(
+                                "Top-k isn't part of the OpenAI API — only sent if the endpoint happens to accept it.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
+                        // Min-p/repetition-penalty/max-images/seed are on-device sampling and
+                        // load-time knobs — RemoteOpenAiEngine.generate() never sends any of them
+                        // (see its param list), so showing them here would be a slider that quietly
+                        // does nothing, exactly the kind of "feature" that reads as broken.
+                        if (!isRemote) {
                         OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
                         OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
+                        }
                         OverrideSlider("Max output tokens", maxOutputTokensOn, { maxOutputTokensOn = it }, maxOutputTokens, { maxOutputTokens = it }, defaults.maxOutputTokens.toFloat(), "%.0f", 64f..4096f, steps = 20)
+                        if (!isRemote) {
                         OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
+                        }
                         OverrideSlider(
                             "Context length", contextOn, { contextOn = it }, context, { context = it }, defaults.contextTokens.toFloat(),
                             "%.0f", 1024f..(model.nativeMaxContext?.toFloat() ?: 32768f), steps = 30
@@ -480,9 +554,11 @@ internal fun ModelEditDialog(
                             "Stop sequences", stopSequencesOn, { stopSequencesOn = it }, stopSequences, { stopSequences = it },
                             "None", singleLine = false
                         )
+                        if (!isRemote) {
                         OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
                         if (seedOn) {
                             TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                        }
                         }
                         } else {
                             Text(
@@ -533,8 +609,14 @@ internal fun ModelEditDialog(
 
                             Text("Conversation memory", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
                             val memoryChoice = if (!contextOn) 0 else context.toInt()
+                            // "Default" literally means the app-wide Settings value, which happens
+                            // to be 4096 out of the box — the same number "Standard" sets. Spelling
+                            // that number out on both chips (instead of two same-looking labels
+                            // whose values silently agree) is what tells the user their tap actually
+                            // did something, rather than looking unchanged after picking Standard.
+                            val defaultTokens = defaults.contextTokens
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf(0 to "Default", 4096 to "Standard", 8192 to "More", 16384 to "Maximum").forEach { (tokens, label) ->
+                                listOf(0 to "Default (${defaultTokens})", 4096 to "Standard (4096)", 8192 to "More (8192)", 16384 to "Maximum (16384)").forEach { (tokens, label) ->
                                     VervanFilterChip(selected = memoryChoice == tokens, onClick = {
                                         contextOn = tokens != 0
                                         if (tokens != 0) context = tokens.toFloat().coerceAtMost(model.nativeMaxContext?.toFloat() ?: 32768f)
@@ -813,18 +895,15 @@ internal fun formatModelSize(bytes: Long): String = when {
 }
 
 internal fun ModelInfo.runtimeSummary(): String {
-    val runtime = when (engine) {
-        ModelEngine.LITERT_LM -> "LiteRT-LM"
-        ModelEngine.LLAMA_CPP -> "llama.cpp"
-        ModelEngine.REMOTE_API -> "Remote API"
-    }
-    val hardware = if (engine == ModelEngine.REMOTE_API) "Network" else when (preferredBackend) {
-        BackendChoice.AUTO -> if (engine == ModelEngine.LLAMA_CPP) "Auto: Vulkan → CPU" else "Auto: NPU → GPU → CPU"
-        BackendChoice.GPU -> if (engine == ModelEngine.LLAMA_CPP) "Vulkan GPU" else "GPU"
+    // No on-device execution means no hardware backend to choose between — preferredBackend is
+    // stored on every row but only means something for an engine that actually runs here.
+    val hardware = if (!traits.runsOnDevice) "Network" else when (preferredBackend) {
+        BackendChoice.AUTO -> if (traits.hasNativeTuningKnobs) "Auto: Vulkan → CPU" else "Auto: NPU → GPU → CPU"
+        BackendChoice.GPU -> if (traits.hasNativeTuningKnobs) "Vulkan GPU" else "GPU"
         BackendChoice.CPU -> "CPU"
         BackendChoice.NPU -> "NPU"
     }
-    return "$runtime • $hardware"
+    return "${traits.label} • $hardware"
 }
 
 /** Rough "would this comfortably fit" check for a catalogue entry against a device budget —

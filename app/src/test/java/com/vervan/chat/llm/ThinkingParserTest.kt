@@ -92,4 +92,21 @@ class ThinkingParserTest {
         assertEquals("one\ntwo", parsed.reasoning)
         assertEquals("Answer.", parsed.answer)
     }
+
+    // Gemma's own chat template (as served by LM Studio/vLLM) uses an asymmetric marker pair —
+    // "<|channel>thought" to open, bare "<channel|>" to close — not either of its own tag names.
+    @Test
+    fun `gemma channel markers are recognized as a reasoning block`() {
+        val parsed = ThinkingParser.parse("<|channel>thought\nweighing options<channel|>The answer is 42.")
+        assertEquals("weighing options", parsed.reasoning)
+        assertEquals("The answer is 42.", parsed.answer)
+    }
+
+    @Test
+    fun `unclosed gemma channel marker treats trailing text as reasoning`() {
+        val parsed = ThinkingParser.parse("<|channel>thought\nstill reasoning")
+        assertEquals("still reasoning", parsed.reasoning)
+        assertEquals("", parsed.answer)
+        assertEquals(true, parsed.thinkingInProgress)
+    }
 }

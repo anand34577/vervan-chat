@@ -2,7 +2,6 @@ package com.vervan.chat.tools
 
 import android.Manifest
 import android.content.Intent
-import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -38,7 +37,7 @@ object ToolRegistry {
      * so [runGenerationLoop] never has to special-case them: they're gateable/disableable the
      * same as any other tool via [ChatToolsDialog], they're just also how the model finds out
      * what else it can call. */
-    val META_TOOL_NAMES = setOf("list_tools", "tool_details")
+    val META_TOOL_NAMES = setOf("list_tools", "search_tools", "tool_details")
 
     val tools: List<ToolDefinition> = listOf(
         ToolDefinition(
@@ -60,6 +59,29 @@ object ToolRegistry {
                         }
                     ToolResult(true, body)
                 }
+            }
+        ),
+        // list_tools's full grouped dump doesn't scale as the catalog grows past a handful of
+        // categories — this is the actual "search" step: one keyword against name+description,
+        // so the model can jump straight to "what handles timers" without scanning every
+        // category first. Same shape/cost as list_tools (names + one-line summaries only), just
+        // pre-filtered.
+        ToolDefinition(
+            name = "search_tools",
+            description = "Find tools matching a keyword (e.g. \"timer\", \"calendar\", \"expense\") by name or description.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DISCOVERY,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "search_tools needs a non-empty 'query'")
+                val disabled = app.container.settingsRepository.disabledToolIds.first()
+                val matches = tools.filter {
+                    it.name !in disabled && it.name !in META_TOOL_NAMES &&
+                        (query in it.name || it.description.contains(query, ignoreCase = true))
+                }
+                if (matches.isEmpty()) ToolResult(true, "No tools matched \"$query\". Call list_tools to see everything available.")
+                else ToolResult(true, matches.joinToString("\n") { "- ${it.name}: ${it.description.take(80)}" })
             }
         ),
         ToolDefinition(
@@ -215,6 +237,47 @@ object ToolRegistry {
                 }, "timer")
             }
         ),
+        // set_timer only covers a duration from now — "wake me at 7am" has no home without a
+        // clock-time alarm. Distinct AlarmClock action, same open-for-review-only shape.
+        ToolDefinition(
+            name = "set_alarm",
+            description = "Open the Android clock app with an alarm configured for a specific time of day.",
+            paramNames = listOf("hour", "minute", "label"),
+            risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
+            execute = { app, params ->
+                val hour = params.optInt("hour", -1)
+                val minute = params.optInt("minute", 0)
+                if (hour !in 0..23 || minute !in 0..59) {
+                    return@ToolDefinition ToolResult(false, "set_alarm needs 'hour' (0-23) and 'minute' (0-59)")
+                }
+                launch(app, Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                    putExtra(AlarmClock.EXTRA_HOUR, hour)
+                    putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                    putExtra(AlarmClock.EXTRA_MESSAGE, params.optString("label"))
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                }, "alarm")
+            }
+        ),
+        // draft_email and open_map each hardcode one destination app; share_text hands text to
+        // whatever app the user picks from the system share sheet (SMS, notes, other chat apps)
+        // instead of the model needing a dedicated tool per target app.
+        ToolDefinition(
+            name = "share_text",
+            description = "Open the system share sheet with text, letting the user pick which app to send it to.",
+            paramNames = listOf("text"),
+            risk = ToolRisk.EXTERNAL_ACTION,
+            category = ToolCategory.ACTION,
+            execute = { app, params ->
+                val text = params.optString("text")
+                if (text.isBlank()) return@ToolDefinition ToolResult(false, "share_text needs non-empty 'text'")
+                val chooser = Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) },
+                    null
+                )
+                launch(app, chooser, "share sheet")
+            }
+        ),
         ToolDefinition(
             name = "create_calendar_event",
             description = "Open the calendar app with an event prefilled. Does not save without user confirmation there.",
@@ -361,8 +424,15 @@ object ToolRegistry {
             risk = ToolRisk.READ_ONLY,
             category = ToolCategory.DEVICE,
             execute = { _, _ ->
-                val fmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.FULL, java.text.DateFormat.SHORT)
-                ToolResult(true, fmt.format(java.util.Date()))
+                // FULL date + SHORT time carried no zone at all, so "what time is it" came back
+                // ambiguous and anything timezone-dependent was unanswerable. Emit the zone name,
+                // the UTC offset and the IANA id explicitly — a model can't infer any of them.
+                val now = java.util.Date()
+                val zone = java.util.TimeZone.getDefault()
+                val stamp = java.text.SimpleDateFormat("EEEE, d MMMM yyyy 'at' h:mm a zzz (XXX)", java.util.Locale.getDefault())
+                    .apply { timeZone = zone }
+                    .format(now)
+                ToolResult(true, "$stamp — timezone ${zone.id}")
             }
         ),
         ToolDefinition(
@@ -426,35 +496,6 @@ object ToolRegistry {
                 ToolResult(true, "Copied to clipboard.")
             }
         ),
-        ToolDefinition(
-            name = "current_location",
-            description = "Get the device's last known approximate location (latitude/longitude only, no address).",
-            paramNames = emptyList(),
-            risk = ToolRisk.READ_ONLY,
-            category = ToolCategory.DEVICE,
-            execute = { app, _ ->
-                gatedResult(app, app.container.settingsRepository.locationToolEnabled, Manifest.permission.ACCESS_COARSE_LOCATION, "Location") {
-                    withContext(Dispatchers.IO) {
-                        // Recheck at the platform call site as the permission can be revoked after
-                        // gatedResult's initial check. runCatching below handles the remaining race.
-                        if (ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            "Location permission hasn't been granted."
-                        } else {
-                            val lm = app.getSystemService(android.content.Context.LOCATION_SERVICE) as LocationManager
-                            @android.annotation.SuppressLint("MissingPermission") // Checked above; runCatching handles revocation races.
-                            val location = runCatching {
-                                lm.getProviders(true).asSequence()
-                                    .mapNotNull { provider -> lm.getLastKnownLocation(provider) }
-                                    .maxByOrNull { it.time }
-                            }.getOrNull()
-                            if (location == null) "No recent location available."
-                            else "Latitude ${"%.4f".format(location.latitude)}, longitude ${"%.4f".format(location.longitude)} " +
-                                "(as of ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(location.time))})."
-                        }
-                    }
-                }
-            }
-        ),
         // Tasks reuse the existing Note entity/table tagged "task" (and "task-done" once
         // completed) instead of a new entity+DAO+migration — Notes already has full CRUD,
         // search, and a UI, so a task is really just a note with a status.
@@ -498,6 +539,42 @@ object ToolRegistry {
                     ?: return@ToolDefinition ToolResult(false, "No open task matched \"$query\".")
                 app.container.db.noteDao().upsert(task.copy(tags = "task-done"))
                 ToolResult(true, "Completed task: ${task.title}")
+            }
+        ),
+        // create_note had no counterpart — a model that filed the wrong note, or a duplicate,
+        // had no way to undo it short of the user opening Notes themselves. Soft-delete via the
+        // existing deletedAt column, same as the Notes UI's own delete path — no new DAO method.
+        ToolDefinition(
+            name = "delete_note",
+            description = "Delete a note by matching its title or content.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "delete_note needs a non-empty 'query'")
+                val note = app.container.db.noteDao().search(query).firstOrNull()
+                    ?: return@ToolDefinition ToolResult(false, "No note matched \"$query\".")
+                app.container.db.noteDao().upsert(note.copy(deletedAt = System.currentTimeMillis()))
+                ToolResult(true, "Deleted note \"${note.title}\".")
+            }
+        ),
+        // Mirrors delete_note — a task added by mistake shouldn't have to be completed just to
+        // get it off the list.
+        ToolDefinition(
+            name = "delete_task",
+            description = "Delete a to-do task by matching its text, without marking it complete.",
+            paramNames = listOf("query"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.PRODUCTIVITY,
+            execute = { app, params ->
+                val query = params.optString("query")
+                if (query.isBlank()) return@ToolDefinition ToolResult(false, "delete_task needs a non-empty 'query'")
+                val task = app.container.db.noteDao().getTaskNotes()
+                    .firstOrNull { "task" in it.tags.split(",") && it.title.contains(query, true) }
+                    ?: return@ToolDefinition ToolResult(false, "No open task matched \"$query\".")
+                app.container.db.noteDao().upsert(task.copy(deletedAt = System.currentTimeMillis()))
+                ToolResult(true, "Deleted task: ${task.title}")
             }
         ),
         ToolDefinition(
@@ -651,8 +728,9 @@ object ToolRegistry {
         return "You have access to tools, called by emitting a block like this on its own: " +
             "<tool_call>{\"tool\": \"tool_name\", \"params\": {\"param\": \"value\"}}</tool_call>\n" +
             namesLine +
-            "Call list_tools for a one-line summary of each, then tool_details(name) for a specific " +
-            "tool's parameters before calling it. Only reach for a tool when you actually need one.\n"
+            "Call search_tools(query) with a keyword for what you need (e.g. \"timer\", \"calendar\") to " +
+            "find a specific tool fast, or list_tools for the full grouped list, then tool_details(name) " +
+            "for a specific tool's parameters before calling it. Only reach for a tool when you actually need one.\n"
     }
 
     private fun launch(app: com.vervan.chat.VervanApp, intent: Intent, label: String): ToolResult = try {

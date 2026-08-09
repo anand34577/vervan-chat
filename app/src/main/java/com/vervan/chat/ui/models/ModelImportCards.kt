@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -98,6 +100,8 @@ import com.vervan.chat.data.db.entities.FileDownloadStatus
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.traits
+import com.vervan.chat.llm.RemoteModelCatalog
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.data.db.entities.ToolApprovalMode
 import com.vervan.chat.data.db.entities.canSupportAudio
@@ -117,6 +121,7 @@ import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.Space
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -330,7 +335,7 @@ internal fun ImportModelDialog(
                 HorizontalDivider(Modifier.padding(vertical = Space.xs))
                 ImportChoiceCard(
                     title = "Remote API",
-                    subtitle = "OpenAI-compatible endpoint · your own key",
+                    subtitle = "OpenAI-compatible endpoint · cloud or self-hosted",
                     icon = Icons.Filled.CloudDownload,
                     enabled = !importing,
                     horizontal = true,
@@ -344,60 +349,143 @@ internal fun ImportModelDialog(
 }
 
 /**
- * Add/edit an external OpenAI-compatible [ModelInfo] (`engine == REMOTE_API`) — no file picker,
- * since there's nothing on disk: just where to send requests, the provider's own model name, and
- * a bearer key. [initial] non-null means editing an existing row (fields prefilled, API key field
- * left blank — see its own supporting text); null means adding a new one. [onTestConnection]
- * hits the endpoint's `/models` list before the user commits, so a typo'd URL or bad key is
- * caught here rather than on first chat send.
+ * Adds one or more external OpenAI-compatible [ModelInfo] rows (`engine == REMOTE_API`) — no file
+ * picker, since there's nothing on disk: just where to send requests, which models to ask for, and
+ * a bearer key. Editing an already-added remote model reuses [ModelEditDialog], the same "Configure
+ * model" screen a local model gets, rather than this dialog — see `ModelManagerScreen.editModel()`.
+ *
+ * The model field is a search box over the endpoint's own catalog, fetched automatically once the
+ * URL parses (debounced, since it runs while the URL is still being typed). That fetch doubles as
+ * the connection test — it is the same `/models` request a separate "Test connection" button used
+ * to make, so there no longer is one. Whatever is typed wins: an id absent from the dropdown, or a
+ * self-hosted server that serves no usable catalog at all, is still added verbatim.
+ *
+ * Multi-select, because one endpoint routinely serves a dozen models and adding them one dialog at
+ * a time is the same URL and key re-entered a dozen times. Each pick carries its own role and
+ * capabilities — guessed per id by [RemoteModelCatalog] and overridable per row, since one endpoint
+ * commonly mixes a vision chat model, a text-only one, and an embedding model together.
  */
 @Composable
 internal fun RemoteApiModelDialog(
-    initial: ModelInfo?,
     saving: Boolean,
+    defaults: ModelDefaults,
     onDismiss: () -> Unit,
-    onTestConnection: suspend (baseUrl: String, apiKey: String) -> Result<Unit>,
-    onSave: (displayName: String, baseUrl: String, apiKey: String, remoteApiModelId: String) -> Unit
+    onFetch: suspend (baseUrl: String, apiKey: String) -> Result<List<String>>,
+    onSave: (
+        baseUrl: String,
+        apiKey: String,
+        selections: List<ModelManagerViewModel.RemoteModelSelection>
+    ) -> Unit
 ) {
-    var displayName by remember { mutableStateOf(initial?.displayName ?: "") }
-    var baseUrl by remember { mutableStateOf(initial?.remoteBaseUrl ?: "") }
+    var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
-    var remoteApiModelId by remember { mutableStateOf(initial?.remoteApiModelId ?: "") }
-    var testResult by remember { mutableStateOf<Result<Unit>?>(null) }
-    var testing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    // Only surfaced once the user has typed something, so an untouched field isn't pre-marked
-    // invalid — but it gates Save/Test either way (see `valid` below).
+    // Search box AND free-text entry: an endpoint that serves no catalog (or serves one missing
+    // the model you want) is still usable by typing the id and pressing Add.
+    var query by remember { mutableStateOf("") }
+    var picked by remember { mutableStateOf(emptyList<ModelManagerViewModel.RemoteModelSelection>()) }
+    // Same override-or-default pattern ModelEditDialog uses for a local model — "unset" (the
+    // switch off) means "use the app-wide Settings value", not "use whatever the slider happens
+    // to show". Shared across the batch rather than per-row (unlike capabilities): a wrong
+    // capability guess breaks the request outright, a shared sampling preference across a handful
+    // of models you're adding together is just a starting point, refinable per model afterward via
+    // ModelEditDialog once the row exists.
+    var temperatureOn by remember { mutableStateOf(false) }
+    var temperature by remember { mutableStateOf(defaults.temperature) }
+    var topPOn by remember { mutableStateOf(false) }
+    var topP by remember { mutableStateOf(defaults.topP) }
+    var topKOn by remember { mutableStateOf(false) }
+    var topK by remember { mutableStateOf(defaults.topK.toFloat()) }
+    var maxOutputTokensOn by remember { mutableStateOf(false) }
+    var maxOutputTokens by remember { mutableStateOf(defaults.maxOutputTokens.toFloat()) }
+    var contextOn by remember { mutableStateOf(false) }
+    var context by remember { mutableStateOf(defaults.contextTokens.toFloat()) }
+    var catalog by remember { mutableStateOf<List<String>>(emptyList()) }
+    var fetching by remember { mutableStateOf(false) }
+    var fetchNote by remember { mutableStateOf<String?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+
     val baseUrlError = com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(baseUrl)
+    // Only surfaced once the user has typed something, so an untouched field isn't pre-marked
+    // invalid — but it gates Save either way (see `valid`).
     val shownBaseUrlError = baseUrlError?.takeIf { baseUrl.isNotBlank() }
-    val valid = displayName.isNotBlank() && baseUrlError == null && remoteApiModelId.isNotBlank()
+    val cleartext = baseUrl.trim().startsWith("http://", ignoreCase = true)
+    val valid = baseUrlError == null && picked.isNotEmpty()
+
+    fun update(id: String, transform: (ModelManagerViewModel.RemoteModelSelection) -> ModelManagerViewModel.RemoteModelSelection) {
+        picked = picked.map { if (it.remoteApiModelId == id) transform(it) else it }
+    }
+
+    fun toggle(modelId: String) {
+        val id = modelId.trim()
+        if (id.isEmpty()) return
+        picked = if (picked.any { it.remoteApiModelId == id }) {
+            picked.filterNot { it.remoteApiModelId == id }
+        } else {
+            // Display name defaults to the provider's id — that's what the user recognizes and what
+            // their billing shows. Renameable afterwards from this same dialog (single) or the
+            // model's own edit action. Tools/Thinking default ON — "on until proven otherwise", the
+            // same convention ModelEditDialog uses for a local model's own toggles; both are pure
+            // prompt-level behavior with nothing to break. Vision is guessed from the id
+            // (RemoteModelCatalog.inferVision); Audio has no comparable naming convention to guess
+            // from, so it stays off until set by hand.
+            picked + ModelManagerViewModel.RemoteModelSelection(
+                remoteApiModelId = id,
+                displayName = id,
+                role = RemoteModelCatalog.inferRole(id),
+                capabilities = ModelManagerViewModel.RemoteCapabilities(
+                    vision = RemoteModelCatalog.inferVision(id),
+                    tools = true,
+                    thinking = true
+                )
+            )
+        }
+    }
+
+    LaunchedEffect(baseUrl, apiKey) {
+        catalog = emptyList()
+        fetchNote = null
+        // Also resets a spinner left over from a fetch this restart just cancelled.
+        fetching = false
+        if (baseUrlError != null) return@LaunchedEffect
+        delay(CATALOG_FETCH_DEBOUNCE_MS)
+        fetching = true
+        onFetch(baseUrl, apiKey).fold(
+            onSuccess = { ids ->
+                catalog = ids
+                menuOpen = ids.isNotEmpty() && picked.isEmpty()
+                fetchNote = "${ids.size} model${if (ids.size == 1) "" else "s"} available"
+            },
+            // Advisory, not blocking: plenty of self-hosted servers don't implement /models, and
+            // typing the id by hand still works — so Save stays enabled either way.
+            onFailure = { fetchNote = it.message ?: "Could not list models — type the id instead" }
+        )
+        fetching = false
+    }
+
+    // The field is the search box, so the list narrows as the user types.
+    val suggestions = catalog.filter { query.isBlank() || it.contains(query.trim(), ignoreCase = true) }
+    // Only offer "add as typed" for something the catalog genuinely doesn't have — otherwise it
+    // duplicates the row directly below it.
+    val typedIsNew = query.isNotBlank() && catalog.none { it.equals(query.trim(), ignoreCase = true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Add remote API model" else "Edit remote API model") },
+        title = { Text("Add remote API models") },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 Text(
-                    "Connects to any OpenAI-compatible /v1/chat/completions endpoint — OpenAI itself, " +
-                        "OpenRouter, or a self-hosted server. Generation leaves this device; the API key " +
-                        "is stored encrypted and only ever sent to the URL below.",
+                    "Connects to any OpenAI-compatible endpoint — OpenAI itself, OpenRouter, or a " +
+                        "server on your own network. Requests leave this device; the API key is " +
+                        "stored encrypted and only ever sent to the URL below.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = { Text("Display name") },
-                    placeholder = { Text("e.g. GPT-4o mini") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
                     value = baseUrl,
-                    onValueChange = { baseUrl = it; testResult = null },
+                    onValueChange = { baseUrl = it },
                     label = { Text("Base URL") },
                     placeholder = { Text("https://api.openai.com/v1") },
                     isError = shownBaseUrlError != null,
@@ -405,55 +493,196 @@ internal fun RemoteApiModelDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 shownBaseUrlError?.let { ValidationMessage(it) }
-                OutlinedTextField(
-                    value = remoteApiModelId,
-                    onValueChange = { remoteApiModelId = it },
-                    label = { Text("Model id") },
-                    placeholder = { Text("gpt-4o-mini") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (cleartext) {
+                    Text(
+                        "http:// sends the API key unencrypted — fine for a server on your own " +
+                            "network, but use https:// for anything over the internet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
                 OutlinedTextField(
                     value = apiKey,
-                    onValueChange = { apiKey = it; testResult = null },
+                    onValueChange = { apiKey = it },
                     label = { Text("API key") },
-                    placeholder = { Text(if (initial != null) "Leave blank to keep the current key" else "") },
-                    supportingText = if (initial != null) {
-                        { Text("Leave blank to keep the existing key") }
-                    } else null,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        // Same URL gate as Save — no point spending a round trip on a URL the
-                        // platform would refuse to connect to anyway.
-                        enabled = baseUrlError == null && !testing,
-                        onClick = {
-                            testing = true
-                            testResult = null
-                            scope.launch {
-                                testResult = onTestConnection(baseUrl, apiKey)
-                                testing = false
+
+                run {
+                    Box {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it; menuOpen = true },
+                            label = { Text("Models") },
+                            placeholder = { Text("Search, or type any model id") },
+                            singleLine = true,
+                            trailingIcon = {
+                                when {
+                                    fetching -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    catalog.isNotEmpty() -> IconButton(onClick = { menuOpen = !menuOpen }) {
+                                        Icon(
+                                            if (menuOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                            contentDescription = if (menuOpen) "Hide model list" else "Show model list"
+                                        )
+                                    }
+                                }
+                            },
+                            supportingText = {
+                                Text(
+                                    when {
+                                        fetching -> "Checking the endpoint…"
+                                        fetchNote != null -> fetchNote!!
+                                        else -> "Pick as many as you like."
+                                    }
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = menuOpen && (suggestions.isNotEmpty() || typedIsNew),
+                            onDismissRequest = { menuOpen = false },
+                            // Non-focusable so the keyboard stays up and the caret stays in the
+                            // field while the list narrows and rows are ticked — the field is the
+                            // search input, and closing on every pick would make multi-select
+                            // require reopening the menu once per model.
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                            modifier = Modifier.heightIn(max = 280.dp)
+                        ) {
+                            if (typedIsNew) {
+                                DropdownMenuItem(
+                                    text = { Text("Add \"${query.trim()}\"", style = MaterialTheme.typography.bodyMedium) },
+                                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                    onClick = { toggle(query); query = "" }
+                                )
+                            }
+                            suggestions.take(MAX_MODEL_SUGGESTIONS).forEach { id ->
+                                val checked = picked.any { it.remoteApiModelId == id }
+                                DropdownMenuItem(
+                                    text = { Text(id, style = MaterialTheme.typography.bodyMedium) },
+                                    leadingIcon = { Checkbox(checked = checked, onCheckedChange = { toggle(id) }) },
+                                    // Menu deliberately stays open — see PopupProperties above.
+                                    onClick = { toggle(id) }
+                                )
+                            }
+                            // Say so rather than silently hiding matches — providers like
+                            // OpenRouter return hundreds of ids.
+                            if (suggestions.size > MAX_MODEL_SUGGESTIONS) {
+                                DropdownMenuItem(
+                                    enabled = false,
+                                    text = {
+                                        Text(
+                                            "${suggestions.size - MAX_MODEL_SUGGESTIONS} more — keep typing to narrow",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    onClick = {}
+                                )
                             }
                         }
-                    ) { Text(if (testing) "Testing…" else "Test connection") }
-                    if (testing) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+
+                    if (picked.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text(
+                            "Selected (${picked.size})",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            // Both guessed from the id alone — RemoteModelCatalog.inferRole and
+                            // .inferVision — since /models reports neither. A local server can
+                            // serve anything under any name, so every guess renders as a changeable
+                            // chip, never applied silently.
+                            "Role and capabilities are guessed from each name — tap any chip to fix it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                testResult?.let { result ->
-                    result.fold(
-                        onSuccess = {
+
+                picked.forEach { selection ->
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                        ) {
                             Text(
-                                "Connection OK",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.tertiary
+                                selection.remoteApiModelId,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
-                        },
-                        onFailure = { ValidationMessage(it.message ?: "Connection failed") }
+                            VervanFilterChip(
+                                selected = selection.role == ModelRole.EMBEDDING,
+                                onClick = {
+                                    val flipped = if (selection.role == ModelRole.EMBEDDING) ModelRole.GENERATION else ModelRole.EMBEDDING
+                                    update(selection.remoteApiModelId) { it.copy(role = flipped) }
+                                },
+                                label = { Text(if (selection.role == ModelRole.EMBEDDING) "Embedding" else "Chat") }
+                            )
+                            IconButton(onClick = { toggle(selection.remoteApiModelId) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove ${selection.remoteApiModelId}", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        // Chat-only concepts: an embedding model turns text into a vector and
+                        // never sees a tool catalog, an image, or a reasoning instruction — same
+                        // rule ModelEditDialog uses to hide its own capability section by role.
+                        if (selection.role == ModelRole.GENERATION) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth().padding(start = Space.xl, bottom = Space.xs),
+                                horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                            ) {
+                                VervanFilterChip(
+                                    selected = selection.capabilities.vision,
+                                    onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(vision = !it.capabilities.vision)) } },
+                                    label = { Text("Vision") }
+                                )
+                                VervanFilterChip(
+                                    selected = selection.capabilities.audio,
+                                    onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(audio = !it.capabilities.audio)) } },
+                                    label = { Text("Audio") }
+                                )
+                                VervanFilterChip(
+                                    selected = selection.capabilities.tools,
+                                    onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(tools = !it.capabilities.tools)) } },
+                                    label = { Text("Tools") }
+                                )
+                                VervanFilterChip(
+                                    selected = selection.capabilities.thinking,
+                                    onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(thinking = !it.capabilities.thinking)) } },
+                                    label = { Text("Thinking") }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Same per-model tuning a local model gets in Configure — temperature/top-p/top-k/
+                // max output tokens/context length, each "off means use the app-wide Settings
+                // value" exactly like ModelEditDialog's own OverrideSlider. Shown once the batch
+                // includes at least one chat model, applied to all of them (see the shared-vs-
+                // per-row reasoning on the state declarations above).
+                if (picked.any { it.role == ModelRole.GENERATION }) {
+                    HorizontalDivider()
+                    Text("Generation settings", style = MaterialTheme.typography.labelLarge)
+                    OverrideSlider("Temperature", temperatureOn, { temperatureOn = it }, temperature, { temperature = it }, defaults.temperature, "%.2f", 0f..2f)
+                    OverrideSlider("Top-p", topPOn, { topPOn = it }, topP, { topP = it }, defaults.topP, "%.2f", 0.1f..1f)
+                    OverrideSlider(
+                        "Top-k", topKOn, { topKOn = it }, topK, { topK = it }, defaults.topK.toFloat(), "%.0f", 1f..64f
+                    )
+                    Text(
+                        "Top-k isn't part of the OpenAI API — only sent if the endpoint happens to accept it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OverrideSlider("Max output tokens", maxOutputTokensOn, { maxOutputTokensOn = it }, maxOutputTokens, { maxOutputTokens = it }, defaults.maxOutputTokens.toFloat(), "%.0f", 64f..4096f, steps = 20)
+                    OverrideSlider(
+                        "Context length", contextOn, { contextOn = it }, context, { context = it }, defaults.contextTokens.toFloat(),
+                        "%.0f", 1024f..131072f, steps = 30
                     )
                 }
             }
@@ -461,12 +690,43 @@ internal fun RemoteApiModelDialog(
         confirmButton = {
             Button(
                 enabled = valid && !saving,
-                onClick = { onSave(displayName.trim(), baseUrl.trim(), apiKey, remoteApiModelId.trim()) }
-            ) { Text(if (saving) "Saving…" else "Save") }
+                onClick = {
+                    val generation = ModelManagerViewModel.RemoteGenerationOverrides(
+                        temperature = temperature.takeIf { temperatureOn },
+                        topP = topP.takeIf { topPOn },
+                        topK = topK.toInt().takeIf { topKOn },
+                        maxOutputTokens = maxOutputTokens.toInt().takeIf { maxOutputTokensOn },
+                        contextTokens = context.toInt().takeIf { contextOn }
+                    )
+                    onSave(
+                        baseUrl.trim(),
+                        apiKey,
+                        picked.map {
+                            it.copy(
+                                displayName = it.displayName.trim().ifBlank { it.remoteApiModelId },
+                                generation = if (it.role == ModelRole.GENERATION) generation else it.generation
+                            )
+                        }
+                    )
+                }
+            ) {
+                Text(
+                    when {
+                        saving -> "Saving…"
+                        picked.size <= 1 -> "Save"
+                        else -> "Add ${picked.size} models"
+                    }
+                )
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } }
     )
 }
+
+/** Long enough that typing a URL doesn't fire a request per keystroke, short enough that the list
+ *  appears without the user hunting for a button. */
+private const val CATALOG_FETCH_DEBOUNCE_MS = 700L
+private const val MAX_MODEL_SUGGESTIONS = 50
 
 /** Keeps the runtime choice explicit. LiteRT-LM and llama.cpp are peers, while embeddings are
  * supporting infrastructure; stacking these options on phones avoids unreadably narrow cards. */
@@ -815,7 +1075,15 @@ internal fun ModelCard(
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
-                            formatModelSize(model.fileSizeBytes),
+                            // No weights on disk means no size to show, and "0 B" reads like a
+                            // broken import — show where it actually lives instead.
+                            if (model.traits.storesWeightsLocally) {
+                                formatModelSize(model.fileSizeBytes)
+                            } else {
+                                model.remoteBaseUrl
+                                    ?.let { runCatching { java.net.URI(it).host }.getOrNull() }
+                                    ?: model.traits.label
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = VervanMono,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -841,7 +1109,10 @@ internal fun ModelCard(
                 if (!selectionMode) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (busy) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 4.dp), strokeWidth = 2.dp)
-                        if (isLoaded) SemanticChip("Loaded", ChipTone.Neutral)
+                        // A remote model never "loads" into memory — it's just the one requests
+                        // currently go to. "Using"/"Use" instead of "Loaded"/"Load" says that
+                        // truthfully instead of implying a local weights file just got read in.
+                        if (isLoaded) SemanticChip(if (model.traits.runsOnDevice) "Loaded" else "Using", ChipTone.Neutral)
                         if (model.isActive) SemanticChip("Default", ChipTone.Neutral)
                         Box {
                             IconButton(onClick = { menuOpen = true }, enabled = !busy) {
@@ -922,7 +1193,11 @@ internal fun ModelCard(
                         colors = if (isLoaded) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant) else ButtonDefaults.buttonColors()
                     ) {
                         Icon(if (isLoaded) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(if (isLoaded) "Unload" else "Load", modifier = Modifier.padding(start = 6.dp))
+                        Text(
+                            if (model.traits.runsOnDevice) (if (isLoaded) "Unload" else "Load")
+                            else (if (isLoaded) "Stop using" else "Use"),
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
                     }
                 }
             }

@@ -497,6 +497,32 @@
     }
   };
 
+  // Home → "API & OpenAPI spec". Absolute URLs are built from location.origin rather than
+  // hardcoded, because the useful value is whatever host the user actually reached this page on
+  // (a LAN IP, usually) — a copied "/openapi.json" or "127.0.0.1" is useless on their laptop.
+  (function wireApiSpecCard() {
+    var link = el("openApiLink");
+    var copyBtn = el("copySpecUrlBtn");
+    var curl = el("specCurl");
+    if (!link) return;
+    var specUrl = location.origin + "/openapi.json";
+    link.href = specUrl;
+    if (curl) {
+      curl.textContent =
+        "curl " + location.origin + "/v1/chat/completions \\\n" +
+        '  -H "Content-Type: application/json" \\\n' +
+        '  -d \'{"messages":[{"role":"user","content":"Hello"}],"stream":true}\'';
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        if (!navigator.clipboard) { toast("Clipboard isn't available in this browser", true); return; }
+        navigator.clipboard.writeText(specUrl)
+          .then(function () { toast("Spec URL copied"); })
+          .catch(function () { toast("Couldn't copy the spec URL", true); });
+      });
+    }
+  })();
+
   var searchTimer = null;
   el("globalSearch").addEventListener("input", function () {
     clearTimeout(searchTimer);

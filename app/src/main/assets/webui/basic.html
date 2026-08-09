@@ -129,10 +129,17 @@
         base64)</li>
       <li><code>POST /v1/audio/speech</code> — returns <code>wav</code> or <code>pcm</code></li>
       <li><code>GET /health</code></li>
+      <li><code>GET /openapi.json</code> — machine-readable OpenAPI 3.1 spec for this server</li>
     </ul>
     <p class="sub">With no model loaded, a request loads this device's default model automatically
       and unloads it again once it has been idle past the TTL set in Settings. <code>/v1/models</code>
       reports each model's <code>state</code> and <code>ttl_expires_at</code>.</p>
+    <p class="sub"><strong>OpenAPI:</strong> <a id="specLink" href="/openapi.json">/openapi.json</a>
+      describes every endpoint above, including this build's extension fields
+      (<code>thinking</code>, <code>app_tools</code>, <code>enabled_tools</code>,
+      <code>knowledge_base_ids</code>, <code>chat_id</code>) and the bearer-token scheme. It is
+      generated from the running server, so it only lists endpoints this instance actually serves —
+      import it into Postman, or point a client generator at it.</p>
     <pre id="example">curl http://127.0.0.1/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"…","messages":[{"role":"user","content":"Hello"}]}'</pre>
@@ -182,9 +189,14 @@
       var models = (data.data || []).filter(function (m) { return m.role === "generation"; });
       var el = document.getElementById("models");
       if (models.length === 0) { el.textContent = "No generation model installed."; return; }
-      el.innerHTML = models.map(function (m) {
-        return '<div class="m">' + m.id + (m.active ? " (active)" : "") + "</div>";
-      }).join("");
+      // textContent (not innerHTML) — m.id is a user-set model display name, unescaped.
+      el.innerHTML = "";
+      models.forEach(function (m) {
+        var row = document.createElement("div");
+        row.className = "m";
+        row.textContent = m.id + (m.active ? " (active)" : "");
+        el.appendChild(row);
+      });
     })
     .catch(function (err) {
       var el = document.getElementById("models");

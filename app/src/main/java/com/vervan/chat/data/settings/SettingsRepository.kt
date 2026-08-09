@@ -43,6 +43,7 @@ class SettingsRepository(context: Context) {
         val LARGE_TOUCH_TARGETS = booleanPreferencesKey("large_touch_targets")
         val DEFAULT_RETRIEVAL_MODE = stringPreferencesKey("default_retrieval_mode")
         val QUERY_EXPANSION_ENABLED = booleanPreferencesKey("query_expansion_enabled")
+        val INCLUDE_PAST_THINKING_IN_CONTEXT = booleanPreferencesKey("include_past_thinking_in_context")
         val AUTO_READ_ALOUD = booleanPreferencesKey("auto_read_aloud")
         val TTS_ENGINE_PREFERENCE = stringPreferencesKey("tts_engine_preference")
         val BARGE_IN_ENABLED = booleanPreferencesKey("barge_in_enabled")
@@ -132,7 +133,6 @@ class SettingsRepository(context: Context) {
         // doesn't mean the model should always be allowed to query it.
         val CALENDAR_TOOL_ENABLED = booleanPreferencesKey("calendar_tool_enabled")
         val DEVICE_STATUS_TOOL_ENABLED = booleanPreferencesKey("device_status_tool_enabled")
-        val LOCATION_TOOL_ENABLED = booleanPreferencesKey("location_tool_enabled")
         // floating quick-action bubble, off by default (the one feature in this app
         // that needs an overlay permission).
         val QUICK_ACTION_BUBBLE_ENABLED = booleanPreferencesKey("quick_action_bubble_enabled")
@@ -235,6 +235,13 @@ class SettingsRepository(context: Context) {
     // recall improvement enough to pay for it turn it on explicitly.
     val queryExpansionEnabled: Flow<Boolean> = store.data.map { it[Keys.QUERY_EXPANSION_ENABLED] ?: false }
     suspend fun setQueryExpansionEnabled(enabled: Boolean) { store.edit { it[Keys.QUERY_EXPANSION_ENABLED] = enabled } }
+
+    // Off by default — a past turn's <think> block re-entering every later prompt is what was
+    // quietly eating the context budget across a long reasoning-heavy conversation (see
+    // ChatViewModel.buildPromptSections). Left as an opt-in for anyone who actually wants the
+    // model to see its own past reasoning, not just the answer.
+    val includePastThinkingInContext: Flow<Boolean> = store.data.map { it[Keys.INCLUDE_PAST_THINKING_IN_CONTEXT] ?: false }
+    suspend fun setIncludePastThinkingInContext(enabled: Boolean) { store.edit { it[Keys.INCLUDE_PAST_THINKING_IN_CONTEXT] = enabled } }
 
     val autoReadAloud: Flow<Boolean> = store.data.map { it[Keys.AUTO_READ_ALOUD] ?: false }
     suspend fun setAutoReadAloud(enabled: Boolean) { store.edit { it[Keys.AUTO_READ_ALOUD] = enabled } }
@@ -385,8 +392,10 @@ class SettingsRepository(context: Context) {
     val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.3f) }
     suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.3f) } }
 
-    val contextTokenLimit: Flow<Int> = store.data.map { (it[Keys.CONTEXT_TOKEN_LIMIT] ?: 4096).coerceIn(512, 32_768) }
-    suspend fun setContextTokenLimit(limit: Int) { store.edit { it[Keys.CONTEXT_TOKEN_LIMIT] = limit.coerceIn(512, 32_768) } }
+    // Default stays 4096 (unchanged) — only the ceiling moved, to 128K, for models that can
+    // actually use a longer context.
+    val contextTokenLimit: Flow<Int> = store.data.map { (it[Keys.CONTEXT_TOKEN_LIMIT] ?: 4096).coerceIn(512, 131_072) }
+    suspend fun setContextTokenLimit(limit: Int) { store.edit { it[Keys.CONTEXT_TOKEN_LIMIT] = limit.coerceIn(512, 131_072) } }
 
     /**
      * Declared, not inferred — the user picks these explicitly in Settings, the
@@ -572,17 +581,15 @@ class SettingsRepository(context: Context) {
     suspend fun setCalendarToolEnabled(v: Boolean) { store.edit { it[Keys.CALENDAR_TOOL_ENABLED] = v } }
     val deviceStatusToolEnabled: Flow<Boolean> = store.data.map { it[Keys.DEVICE_STATUS_TOOL_ENABLED] ?: false }
     suspend fun setDeviceStatusToolEnabled(v: Boolean) { store.edit { it[Keys.DEVICE_STATUS_TOOL_ENABLED] = v } }
-    val locationToolEnabled: Flow<Boolean> = store.data.map { it[Keys.LOCATION_TOOL_ENABLED] ?: false }
-    suspend fun setLocationToolEnabled(v: Boolean) { store.edit { it[Keys.LOCATION_TOOL_ENABLED] = v } }
 
     // ---- Tool catalog (Settings → Tools) ----
     /**
      * Off until the user explicitly opts in (Settings → Tools). read_clipboard is READ_ONLY, so
      * runGenerationLoop executes it with no confirmation prompt, and it has no Android permission
-     * to gate it the way current_location has ACCESS_COARSE_LOCATION — the model could pull
-     * whatever is on the clipboard (passwords, 2FA codes, anything just copied) straight into the
-     * conversation, which for a remote model means off-device. Now that Chat.toolsEnabled defaults
-     * to true, "nobody turns tools on anyway" is no longer the thing keeping that shut.
+     * behind it the way the calendar tool has READ_CALENDAR — the model could pull whatever is on
+     * the clipboard (passwords, 2FA codes, anything just copied) straight into the conversation,
+     * which for a remote model means off-device. Now that Chat.toolsEnabled defaults to true,
+     * "nobody turns tools on anyway" is no longer the thing keeping that shut.
      *
      * MUST be the fallback in both the getter and [setToolEnabled] below: if only the getter
      * defaulted to it, the first toggle of any unrelated tool would persist a set built from
