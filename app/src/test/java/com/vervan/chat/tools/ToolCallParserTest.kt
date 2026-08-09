@@ -91,4 +91,57 @@ class ToolCallParserTest {
     fun `stripForDisplay leaves plain text with no tool_call tag unchanged`() {
         assertEquals("Just a normal answer.", ToolCallParser.stripForDisplay("Just a normal answer."))
     }
+
+    // --- model-native call shapes -------------------------------------------------------------
+    // Regression cover for the shapes that used to fall through to the answer text verbatim.
+
+    @Test
+    fun `parses Gemma's native pipe-delimited bare call`() {
+        // Exactly what gemma-4-E2B-it emitted on-device; this used to render as raw text.
+        val call = ToolCallParser.parse("<|tool_call>call:list_tools{}<tool_call|>")
+        assertEquals("list_tools", call?.name)
+        assertEquals(0, call?.params?.length())
+    }
+
+    @Test
+    fun `parses a pipe-delimited call with json params`() {
+        val call = ToolCallParser.parse("""<|tool_call>call:search_notes{"query": "taxes"}<tool_call|>""")
+        assertEquals("search_notes", call?.name)
+        assertEquals("taxes", call?.params?.optString("query"))
+    }
+
+    @Test
+    fun `parses OpenAI-style name and arguments`() {
+        val call = ToolCallParser.parse("""<tool_call>{"name": "search_notes", "arguments": {"query": "rent"}}</tool_call>""")
+        assertEquals("search_notes", call?.name)
+        assertEquals("rent", call?.params?.optString("query"))
+    }
+
+    @Test
+    fun `parses OpenAI-style arguments passed as a json string`() {
+        val call = ToolCallParser.parse("""<tool_call>{"name": "search_notes", "arguments": "{\"query\": \"rent\"}"}</tool_call>""")
+        assertEquals("search_notes", call?.name)
+        assertEquals("rent", call?.params?.optString("query"))
+    }
+
+    @Test
+    fun `stripForDisplay hides a pipe-delimited block`() {
+        assertEquals("Checking.", ToolCallParser.stripForDisplay("Checking. <|tool_call>call:list_tools{}<tool_call|>"))
+    }
+
+    @Test
+    fun `documented format still wins over the bare-call fallback`() {
+        val call = ToolCallParser.parse("""<tool_call>{"tool": "search_chats", "params": {"query": "a"}}</tool_call>""")
+        assertEquals("search_chats", call?.name)
+        assertEquals("a", call?.params?.optString("query"))
+    }
+
+    @Test
+    fun `prose inside a tool_call block is still reported as malformed`() {
+        // The bare-call fallback must not turn an explanatory sentence into a bogus tool named
+        // after its first word — that would fabricate calls the model never made.
+        val result = ToolCallParser.parseAll("<tool_call>I am not sure which tool to use here.</tool_call>")
+        assertEquals(0, result.calls.size)
+        assertEquals(1, result.malformed.size)
+    }
 }

@@ -15,13 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,7 +58,7 @@ import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ScrollablePage
-import com.vervan.chat.ui.common.ResponsiveActions
+import com.vervan.chat.ui.common.ResultActions
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
@@ -340,21 +337,13 @@ fun TextActionScreen(
                             }
                         }
                     } else {
-                        // Wrapping action bar (FlowRow) — never shrinks buttons on a narrow screen.
-                        ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                            OutlinedButton(onClick = { copy(outputText) }) {
-                                Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm))
-                            }
-                            lastAction?.let { action ->
-                                OutlinedButton(onClick = { runAction(action) }) {
-                                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Text("Regenerate", modifier = Modifier.padding(start = Space.sm))
-                                }
-                            }
-                            OutlinedButton(onClick = { share(outputText) }) {
-                                Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Share", modifier = Modifier.padding(start = Space.sm))
-                            }
-                            if (allowSaveAsNote) {
-                                OutlinedButton(onClick = {
+                        ResultActions(
+                            modifier = Modifier.padding(top = Space.sm),
+                            onCopy = { copy(outputText) },
+                            onShare = { share(outputText) },
+                            onRegenerate = lastAction?.let { action -> { runAction(action) } },
+                            onSave = if (allowSaveAsNote) {
+                                {
                                     scope.launch {
                                         val note = Note(
                                             title = "${activeLabel ?: title} · ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date())}",
@@ -363,11 +352,10 @@ fun TextActionScreen(
                                         app.container.db.noteDao().upsert(note)
                                         snackbarHostState.showSnackbar("Saved to Notes")
                                     }
-                                }) {
-                                    Icon(Icons.AutoMirrored.Filled.NoteAdd, null, Modifier.size(18.dp)); Text("Save as note", modifier = Modifier.padding(start = Space.sm))
                                 }
-                            }
-                        }
+                            } else null,
+                            saveLabel = "Save as note"
+                        )
                     }
                 }
                 errorText != null -> {

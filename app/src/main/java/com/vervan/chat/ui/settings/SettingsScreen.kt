@@ -136,7 +136,7 @@ fun SettingsScreen(
                 SettingsDestination(
                     Icons.AutoMirrored.Filled.Help,
                     "Help & troubleshooting",
-                    "How-to guides, common fixes, and app diagnostics",
+                    "Guides, fixes, and diagnostics",
                     listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
                     onOpenHelp
                 )
@@ -154,7 +154,7 @@ fun SettingsScreen(
                     listOf("TalkBack", "screen reader", "vibration"), onOpenAccessibility
                 ),
                 SettingsDestination(
-                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, and voice models",
+                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, voice models",
                     listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
                 )
             )
@@ -202,7 +202,7 @@ fun SettingsScreen(
                     listOf("biometrics", "PIN", "auto lock", "screenshots", "API server", "panic wipe"), onOpenSecurity
                 ),
                 SettingsDestination(
-                    Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, and diagnostics",
+                    Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, diagnostics",
                     listOf("export", "restore", "recycle bin", "jobs", "index", "cache"), onOpenStorage
                 )
             )
@@ -330,7 +330,7 @@ fun SettingsScreen(
                     },
                     {
                         Text(
-                            "Chats and documents stay on this device. Check important answers before acting on them.",
+                            "Chats and documents stay on this device. Verify important answers.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(Space.lg)

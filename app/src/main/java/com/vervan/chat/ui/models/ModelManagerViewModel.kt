@@ -10,6 +10,7 @@ import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelBackend
 import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.model.ImportResult
 import com.vervan.chat.llm.LlmEngine
 import com.vervan.chat.modelload.LoadTrigger
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -298,58 +300,140 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         }
     }
 
-    /** Registers a [ModelEngine.REMOTE_API] model — no file import, since there are no local
-     * weights: just a row describing where/how to reach the endpoint, plus the API key stashed
-     * in [com.vervan.chat.llm.RemoteApiKeyStore] rather than this row (see that class's doc
-     * comment). Runs the same [validateAndActivate] round trip ("Reply with OK.") every other
-     * import path uses, so a bad URL/key/model id is caught immediately instead of silently
-     * failing on the user's first real chat message. */
-    fun addRemoteApiModel(displayName: String, baseUrl: String, apiKey: String, remoteApiModelId: String) {
-        Log.i(TAG, "addRemoteApiModel() requested: $displayName ($baseUrl)")
+    /** One model picked out of (or typed against) a provider's catalog. [role] and [capabilities]
+     *  are per-model, not shared across a batch — one endpoint commonly serves a vision chat model,
+     *  a text-only one, and an embedding model side by side, and defaulting them all to the same
+     *  answer is exactly the "gemma-4-12b supports vision, tools, reasoning" gap this exists to
+     *  close. See [com.vervan.chat.llm.RemoteModelCatalog], which supplies the dialog's guesses for
+     *  both. */
+    data class RemoteModelSelection(
+        val remoteApiModelId: String,
+        val displayName: String,
+        val role: ModelRole,
+        val capabilities: RemoteCapabilities,
+        val generation: RemoteGenerationOverrides = RemoteGenerationOverrides()
+    )
+
+    /**
+     * Per-model generation overrides for a remote chat model — same fields, same "unset means use
+     * the app-wide default" semantics [ModelInfo]'s own temperature/topP/topK/maxOutputTokens/
+     * contextTokens already have for a local model, so a remote model stops being the one model
+     * type with no way to tune sampling per-model. [topK] is the one field genuinely specific to
+     * this path: it isn't part of the OpenAI spec, so it's only ever sent when set (see
+     * [RemoteOpenAiEngine.generate]'s own doc comment on it).
+     */
+    data class RemoteGenerationOverrides(
+        val temperature: Float? = null,
+        val topP: Float? = null,
+        val topK: Int? = null,
+        val maxOutputTokens: Int? = null,
+        val contextTokens: Int? = null
+    )
+
+    /**
+     * Registers one or more [ModelEngine.REMOTE_API] models from a single endpoint — no file
+     * import, since there are no local weights: just a row per model describing where/how to reach
+     * the endpoint, plus the API key stashed in [com.vervan.chat.llm.RemoteApiKeyStore] rather than
+     * these rows (see that class's doc comment).
+     *
+     * A single selection gets the same [validateAndActivate] round trip every other import path
+     * uses, so a bad URL/key/model id is caught immediately rather than on first use. A batch
+     * deliberately skips it: that round trip is a real billable completion per model, and the
+     * endpoint was already proven reachable by the catalog fetch that produced these ids. Batch
+     * rows still become the default for their role automatically when that role has none — the
+     * `models.collect` auto-default in this class's `init` covers it.
+     */
+    fun addRemoteApiModels(
+        baseUrl: String,
+        apiKey: String,
+        selections: List<RemoteModelSelection>
+    ) {
+        Log.i(TAG, "addRemoteApiModels() requested: ${selections.size} model(s) from $baseUrl")
+        if (selections.isEmpty()) return
         // The dialog already blocks Save on this, but validating here too is what guarantees no
         // unusable row is ever persisted — this is the single choke point both the add and edit
-        // paths route through, and a row with a non-https URL would only fail much later, as an
-        // opaque connection error on the user's first message.
+        // paths route through, and a malformed URL would only fail much later, as an opaque
+        // connection error on the user's first message.
         com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(baseUrl)?.let { error ->
-            _status.value = "Could not add $displayName. $error"
+            _status.value = "Could not add models. $error"
             return
         }
         viewModelScope.launch {
             _importing.value = true
-            _busyLabel.value = "Adding $displayName…"
+            _busyLabel.value = if (selections.size == 1) {
+                "Adding ${selections.first().displayName}…"
+            } else {
+                "Adding ${selections.size} models…"
+            }
             try {
-                val model = ModelInfo(
-                    displayName = displayName,
+                val normalizedUrl = baseUrl.trim().trimEnd('/')
+                val existing = db.modelDao().observeModels().first()
+                val added = mutableListOf<ModelInfo>()
+                var skipped = 0
+                selections.forEach { selection ->
+                    // Re-adding the same id on the same endpoint would create a second row that is
+                    // indistinguishable from the first in every picker — skip, and say how many.
+                    val duplicate = existing.any {
+                        it.engine == ModelEngine.REMOTE_API &&
+                            it.remoteBaseUrl == normalizedUrl &&
+                            it.remoteApiModelId == selection.remoteApiModelId
+                    }
+                    if (duplicate) {
+                        skipped++
+                        return@forEach
+                    }
+                    val model = ModelInfo(
+                        displayName = selection.displayName,
                     // Synthetic, unique per row — never a real path on disk. Every file-path-
                     // sniffing call site elsewhere in the app already treats a missing/unreadable
                     // file as "fall back to the stored metadata" (see the effort report's
                     // File(model.filePath).takeIf{it.isFile} pattern), so this never crashes,
                     // it just never resolves to a real file, which is correct for a remote model.
-                    filePath = "remote:${java.util.UUID.randomUUID()}",
-                    fileSizeBytes = 0L,
-                    sha256 = "",
-                    role = ModelRole.GENERATION,
-                    engine = ModelEngine.REMOTE_API,
-                    // Bring-your-own-API-key means this app has no license text to show for a
-                    // remote provider the way it does for an on-device model file — nothing to
-                    // acknowledge, so this starts true rather than blocking on a dialog that has
-                    // no content.
-                    licenseAcknowledged = true,
-                    // Known statically, not left null ("never tried") — a null here would fall
-                    // back to whatever's incidentally loaded on the on-device LiteRT-LM engine
-                    // (see ChatViewModel.activeEngineFor's REMOTE_API fallback) instead of the
-                    // real, fixed answer for a v1 text-only remote model.
-                    supportsVision = false,
-                    supportsAudio = false,
-                    remoteBaseUrl = baseUrl.trim().trimEnd('/'),
-                    remoteApiModelId = remoteApiModelId.trim()
-                )
-                db.modelDao().upsert(model)
-                app.container.remoteApiKeyStore.set(model.id, apiKey.trim())
-                validateAndActivate(model)
+                        filePath = "remote:${java.util.UUID.randomUUID()}",
+                        fileSizeBytes = 0L,
+                        sha256 = "",
+                        role = selection.role,
+                        engine = ModelEngine.REMOTE_API,
+                        // Bring-your-own-API-key means this app has no license text to show for a
+                        // remote provider the way it does for an on-device model file — nothing to
+                        // acknowledge, so this starts true rather than blocking on a dialog that
+                        // has no content.
+                        licenseAcknowledged = true,
+                        // Always set, never left null ("never tried") — a null here would fall back
+                        // to whatever's incidentally loaded on the on-device LiteRT-LM engine (see
+                        // ChatViewModel.activeEngineFor's REMOTE_API fallback) instead of what the
+                        // user told us this remote model can do. Meaningless for an EMBEDDING row
+                        // — nothing reads these off a non-GENERATION model.
+                        supportsVision = selection.capabilities.vision,
+                        supportsAudio = selection.capabilities.audio,
+                        supportsTools = selection.capabilities.tools,
+                        supportsThinking = selection.capabilities.thinking,
+                        remoteBaseUrl = normalizedUrl,
+                        remoteApiModelId = selection.remoteApiModelId,
+                        temperature = selection.generation.temperature,
+                        topP = selection.generation.topP,
+                        topK = selection.generation.topK,
+                        maxOutputTokens = selection.generation.maxOutputTokens,
+                        contextTokens = selection.generation.contextTokens
+                    )
+                    db.modelDao().upsert(model)
+                    // Per-row copy: RemoteApiKeyStore is keyed by model id, so every row needs its
+                    // own entry even though they all share one provider key.
+                    app.container.remoteApiKeyStore.set(model.id, apiKey.trim())
+                    added += model
+                }
+                when {
+                    added.isEmpty() -> _status.value =
+                        "Already added — nothing new to import from this endpoint"
+                    added.size == 1 && skipped == 0 -> validateAndActivate(added.first())
+                    else -> _status.value = buildString {
+                        append("Added ${added.size} model${if (added.size == 1) "" else "s"}")
+                        if (skipped > 0) append(" · skipped $skipped already added")
+                    }
+                }
             } catch (t: Throwable) {
-                Log.e(TAG, "addRemoteApiModel() threw unexpectedly", t)
-                _status.value = "Could not add $displayName. ${t.toUserMessage()}"
+                Log.e(TAG, "addRemoteApiModels() threw unexpectedly", t)
+                _status.value = "Could not add models. ${t.toUserMessage()}"
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -357,25 +441,42 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         }
     }
 
-    /** Updates an existing REMOTE_API model's connection details in place (same row id, so chat
-     * history/config referencing it survives) — [apiKey], when non-blank, replaces the stored
-     * key; leave it blank to keep the existing one. */
-    fun updateRemoteApiModel(model: ModelInfo, displayName: String, baseUrl: String, apiKey: String, remoteApiModelId: String) {
-        // Same guarantee as addRemoteApiModel — an edit must not be able to downgrade a working
+    /**
+     * What a remote model supports, as the user declared it. Explicit rather than probed: the
+     * provider's `/models` list reports nothing reliable about capabilities, and unlike a local
+     * model there is nothing on this device to feature-test — [RemoteOpenAiEngine] will happily
+     * send an `image_url`/`input_audio` content part or a tool-call prompt to any model; whether
+     * the far end actually understands it is between the user and their provider.
+     */
+    data class RemoteCapabilities(
+        val vision: Boolean = false,
+        val audio: Boolean = false,
+        val tools: Boolean = false,
+        val thinking: Boolean = false
+    )
+
+    /** Provider catalog for the "fetch models" step of the remote-API dialog. */
+    suspend fun fetchRemoteModels(baseUrl: String, apiKey: String): Result<List<String>> =
+        com.vervan.chat.llm.RemoteOpenAiEngine.fetchModels(baseUrl, apiKey)
+
+    /** Updates an existing REMOTE_API model in place (same row id, so chat history/config
+     * referencing it survives) — [updated] is the fully-edited row from the same
+     * [com.vervan.chat.ui.models.ModelEditDialog] a local model goes through (connection fields,
+     * capabilities, thinking mode, tool approval, generation overrides all live on it already).
+     * [apiKey], when non-blank, replaces the stored key; null/blank keeps the existing one. */
+    fun updateRemoteApiModel(updated: ModelInfo, apiKey: String?) {
+        // Same guarantee as addRemoteApiModels — an edit must not be able to downgrade a working
         // row to an unreachable one.
-        com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(baseUrl)?.let { error ->
-            _status.value = "Could not update $displayName. $error"
+        com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(updated.remoteBaseUrl.orEmpty())?.let { error ->
+            _status.value = "Could not update ${updated.displayName}. $error"
             return
         }
         viewModelScope.launch {
-            val updated = model.copy(
-                displayName = displayName,
-                remoteBaseUrl = baseUrl.trim().trimEnd('/'),
-                remoteApiModelId = remoteApiModelId.trim()
-            )
+            val previous = db.modelDao().get(updated.id)
+            if (previous != null && previous != updated) coordinator.forceUnloadIfLoaded(previous)
             db.modelDao().upsert(updated)
-            if (apiKey.isNotBlank()) app.container.remoteApiKeyStore.set(model.id, apiKey.trim())
-            _status.value = "Updated $displayName"
+            if (!apiKey.isNullOrBlank()) app.container.remoteApiKeyStore.set(updated.id, apiKey.trim())
+            _status.value = "Updated ${updated.displayName}"
         }
     }
 
@@ -460,14 +561,30 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                             nativeMaxContext = metadata.nativeMaxContext,
                             layerCount = metadata.layerCount
                         ) else persisted
-                    } else if (persisted.engine == ModelEngine.REMOTE_API) {
-                        // No native file to probe for MTP support — the "Reply with OK." round
+                    } else if (!persisted.traits.storesWeightsLocally) {
+                        // No weights file to probe for MTP support — the "Reply with OK." round
                         // trip above already proved the endpoint/key/model id actually work.
                         persisted
                     } else {
                         val mtpSupported = app.container.llmEngine.detectSpeculativeDecodingSupport(persisted.filePath)
                         persisted.copy(mtpSupported = mtpSupported)
                     }
+                } else if (!model.traits.runsOnDevice) {
+                    // No native session to check "still loaded" against (see the GENERATION
+                    // branch's own off-device case above) — validate by actually requesting a
+                    // vector from the endpoint, the same round-trip proof "Reply with OK." gives
+                    // a remote chat model.
+                    val persisted = db.modelDao().get(model.id) ?: model
+                    val vector = com.vervan.chat.retrieval.embedWith(
+                        persisted, "model validation",
+                        embeddingEngine = app.container.embeddingEngine,
+                        embeddingMutex = app.container.embeddingMutex,
+                        remoteOpenAiEngine = app.container.remoteOpenAiEngine,
+                        remoteApiKeyStore = app.container.remoteApiKeyStore,
+                        networkAuditLog = app.container.networkAuditLog
+                    )
+                    require(vector != null && vector.isNotEmpty()) { "Embedding model returned no vector" }
+                    persisted
                 } else {
                     app.container.withEmbedding { engine ->
                         check(engine.loadedModelPath == model.filePath) { "Model changed during validation" }
@@ -592,8 +709,24 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                             chars += it.length
                         }
                         val seconds = (System.nanoTime() - started) / 1_000_000_000.0
-                        "${String.format("%.1f", chars / seconds)} characters/sec on ${persisted.lastWorkingBackend}" +
+                        // lastWorkingBackend never advances past UNVERIFIED for a model that never
+                        // runs doLoadGeneration (see ModelLoadCoordinator's runsOnDevice
+                        // short-circuit) — same fix as the chat stats row's own backend label.
+                        val backendLabel = if (persisted.traits.runsOnDevice) persisted.lastWorkingBackend.toString() else "Remote"
+                        "${String.format("%.1f", chars / seconds)} characters/sec on $backendLabel" +
                             (if (persisted.engine == ModelEngine.LITERT_LM && app.container.llmEngine.speculativeDecodingActive) " (MTP active)" else "")
+                    } else if (!model.traits.runsOnDevice) {
+                        val persisted = db.modelDao().get(model.id) ?: model
+                        val vector = com.vervan.chat.retrieval.embedWith(
+                            persisted, "benchmark",
+                            embeddingEngine = app.container.embeddingEngine,
+                            embeddingMutex = app.container.embeddingMutex,
+                            remoteOpenAiEngine = app.container.remoteOpenAiEngine,
+                            remoteApiKeyStore = app.container.remoteApiKeyStore,
+                            networkAuditLog = app.container.networkAuditLog
+                        )
+                        val millis = (System.nanoTime() - started) / 1_000_000
+                        "${vector?.size ?: 0} dimensions in ${millis}ms on Remote"
                     } else {
                         app.container.withEmbedding { engine ->
                             check(engine.loadedModelPath == model.filePath) { "Model changed during benchmark" }
@@ -631,8 +764,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         Log.i(TAG, "load() requested: ${model.displayName} (preferredBackend=${model.preferredBackend})")
         // Already resident — skip the busy state/toast churn of "loading" a model that's
         // already loaded.
+        // A remote model never actually "loads" — see EngineTraits.runsOnDevice — so every status
+        // string below says "using"/"confirming" instead, matching the model card's own wording.
+        val verb = if (model.traits.runsOnDevice) "loaded" else "using"
+        val verbIng = if (model.traits.runsOnDevice) "Loading" else "Confirming"
         if (loadInfoFor(model.role).currentModelId == model.id) {
-            _status.value = "${model.displayName} is already loaded"
+            _status.value = "${model.displayName} is already $verb"
             return
         }
         if (!canLoadSafely(model)) {
@@ -643,8 +780,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch {
             _importing.value = true
             _busyModelId.value = model.id
-            _busyLabel.value = "Loading ${model.displayName}…"
-            _status.value = "Loading ${model.displayName}…"
+            _busyLabel.value = "$verbIng ${model.displayName}…"
+            _status.value = "$verbIng ${model.displayName}…"
             // Only one generation (or embedding) model is ever resident — remember what was
             // loaded before this call so the toast below can call out the auto-unload instead
             // of looking like nothing happened to the previous model.
@@ -657,16 +794,19 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 // technically "success" — must be disclosed, not folded silently into a plain
                 // "Loaded" toast.
                 val fallbackNote = if (result.delegateFallback) " (fell back to CPU — the requested backend wasn't available)" else ""
-                _status.value = "Loaded ${model.displayName}$fallbackNote"
+                val doneVerb = if (model.traits.runsOnDevice) "Loaded" else "Using"
+                val previousDoneVerb = if (model.traits.runsOnDevice) "loaded" else "using"
+                _status.value = "$doneVerb ${model.displayName}$fallbackNote"
                 android.widget.Toast.makeText(
                     app,
-                    (if (previousName != null) "Unloaded $previousName — loaded ${model.displayName}" else "Loaded ${model.displayName}") + fallbackNote,
+                    (if (previousName != null) "Unloaded $previousName — $previousDoneVerb ${model.displayName}" else "$doneVerb ${model.displayName}") + fallbackNote,
                     android.widget.Toast.LENGTH_LONG
                 ).show()
             } else {
                 Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${result.errorMessage}")
                 val backendNote = if (model.preferredBackend != BackendChoice.AUTO) " on ${model.preferredBackend}" else ""
-                _status.value = "Load failed$backendNote. ${result.errorMessage.toUserMessage()}"
+                val failVerb = if (model.traits.runsOnDevice) "Load" else "Connection"
+                _status.value = "$failVerb failed$backendNote. ${result.errorMessage.toUserMessage()}"
             }
             _importing.value = false
             _busyModelId.value = null

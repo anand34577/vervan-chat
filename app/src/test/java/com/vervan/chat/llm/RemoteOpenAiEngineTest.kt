@@ -1,6 +1,5 @@
 package com.vervan.chat.llm
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -18,13 +17,17 @@ class RemoteOpenAiEngineTest {
     }
 
     @Test
-    fun rejectsCleartextHttpBecauseAnApiKeyTravelsOnIt() {
-        assertEquals(
-            "Only https:// endpoints are supported — an API key must never travel unencrypted.",
-            RemoteOpenAiEngine.baseUrlError("http://api.openai.com/v1")
-        )
-        // Self-hosted on the LAN is the tempting case for plain http, and is rejected too.
-        assertNotNull(RemoteOpenAiEngine.baseUrlError("http://192.168.1.10:8080/v1"))
+    fun acceptsCleartextHttpForSelfHostedEndpoints() {
+        // A server on the user's own LAN has no certificate to present; the dialog warns about the
+        // key travelling unencrypted rather than refusing the URL outright.
+        assertNull(RemoteOpenAiEngine.baseUrlError("http://192.168.1.10:8080/v1"))
+        assertNull(RemoteOpenAiEngine.baseUrlError("HTTP://localhost:11434/v1"))
+    }
+
+    @Test
+    fun rejectsSchemesThatArentHttp() {
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("ftp://example.com/v1"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("file:///data/v1"))
     }
 
     @Test

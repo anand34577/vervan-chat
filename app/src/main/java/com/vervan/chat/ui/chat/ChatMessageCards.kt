@@ -109,7 +109,42 @@ fun chatPreviewText(content: String, isUser: Boolean): String {
     val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
     // Fall back to the request's question, never to the pre-clarification `answer` — that still
     // has the <clarify> tag in it whenever the tag's own JSON failed to parse into a question.
-    return clarification.answer.ifBlank { clarification.request?.question ?: "" }.trim()
+    val text = clarification.answer.ifBlank { clarification.request?.question ?: "" }.trim()
+    return stripMarkdownForPreview(text)
+}
+
+/**
+ * Collapses common markdown syntax down to plain text for a one-line, no-formatting preview
+ * (chat list / home screen row) — those render a plain `Text()`, never through Markwon, so a
+ * heading or bold marker showed up as literal `## `/`**` instead of being rendered. Also sweeps up
+ * any leftover angle-bracket tag [com.vervan.chat.llm.ThinkingParser] didn't recognize — a
+ * reasoning-marker spelling it doesn't know, or a message still streaming with a not-yet-closed
+ * tag — which is what produced a raw `<thinking>` in the preview even though the full message
+ * bubble (which has its own dedicated reasoning card) never showed one. Deliberately lossy: this
+ * is a best-effort single line, not the full message renderer, which stays exact.
+ */
+private fun stripMarkdownForPreview(text: String): String {
+    var s = text
+    // Fenced code blocks — drop the fence/language marker, keep the code text itself.
+    s = s.replace(Regex("```[a-zA-Z0-9_+-]*\\n?"), "")
+    // Headings, blockquotes, list bullets/numbers at the start of a line.
+    s = s.replace(Regex("(?m)^\\s{0,3}(#{1,6}|>|[-*+]|\\d+\\.)\\s+"), "")
+    // Emphasis/inline-code/strikethrough markers — keep their contents.
+    s = s.replace(Regex("\\*\\*\\*(.+?)\\*\\*\\*"), "$1")
+    s = s.replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+    s = s.replace(Regex("__(.+?)__"), "$1")
+    s = s.replace(Regex("\\*(.+?)\\*"), "$1")
+    s = s.replace(Regex("(?<![A-Za-z0-9])_(.+?)_(?![A-Za-z0-9])"), "$1")
+    s = s.replace(Regex("`([^`]+)`"), "$1")
+    s = s.replace(Regex("~~(.+?)~~"), "$1")
+    // Links/images — show their visible text, not the markup.
+    s = s.replace(Regex("!?\\[([^\\]]*)\\]\\([^)]*\\)"), "$1")
+    // Any remaining tag-shaped construct — a reasoning/tool marker ThinkingParser's own tag list
+    // doesn't cover, or one still open mid-stream. A defensive net for a lossy one-liner, not a
+    // correctness guarantee (the real message bubble parses these properly).
+    s = s.replace(Regex("<\\|[^|>]*\\|?>"), "")
+    s = s.replace(Regex("</?[a-zA-Z_][\\w:-]*(?:\\s[^<>]*)?>"), "")
+    return s.replace(Regex("\\s+"), " ").trim()
 }
 
 internal fun assistantSpokenText(content: String): String {
@@ -242,7 +277,16 @@ internal fun SourceCards(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.md)
                     )
-                    Row(Modifier.padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    // FlowRow, not Row — three buttons plus "Mark irrelevant" don't reliably fit
+                    // one line at dialog width, and a plain Row squeezed each button into
+                    // whatever sliver was left instead of wrapping, breaking "Mark irrelevant"
+                    // across several lines of single characters. Same fix as the Sources chips
+                    // FlowRow above.
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.padding(top = Space.md),
+                        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                        verticalArrangement = Arrangement.spacedBy(Space.xs)
+                    ) {
                         TextButton(onClick = { clipboard.setText(source.optString("excerpt"), scope) }) {
                             Text("Copy excerpt", style = MaterialTheme.typography.labelSmall)
                         }
@@ -353,13 +397,17 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(Modifier.padding(Space.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (success) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = if (success) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.error
                 )
+                // One weighted child, not two: this was `weight(1f, fill = false)` on the label plus
+                // a `Spacer(weight(1f))`, and those two split the free space 50/50 — which parked the
+                // expand chevron mid-row instead of at the trailing edge. Letting the label consume
+                // the remaining width (it already ellipsizes) pushes the chevron to the real end.
                 Text(
                     "${obj.optString("tool")}${if (!success) " failed" else " done"}",
                     style = MaterialTheme.typography.labelMedium,
@@ -367,21 +415,20 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
                     color = if (success) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.error,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = Space.xs).weight(1f, fill = false)
+                    modifier = Modifier.padding(start = Space.xs).weight(1f)
                 )
-                Spacer(Modifier.weight(1f))
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = if (expanded) "Hide details" else "Show request and response",
                     modifier = Modifier.size(18.dp)
                 )
             }
-            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
-            // Full request (tool + params) and raw response JSON — collapsed by default so the
-            // normal chat flow stays uncluttered, but always available per tool call, including
-            // when scrolling back through history later (this is the persisted message, not a
-            // transient in-session view).
+            // Summary, request params, and raw response are all tool *output* — collapsed shows
+            // only the name/status row above (user ask: don't leak the response before the card is
+            // opened). Expanded reveals everything, still persisted per call so it's available when
+            // scrolling back through history later, not just in the live session.
             if (expanded) {
+                Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
                 HorizontalDivider(Modifier.padding(top = Space.sm, bottom = Space.sm), color = MaterialTheme.colorScheme.outlineVariant)
                 Text("Request", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(

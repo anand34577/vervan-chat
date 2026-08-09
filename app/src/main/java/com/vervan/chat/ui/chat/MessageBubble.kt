@@ -254,6 +254,9 @@ internal fun MessageBubble(
     onQuote: (String) -> Unit = {},
     onRetryWithQuality: () -> Unit = {},
     betterModelName: String? = null,
+    /** From [com.vervan.chat.data.db.entities.EngineTraits] — false means inference is leaving
+     *  the device, so the streaming indicator must not claim otherwise. */
+    modelRunsOnDevice: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
@@ -712,7 +715,12 @@ internal fun MessageBubble(
                             val elapsed = (thinkingNow - (thinkingStartedAt ?: message.createdAt)).coerceAtLeast(0L)
                             if (elapsed < 2_000L) "Thinking…" else "Thinking for ${formatThinkingDuration(elapsed)}"
                         } else {
-                            "Thought for ${formatThinkingDuration(thinkingDurationMs)}"
+                            // A reasoning block that produced no measurable duration means the
+                            // timing was genuinely lost (a pre-fix cancelled row, or a message
+                            // restored from backup) — say so vaguely rather than assert "0s",
+                            // which reads as a bug even when the reasoning itself is intact.
+                            if (thinkingDurationMs < 1_000L) "Reasoning"
+                            else "Thought for ${formatThinkingDuration(thinkingDurationMs)}"
                         }
                         com.vervan.chat.ui.common.AssistantSubCard(
                             kind = com.vervan.chat.ui.common.SubCardKind.Reasoning,
@@ -773,7 +781,7 @@ internal fun MessageBubble(
                         Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             Text(
-                                "Generating on device",
+                                if (modelRunsOnDevice) "Generating on device" else "Generating",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(start = Space.sm)
@@ -820,12 +828,12 @@ internal fun MessageBubble(
                         IconButton(onClick = { onSwitchBranch(1) }, enabled = siblingPosition.first < siblingPosition.second) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next branch", modifier = Modifier.size(16.dp))
                         }
-                        TextButton(
-                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            onClick = onCompare
-                        ) {
+                        // No custom colors — this sits on the plain background, not a
+                        // primary-colored surface. onPrimary is meant for text ON TOP of a
+                        // primary-filled container; here it made the label a near-black color
+                        // on a dark background in dark theme, effectively invisible.
+                        // TextButton's own default (colorScheme.primary) is already correct.
+                        TextButton(onClick = onCompare) {
                             Text("Compare", style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -863,14 +871,31 @@ internal fun MessageBubble(
         // Stats + actions live below the bubble, outside its card — this is the response's
         // metadata/toolbar, not part of the response itself, and keeping it out of the Card
         // means the bubble's background/border doesn't stretch to fit five icon buttons.
+        // Stats get their own full-width line above the buttons. Sharing the action Row meant the
+        // text carried weight(1f, fill = false) next to a Spacer(weight(1f)) — the two split the
+        // leftover space 50/50, and with six 48dp icon buttons there is barely any leftover on a
+        // phone, so the line ellipsized down to "36.4…" and the numbers were unreadable. On its own
+        // row it can't be squeezed no matter how many actions the bubble ends up with.
+        if (showGenerationStats && !isUser && !editing && message.state == MessageState.COMPLETE && message.generationMs != null) {
+            val seconds = message.generationMs / 1000f
+            val tokens = message.tokenCount ?: 0
+            val tps = if (seconds > 0f) tokens / seconds else 0f
+            Text(
+                "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = Space.xs, top = Space.xs)
+            )
+        }
         if (showActions && !editing) {
             // horizontalScroll here previously fought Arrangement.End — a scrollable
             // Row measures children with unbounded width, so "End" has no finite edge to align
             // against and buttons silently render left-aligned/off past the bubble instead of
             // at the visible right edge (looked like the last one, the 3-dot menu, vanished).
-            // At most 5 buttons × 48dp comfortably fits any real phone width without scrolling,
-            // so drop the scroll guard rather than fight the interaction — revisit only if a
-            // narrower layout genuinely overflows.
+            // Six buttons × 48dp still fits any real phone width now that the stats line no longer
+            // competes for the same row, so no scroll guard is needed.
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -878,20 +903,6 @@ internal fun MessageBubble(
                 horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (showGenerationStats && !isUser && message.state == MessageState.COMPLETE && message.generationMs != null) {
-                    val seconds = message.generationMs / 1000f
-                    val tokens = message.tokenCount ?: 0
-                    val tps = if (seconds > 0f) tokens / seconds else 0f
-                    Text(
-                        "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(Modifier.weight(1f))
-                }
                 if (isUser && !isGenerating) {
                     IconButton(onClick = { editing = true }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Edit and resend", modifier = Modifier.size(18.dp))

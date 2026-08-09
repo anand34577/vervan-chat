@@ -96,6 +96,35 @@
             <div class="card"><h3>Model status</h3><div id="homeModels"></div></div>
             <div class="card"><h3>Recent chats</h3><div id="homeChats"></div></div>
             <div class="card"><h3>Recent notes</h3><div id="homeNotes"></div></div>
+            <div class="card">
+              <div class="card-heading">
+                <div><h3>API &amp; OpenAPI spec</h3><p>Point your own tools at this device.</p></div>
+                <svg class="ui-icon heading-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6 3 12l5 6M16 6l5 6-5 6M14 4l-4 16"/></svg>
+              </div>
+              <p class="sub">This server is OpenAI-compatible, so most existing clients work by
+                changing only the base URL. Generation, retrieval and speech all run on this device.</p>
+              <ul class="spec-list">
+                <li><code>POST /v1/chat/completions</code> — streaming, tools, vision, audio, <code>reasoning_content</code></li>
+                <li><code>GET /v1/models</code> · <code>POST /v1/embeddings</code></li>
+                <li><code>POST /v1/audio/transcriptions</code> · <code>POST /v1/audio/speech</code></li>
+                <li><code>GET /health</code> · <code>GET /openapi.json</code></li>
+              </ul>
+              <p class="sub">Beyond the standard body this build accepts <code>thinking</code>,
+                <code>app_tools</code>, <code>enabled_tools</code>, <code>knowledge_base_ids</code>
+                and <code>chat_id</code> (continue a stored chat, with its persona, history and
+                knowledge bases applied server-side).</p>
+              <div class="spec-actions">
+                <a class="primary button-with-icon" id="openApiLink" href="/openapi.json" target="_blank" rel="noopener">
+                  <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+                  Open the OpenAPI spec
+                </a>
+                <button class="button-with-icon" type="button" id="copySpecUrlBtn">
+                  <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v9"/></svg>
+                  Copy spec URL
+                </button>
+              </div>
+              <pre id="specCurl"></pre>
+            </div>
           </div>
         </div>
       </div>

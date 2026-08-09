@@ -70,7 +70,11 @@ interface ChunkDao {
     @Query("SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL")
     fun observeEmbeddedCount(): Flow<Int>
 
-    @Query("SELECT * FROM chunks WHERE documentId = :documentId ORDER BY id ASC")
+    // ORDER BY id (the primary key) used to sort here — id is a random UUID (see Chunk.id), so
+    // that ordering was effectively random, not reading order. chunkIndex is what the import
+    // pipeline actually assigns in extraction order (see DocumentImportManager.persistChunks'
+    // raw.mapIndexed) — that's what a page/reading-order-sequential preview needs to sort by.
+    @Query("SELECT * FROM chunks WHERE documentId = :documentId ORDER BY chunkIndex ASC")
     fun observeForDocument(documentId: String): Flow<List<Chunk>>
 
     @Query("SELECT * FROM chunks WHERE id = :chunkId")

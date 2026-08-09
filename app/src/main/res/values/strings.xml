@@ -39,7 +39,7 @@
     <string name="home_continue">Continue</string>
     <string name="home_all_chats">All chats</string>
     <string name="home_fresh_workspace">A fresh workspace</string>
-    <string name="home_recent_content_hint">Recent chats, notes, projects, and tool results will appear here.</string>
+    <string name="home_recent_content_hint">Your recent work will appear here.</string>
     <string name="action_start">Start</string>
     <string name="entity_chat">Chat</string>
     <string name="entity_project">Project</string>

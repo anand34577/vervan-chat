@@ -8,6 +8,7 @@ import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.reconcileCapabilities
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.llm.LlamaCppEngine
 import com.vervan.chat.llm.LlmEngine
 import com.vervan.chat.retrieval.EmbeddingBackend
@@ -383,7 +384,16 @@ class ModelLoadCoordinator(
                 ModelEngine.REMOTE_API -> true
                 else -> false
             }
-            ModelRole.EMBEDDING -> embeddingEngine.loadedModelPath == path
+            // Same reasoning as the GENERATION branch above — missing this case meant a remote
+            // embedding model's synthetic "remote:<uuid>" filePath was compared against the
+            // on-device embedding engine's own loadedModelPath, which can never match. isResident
+            // always came back false, so the request.success fast path (see requestLoad) never
+            // fired for a remote embedding model and every RAG retrieval re-ran the full load path
+            // instead of recognizing it was already confirmed.
+            ModelRole.EMBEDDING -> when (request.engine) {
+                ModelEngine.REMOTE_API -> true
+                else -> embeddingEngine.loadedModelPath == path
+            }
             else -> false
         }
     }
@@ -416,13 +426,15 @@ class ModelLoadCoordinator(
             model.nBatch, model.nUbatch, model.useMlock, model.flashAttention,
             model.kvCacheType, model.vulkanDeviceIndex, model.ropeFreqBase,
             model.ropeFreqScale, model.loraPath, model.loraScale,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.cpuThreads() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.nBatch() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.nUbatch() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.useMlock() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.flashAttentionMode() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.kvCacheType() else null,
-            if (model.engine == ModelEngine.LLAMA_CPP) defaults.vulkanDeviceIndex() else null
+            // App-wide fallbacks only participate in the hash for an engine that actually reads
+            // them — otherwise changing an unrelated llama.cpp default would invalidate a resident
+            // LiteRT-LM model's config and force a pointless reload.
+            *if (model.traits.hasNativeTuningKnobs) {
+                arrayOf<Any?>(
+                    defaults.cpuThreads(), defaults.nBatch(), defaults.nUbatch(), defaults.useMlock(),
+                    defaults.flashAttentionMode(), defaults.kvCacheType(), defaults.vulkanDeviceIndex()
+                )
+            } else emptyArray()
         ).hashCode()
     }
 
@@ -564,8 +576,8 @@ class ModelLoadCoordinator(
             publishFailure(role, result)
             return result
         }
-        if (model.engine == ModelEngine.REMOTE_API) {
-            // No native session, no local file, no hardware backend — "loading" a remote model is
+        if (!model.traits.runsOnDevice) {
+            // No native session, no local file, no hardware backend — "loading" such a model is
             // just confirming it's actually configured. Skip every check below this point (file
             // existence, poisoned-engine, memory budget) that only makes sense for an on-device
             // engine; RemoteOpenAiEngine validates the base URL/model id again at generate() time,

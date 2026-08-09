@@ -43,7 +43,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -58,8 +57,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -203,6 +200,7 @@ import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
 import com.vervan.chat.data.db.entities.KnowledgeBase
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
@@ -272,45 +270,30 @@ fun ChatScreen(
     val vm: ChatViewModel = viewModel(factory = viewModelFactory {
         initializer { ChatViewModel(app, chatId) }
     })
-    val messages by vm.messages.collectAsState()
-    val allMessages by vm.allMessages.collectAsState()
-    val isGenerating by vm.isGenerating.collectAsState()
-    val isRetrieving by vm.isRetrieving.collectAsState()
-    val isRecallingMemory by vm.isRecallingMemory.collectAsState()
-    val error by vm.error.collectAsState()
-    val chat by vm.chat.collectAsState()
-    val workspace by vm.workspace.collectAsState()
-    val folder by vm.folder.collectAsState()
-    val isWorkspaceArchived by vm.isWorkspaceArchived.collectAsState()
-    val titleGenerating by vm.titleGenerating.collectAsState()
-    val confirmationMessage by vm.confirmationMessage.collectAsState()
-    val pendingDocument by vm.pendingDocument.collectAsState()
-    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
-    val savedOutputs by app.container.db.savedOutputDao().observeAll().collectAsState(initial = emptyList())
+    // See ChatScreenComponents.kt's doc comment on ChatVmState/ChatVoiceSettingsState/
+    // VoiceControllerUiState for why these are bundled instead of ~50 separate collectAsState
+    // calls sitting directly in this method — that was the real driver of ChatScreen's compiled
+    // method exceeding ART's JIT compile-size limit (dropped frames every time a chat opened).
+    val (
+        messages, allMessages, isGenerating, isRetrieving, isRecallingMemory, error, chat, workspace,
+        folder, isWorkspaceArchived, titleGenerating, confirmationMessage, pendingDocument,
+        attachEmbedProgress, documents, savedOutputs, persona, personas, activeModelName,
+        selectedGenerationModel, generationModels, modelLoadState, visionAvailable, audioAvailable
+    ) = rememberChatVmState(vm, app)
     val chatSavedOutputs = remember(savedOutputs, chatId) { savedOutputs.filter { it.sourceChatId == chatId } }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     LaunchedEffect(confirmationMessage) {
         confirmationMessage?.let { snackbarHostState.showSnackbar(it); vm.clearConfirmation() }
     }
-    val persona by vm.persona.collectAsState()
-    val personas by vm.personas.collectAsState()
-    val activeModelName by vm.activeModelName.collectAsState()
-    val selectedGenerationModel by vm.selectedGenerationModel.collectAsState()
-    val generationModels by vm.generationModels.collectAsState()
-    val modelLoadState by vm.modelLoadState.collectAsState()
-    val visionAvailable by vm.visionAvailable.collectAsState()
-    val audioAvailable by vm.audioAvailable.collectAsState()
+    // Defaults to true when no model is resolved yet: this screen's baseline claim is on-device,
+    // and only a model that actually runs elsewhere may weaken it.
+    val modelRunsOnDevice = selectedGenerationModel?.traits?.runsOnDevice != false
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val hapticsEnabled by app.container.settingsRepository.hapticsEnabled.collectAsState(initial = true)
-    val speechInputEnabled by app.container.settingsRepository.speechInputEnabled.collectAsState(initial = true)
-    val modelAudioSttEnabled by app.container.settingsRepository.modelAudioSttEnabled.collectAsState(initial = true)
-    val whisperSttEnabled by app.container.settingsRepository.inbuiltSttEnabled.collectAsState(initial = true)
-    val androidSttEnabled by app.container.settingsRepository.androidSttEnabled.collectAsState(initial = true)
-    val sttEnginePreference by app.container.settingsRepository.sttEnginePreference.collectAsState(initial = "AUTO")
-    val sttFallbackEnabled by app.container.settingsRepository.sttFallbackEnabled.collectAsState(initial = true)
-    val installedVoiceModels by app.container.db.ttsVoiceModelDao().observeAll().collectAsState(initial = emptyList())
-    val voiceReplyMode by app.container.settingsRepository.voiceReplyMode.collectAsState(initial = "MANUAL")
-    val transcriptReviewEnabled by app.container.settingsRepository.transcriptReviewEnabled.collectAsState(initial = true)
+    val (
+        hapticsEnabled, speechInputEnabled, modelAudioSttEnabled, whisperSttEnabled, androidSttEnabled,
+        sttEnginePreference, sttFallbackEnabled, installedVoiceModels, voiceReplyMode,
+        transcriptReviewEnabled, voicePushToTalkEnabled, autoReadAloud
+    ) = rememberChatVoiceSettingsState(app)
     val whisperSttAvailable = com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE &&
         com.vervan.chat.voice.WhisperCppSttEngine.findInstalledModelFile(
             context,
@@ -531,7 +514,6 @@ fun ChatScreen(
     var isRunningOcr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val voicePushToTalkEnabled by app.container.settingsRepository.voicePushToTalkEnabled.collectAsState(initial = false)
     val latestDraft = rememberUpdatedState(draft)
     val latestPendingQuote = rememberUpdatedState(pendingQuote)
     val latestVoiceReplyMode = rememberUpdatedState(voiceReplyMode)
@@ -597,60 +579,26 @@ fun ChatScreen(
     val voiceController = remember(chatId, voiceSessionKey, voiceRespond, selectedGenerationModel?.id) {
         com.vervan.chat.voice.RealtimeVoiceController(app, voiceRespond, voiceCancel, selectedGenerationModel?.id)
     }
-    val voiceState by voiceController.state.collectAsState()
-    val voiceTurns by voiceController.turns.collectAsState()
-    val voiceWaveform by voiceController.liveWaveform.collectAsState()
-    val voiceElapsedMs by voiceController.liveElapsedMs.collectAsState()
-    val voiceLiveTranscript by voiceController.liveTranscript.collectAsState()
-    val voiceSttLabel by voiceController.sttLabel.collectAsState()
-    val voiceTtsLabel by voiceController.ttsLabel.collectAsState()
-    val voiceHasEchoCancellation by voiceController.hasEchoCancellation.collectAsState()
-    val voicePlaybackPaused by voiceController.playbackPaused.collectAsState()
-    val voiceMicrophoneMuted by voiceController.microphoneMuted.collectAsState()
-    val voiceSpeechOutputEnabled by voiceController.speechOutputEnabled.collectAsState()
-    val voiceModelLoadError by voiceController.modelLoadError.collectAsState()
-    val voiceSttUnavailable by voiceController.sttUnavailable.collectAsState()
-    val voiceLoadingModelName by voiceController.loadingModelName.collectAsState()
-    val voicePushToTalkHeld by voiceController.pushToTalkHeld.collectAsState()
+    val (
+        voiceState, voiceTurns, voiceWaveform, voiceElapsedMs, voiceLiveTranscript, voiceSttLabel,
+        voiceTtsLabel, voiceHasEchoCancellation, voicePlaybackPaused, voiceMicrophoneMuted,
+        voiceSpeechOutputEnabled, voiceModelLoadError, voiceSttUnavailable, voiceLoadingModelName,
+        voicePushToTalkHeld
+    ) = rememberVoiceControllerUiState(voiceController)
     val onTogglePushToTalkMode: () -> Unit = {
         val enabled = !voicePushToTalkEnabled
         voiceController.setPushToTalkEnabled(enabled)
         scope.launch { app.container.settingsRepository.setVoicePushToTalkEnabled(enabled) }
     }
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) scope.launch {
-            val copied = vm.copyImage(uri)
-            vm.setPendingImage(copied)
-            showPendingImagePreview = copied != null
-            if (copied == null) attachmentError = "Couldn’t prepare that image. Choose another photo and try again."
-        }
-    }
-    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) {
-            pendingCameraFile?.let { com.vervan.chat.model.ImageUtils.fixOrientation(it) }
-            pendingCameraFile?.absolutePath?.let { vm.setPendingImage(it) }
-            showPendingImagePreview = pendingCameraFile != null
-        } else {
-            pendingCameraFile?.delete()
-        }
-        pendingCameraFile = null
-    }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            val (file, uri) = vm.newCameraImageFile()
-            pendingCameraFile = file
-            takePicture.launch(uri)
-        } else {
-                attachmentError = "Camera access is off. Choose a photo, or allow it in Android Settings → Apps → Vervan → Permissions."
-        }
-    }
+    val (pickImage, requestCameraPermission) = rememberImageAttachLaunchers(
+        vm = vm, scope = scope,
+        onPreviewReady = { showPendingImagePreview = it },
+        onError = { attachmentError = it }
+    )
     // "Document" attach — any standard document type, run through extract/chunk/embed and
     // attached as a per-chat knowledge source (see ChatViewModel.attachDocument).
     var selectedDocument by remember { mutableStateOf<PendingDocumentSelection?>(null) }
-    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) selectedDocument = inspectDocument(context, uri)
-    }
+    val pickDocument = rememberDocumentAttachLauncher(context) { selectedDocument = it }
     val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             isImportingAudio = true
@@ -714,32 +662,12 @@ fun ChatScreen(
             attachmentError = it.toUserMessage()
         }
     }
-    val pickOcrImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            isRunningOcr = true
-            scope.launch { applyOcrResult(vm.extractOcr(uri)) }
-        }
-    }
-    var pendingOcrCameraFile by remember { mutableStateOf<java.io.File?>(null) }
-    val takeOcrPicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = pendingOcrCameraFile
-        pendingOcrCameraFile = null
-        if (success && file != null) {
-            isRunningOcr = true
-            scope.launch { applyOcrResult(vm.extractOcrFromFile(file)) }
-        } else {
-            file?.delete()
-        }
-    }
-    val requestOcrCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            val (file, uri) = vm.newCameraImageFile()
-            pendingOcrCameraFile = file
-            takeOcrPicture.launch(uri)
-        } else {
-                attachmentError = "Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions."
-        }
-    }
+    val (pickOcrImage, requestOcrCameraPermission) = rememberOcrAttachLaunchers(
+        vm = vm, scope = scope,
+        onRunningChange = { isRunningOcr = it },
+        onOcrResult = ::applyOcrResult,
+        onError = { attachmentError = it }
+    )
 
     fun startVoiceMessageRecording() {
         val file = vm.newAudioFile()
@@ -999,7 +927,6 @@ fun ChatScreen(
             latestDictationJob?.cancel()
         }
     }
-    val autoReadAloud by app.container.settingsRepository.autoReadAloud.collectAsState(initial = false)
     // Auto-read-aloud speaks via the same Piper/Kokoro engine chain as realtime voice chat —
     // Android's system TTS is deliberately never used anywhere in this app. If no offline voice
     // is downloaded yet, TtsEngineSelector.resolve() returns null and TtsPlaybackQueue silently
@@ -1172,11 +1099,15 @@ fun ChatScreen(
                                 isRetrieving -> "Searching knowledge base…"
                                 isRecallingMemory -> "Recalling memories…"
                                 chat?.isTemporary == true -> "Incognito · deletes when you leave"
+                                // Saying "on device" for an engine that runs off it would claim the
+                                // opposite of what's happening — this is a privacy statement, not
+                                // decoration.
                                 modelLoadState is ChatViewModel.ModelLoadState.Ready -> {
                                     val ready = modelLoadState as ChatViewModel.ModelLoadState.Ready
-                                    "Ready · ${ready.backend} · on device"
+                                    if (modelRunsOnDevice) "Ready · ${ready.backend} · on device" else "Ready · via API"
                                 }
-                                else -> "Private · on device"
+                                modelRunsOnDevice -> "Private · on device"
+                                else -> "Private · via API"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isGenerating || isRetrieving || isRecallingMemory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1348,9 +1279,12 @@ fun ChatScreen(
                 // Prefer the resolved model's actual context window over the app-wide default —
                 // the old version measured the whole branch against the global setting, so a chat
                 // that would fit fine after history trimming could still read a scary "400%".
-                val chatModel = chat?.modelId?.let { id -> generationModels.firstOrNull { it.id == id } }
-                    ?: generationModels.firstOrNull { it.isActive }
-                val contextLimit = chatModel?.contextTokens ?: defaultContextLimit
+                // `selectedGenerationModel` (not a local chat?.modelId lookup) is what actually
+                // resolves the same chat→folder-default→loaded-model chain generation itself uses
+                // (see ChatViewModel.resolveGenerationModel) — the old local lookup skipped the
+                // folder-default and currently-loaded rungs, so a per-model context override only
+                // showed up here when the model also happened to be the global "Default" one.
+                val contextLimit = selectedGenerationModel?.contextTokens ?: defaultContextLimit
                 val estimatedTokens = messages.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
                 val contextPercent = if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(0, 100) else 0
                 ChatContextStrip(
@@ -1359,7 +1293,7 @@ fun ChatScreen(
                     personaName = persona?.name,
                     modelName = activeModelName?.substringBefore(" · "),
                     thinkingMode = com.vervan.chat.llm.ThinkingPolicy.effectiveThinkingMode(
-                        chat?.thinkingMode, chatModel?.defaultThinkingMode, chatModel?.supportsThinking
+                        chat?.thinkingMode, selectedGenerationModel?.defaultThinkingMode, selectedGenerationModel?.supportsThinking
                     ).takeIf { it != "OFF" },
                     sourceCount = chat?.kbIdList()?.size?.takeIf { chat?.sourceGrounded == true && it > 0 },
                     contextTokens = estimatedTokens,
@@ -1378,6 +1312,7 @@ fun ChatScreen(
             }
             ModelReadinessPanel(
                 state = modelLoadState,
+                modelRunsOnDevice = modelRunsOnDevice,
                 onLoad = vm::retryModelLoad,
                 onOpenModels = onOpenModels
             )
@@ -1461,8 +1396,14 @@ fun ChatScreen(
                     }
                     MessageBubble(
                             // Placement animation smooths branch switches and regenerations,
-                            // which otherwise snap the whole list into its new shape.
-                            modifier = Modifier.animateItem(),
+                            // which otherwise snap the whole list into its new shape — but NOT
+                            // while this exact message is the one streaming: its height changes on
+                            // every persisted chunk (STREAM_PERSIST_INTERVAL_MS, 80ms), and
+                            // animateItem() is built for reorder/insert/remove transitions, not a
+                            // continuously growing item. Animating that growth is what read as
+                            // flickering on a fast model — the item visibly overshoots and snaps
+                            // back on every single update instead of just getting taller.
+                            modifier = if (message.state == MessageState.STREAMING) Modifier else Modifier.animateItem(),
                             message = message,
                             attachedDocument = message.documentId?.let { id -> documentsById[id] },
                             savedOutput = savedOutputsByLabel[message.id] ?: blankLabelSavedOutputsByContent[message.content],
@@ -1515,7 +1456,8 @@ fun ChatScreen(
                             // size — the quote is only merged into the actual sent text on Send.
                             onQuote = { quoted -> pendingQuote = quoted },
                             onRetryWithQuality = { vm.retryWithQuality(message.id) },
-                            betterModelName = betterModelName
+                            betterModelName = betterModelName,
+                            modelRunsOnDevice = modelRunsOnDevice
                         )
                     }
                 }
@@ -1611,11 +1553,24 @@ fun ChatScreen(
                         ) {
                             when (docState) {
                                 is ChatViewModel.DocumentAttachState.Importing -> {
-                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    // Embedding is the one stage slow enough to want a real number
+                                    // (see JobProgressCard's use on the Knowledge Base screen for
+                                    // the same signal) — copy/extract/chunk stay an indeterminate
+                                    // spinner since they're normally near-instant.
+                                    val embedding = attachEmbedProgress
+                                    if (embedding != null) {
+                                        CircularProgressIndicator(
+                                            progress = { embedding.done.toFloat() / embedding.total.coerceAtLeast(1) },
+                                            modifier = Modifier.size(18.dp), strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    }
                                     Column(Modifier.weight(1f).padding(start = Space.sm)) {
                                         Text("Preparing \"${docState.name}\"", style = MaterialTheme.typography.labelMedium)
                                         Text(
-                                                "Copying and indexing locally. Large files may take a few minutes.",
+                                            if (embedding != null) "Embedding ${embedding.done} of ${embedding.total} chunks…"
+                                            else "Copying and indexing locally. Large files may take a few minutes.",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2176,12 +2131,15 @@ fun ChatScreen(
             onDocument = {
                 showAttachmentSheet = false
                 pickDocument.launch(
+                    // Same fix as KnowledgeBaseDetailScreen's picker — a trailing "*/*" made this
+                    // whole allow-list a no-op, letting the user pick anything (only to fail at
+                    // extraction). Listing only what the import pipeline actually supports keeps
+                    // the system picker itself from offering something doomed to fail.
                     arrayOf(
                         "text/*", "application/pdf", "application/epub+zip",
                         "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        "*/*"
+                        "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                     )
                 )
             }
@@ -2256,31 +2214,19 @@ fun ChatScreen(
     }
 
     if (showVoiceOptions) {
-        val voiceSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { showVoiceOptions = false },
-            sheetState = voiceSheetState
-        ) {
-            VoiceSessionOptionsSheet(
-                speechOutputEnabled = voiceSpeechOutputEnabled,
-                microphoneMuted = voiceMicrophoneMuted,
-                immersiveEnabled = immersiveVoiceActive,
-                pushToTalkEnabled = voicePushToTalkEnabled,
-                onToggleSpeechOutput = voiceController::toggleSpeechOutput,
-                onToggleMute = voiceController::toggleMicrophoneMute,
-                onToggleImmersive = { immersiveVoiceActive = !immersiveVoiceActive },
-                onTogglePushToTalk = onTogglePushToTalkMode,
-                onSwitchModel = {
-                    showVoiceOptions = false
-                    showModelPicker = true
-                },
-                onOpenSettings = {
-                    showVoiceOptions = false
-                    onOpenVoiceSettings()
-                },
-                onDismiss = { showVoiceOptions = false }
-            )
-        }
+        ChatVoiceOptionsBottomSheet(
+            speechOutputEnabled = voiceSpeechOutputEnabled,
+            microphoneMuted = voiceMicrophoneMuted,
+            immersiveEnabled = immersiveVoiceActive,
+            pushToTalkEnabled = voicePushToTalkEnabled,
+            onToggleSpeechOutput = voiceController::toggleSpeechOutput,
+            onToggleMute = voiceController::toggleMicrophoneMute,
+            onToggleImmersive = { immersiveVoiceActive = !immersiveVoiceActive },
+            onTogglePushToTalk = onTogglePushToTalkMode,
+            onSwitchModel = { showVoiceOptions = false; showModelPicker = true },
+            onOpenSettings = { showVoiceOptions = false; onOpenVoiceSettings() },
+            onDismiss = { showVoiceOptions = false }
+        )
     }
 
     selectedDocument?.let { selection ->
@@ -2368,17 +2314,10 @@ fun ChatScreen(
     }
 
     if (showRenameDialog) {
-        var title by remember { mutableStateOf(chat?.title.orEmpty()) }
-        AlertDialog(
-            onDismissRequest = { showRenameDialog = false },
-            title = { Text("Rename chat") },
-            text = {
-                BoundedTextField(value = title, onValueChange = { title = it }, maxLength = 120, singleLine = true, modifier = Modifier.fillMaxWidth())
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.rename(title); showRenameDialog = false }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text("Save") }
-            },
-            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } }
+        RenameChatDialog(
+            initialTitle = chat?.title.orEmpty(),
+            onDismiss = { showRenameDialog = false },
+            onRename = { vm.rename(it); showRenameDialog = false }
         )
     }
 
@@ -2387,77 +2326,34 @@ fun ChatScreen(
     // active workspace are independent), or move this chat to a different one. Moving shows a
     // preview before committing.
     var pendingMoveTarget by remember { mutableStateOf<com.vervan.chat.data.db.entities.Workspace?>(null) }
-    if (showWorkspaceOptions && workspace != null) {
-        val otherWorkspaces by app.container.db.workspaceDao().observeActive().collectAsState(initial = emptyList())
-        val activeWorkspaceId by app.container.settingsRepository.activeWorkspaceId.collectAsState(initial = "")
-        val isChatWorkspaceActive = workspace?.id == activeWorkspaceId
-        AlertDialog(
-            onDismissRequest = { showWorkspaceOptions = false },
-            title = { Text(workspace?.name.orEmpty()) },
-            text = {
-                Column {
-                    Text("Open workspace", modifier = Modifier.fillMaxWidth().clickable {
-                        showWorkspaceOptions = false
-                        workspace?.let { onOpenWorkspace(it.id) }
-                    }.padding(vertical = Space.md))
-                    if (!isChatWorkspaceActive) {
-                        Text(
-                            "Set as active workspace",
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { vm.setChatWorkspaceActive(); showWorkspaceOptions = false }
-                                .padding(vertical = Space.md)
-                        )
-                    }
-                    HorizontalDivider()
-                    Text("Move to another workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
-                    otherWorkspaces.filter { it.id != workspace?.id }.forEach { ws ->
-                        Text(
-                            ws.name,
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { pendingMoveTarget = ws; showWorkspaceOptions = false }
-                                .padding(vertical = Space.md)
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showWorkspaceOptions = false }) { Text("Close") } }
-        )
+    workspace?.let { ws ->
+        if (showWorkspaceOptions) {
+            WorkspaceOptionsDialog(
+                workspace = ws,
+                onDismiss = { showWorkspaceOptions = false },
+                onOpen = { showWorkspaceOptions = false; onOpenWorkspace(ws.id) },
+                onSetActive = { vm.setChatWorkspaceActive(); showWorkspaceOptions = false },
+                onMoveTo = { target -> pendingMoveTarget = target; showWorkspaceOptions = false }
+            )
+        }
     }
 
     // preview before the move actually happens.
     pendingMoveTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingMoveTarget = null },
-            title = { Text("Move to \"${target.name}\"?") },
-            text = {
-                Column {
-                    Text("From: ${workspace?.name.orEmpty()}")
-                    Text("To: ${target.name}")
-                    if (folder != null) Text("This chat will leave \"${folder?.name}\" and become unfiled.")
-                    Text("Messages, branches, attachments, and history are kept.")
-                    Text("Chat-specific model and persona choices are also kept.")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.moveToWorkspace(target.id, target.name); pendingMoveTarget = null }) { Text("Move") }
-            },
-            dismissButton = { TextButton(onClick = { pendingMoveTarget = null }) { Text("Cancel") } }
+        MoveToWorkspaceConfirmDialog(
+            targetName = target.name,
+            fromWorkspaceName = workspace?.name.orEmpty(),
+            folderName = folder?.name,
+            onDismiss = { pendingMoveTarget = null },
+            onConfirm = { vm.moveToWorkspace(target.id, target.name); pendingMoveTarget = null }
         )
     }
 
     // Chat Screen — reset confirmation: what will be reset, what remains.
     if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("Reset chat settings?") },
-            text = {
-                Column {
-                    Text("Resets AI, source, tool, and knowledge settings to workspace defaults.")
-                    Text("Messages, attachments, workspace, and folder stay unchanged.", modifier = Modifier.padding(top = Space.sm))
-                }
-            },
-            confirmButton = { TextButton(onClick = { vm.resetChatSettings(); showResetConfirm = false }) { Text("Reset") } },
-            dismissButton = { TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") } }
+        ResetChatSettingsDialog(
+            onDismiss = { showResetConfirm = false },
+            onConfirm = { vm.resetChatSettings(); showResetConfirm = false }
         )
     }
 
@@ -2465,21 +2361,7 @@ fun ChatScreen(
     // token counts since this app doesn't record per-message usage anywhere yet.
     if (showChatStats) {
         val stats = remember(messages, allMessages) { vm.chatStats() }
-        val dateFormat = remember { java.text.SimpleDateFormat("MMM d, yyyy HH:mm", java.util.Locale.getDefault()) }
-        AlertDialog(
-            onDismissRequest = { showChatStats = false },
-            title = { Text("Chat details") },
-            text = {
-                Column {
-                    Text("Messages: ${stats.totalMessages} (${stats.userMessages} user, ${stats.assistantMessages} assistant)")
-                    Text("Attachments: ${stats.attachments}")
-                    Text("Branches: ${stats.branchPoints}")
-                    Text("Created: ${dateFormat.format(java.util.Date(stats.createdAt))}")
-                    Text("Last updated: ${dateFormat.format(java.util.Date(stats.updatedAt))}")
-                }
-            },
-            confirmButton = { TextButton(onClick = { showChatStats = false }) { Text("Close") } }
-        )
+        ChatStatsDialog(stats = stats, onDismiss = { showChatStats = false })
     }
 
     if (showSourcePicker) {
@@ -2505,88 +2387,28 @@ fun ChatScreen(
 
     if (showKbPicker) {
         val knowledgeBases by vm.knowledgeBases.collectAsState()
-        AlertDialog(
-            onDismissRequest = { showKbPicker = false },
-            title = { Text("Add to knowledge base") },
-            text = {
-                Column {
-                    if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet. Create one in Knowledge.")
-                    }
-                    knowledgeBases.forEach { kb ->
-                        Text(
-                            kb.name,
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { vm.addToKnowledgeBase(kb.id); showKbPicker = false }
-                                .padding(vertical = Space.md)
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showKbPicker = false }) { Text("Cancel") } }
+        AddToKnowledgeBaseDialog(
+            knowledgeBases = knowledgeBases,
+            onDismiss = { showKbPicker = false },
+            onSelect = { id -> vm.addToKnowledgeBase(id); showKbPicker = false }
         )
     }
 
     if (showPersonaPicker) {
-        AlertDialog(
-            onDismissRequest = { showPersonaPicker = false },
-            title = { Text("Persona") },
-            text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                    // Single-select list — radio buttons, not checkboxes (M3 selection semantics).
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                        vm.setPersona(null)
-                        showPersonaPicker = false
-                    }) {
-                        androidx.compose.material3.RadioButton(selected = chat?.personaId == null, onClick = null)
-                        Text("No persona", modifier = Modifier.padding(start = Space.sm))
-                    }
-                    personas.forEach { option ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                            vm.setPersona(option.id)
-                            showPersonaPicker = false
-                        }) {
-                            androidx.compose.material3.RadioButton(selected = chat?.personaId == option.id, onClick = null)
-                            OverflowTooltipText(
-                                text = option.name,
-                                modifier = Modifier.weight(1f).padding(start = Space.sm)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showPersonaPicker = false }) { Text("Close") } }
+        PersonaPickerDialog(
+            personas = personas,
+            selectedPersonaId = chat?.personaId,
+            onDismiss = { showPersonaPicker = false },
+            onSelect = { id -> vm.setPersona(id); showPersonaPicker = false }
         )
     }
 
     if (showModelPicker) {
-        AlertDialog(
-            onDismissRequest = { showModelPicker = false },
-            title = { Text("Chat model") },
-            text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                        vm.setModel(null)
-                        showModelPicker = false
-                    }) {
-                        androidx.compose.material3.RadioButton(selected = chat?.modelId == null, onClick = null)
-                        Text("Use active default", modifier = Modifier.padding(start = Space.sm))
-                    }
-                    generationModels.forEach { model ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                            vm.setModel(model.id)
-                            showModelPicker = false
-                        }) {
-                            androidx.compose.material3.RadioButton(selected = chat?.modelId == model.id, onClick = null)
-                            OverflowTooltipText(
-                                text = model.displayName,
-                                modifier = Modifier.weight(1f).padding(start = Space.sm)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showModelPicker = false }) { Text("Close") } }
+        ChatModelPickerDialog(
+            models = generationModels,
+            selectedModelId = chat?.modelId,
+            onDismiss = { showModelPicker = false },
+            onSelect = { id -> vm.setModel(id); showModelPicker = false }
         )
     }
 
@@ -2614,37 +2436,7 @@ fun ChatScreen(
     }
 
     contextBreakdown?.let { breakdown ->
-        AlertDialog(
-            onDismissRequest = { contextBreakdown = null },
-            title = { Text("Context for the next message") },
-            text = {
-                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                    val palette = listOf(
-                        MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.vervanSuccess,
-                        MaterialTheme.colorScheme.vervanWarning, MaterialTheme.colorScheme.secondary,
-                        MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.error,
-                        MaterialTheme.colorScheme.outline
-                    )
-                    com.vervan.chat.ui.common.ContextUsageBar(
-                        usedTokens = breakdown.estimatedTotalTokens,
-                        totalTokens = breakdown.recommendedLimit,
-        summary = "About ${breakdown.estimatedTotalTokens} of ${breakdown.recommendedLimit} recommended tokens used.",
-                        slices = breakdown.items.mapIndexed { i, item ->
-                            com.vervan.chat.ui.common.ContextSlice(item.label, item.estimatedTokens, palette[i % palette.size])
-                        }
-                    )
-                    if (breakdown.estimatedTotalTokens > breakdown.recommendedLimit) {
-                        Text(
-                "Over the recommended limit. Older context will be trimmed before sending.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = Space.sm)
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { contextBreakdown = null }) { Text("Close") } }
-        )
+        ContextBreakdownDialog(breakdown = breakdown, onDismiss = { contextBreakdown = null })
     }
 
     compareMessageId?.let { targetId ->

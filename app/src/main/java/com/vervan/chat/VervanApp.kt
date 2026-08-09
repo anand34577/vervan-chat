@@ -19,6 +19,7 @@ import com.vervan.chat.data.repo.MessageAttachmentCleanup
 import com.vervan.chat.data.repo.PersonaAvatarCleanup
 import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.data.settings.SettingsRepository
 import com.vervan.chat.llm.LlamaCppEngine
 import com.vervan.chat.llm.LlmEngine
@@ -63,11 +64,17 @@ class AppContainer(app: Application) {
     val llamaCppMutex = Mutex()
     val embeddingMutex = Mutex()
     val modelImportManager = ModelImportManager(app, db.modelDao())
-    val documentImportManager = DocumentImportManager(app, db.documentDao(), db.chunkDao(), embeddingEngine, db.modelDao(), db.jobDao())
-    val retrievalEngine = RetrievalEngine(db.chunkDao(), db.documentDao(), embeddingEngine, db.modelDao())
     val settingsRepository = SettingsRepository(app)
     val thermalMonitor = ThermalMonitor(app)
     val networkAuditLog = com.vervan.chat.system.NetworkAuditLog()
+    val documentImportManager = DocumentImportManager(
+        app, db.documentDao(), db.chunkDao(), embeddingEngine, db.modelDao(), db.jobDao(),
+        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
+    )
+    val retrievalEngine = RetrievalEngine(
+        db.chunkDao(), db.documentDao(), embeddingEngine, db.modelDao(),
+        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
+    )
     val ttsModelDownloadManager = com.vervan.chat.voice.TtsModelDownloadManager(app, db.ttsVoiceModelDao(), db.jobDao(), networkAuditLog)
     val hfTokenStore = com.vervan.chat.modeldownload.HuggingFaceTokenStore(app)
     // Application-scoped: a download must keep running across screen navigation, and its own
@@ -117,7 +124,8 @@ class AppContainer(app: Application) {
         }
     )
     val memoryRepository = com.vervan.chat.data.repo.MemoryRepository(
-        db.memoryDao(), db.modelDao(), modelLoadCoordinator, embeddingEngine, embeddingMutex
+        db.memoryDao(), db.modelDao(), modelLoadCoordinator, embeddingEngine, embeddingMutex,
+        remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
     )
     // --- Model Store (com.vervan.chat.store) ---------------------------------------------------
     // Curated, signed, remote catalogue. Deliberately parallel to modelDownloadRepository above
@@ -237,17 +245,21 @@ class AppContainer(app: Application) {
         embeddingMutex.withLock { block(embeddingEngine) }
     }
 
-    fun visionEnabled(model: ModelInfo): Boolean = when (model.engine) {
-        ModelEngine.LITERT_LM -> llmEngine.visionEnabled
-        ModelEngine.LLAMA_CPP -> llamaCppEngine.visionEnabled
-        ModelEngine.REMOTE_API -> false
-    }
+    // capabilitiesUserDeclared: no loaded native session to ask, so the user's own declaration
+    // (Model Manager capability toggle) is the only signal there is.
+    fun visionEnabled(model: ModelInfo): Boolean =
+        if (model.traits.capabilitiesUserDeclared) model.supportsVision == true
+        else when (model.engine) {
+            ModelEngine.LLAMA_CPP -> llamaCppEngine.visionEnabled
+            else -> llmEngine.visionEnabled
+        }
 
-    fun audioEnabled(model: ModelInfo): Boolean = when (model.engine) {
-        ModelEngine.LITERT_LM -> llmEngine.audioEnabled
-        ModelEngine.LLAMA_CPP -> llamaCppEngine.audioEnabled
-        ModelEngine.REMOTE_API -> false
-    }
+    fun audioEnabled(model: ModelInfo): Boolean =
+        if (model.traits.capabilitiesUserDeclared) model.supportsAudio == true
+        else when (model.engine) {
+            ModelEngine.LLAMA_CPP -> llamaCppEngine.audioEnabled
+            else -> llmEngine.audioEnabled
+        }
 
     /** Single generation entry point for callers (Chat, Voice) that don't want to hand-roll a
      * `when (model.engine)` themselves — routes to whichever engine [model] actually needs.
@@ -325,12 +337,12 @@ class AppContainer(app: Application) {
             // No engine mutex: RemoteOpenAiEngine holds no native session, so nothing here needs
             // exclusive access the way the two on-device engines do — concurrent remote calls
             // (e.g. this chat plus a background title-generation call) are safe as separate HTTP
-            // requests. imagePath/audioPath aren't supported yet (see ModelInfo.canSupportVision/
-            // canSupportAudio's REMOTE_API branches, which already keep the UI from offering them
-            // for a remote model) — reject explicitly rather than silently dropping the attachment.
+            // requests. Vision/audio are gated on the user's own capability declaration
+            // (model.supportsVision/supportsAudio — see visionEnabled/audioEnabled above), same
+            // rule the LITERT_LM/LLAMA_CPP branches apply against their engine's hard property.
             ModelEngine.REMOTE_API -> {
-                require(imagePath == null) { "${model.displayName} does not support image input yet" }
-                require(audioPath == null) { "${model.displayName} does not support audio input yet" }
+                require(imagePath == null || visionEnabled(model)) { "${model.displayName} does not support image input" }
+                require(audioPath == null || audioEnabled(model)) { "${model.displayName} does not support audio input" }
                 val baseUrl = model.remoteBaseUrl?.takeIf { it.isNotBlank() }
                     ?: throw IllegalStateException("${model.displayName} has no API base URL configured")
                 val remoteModelId = model.remoteApiModelId?.takeIf { it.isNotBlank() }
@@ -340,7 +352,14 @@ class AppContainer(app: Application) {
                 emitAll(
                     remoteOpenAiEngine.generate(
                         baseUrl, apiKey, remoteModelId, prompt, systemPrompt,
-                        temperature, topP, maxOutputTokens, stopSequences
+                        temperature, topP, maxOutputTokens, stopSequences, imagePath, audioPath,
+                        // Only forwarded when the user explicitly set a per-model override
+                        // (model.topK, the raw nullable field — not the resolved [topK] parameter,
+                        // which is always populated from the app-wide default). top_k isn't part of
+                        // the OpenAI spec; sending the ambient default to every request on every
+                        // endpoint that happens to accept the vendor extension would silently
+                        // change behavior nobody asked to change.
+                        topK = model.topK
                     ).stoppingAt(stopSequences)
                 )
             }

@@ -3,14 +3,18 @@ package com.vervan.chat.data.repo
 import com.vervan.chat.data.db.dao.MemoryDao
 import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.Memory
+import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.toBytes
 import com.vervan.chat.data.db.entities.toFloatArray
+import com.vervan.chat.llm.RemoteApiKeyStore
+import com.vervan.chat.llm.RemoteOpenAiEngine
 import com.vervan.chat.modelload.LoadTrigger
 import com.vervan.chat.modelload.ModelLoadCoordinator
 import com.vervan.chat.retrieval.EmbeddingEngine
+import com.vervan.chat.retrieval.embedWith
+import com.vervan.chat.system.NetworkAuditLog
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 enum class MemoryRecallMode { SEMANTIC, TEXT }
 
@@ -24,13 +28,19 @@ class MemoryRepository(
     private val modelDao: ModelDao,
     private val coordinator: ModelLoadCoordinator,
     private val embeddingEngine: EmbeddingEngine,
-    private val embeddingMutex: Mutex
+    private val embeddingMutex: Mutex,
+    private val remoteOpenAiEngine: RemoteOpenAiEngine,
+    private val remoteApiKeyStore: RemoteApiKeyStore,
+    private val networkAuditLog: NetworkAuditLog
 ) {
+    private suspend fun embed(model: ModelInfo, text: String, isQuery: Boolean = false, title: String? = null): FloatArray? =
+        embedWith(model, text, isQuery, title, embeddingEngine, embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog)
+
     suspend fun upsert(memory: Memory): MemorySaveResult {
         val base = memory.copy(embedding = null, embeddingModelId = null)
         val model = modelDao.getActiveModel(ModelRole.EMBEDDING)
         val vector = if (model != null && coordinator.ensureLoaded(model, LoadTrigger.RAG_RETRIEVAL).success) {
-            embeddingMutex.withLock { embeddingEngine.embed(base.text, title = "Memory") }
+            embed(model, base.text, title = "Memory")
         } else null
         val saved = if (vector != null) base.copy(embedding = vector.toBytes(), embeddingModelId = model?.id) else base
         memoryDao.upsert(saved)
@@ -51,21 +61,18 @@ class MemoryRepository(
         val model = modelDao.getActiveModel(ModelRole.EMBEDDING) ?: return textFallback(candidates, query, topK)
         if (!coordinator.ensureLoaded(model, LoadTrigger.RAG_RETRIEVAL).success) return textFallback(candidates, query, topK)
 
-        val queryVector = embeddingMutex.withLock { embeddingEngine.embed(query, isQuery = true) }
-            ?: return textFallback(candidates, query, topK)
+        val queryVector = embed(model, query, isQuery = true) ?: return textFallback(candidates, query, topK)
         val vectors = mutableMapOf<String, FloatArray>()
         val refreshed = mutableListOf<Memory>()
-        embeddingMutex.withLock {
-            candidates.forEach { memory ->
-                val cached = memory.embedding
-                    ?.takeIf { memory.embeddingModelId == model.id }
-                    ?.toFloatArray()
-                    ?.takeIf { it.size == queryVector.size }
-                val vector = cached ?: embeddingEngine.embed(memory.text, title = "Memory")
-                if (vector != null && vector.size == queryVector.size) {
-                    vectors[memory.id] = vector
-                    if (cached == null) refreshed += memory.copy(embedding = vector.toBytes(), embeddingModelId = model.id)
-                }
+        candidates.forEach { memory ->
+            val cached = memory.embedding
+                ?.takeIf { memory.embeddingModelId == model.id }
+                ?.toFloatArray()
+                ?.takeIf { it.size == queryVector.size }
+            val vector = cached ?: embed(model, memory.text, title = "Memory")
+            if (vector != null && vector.size == queryVector.size) {
+                vectors[memory.id] = vector
+                if (cached == null) refreshed += memory.copy(embedding = vector.toBytes(), embeddingModelId = model.id)
             }
         }
         refreshed.forEach { memoryDao.update(it) }

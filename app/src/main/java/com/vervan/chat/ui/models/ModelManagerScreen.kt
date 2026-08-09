@@ -103,6 +103,7 @@ import com.vervan.chat.data.db.entities.ToolApprovalMode
 import com.vervan.chat.data.db.entities.canSupportAudio
 import com.vervan.chat.data.db.entities.canSupportVision
 import com.vervan.chat.data.db.entities.displayName
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
@@ -193,10 +194,17 @@ fun ModelManagerScreen(
     }
 
     // Remote OpenAI-compatible API model — no file picker, just endpoint/key/model-id fields.
-    // null editingRemoteModel + showRemoteApiDialog = adding a new one; non-null = editing an
-    // existing row (see the model card's own edit affordance further below).
+    // This dialog is add-only (see RemoteApiModelDialog's doc comment); editing an already-added
+    // row reuses ModelEditDialog, the same "Configure model" screen a local model gets.
     var showRemoteApiDialog by remember { mutableStateOf(false) }
-    var editingRemoteModel by remember { mutableStateOf<ModelInfo?>(null) }
+
+    // One routing decision for every model row in every section. Both local and remote models
+    // share the same Configure screen now (ModelEditDialog branches internally on
+    // model.traits.runsOnDevice) — a remote model just gets connection fields instead of
+    // hardware/tuning sections.
+    fun editModel(model: ModelInfo) {
+        editingModel = model
+    }
 
     // Press-and-hold selects one or more models for bulk delete; tapping a card while in
     // selection mode toggles it instead of doing its normal action.
@@ -393,18 +401,7 @@ fun ModelManagerScreen(
                                 showSetActive = generationModels.size > 1,
                                 onSetActive = { vm.setActive(model) },
                                 onToggleLoad = { if (generationLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
-                                // A REMOTE_API row has no llama.cpp/LiteRT-LM sliders to
-                                // configure — ModelEditDialog's fields (backend, context,
-                                // GPU layers, ...) are all meaningless for it, so it gets its own
-                                // endpoint/key/model-id editor instead.
-                                onEdit = {
-                                    if (model.engine == ModelEngine.REMOTE_API) {
-                                        editingRemoteModel = model
-                                        showRemoteApiDialog = true
-                                    } else {
-                                        editingModel = model
-                                    }
-                                },
+                                onEdit = { editModel(model) },
                                 onBenchmark = { vm.benchmark(model) },
                                 onDelete = { vm.delete(model) },
                                 busy = busyModelId == model.id,
@@ -432,7 +429,7 @@ fun ModelManagerScreen(
                                 showSetActive = embeddingModels.size > 1,
                                 onSetActive = { vm.setActive(model) },
                                 onToggleLoad = { if (embeddingLoadInfo.currentModelId == model.id) vm.unload(model) else vm.load(model) },
-                                onEdit = { editingModel = model },
+                                onEdit = { editModel(model) },
                                 onBenchmark = { vm.benchmark(model) },
                                 onDelete = { vm.delete(model) },
                                 busy = busyModelId == model.id,
@@ -473,7 +470,10 @@ fun ModelManagerScreen(
             flashAttentionModeDefault = flashAttentionModeDefault,
             kvCacheTypeDefault = kvCacheTypeDefault,
             onDismiss = { editingModel = null },
-            onSave = { vm.update(it); editingModel = null }
+            onSave = { updated, apiKey ->
+                if (updated.traits.runsOnDevice) vm.update(updated) else vm.updateRemoteApiModel(updated, apiKey)
+                editingModel = null
+            }
         )
     }
 
@@ -518,7 +518,6 @@ fun ModelManagerScreen(
             },
             onImportRemote = {
                 showImportOptions = false
-                editingRemoteModel = null
                 showRemoteApiDialog = true
             }
         )
@@ -526,31 +525,22 @@ fun ModelManagerScreen(
 
     if (showRemoteApiDialog) {
         RemoteApiModelDialog(
-            initial = editingRemoteModel,
             saving = importing,
-            onDismiss = { showRemoteApiDialog = false; editingRemoteModel = null },
-            onTestConnection = { baseUrl, apiKey ->
-                val effectiveKey = apiKey.ifBlank {
-                    editingRemoteModel?.let { app.container.remoteApiKeyStore.get(it.id) }.orEmpty()
-                }
+            defaults = defaults,
+            onDismiss = { showRemoteApiDialog = false },
+            onFetch = { baseUrl, apiKey ->
                 // This leaves the device carrying the user's bearer key, so it belongs in the
                 // audit log like every other outbound request (model downloads, store catalogue,
                 // remote generation). Host only, never the full URL — a base URL a user pasted
                 // could carry a token in its query string, and the audit log is user-visible.
                 app.container.networkAuditLog.record(
-                    "Remote API connection test: ${runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: "invalid URL"}"
+                    "Remote API model list: ${runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: "invalid URL"}"
                 )
-                com.vervan.chat.llm.RemoteOpenAiEngine.testConnection(baseUrl, effectiveKey)
+                vm.fetchRemoteModels(baseUrl, apiKey)
             },
-            onSave = { name, baseUrl, apiKey, remoteModelId ->
-                val existing = editingRemoteModel
-                if (existing != null) {
-                    vm.updateRemoteApiModel(existing, name, baseUrl, apiKey, remoteModelId)
-                } else {
-                    vm.addRemoteApiModel(name, baseUrl, apiKey, remoteModelId)
-                }
+            onSave = { baseUrl, apiKey, selections ->
+                vm.addRemoteApiModels(baseUrl, apiKey, selections)
                 showRemoteApiDialog = false
-                editingRemoteModel = null
             }
         )
     }

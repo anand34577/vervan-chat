@@ -69,6 +69,17 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border-strong) 78%, transparent) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border: 2px solid transparent; border-radius: 999px; background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--accent); border-color: transparent; }
 /* The `hidden` attribute is only a `display: none` *rule* in the UA stylesheet, so any component
    class that sets its own display silently defeats it — which is exactly how the incognito badge
    (a .chip, display: inline-flex) stayed visible on chats that were never incognito. Making it
@@ -317,6 +328,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .home-search-card { padding: 20px; }
 .home-search-card input { background: var(--surface-alt); border-color: transparent; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+#homeStats { margin-bottom: 16px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 .stat b { display: block; font-size: 25px; font-weight: 650; letter-spacing: -.02em; }
 .stat span { font-size: 12px; color: var(--text-muted); }
@@ -324,7 +336,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 /* ---------------------------------------------------------------- chat */
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chat-bar {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center; min-width: 0; padding: 12px 18px;
+  position: relative; z-index: 80; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center; min-width: 0; padding: 12px 18px;
   border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent); flex-wrap: wrap; backdrop-filter: blur(18px);
 }
 .chat-bar-title { min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -343,7 +355,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
    traps focus or hangs open behind a modal is the classic hand-rolled-dropdown failure. */
 .menu-wrap { position: relative; }
 .menu {
-  position: absolute; right: 4px; top: calc(100% + 6px); z-index: 60;
+  position: absolute; right: 4px; top: calc(100% + 6px); z-index: 300;
   background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
   box-shadow: var(--shadow-strong); padding: 5px; min-width: 216px; width: max-content; max-width: min(290px, calc(100vw - 24px));
   max-height: min(70dvh, 520px); overflow-y: auto; overscroll-behavior: contain;
@@ -364,7 +376,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .menu button.destructive { color: var(--danger); }
 .menu button.destructive:hover { background: var(--danger-soft); }
 .menu hr { border: 0; border-top: 1px solid var(--border); margin: 5px 8px; }
-.messages { flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 24px 22px 12px; }
+.messages { position: relative; z-index: 0; flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 24px 22px 12px; }
 .thread { width: 100%; max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 .msg { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -466,27 +478,28 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .msg-sources { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .msg-sources li { margin-bottom: 2px; }
 
-.composer-wrap { border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent); padding: 12px 22px 16px; backdrop-filter: blur(18px); }
+.composer-wrap { position: relative; z-index: 20; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, transparent); padding: 14px clamp(16px, 3vw, 28px) max(18px, env(safe-area-inset-bottom)); backdrop-filter: blur(18px); }
 .composer { width: 100%; max-width: 920px; margin: 0 auto; }
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .attachment { display: flex; align-items: center; gap: 7px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 11px; font-size: 12px; }
 .attachment img { width: 26px; height: 26px; object-fit: cover; border-radius: 6px; }
 .attachment .ui-icon { width: 16px; height: 16px; color: var(--accent); }
 .composer-box {
-  display: flex; align-items: flex-end; gap: 7px; width: 100%; background: var(--surface-raised);
-  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 6px 7px 6px 9px; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) 40px; align-items: center; gap: 8px; width: 100%;
+  min-height: 56px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 22px; padding: 7px 8px 7px 10px; box-shadow: var(--shadow);
 }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow); }
-.composer-box > .menu-wrap { flex: none; }
-.composer-box > .menu-wrap > .icon-btn { width: 34px; min-width: 34px; }
+.composer-box > .menu-wrap { display: grid; place-items: center; }
+.composer-box > .menu-wrap > .icon-btn { width: 38px; min-width: 38px; height: 38px; }
 .composer-box textarea {
-  flex: 1; min-width: 0; border: 0 !important; background: none; padding: 8px 4px; max-height: 190px; min-height: 24px;
+  width: 100%; min-width: 0; border: 0 !important; background: none; padding: 7px 4px; max-height: 190px; min-height: 24px;
+  line-height: 1.45;
   resize: none; outline: none; box-shadow: none !important; overflow-y: auto; scrollbar-width: thin;
 }
 .composer-box textarea:focus { border: 0 !important; box-shadow: none !important; outline: none; }
 .composer-hint { font-size: 11.5px; color: var(--text-faint); margin-top: 7px; display: flex; gap: 10px; flex-wrap: wrap; }
 .composer-hint span { min-height: 16px; }
-.send-btn { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; flex: none; display: grid; place-items: center; transition: transform .18s, background .18s; }
+.send-btn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; flex: none; display: grid; place-items: center; transition: transform .18s, background .18s; }
 .send-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .send-btn:disabled { opacity: .45; cursor: not-allowed; }
 .send-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -610,7 +623,9 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
   .list-col.open { transform: none; }
   .detail-scroll { padding: 14px; }
   .messages { padding: 14px 12px 4px; }
-  .composer-wrap { padding: 10px 12px 12px; }
+  .composer-wrap { padding: 10px 12px max(12px, env(safe-area-inset-bottom)); }
+  .composer-box { grid-template-columns: 36px minmax(0, 1fr) 40px; gap: 6px; padding-left: 8px; padding-right: 6px; }
+  .composer-box > .menu-wrap > .icon-btn { width: 36px; min-width: 36px; }
   .msg.user .msg-body { max-width: 92%; }
   .opts-col { width: min(310px, 88vw); flex-basis: auto; }
 
@@ -649,6 +664,13 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
    are otherwise reachable by Tab but invisible while focused. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 :focus:not(:focus-visible) { outline: none; }
+
+/* Home → "API & OpenAPI spec" card. Deliberately NOT .row-actions, which is display:none until
+   its parent row is hovered — these two controls must always be visible. */
+.spec-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.spec-actions a.primary { text-decoration: none; }
+.spec-list { margin: 8px 0 0; padding-left: 18px; color: var(--text-muted); font-size: 13px; line-height: 1.9; }
+.spec-list code { white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

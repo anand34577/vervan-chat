@@ -288,18 +288,21 @@ internal fun DocumentComposerPreviewDialog(
                     }
                     Text("Document preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                 }
-                Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
+                // Less surrounding chrome around the actual page thumbnail (user ask: "less
+                // bezel") — smaller outer/inner padding and a taller image area so the preview
+                // itself, not the card framing it, is the dominant thing on screen.
+                Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
                         shape = MaterialTheme.shapes.extraLarge,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(Space.xl), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.fillMaxWidth().padding(Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 180.dp, max = 360.dp)
+                                    .heightIn(min = 220.dp, max = 480.dp)
                                     .clip(MaterialTheme.shapes.large)
                                     .background(androidx.compose.ui.graphics.Color.White),
                                 contentAlignment = Alignment.Center

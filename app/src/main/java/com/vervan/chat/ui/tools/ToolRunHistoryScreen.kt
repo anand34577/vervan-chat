@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
@@ -25,6 +27,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import com.vervan.chat.ui.common.collectAsState
@@ -34,7 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,11 +45,12 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.ToolRunState
+import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanTopAppBar
-import com.vervan.chat.ui.common.setText
+import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
@@ -64,8 +68,9 @@ fun ToolRunHistoryScreen(
     val runs by app.container.db.toolRunDao().observeAll().collectAsState(initial = emptyList())
     var query by remember { mutableStateOf("") }
     var expandedId by remember(highlightId) { mutableStateOf(highlightId) }
+    var pendingDelete by remember { mutableStateOf<ToolRun?>(null) }
     val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboard.current
+    val snackbarHostState = remember { SnackbarHostState() }
     val filtered = remember(runs, query) {
         if (query.isBlank()) runs else runs.filter {
             it.toolName.contains(query, true) || it.input.contains(query, true) || it.output.contains(query, true)
@@ -79,12 +84,13 @@ fun ToolRunHistoryScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             Column(Modifier.fillMaxSize()) {
                 VervanSearchField(query, { query = it }, "Search tool results", Modifier.padding(vertical = Space.sm))
                 if (filtered.isEmpty()) {
-        EmptyState(Icons.Filled.History, "No tool runs yet", "Tool and voice results appear here after you leave.")
+                EmptyState(Icons.Filled.History, "No tool runs yet", "Run a tool to see its result here.")
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         items(filtered, key = { it.id }) { run ->
@@ -92,8 +98,20 @@ fun ToolRunHistoryScreen(
                                 run = run,
                                 expanded = expandedId == run.id,
                                 onToggle = { expandedId = if (expandedId == run.id) null else run.id },
-                                onCopy = { clipboard.setText(run.output.ifBlank { run.input }, scope) },
-                                onSave = { scope.launch { app.container.db.savedOutputDao().upsert(SavedOutput(content = run.output.ifBlank { run.input }, label = run.toolName)) } },
+                                onCopy = {
+                                    val content = run.output.ifBlank { run.input }
+                                    context.getSystemService(android.content.ClipboardManager::class.java)
+                                        .setSensitiveText(content, scope, run.toolName)
+                                    scope.launch { snackbarHostState.showSnackbar("Copied") }
+                                },
+                                onSave = {
+                                    scope.launch {
+                                        app.container.db.savedOutputDao().upsert(
+                                            SavedOutput(content = run.output.ifBlank { run.input }, label = run.toolName)
+                                        )
+                                        snackbarHostState.showSnackbar("Saved")
+                                    }
+                                },
                                 onContinue = { onContinueInChat(run.output.ifBlank { run.input }) },
                                 onShare = {
                                     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -103,13 +121,30 @@ fun ToolRunHistoryScreen(
                                     }, "Share result"))
                                 },
                                 onRerun = { onRerun(run.toolRoute) },
-                                onDelete = { scope.launch { app.container.db.toolRunDao().softDelete(run.id) } },
+                                onDelete = { pendingDelete = run },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { run ->
+        ConfirmDialog(
+            title = "Remove this run?",
+            body = "It will move to the recycle bin.",
+            confirmLabel = "Remove",
+            destructive = true,
+            onConfirm = {
+                pendingDelete = null
+                scope.launch {
+                    app.container.db.toolRunDao().softDelete(run.id)
+                    snackbarHostState.showSnackbar("Moved to recycle bin")
+                }
+            },
+            onDismiss = { pendingDelete = null }
+        )
     }
 }
 
@@ -141,7 +176,15 @@ private fun ToolRunCard(
                         },
                     )
                 }
-                Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(run.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(run.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Collapse run" else "Expand run",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = Space.xs).size(20.dp)
+                    )
+                }
             }
             Text(
                 run.output.ifBlank { run.errorMessage ?: run.input },

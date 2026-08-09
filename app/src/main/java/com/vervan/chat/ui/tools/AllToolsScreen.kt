@@ -273,7 +273,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     Column {
                         Text("Tools")
                         Text(
-                            "From quick fixes to big ideas",
+                            "Common tasks, one tap away",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

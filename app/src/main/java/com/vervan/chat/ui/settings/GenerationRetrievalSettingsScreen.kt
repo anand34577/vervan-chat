@@ -51,6 +51,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     val retrievalMode by vm.defaultRetrievalMode.collectAsState()
     val queryExpansionEnabled by vm.queryExpansionEnabled.collectAsState()
     val contextLimit by vm.contextTokenLimit.collectAsState()
+    val includePastThinking by vm.includePastThinkingInContext.collectAsState()
     val responseLength by vm.responseLength.collectAsState()
     val responseTone by vm.responseTone.collectAsState()
     val temperature by vm.temperature.collectAsState()
@@ -126,7 +127,10 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
                             value = contextLimit.toFloat(), onValueChange = { vm.setContextTokenLimit(it.toInt()) },
-                            valueRange = 1024f..16384f, steps = 14, modifier = Modifier.weight(1f)
+                            // Ceiling raised to 128K (steps kept at the original 1024-token
+                            // granularity, just extended across the wider range) — default is
+                            // still 4096, set separately in SettingsRepository.
+                            valueRange = 1024f..131072f, steps = 126, modifier = Modifier.weight(1f)
                         )
                         Text("$contextLimit tok", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = Space.sm))
                     }
@@ -134,6 +138,24 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         "Sets the target shown in Context inspector.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.lg),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Include past thinking in context", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Off by default: a past reply's reasoning is stripped before it's sent back as " +
+                                    "history, so it only counts against context once, not on every later turn. " +
+                                    "Turning this on lets the model see its own past reasoning too — uses more " +
+                                    "context per turn, and on a long reasoning-heavy chat is what causes replies " +
+                                    "to get cut off once context fills up.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = includePastThinking, onCheckedChange = vm::setIncludePastThinkingInContext)
+                    }
                     Row(
                         Modifier.fillMaxWidth().padding(top = Space.lg),
                         verticalAlignment = Alignment.CenterVertically

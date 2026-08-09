@@ -81,7 +81,12 @@ private fun DocumentStatus.matchesFilter(filter: DocFilter): Boolean = when (fil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) {
+fun KnowledgeBaseDetailScreen(
+    kbId: String,
+    onBack: () -> Unit,
+    onOpenDocument: (String) -> Unit = {},
+    showBackButton: Boolean = true
+) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: KnowledgeBaseDetailViewModel = viewModel(factory = viewModelFactory {
         initializer { KnowledgeBaseDetailViewModel(app, kbId) }
@@ -127,7 +132,13 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
             } else {
                 TopAppBar(
                     title = { Text("Documents") },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                    navigationIcon = {
+                        if (showBackButton) {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        }
+                    },
                     actions = {
                         IconButton(onClick = { selectionMode = true }) {
                             Icon(Icons.Filled.Checklist, contentDescription = "Select documents")
@@ -145,12 +156,17 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
             Button(
                 onClick = {
                     pickFile.launch(
+                        // "*/*" used to be tacked onto the end of this list, which made the whole
+                        // filter a no-op — the system picker shows everything the moment any entry
+                        // is "*/*", so it let the user pick a file type the import pipeline can't
+                        // read at all (only to fail later at extraction). Listing only the types
+                        // DocumentImportManager/Chunker actually support keeps the picker itself
+                        // from offering something doomed to fail.
                         arrayOf(
                             "text/*", "application/pdf", "application/epub+zip",
                             "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            "*/*"
+                            "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                         )
                     )
                 },
@@ -181,10 +197,12 @@ fun KnowledgeBaseDetailScreen(kbId: String, onBack: () -> Unit, onOpenDocument: 
                     body = if (documents.isEmpty()) "Import a file to make it searchable in chat." else "Try a different filter."
                 )
             } else {
+                val embedProgress by app.container.documentImportManager.embedProgress.collectAsState()
                 LazyColumn(Modifier.fillMaxSize().padding(top = Space.sm)) {
                     items(visibleDocuments, key = { it.id }) { doc ->
                         DocumentRow(
                             document = doc,
+                            embedProgress = embedProgress?.takeIf { it.documentId == doc.id },
                             onDelete = { vm.deleteDocument(doc) },
                             onOpen = { onOpenDocument(doc.id) },
                             onRetry = { vm.reindex(doc) },
@@ -260,6 +278,11 @@ private val STAGE_LABELS = listOf("Reading", "Running OCR", "Extracting", "Chunk
 @Composable
 private fun DocumentRow(
     document: Document,
+    // Real "N of M chunks embedded" for the one stage that can otherwise sit at a flat, unmoving
+    // "Embedding…" for a long time (a remote embedding model means one HTTP round trip per chunk)
+    // — see DocumentImportManager.EmbedProgress. Null outside that stage, or when this row isn't
+    // the document currently embedding.
+    embedProgress: com.vervan.chat.model.DocumentImportManager.EmbedProgress?,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
     onRetry: () -> Unit,
@@ -272,10 +295,13 @@ private fun DocumentRow(
     var showActions by remember { mutableStateOf(false) }
     val inProgress = document.status !in setOf(DocumentStatus.READY, DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)
     if (inProgress) {
+        // Blend the fine-grained within-stage fraction into the coarse 5-stage one instead of
+        // jumping straight from 4/5 to 5/5 the instant embedding starts.
+        val withinStage = embedProgress?.let { it.done.toFloat() / it.total.coerceAtLeast(1) } ?: 0f
         JobProgressCard(
             title = document.displayName,
-            stage = STAGE_LABELS[document.status.stageIndex()],
-            progress = (document.status.stageIndex() + 1) / 5f,
+            stage = embedProgress?.let { "Embedding ${it.done} of ${it.total}" } ?: STAGE_LABELS[document.status.stageIndex()],
+            progress = (document.status.stageIndex() + withinStage) / 5f,
             modifier = Modifier.padding(vertical = Space.xs)
         )
         return

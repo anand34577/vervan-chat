@@ -4,8 +4,13 @@ import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
 import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.Chunk
+import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.toFloatArray
+import com.vervan.chat.llm.RemoteApiKeyStore
+import com.vervan.chat.llm.RemoteOpenAiEngine
+import com.vervan.chat.system.NetworkAuditLog
+import kotlinx.coroutines.sync.Mutex
 
 // EXACT_PHRASE added — the other two modes the spec calls out
 // (current-document-only, recency-weighting) either need context this engine doesn't have
@@ -41,7 +46,11 @@ class RetrievalEngine(
     private val chunkDao: ChunkDao,
     private val documentDao: DocumentDao,
     private val embeddingEngine: EmbeddingEngine,
-    private val modelDao: ModelDao
+    private val modelDao: ModelDao,
+    private val embeddingMutex: Mutex,
+    private val remoteOpenAiEngine: RemoteOpenAiEngine,
+    private val remoteApiKeyStore: RemoteApiKeyStore,
+    private val networkAuditLog: NetworkAuditLog
 ) {
     suspend fun retrieve(
         kbIds: List<String>,
@@ -89,9 +98,11 @@ class RetrievalEngine(
         }
         if (chunks.isEmpty()) return emptyList()
 
-        val semanticScores = if ((mode == RetrievalMode.SEMANTIC || mode == RetrievalMode.HYBRID) && embeddingEngine.isLoaded) {
-            val activeModelId = modelDao.getActiveModel(ModelRole.EMBEDDING)?.id
-            semanticScore(query, chunks, activeModelId)
+        val embeddingModel = modelDao.getActiveModel(ModelRole.EMBEDDING)
+        val semanticScores = if ((mode == RetrievalMode.SEMANTIC || mode == RetrievalMode.HYBRID) &&
+            embeddingReady(embeddingModel, embeddingEngine)
+        ) {
+            semanticScore(query, chunks, embeddingModel!!)
         } else emptyMap()
         // Recency-weighting folded directly into HYBRID rather than a standalone
         // mode — a small tie-breaker toward more recently imported documents, not a filter.
@@ -217,8 +228,9 @@ class RetrievalEngine(
         return chunks.associate { chunk -> chunk.id to ((timestamps[chunk.documentId] ?: minTs) - minTs).toFloat() / range }
     }
 
-    private suspend fun semanticScore(query: String, chunks: List<Chunk>, activeModelId: String?): Map<String, Float> {
-        val queryEmbedding = embeddingEngine.embed(query, isQuery = true) ?: return emptyMap()
+    private suspend fun semanticScore(query: String, chunks: List<Chunk>, model: ModelInfo): Map<String, Float> {
+        val queryEmbedding = embedWith(model, query, isQuery = true, embeddingEngine = embeddingEngine, embeddingMutex = embeddingMutex, remoteOpenAiEngine = remoteOpenAiEngine, remoteApiKeyStore = remoteApiKeyStore, networkAuditLog = networkAuditLog)
+            ?: return emptyMap()
         return chunks.mapNotNull { chunk ->
             val embedding = chunk.embedding?.toFloatArray() ?: return@mapNotNull null
             // Exact model-id mismatch (B8) is the authoritative staleness check — two different
@@ -226,7 +238,7 @@ class RetrievalEngine(
             // dimension-only check silently cosine-compare vectors from different embedding
             // spaces. Chunks embedded before embeddingModelId existed carry null, so they fall
             // back to the dimension check alone rather than being treated as a hard mismatch.
-            if (chunk.embeddingModelId != null && activeModelId != null && chunk.embeddingModelId != activeModelId) return@mapNotNull null
+            if (chunk.embeddingModelId != null && chunk.embeddingModelId != model.id) return@mapNotNull null
             if (embedding.size != queryEmbedding.size) return@mapNotNull null
             chunk.id to EmbeddingEngine.cosineSimilarity(queryEmbedding, embedding)
         }.toMap()

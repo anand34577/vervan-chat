@@ -24,6 +24,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "HYBRID")
     val queryExpansionEnabled: StateFlow<Boolean> = settings.queryExpansionEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val includePastThinkingInContext: StateFlow<Boolean> = settings.includePastThinkingInContext
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val autoReadAloud: StateFlow<Boolean> = settings.autoReadAloud
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val ttsEnginePreference: StateFlow<String> = settings.ttsEnginePreference
@@ -305,10 +307,8 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     // ---- On-device data sources ----
     val calendarToolEnabled: StateFlow<Boolean> = settings.calendarToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val deviceStatusToolEnabled: StateFlow<Boolean> = settings.deviceStatusToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val locationToolEnabled: StateFlow<Boolean> = settings.locationToolEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setCalendarToolEnabled(v: Boolean) { viewModelScope.launch { settings.setCalendarToolEnabled(v) } }
     fun setDeviceStatusToolEnabled(v: Boolean) { viewModelScope.launch { settings.setDeviceStatusToolEnabled(v) } }
-    fun setLocationToolEnabled(v: Boolean) { viewModelScope.launch { settings.setLocationToolEnabled(v) } }
 
     // ---- Tool catalog (Settings → Tools) ----
     val disabledToolIds: StateFlow<Set<String>> = settings.disabledToolIds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -359,6 +359,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setThemeMode(mode: ThemeMode) { viewModelScope.launch { settings.setThemeMode(mode) } }
     fun setDefaultRetrievalMode(mode: String) { viewModelScope.launch { settings.setDefaultRetrievalMode(mode) } }
     fun setQueryExpansionEnabled(enabled: Boolean) { viewModelScope.launch { settings.setQueryExpansionEnabled(enabled) } }
+    fun setIncludePastThinkingInContext(enabled: Boolean) { viewModelScope.launch { settings.setIncludePastThinkingInContext(enabled) } }
     fun setAutoReadAloud(enabled: Boolean) { viewModelScope.launch { settings.setAutoReadAloud(enabled) } }
     fun setTtsEnginePreference(value: String) { viewModelScope.launch { settings.setTtsEnginePreference(value) } }
     fun setBargeInEnabled(v: Boolean) { viewModelScope.launch { settings.setBargeInEnabled(v) } }

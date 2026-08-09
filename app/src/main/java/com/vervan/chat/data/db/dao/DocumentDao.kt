@@ -33,6 +33,14 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT * FROM documents WHERE knowledgeBaseId = :kbId AND displayName = :name AND deletedAt IS NULL LIMIT 1")
     suspend fun findActiveByNameInKb(kbId: String, name: String): Document?
 
+    // Content-hash dedup across every knowledge base, not just one — used by the chat-attach
+    // flow (see DocumentImportManager.import's reuseExistingByHash), where each attach creates
+    // its own disposable single-document KB, so a KB-scoped lookup like findActiveByNameInKb
+    // above would never see a duplicate attached earlier or from a different chat. Restricted to
+    // READY so a failed/still-indexing row is never handed back as "the existing copy".
+    @Query("SELECT * FROM documents WHERE contentHash = :hash AND status = 'READY' AND deletedAt IS NULL LIMIT 1")
+    suspend fun findActiveByHash(hash: String): Document?
+
     @Query("DELETE FROM documents WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 

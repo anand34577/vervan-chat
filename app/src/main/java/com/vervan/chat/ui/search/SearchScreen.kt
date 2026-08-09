@@ -124,7 +124,7 @@ fun SearchScreen(
                     VervanSearchField(
                         value = query,
                         onValueChange = { if (it.length <= ValidationLimits.SEARCH_QUERY) vm.setQuery(it) },
-                        placeholder = "Search everything on this device",
+                        placeholder = "Search your workspace",
                         modifier = Modifier.focusRequester(focusRequester)
                     )
                 },
@@ -149,7 +149,7 @@ fun SearchScreen(
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = "Search your private workspace",
-        body = "Search chats, files, tools, workflows, and saved work on this device."
+                        body = "Find chats, files, tools, and saved work."
                     )
                     searching -> LoadingSkeletonList(
                         rows = 6,

@@ -224,6 +224,20 @@ class LocalApiServer(
             return serveStaticAsset(asset.first, asset.second)
         }
 
+        // Liveness probe + API description, same no-auth reasoning as the static routes above:
+        // whether the server is up (and what it can do) is not user data. This has to sit before
+        // the auth gate below to actually be reachable without a token — the two routes used to
+        // be matched inside the post-auth `when` further down, which silently 401'd them despite
+        // both this comment and openApiSpec()'s own `"security": []` on /health claiming
+        // otherwise; a monitoring check or "test connection" probe hitting either route with no
+        // key got turned away exactly like a real data endpoint would.
+        if (session.method == Method.GET && (session.uri == "/health" || session.uri == "/v1/health")) {
+            return jsonResponse(Response.Status.OK, JSONObject().put("status", "ok").put("full_mode", fullMode))
+        }
+        if (session.method == Method.GET && (session.uri == "/openapi.json" || session.uri == "/v1/openapi.json")) {
+            return jsonResponse(Response.Status.OK, openApiSpec())
+        }
+
         // Recorded after the static-asset routes above (fetching the page shell isn't a client
         // "using" the API yet) and before the handlers, so a request that fails auth still shows up
         // — an unrecognized address being turned away is exactly what the user needs to see.
@@ -269,11 +283,8 @@ class LocalApiServer(
                         ErrorType.INVALID_REQUEST, ErrorCode.UNSUPPORTED_VALUE, null
                     )
                 session.method == Method.POST && session.uri == "/v1/audio/speech" -> handleSpeech(session)
-                // Liveness probe for anything fronting this server (a reverse proxy, a monitoring
-                // check, the Settings screen's own "test connection"). Deliberately below the auth
-                // gate: whether the server is up is not public information here.
-                session.method == Method.GET && (session.uri == "/health" || session.uri == "/v1/health") ->
-                    jsonResponse(Response.Status.OK, JSONObject().put("status", "ok").put("full_mode", fullMode))
+                // /health and /openapi.json are handled above, before the auth gate — see that
+                // comment for why.
                 // Everything below reads or writes app data (knowledge bases, documents), not
                 // just running inference — gated on fullMode regardless of auth, same reasoning
                 // as the Settings screen's own "bigger trust boundary" warning for this mode.
@@ -551,8 +562,14 @@ class LocalApiServer(
                     check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
                     val data = JSONArray()
                     inputs.forEachIndexed { index, text ->
-                        val vector = app.container.withEmbedding { it.embed(text) }
-                            ?: throw IllegalStateException("Embedding failed for input #$index")
+                        val vector = com.vervan.chat.retrieval.embedWith(
+                            model, text,
+                            embeddingEngine = app.container.embeddingEngine,
+                            embeddingMutex = app.container.embeddingMutex,
+                            remoteOpenAiEngine = app.container.remoteOpenAiEngine,
+                            remoteApiKeyStore = app.container.remoteApiKeyStore,
+                            networkAuditLog = app.container.networkAuditLog
+                        ) ?: throw IllegalStateException("Embedding failed for input #$index")
                         val embedding: Any = if (encodingFormat == "base64") {
                             encodeFloatsBase64(vector)
                         } else {
@@ -664,14 +681,35 @@ class LocalApiServer(
             return errorResponse(Response.Status.INTERNAL_ERROR, "Could not process attachment: ${t.toUserMessage()}", ErrorType.SERVER, ErrorCode.SERVER_ERROR, null)
         }
 
+        var systemPrompt = request.systemText
+        // A `chat_id` request is the web app continuing a real conversation, not a stateless
+        // completion. Everything below used to be the client's job, which it could not actually do:
+        // the browser only ever sends the newest user turn plus whatever is typed in the system box.
+        // So the model got no history (every turn read as the first), no persona (changing it did
+        // nothing), and only the knowledge bases the page happened to have selected. Rebuilding it
+        // here from the stored chat is what makes the web app behave like the on-device chat.
+        var effectiveTurns = request.turns
+        var effectiveKbIds = request.knowledgeBaseIds
+        if (fullMode && request.chatId != null) {
+            val ctx = runBlocking { chatContext(request.chatId, request.knowledgeBaseIds) }
+            if (ctx != null) {
+                systemPrompt = listOf(ctx.systemPrefix, systemPrompt).filter { it.isNotBlank() }.joinToString("\n\n")
+                effectiveKbIds = ctx.kbIds
+                // Only supply history when the caller clearly didn't: the web app posts exactly one
+                // user turn per send, but a third-party client is free to pass chat_id *and* the
+                // full transcript, and prepending ours on top of theirs would feed the model every
+                // earlier turn twice.
+                effectiveTurns = if (request.turns.size <= 1) ctx.priorTurns + request.turns else request.turns
+            }
+        }
+
         // RAG runs before generation because the retrieved text has to be in the system prompt
         // before the first token is produced; the sources travel alongside the response either way
         // (a header on the streaming path, a field on the non-streaming one).
-        var systemPrompt = request.systemText
         var sourcesJson: String? = null
-        if (fullMode && request.knowledgeBaseIds.isNotEmpty() && request.lastUserText.isNotBlank()) {
+        if (fullMode && effectiveKbIds.isNotEmpty() && request.lastUserText.isNotBlank()) {
             val passages = runBlocking {
-                kotlinx.coroutines.withTimeoutOrNull(GENERATION_TIMEOUT_MS) { performRetrieval(request.knowledgeBaseIds, request.lastUserText) }
+                kotlinx.coroutines.withTimeoutOrNull(GENERATION_TIMEOUT_MS) { performRetrieval(effectiveKbIds, request.lastUserText) }
             }.orEmpty()
             if (passages.isNotEmpty()) {
                 val contextLimit = runBlocking { app.container.settingsRepository.contextTokenLimit.first() }
@@ -706,8 +744,8 @@ class LocalApiServer(
         val runnerRequest = ApiChatRunner.Request(
             model = request.model,
             systemPrompt = systemPrompt,
-            flatPrompt = buildFlatPrompt(request.turns),
-            turns = request.turns,
+            flatPrompt = buildFlatPrompt(effectiveTurns),
+            turns = effectiveTurns,
             imagePath = imageFile?.absolutePath,
             audioPath = audioFile?.absolutePath,
             sampling = request.sampling,
@@ -720,7 +758,7 @@ class LocalApiServer(
             maxToolHops = MAX_TOOL_HOPS
         )
         val promptTokens = com.vervan.chat.llm.estimateTokens(
-            systemPrompt + request.turns.joinToString("\n") { it.second }
+            systemPrompt + effectiveTurns.joinToString("\n") { it.second }
         )
         val completionId = "chatcmpl-${UUID.randomUUID()}"
         val modelName = request.model.displayName
@@ -939,7 +977,13 @@ class LocalApiServer(
                 }
             } finally {
                 runCatching { pipedOut.close() }
-                if (!succeeded || request.chatId == null) { imageFile?.delete(); audioFile?.delete() }
+                // persistAttachment() (above, when chatId != null && succeeded) copies into
+                // permanent storage rather than moving — the temp upload under server-uploads/ is
+                // always safe to delete here regardless of outcome, same as the non-streaming
+                // path (blockingChatCompletion). Deleting it only on failure leaked one temp file
+                // per attachment on every successful persisted (chatId != null) turn — the common
+                // case for the bundled web UI.
+                imageFile?.delete(); audioFile?.delete()
                 generationSlots.release()
                 // Restart the idle clock from *end of request* — a long stream would otherwise be
                 // most of the way through its TTL window by the time it finished.
@@ -1310,6 +1354,203 @@ class LocalApiServer(
         append("Assistant:")
     }
 
+    /**
+     * OpenAPI 3.1 description of this server, built at request time so it reflects the *running*
+     * configuration — `full_mode` decides whether the `/api/` app-data surface exists at all, and
+     * a spec that advertised endpoints this instance 404s would be worse than none.
+     * (Note: no `/api` glob in this comment on purpose — Kotlin block comments nest, so a literal
+     * slash-star-star sequence in KDoc opens a nested comment and swallows the rest of the file.)
+     *
+     * Hand-built rather than generated: there is no annotation-driven spec pipeline in this project,
+     * and the endpoint list is small and changes rarely. Describes shapes callers actually branch on
+     * (auth, streaming, the extension fields) instead of every optional sampling knob.
+     */
+    private fun openApiSpec(): JSONObject {
+        fun schema(vararg pairs: Pair<String, Any>) = JSONObject().apply { pairs.forEach { put(it.first, it.second) } }
+        fun jsonBody(schemaObj: JSONObject) = JSONObject()
+            .put("required", true)
+            .put("content", JSONObject().put("application/json", JSONObject().put("schema", schemaObj)))
+        fun okJson(description: String) = JSONObject().put("200", JSONObject().put("description", description))
+
+        val paths = JSONObject()
+
+        paths.put("/health", JSONObject().put("get", JSONObject()
+            .put("summary", "Liveness probe; also reports whether full web-app mode is on")
+            .put("security", JSONArray())
+            .put("responses", okJson("Server status"))))
+
+        paths.put("/v1/models", JSONObject().put("get", JSONObject()
+            .put("summary", "List installed models, with load state and TTL")
+            .put("responses", okJson("Model list"))))
+
+        paths.put("/v1/chat/completions", JSONObject().put("post", JSONObject()
+            .put("summary", "Chat completion (streaming or blocking)")
+            .put(
+                "description",
+                "OpenAI-compatible. Extensions beyond the standard body: `thinking` " +
+                    "(off/fast/balanced/deep), `app_tools` (run this device's own tools in-process), " +
+                    "`enabled_tools` (narrow that set for one request — it can only ever remove " +
+                    "tools the user allowed on the device), `knowledge_base_ids` (RAG), and " +
+                    "`chat_id` (full mode only: continue a stored conversation, so the server " +
+                    "supplies that chat's persona, history and knowledge bases itself). Reasoning " +
+                    "is returned as `reasoning_content`."
+            )
+            .put("requestBody", jsonBody(schema(
+                "type" to "object",
+                "required" to JSONArray(listOf("messages")),
+                "properties" to schema(
+                    "model" to schema("type" to "string"),
+                    "messages" to schema("type" to "array", "items" to schema("type" to "object")),
+                    "stream" to schema("type" to "boolean"),
+                    "tools" to schema("type" to "array", "items" to schema("type" to "object")),
+                    "tool_choice" to schema("oneOf" to JSONArray(listOf(schema("type" to "string"), schema("type" to "object")))),
+                    "response_format" to schema("type" to "object"),
+                    "thinking" to schema("type" to "string", "enum" to JSONArray(listOf("off", "fast", "balanced", "deep"))),
+                    "app_tools" to schema("type" to "boolean"),
+                    "enabled_tools" to schema("type" to "array", "items" to schema("type" to "string")),
+                    "knowledge_base_ids" to schema("type" to "array", "items" to schema("type" to "string")),
+                    "chat_id" to schema("type" to "string")
+                )
+            )))
+            .put("responses", JSONObject()
+                .put("200", JSONObject().put("description", "Completion, or an SSE stream when `stream` is true"))
+                .put("401", JSONObject().put("description", "Missing or wrong API key"))
+                .put("404", JSONObject().put("description", "Named model is not installed"))
+                .put("429", JSONObject().put("description", "Too many concurrent generations on this device")))))
+
+        paths.put("/v1/completions", JSONObject().put("post", JSONObject()
+            .put("summary", "Legacy text completion")
+            .put("requestBody", jsonBody(schema("type" to "object")))
+            .put("responses", okJson("Completion"))))
+
+        paths.put("/v1/embeddings", JSONObject().put("post", JSONObject()
+            .put("summary", "Embeddings; `encoding_format` accepts float or base64")
+            .put("requestBody", jsonBody(schema("type" to "object")))
+            .put("responses", okJson("Embedding vectors"))))
+
+        paths.put("/v1/audio/transcriptions", JSONObject().put("post", JSONObject()
+            .put("summary", "Speech to text (multipart `file`, or JSON base64 audio)")
+            .put("responses", okJson("Transcript"))))
+
+        paths.put("/v1/audio/speech", JSONObject().put("post", JSONObject()
+            .put("summary", "Text to speech; returns wav or pcm")
+            .put("requestBody", jsonBody(schema("type" to "object")))
+            .put("responses", okJson("Audio"))))
+
+        if (fullMode) {
+            // Only advertised in full mode — these read and write the user's own data, and in basic
+            // mode every /api/** path deliberately 404s.
+            listOf(
+                "/api/chats" to "List or create chats",
+                "/api/chat" to "Fetch one chat's configuration",
+                "/api/messages" to "List a chat's messages",
+                "/api/knowledge-bases" to "List or create knowledge bases",
+                "/api/documents" to "List or upload knowledge-base documents",
+                "/api/personas" to "List or save personas (built-ins are read-only)",
+                "/api/templates" to "List or save prompt templates (built-ins are read-only)",
+                "/api/workspaces" to "List or save workspaces (the default workspace is read-only)",
+                "/api/memories" to "List or save memories",
+                "/api/tools/run" to "Run one of this device's tools directly",
+                "/api/models" to "List models, with load/unload and default-model actions"
+            ).forEach { (path, summary) ->
+                paths.put(path, JSONObject().put("get", JSONObject()
+                    .put("summary", summary)
+                    .put("responses", okJson("Result"))))
+            }
+        }
+
+        return JSONObject()
+            .put("openapi", "3.1.0")
+            .put(
+                "info", JSONObject()
+                    .put("title", "Vervan on-device API")
+                    .put("version", com.vervan.chat.BuildConfig.VERSION_NAME)
+                    .put(
+                        "description",
+                        "OpenAI-compatible inference served from this Android device. All generation, " +
+                            "retrieval and speech runs locally. " +
+                            (if (fullMode) "Full web-app mode is ON, so the /api/** app-data endpoints are live."
+                            else "Full web-app mode is OFF, so only the /v1/** inference endpoints are served.")
+                    )
+            )
+            .put("servers", JSONArray().put(JSONObject().put("url", "/")))
+            .put(
+                "components", JSONObject().put(
+                    "securitySchemes", JSONObject().put(
+                        "bearerAuth", JSONObject()
+                            .put("type", "http").put("scheme", "bearer")
+                            .put("description", "The API key from Settings → API server. Omitted only when no key is set.")
+                    )
+                )
+            )
+            .put("security", JSONArray().put(JSONObject().put("bearerAuth", JSONArray())))
+            .put("paths", paths)
+    }
+
+    /** The stored-chat context a `chat_id` request should generate against. */
+    private class ChatContext(
+        /** Persona instruction + project instructions, prepended to the client's system text. */
+        val systemPrefix: String,
+        /** Prior conversation on the active branch, oldest first, as (role, content) turns. */
+        val priorTurns: List<Pair<String, String>>,
+        /** The chat's own knowledge bases, unioned with any the caller named. */
+        val kbIds: List<String>
+    )
+
+    /**
+     * Rebuilds what the native chat would have had in context for [chatId]. Resolves the persona
+     * through the same [ChatDefaults] chain the app uses (chat → folder → workspace → built-in), so
+     * a persona picked in either place takes effect in both and the two can't drift.
+     *
+     * History is read on the *active branch* ([BranchUtil.pathTo]) and trimmed to the context
+     * budget, exactly as the native loop does — a browser tab must not be able to push a huge chat
+     * past the model's window just because it isn't the one doing the trimming.
+     *
+     * Deliberately excludes the newest user turn: the client sends that in `messages[]` and the
+     * server only persists it after generation, so the DB holds prior turns only and appending the
+     * request's own turns after these can't double it up.
+     */
+    private suspend fun chatContext(chatId: String, requestedKbIds: List<String>): ChatContext? {
+        val db = app.container.db
+        val chat = db.chatDao().getChat(chatId) ?: return null
+        val folder = chat.folderId?.let { runCatching { db.folderDao().get(it) }.getOrNull() }
+        val workspace = runCatching { db.workspaceDao().get(chat.workspaceId) }.getOrNull()
+
+        val personaId = com.vervan.chat.model.ChatDefaults.personaId(chat, folder, workspace)
+        val persona = runCatching { db.personaDao().getPersona(personaId) }.getOrNull()
+        val projectInstructions = chat.projectId?.let { runCatching { db.projectDao().get(it)?.instructions }.getOrNull() }
+
+        val systemPrefix = buildString {
+            persona?.systemInstruction?.takeIf { it.isNotBlank() }?.let { instruction ->
+                append(instruction)
+                val traits = com.vervan.chat.data.repo.PersonaTraits.instructionFor(persona)
+                if (traits.isNotBlank()) append('\n').append(traits)
+            }
+            projectInstructions?.takeIf { it.isNotBlank() }?.let {
+                if (isNotEmpty()) append("\n\n")
+                append(it)
+            }
+        }.trim()
+
+        val history = com.vervan.chat.data.branch.BranchUtil
+            .pathTo(db.messageDao().getMessages(chatId), chat.activeLeafId)
+            .filter {
+                it.role != com.vervan.chat.data.db.entities.MessageRole.SYSTEM &&
+                    it.content.isNotBlank() &&
+                    it.state == com.vervan.chat.data.db.entities.MessageState.COMPLETE
+            }
+        val contextLimit = runCatching { app.container.settingsRepository.contextTokenLimit.first() }.getOrDefault(4096)
+        val priorTurns = ChatFormatting.trimHistoryToBudget(history, contextLimit).map { message ->
+            val role = if (message.role == com.vervan.chat.data.db.entities.MessageRole.USER) "user" else "assistant"
+            role to message.content
+        }
+
+        // Union, not replace: the page's picker can add a knowledge base for one question without
+        // silently dropping the ones the chat was configured with on the phone.
+        val kbIds = (chat.kbIdList() + requestedKbIds).distinct().filter { it.isNotBlank() }
+        return ChatContext(systemPrefix, priorTurns, kbIds)
+    }
+
     /** [com.vervan.chat.ui.chat.ChatViewModel]'s own retrieveSourcesInner, minimized: no query
      * expansion (needs a resident LLM this server call has no reason to also load) and no
      * settings-driven mode override beyond the user's plain default — just "load the embedding
@@ -1321,8 +1562,12 @@ class LocalApiServer(
         val mode = runCatching {
             RetrievalMode.valueOf(app.container.settingsRepository.defaultRetrievalMode.first())
         }.getOrDefault(RetrievalMode.HYBRID)
-        val direct = app.container.withEmbedding { app.container.retrievalEngine.retrieve(kbIds, query, mode, RAG_TOP_K) }
-        return direct.ifEmpty { app.container.withEmbedding { app.container.retrievalEngine.retrieveOverviewFallback(kbIds, RAG_TOP_K) } }
+        // No app.container.withEmbedding{} wrap — see ChatViewModel.retrieveSourcesInner's comment.
+        // retrieve()/retrieveOverviewFallback() already lock embeddingMutex themselves, only for
+        // the actual embed call; wrapping the outside in that same non-reentrant mutex again
+        // deadlocks instead of erroring.
+        val direct = app.container.retrievalEngine.retrieve(kbIds, query, mode, RAG_TOP_K)
+        return direct.ifEmpty { app.container.retrievalEngine.retrieveOverviewFallback(kbIds, RAG_TOP_K) }
     }
 
     /** Decodes a `data:image/...;base64,...` (or bare base64) image into a normalized temp JPEG
@@ -2135,6 +2380,19 @@ class LocalApiServer(
         var responseFormat = "json"
         try {
             if (contentType.startsWith("multipart/form-data")) {
+                // Every other body-reading path in this file (readJsonBody, WebAppApi.withBody)
+                // rejects an oversized Content-Length before spooling anything to disk. This
+                // branch only checked the spooled file's size *after* NanoHTTPD's parseBody()
+                // had already written the whole body to a temp file — an unbounded multipart
+                // upload could exhaust disk/memory before the MAX_AUDIO_UPLOAD_BYTES check ever
+                // ran. Same declared-length gate as readJsonBody, applied up front here too.
+                val declaredLength = (session.headers["content-length"] ?: session.headers["Content-Length"])?.toLongOrNull()
+                if (declaredLength == null) {
+                    return errorResponse(Response.Status.BAD_REQUEST, "A valid Content-Length header is required")
+                }
+                if (declaredLength < 0 || declaredLength > MAX_AUDIO_UPLOAD_BYTES) {
+                    return errorResponse(Response.Status.PAYLOAD_TOO_LARGE, "Audio file is too large (max ${MAX_AUDIO_UPLOAD_BYTES / (1024 * 1024)} MB)")
+                }
                 val files = HashMap<String, String>()
                 session.parseBody(files)
                 responseFormat = session.parameters["response_format"]?.firstOrNull()?.lowercase() ?: "json"

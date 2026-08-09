@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
@@ -63,11 +62,14 @@ fun CompactAttachmentTray(
 
 @Composable
 private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit, onClick: () -> Unit) {
+    // Theme tokens rather than hardcoded dp: these two were the only corners in the composer that
+    // didn't track the app-wide shape scale, so they stayed bubbly when the scale tightened.
+    val chipShape = MaterialTheme.shapes.small
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(chipShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, chipShape)
             .clickable(onClick = onClick)
             .padding(start = Space.sm, end = Space.xs)
             .padding(vertical = Space.xs),
@@ -77,7 +79,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(MaterialTheme.shapes.extraSmall)
                 .background(MaterialTheme.colorScheme.secondaryContainer),
             contentAlignment = Alignment.Center
         ) {

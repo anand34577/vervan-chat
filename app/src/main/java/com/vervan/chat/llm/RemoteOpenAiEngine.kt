@@ -19,6 +19,43 @@ import org.json.JSONObject
 
 class RemoteOpenAiApiException(message: String, val httpStatus: Int? = null) : IOException(message)
 
+/**
+ * Reduces a stream of (content, reasoning) SSE deltas into the app's one text convention —
+ * reasoning wrapped in `<think>…</think>`, same as the two on-device engines emit natively — so
+ * [RemoteOpenAiEngine.generate]'s caller never has to know reasoning arrived on a separate field.
+ * Kept as its own tiny state machine, not inlined into the SSE loop, purely so it's unit-testable
+ * without standing up a fake HTTP server.
+ */
+internal class ReasoningStreamMerger {
+    // Whether we're currently inside an emitted <think> block — not "has one ever been opened".
+    // The old version used a pair of one-shot flags (opened-once, closed-once) that could never
+    // re-open: a provider that resumes `reasoning_content` after `content` has already started
+    // (interleaved reasoning/content chunks, not one clean reasoning-then-answer split) would hit
+    // `!reasoningOpen` as false forever after the first open, so the later reasoning text got
+    // appended straight into the content stream with no wrapping tag at all — reasoning printed
+    // outside the thinking block, right in the middle of the visible answer.
+    private var insideThink = false
+
+    /** Text to emit for one delta, in order. Usually 0-2 pieces; the tag itself only appears the
+     *  moment reasoning starts or ends — including re-starting after content already resumed. */
+    fun accept(content: String?, reasoning: String?): List<String> = buildList {
+        if (!reasoning.isNullOrEmpty()) {
+            if (!insideThink) { add("<think>\n"); insideThink = true }
+            add(reasoning)
+        }
+        if (!content.isNullOrEmpty()) {
+            if (insideThink) { add("\n</think>\n"); insideThink = false }
+            add(content)
+        }
+    }
+
+    /** Call once the stream ends. A response that finishes still inside an open reasoning block
+     *  (finish_reason cut it off, or the connection just closed) would otherwise leave
+     *  ThinkingParser treating everything after as "still thinking" forever. */
+    fun finish(): List<String> =
+        if (insideThink) { insideThink = false; listOf("\n</think>\n") } else emptyList()
+}
+
 private fun readAllUtf8(stream: java.io.InputStream): String =
     stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
 
@@ -32,7 +69,7 @@ private fun describeHttpError(status: Int, body: String, context: String): Strin
 }
 
 /** Throws [RemoteOpenAiApiException] if [connection]'s response wasn't 2xx — shared by
- * [RemoteOpenAiEngine.generate] and [RemoteOpenAiEngine.testConnection]. */
+ * [RemoteOpenAiEngine.generate] and [RemoteOpenAiEngine.fetchModels]. */
 private fun HttpURLConnection.requireSuccessResponse(context: String) {
     val status = responseCode
     if (status !in 200..299) {
@@ -65,6 +102,13 @@ class RemoteOpenAiEngine {
      *   other two branches use) — sent as the single trailing `user` message.
      * @param systemPrompt sent as a leading `system`-role message when non-blank, same semantics
      *   as [LlmEngine.generate]'s own `systemPrompt` parameter.
+     * @param imagePath a filesystem path (same convention as [LlmEngine.generate]/
+     *   [LlamaCppEngine.generate]) read, base64-encoded, and sent as an `image_url` data-URI
+     *   content part per the standard OpenAI vision message shape. Caller (`AppContainer.generate`)
+     *   already gates this on `model.supportsVision == true` — the endpoint itself is trusted to
+     *   400 if the selected model doesn't actually accept it.
+     * @param audioPath sent as an `input_audio` content part (the `gpt-4o-audio-preview` shape);
+     *   same trust boundary as [imagePath].
      */
     fun generate(
         baseUrl: String,
@@ -75,7 +119,14 @@ class RemoteOpenAiEngine {
         temperature: Float,
         topP: Float,
         maxOutputTokens: Int,
-        stopSequences: List<String> = emptyList()
+        stopSequences: List<String> = emptyList(),
+        imagePath: String? = null,
+        audioPath: String? = null,
+        // Not part of the OpenAI spec itself (OpenAI's own API has no top_k), but a vendor
+        // extension nearly every self-hosted OpenAI-compatible server accepts (vLLM, LM Studio,
+        // Ollama, text-generation-webui) — sent only when the user explicitly set it, so a strict
+        // implementation that 400s on an unrecognized field never sees it.
+        topK: Int? = null
     ): Flow<String> = flow {
         val url = URL(endpointUrl(baseUrl))
         val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -88,7 +139,10 @@ class RemoteOpenAiEngine {
             if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
         }
         try {
-            val body = requestBody(remoteModelId, prompt, systemPrompt, temperature, topP, maxOutputTokens, stopSequences)
+            val body = requestBody(
+                remoteModelId, prompt, systemPrompt, temperature, topP, maxOutputTokens, stopSequences,
+                imagePath, audioPath, topK
+            )
             withContext(Dispatchers.IO) {
                 connection.outputStream.use { it.writeUtf8(body) }
                 connection.requireSuccessResponse("Remote generation request failed")
@@ -96,6 +150,14 @@ class RemoteOpenAiEngine {
             val reader = withContext(Dispatchers.IO) {
                 BufferedReader(InputStreamReader(connection.inputStream, StandardCharsets.UTF_8))
             }
+            // Reasoning-capable OpenAI-compatible servers (vLLM, LM Studio, DeepSeek's own API,
+            // most others that expose `enable_thinking`) stream reasoning as its own
+            // `delta.reasoning_content` (or `delta.reasoning`) field, separate from `delta.content`
+            // — unlike the two on-device engines, which emit thinking inline as literal <think>
+            // tags in one text stream. ReasoningStreamMerger re-wraps it in that same convention so
+            // every downstream consumer (ThinkingParser, the collapsible reasoning card, exports)
+            // needs exactly one code path regardless of which engine produced it.
+            val merger = ReasoningStreamMerger()
             reader.use { r ->
                 while (true) {
                     currentCoroutineContext().ensureActive()
@@ -104,20 +166,74 @@ class RemoteOpenAiEngine {
                     val data = line.removePrefix("data:").trim()
                     if (data == "[DONE]") break
                     val delta = try {
-                        deltaContent(data)
+                        deltaParts(data)
                     } catch (e: Exception) {
                         Log.w(TAG, "generate(): could not parse SSE chunk, skipping: $data", e)
                         null
-                    }
-                    if (!delta.isNullOrEmpty()) emit(delta)
+                    } ?: continue
+                    merger.accept(delta.content, delta.reasoning).forEach { emit(it) }
                 }
             }
+            merger.finish().forEach { emit(it) }
         } finally {
             // Unblocks any read still parked in `r.readLine()` on cancellation — mirrors
             // HttpRangeDownloader's own connection.disconnect()-in-finally pattern.
             withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) { connection.disconnect() }
         }
     }
+
+    /**
+     * Calls an external OpenAI-compatible `/embeddings` endpoint — the [ModelEngine.REMOTE_API]
+     * counterpart to [EmbeddingEngine][com.vervan.chat.retrieval.EmbeddingEngine]'s on-device
+     * models, used the same way by [embedWith][com.vervan.chat.retrieval.embedWith] for RAG
+     * retrieval, memory recall, and document indexing.
+     */
+    suspend fun embed(baseUrl: String, apiKey: String, remoteModelId: String, text: String): Result<FloatArray> =
+        embedBatch(baseUrl, apiKey, remoteModelId, listOf(text)).map { it.single() }
+
+    /**
+     * Batched counterpart of [embed] — the `/embeddings` endpoint accepts `input` as either a
+     * single string or an array, so a document with hundreds of chunks doesn't have to pay one
+     * HTTP round trip per chunk (see [com.vervan.chat.model.DocumentImportManager.persistChunks]'s
+     * batch size choice for why: this is what turns "one request per chunk" into "one request per
+     * ~32 chunks", which matters both for import speed and for not hammering a rate-limited API).
+     * `data` items carry their own `index`, sorted back into request order here rather than
+     * trusted to arrive in order — the spec doesn't guarantee it, and OpenAI's own docs note
+     * providers may return results out of order.
+     */
+    suspend fun embedBatch(baseUrl: String, apiKey: String, remoteModelId: String, texts: List<String>): Result<List<FloatArray>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (texts.isEmpty()) return@runCatching emptyList()
+                val url = URL(baseUrl.trimEnd('/') + "/embeddings")
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = CONNECT_TIMEOUT_MS
+                    readTimeout = READ_TIMEOUT_MS
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
+                }
+                try {
+                    val input = JSONArray().apply { texts.forEach { put(it) } }
+                    val body = JSONObject().put("model", remoteModelId).put("input", input).toString()
+                    connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+                    connection.requireSuccessResponse("Embedding request failed")
+                    val data = JSONObject(readAllUtf8(connection.inputStream)).getJSONArray("data")
+                    val byIndex = arrayOfNulls<FloatArray>(texts.size)
+                    for (i in 0 until data.length()) {
+                        val item = data.getJSONObject(i)
+                        val embedding = item.getJSONArray("embedding")
+                        val index = item.optInt("index", i)
+                        if (index !in byIndex.indices) continue
+                        byIndex[index] = FloatArray(embedding.length()) { embedding.getDouble(it).toFloat() }
+                    }
+                    byIndex.map { it ?: throw RemoteOpenAiApiException("Embedding response missing an entry") }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+        }
 
     private fun endpointUrl(baseUrl: String): String = baseUrl.trimEnd('/') + "/chat/completions"
 
@@ -133,13 +249,39 @@ class RemoteOpenAiEngine {
         temperature: Float,
         topP: Float,
         maxOutputTokens: Int,
-        stopSequences: List<String>
+        stopSequences: List<String>,
+        imagePath: String? = null,
+        audioPath: String? = null,
+        topK: Int? = null
     ): String {
         val messages = JSONArray()
         if (!systemPrompt.isNullOrBlank()) {
             messages.put(JSONObject().put("role", "system").put("content", systemPrompt))
         }
-        messages.put(JSONObject().put("role", "user").put("content", prompt))
+        // Plain string content when there's nothing to attach — every OpenAI-compatible server
+        // accepts that shape, including ones that would choke on a single-element content array.
+        // The multipart `content: [...]` form only appears once there's an attachment to carry.
+        val userContent: Any = if (imagePath == null && audioPath == null) {
+            prompt
+        } else {
+            JSONArray().apply {
+                put(JSONObject().put("type", "text").put("text", prompt))
+                imagePath?.let { path ->
+                    encodeFileAsDataUri(path, defaultMime = "image/jpeg")?.let { dataUri ->
+                        put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUri)))
+                    }
+                }
+                audioPath?.let { path ->
+                    encodeFileAsBase64(path)?.let { (base64, format) ->
+                        put(
+                            JSONObject().put("type", "input_audio")
+                                .put("input_audio", JSONObject().put("data", base64).put("format", format))
+                        )
+                    }
+                }
+            }
+        }
+        messages.put(JSONObject().put("role", "user").put("content", userContent))
         val json = JSONObject()
             .put("model", remoteModelId)
             .put("messages", messages)
@@ -150,15 +292,45 @@ class RemoteOpenAiEngine {
         if (stopSequences.isNotEmpty()) {
             json.put("stop", JSONArray(stopSequences))
         }
+        if (topK != null) json.put("top_k", topK)
         return json.toString()
+    }
+
+    /** Reads [path] off disk and returns a `data:<mime>;base64,...` URI for an `image_url` content
+     *  part, or null if the file can't be read (attachment silently dropped rather than failing
+     *  the whole turn — same tolerance [deltaContent] uses for a malformed SSE chunk). */
+    private fun encodeFileAsDataUri(path: String, defaultMime: String): String? {
+        val file = java.io.File(path)
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        val mime = android.webkit.MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(file.extension.lowercase())
+            ?: defaultMime
+        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return "data:$mime;base64,$base64"
+    }
+
+    /** Reads [path] off disk for an `input_audio` content part, returning (base64, format) where
+     *  format is the bare extension (`"wav"`, `"mp3"`) the OpenAI audio content shape expects —
+     *  or null if the file can't be read. */
+    private fun encodeFileAsBase64(path: String): Pair<String, String>? {
+        val file = java.io.File(path)
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return base64 to file.extension.lowercase().ifBlank { "wav" }
     }
 
     /** Extracts `choices[0].delta.content` from one `data: {...}` SSE chunk — the OpenAI
      * streaming chat-completions shape every OpenAI-compatible provider mirrors. */
-    private fun deltaContent(data: String): String? {
+    private data class DeltaParts(val content: String?, val reasoning: String?)
+
+    /** [DeltaParts.reasoning] checks `reasoning_content` (the vLLM/DeepSeek/LM Studio field name)
+     *  then `reasoning` (OpenRouter's) — whichever the server actually sends, or neither. */
+    private fun deltaParts(data: String): DeltaParts? {
         val choices = JSONObject(data).optJSONArray("choices") ?: return null
         val delta = choices.optJSONObject(0)?.optJSONObject("delta") ?: return null
-        return delta.optString("content", "").takeIf { it.isNotEmpty() }
+        val reasoning = delta.optString("reasoning_content", "").takeIf { it.isNotEmpty() }
+            ?: delta.optString("reasoning", "").takeIf { it.isNotEmpty() }
+        return DeltaParts(delta.optString("content", "").takeIf { it.isNotEmpty() }, reasoning)
     }
 
     companion object {
@@ -168,12 +340,12 @@ class RemoteOpenAiEngine {
         /**
          * Human-readable reason [baseUrl] is unusable, or null when it's fine.
          *
-         * HTTPS is required, not preferred. targetSdk 35 with no `usesCleartextTraffic` override
-         * means the platform already refuses a cleartext connection, so an `http://` endpoint
-         * could never have leaked the bearer key — but it failed as an opaque
-         * `IOException`/`UnknownServiceException` at request time rather than telling the user the
-         * one thing they needed to change. Checking here also keeps the requirement true if a
-         * cleartext exemption is ever added to the manifest for some unrelated reason.
+         * Both `http` and `https` are accepted. HTTPS was originally required so a bearer key
+         * couldn't travel in the clear, but that also ruled out the most common self-hosted case —
+         * llama.cpp/Ollama/vLLM on a machine on the user's own LAN, which serves plain HTTP and has
+         * no certificate to present. Cleartext is allowed at the manifest level for that reason (see
+         * `usesCleartextTraffic`), and the add-model dialog warns whenever the URL is `http://`
+         * rather than silently accepting it.
          */
         fun baseUrlError(baseUrl: String): String? {
             val trimmed = baseUrl.trim()
@@ -182,8 +354,9 @@ class RemoteOpenAiEngine {
                 ?: return "That isn't a valid URL."
             return when {
                 uri.scheme == null -> "Include the scheme, e.g. https://api.openai.com/v1"
-                !uri.scheme.equals("https", ignoreCase = true) ->
-                    "Only https:// endpoints are supported — an API key must never travel unencrypted."
+                !uri.scheme.equals("https", ignoreCase = true) &&
+                    !uri.scheme.equals("http", ignoreCase = true) ->
+                    "The URL must start with https:// or http://"
                 uri.host.isNullOrBlank() -> "That URL is missing a host name."
                 else -> null
             }
@@ -193,11 +366,21 @@ class RemoteOpenAiEngine {
         // single stalled read (dead connection, provider hang) can block before failing loudly.
         private const val READ_TIMEOUT_MS = 60_000
 
-        /** Best-effort reachability/auth check for the "Add remote model" UI — a real
-         * `/chat/completions` call would work even with a wrong model id (some providers 400 only
-         * once billing/model resolution runs deeper), so this hits the cheaper, more universally
-         * supported `/models` list endpoint instead and treats any 2xx as success. */
-        suspend fun testConnection(baseUrl: String, apiKey: String): Result<Unit> = withContext(Dispatchers.IO) {
+        /**
+         * The provider's own model catalog, from its `/models` endpoint — so the user can pick from
+         * a real list instead of hand-typing an id that only fails on first send. This doubles as
+         * the reachability/auth check the add-model dialog used to spend a separate "Test
+         * connection" button on: it's the cheapest universally-supported endpoint, and a wrong
+         * URL or bad key fails here rather than on the user's first chat message.
+         *
+         * Ids only: the endpoint reports no capability information worth trusting
+         * (`/models` returns little beyond ids and ownership, and providers disagree on the rest),
+         * which is exactly why capabilities are chosen per model in the UI instead of guessed here.
+         *
+         * Tolerates both the spec's `{"data":[{"id":…}]}` envelope and the bare `[{"id":…}]` or
+         * `["id"]` shapes self-hosted servers sometimes return. Sorted, de-duplicated.
+         */
+        suspend fun fetchModels(baseUrl: String, apiKey: String): Result<List<String>> = withContext(Dispatchers.IO) {
             runCatching {
                 val url = URL(baseUrl.trimEnd('/') + "/models")
                 val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -206,11 +389,21 @@ class RemoteOpenAiEngine {
                     readTimeout = CONNECT_TIMEOUT_MS
                     if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
                 }
-                try {
-                    connection.requireSuccessResponse("Connection test failed")
+                val body = try {
+                    connection.requireSuccessResponse("Could not list models")
+                    readAllUtf8(connection.inputStream)
                 } finally {
                     connection.disconnect()
                 }
+                val array = runCatching { org.json.JSONObject(body).optJSONArray("data") }.getOrNull()
+                    ?: runCatching { org.json.JSONArray(body) }.getOrNull()
+                    ?: throw RemoteOpenAiApiException("The endpoint's /models response wasn't in a recognized format")
+                val ids = (0 until array.length()).mapNotNull { i ->
+                    array.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }
+                        ?: array.optString(i).takeIf { it.isNotBlank() }
+                }
+                if (ids.isEmpty()) throw RemoteOpenAiApiException("The endpoint reported no available models")
+                ids.distinct().sorted()
             }
         }
     }

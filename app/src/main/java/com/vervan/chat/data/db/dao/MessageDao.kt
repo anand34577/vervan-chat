@@ -16,8 +16,16 @@ interface MessageDao : BaseDao<Message> {
     @Query("SELECT * FROM messages WHERE state = 'STREAMING'")
     suspend fun getUnfinished(): List<Message>
 
-    @Query("UPDATE messages SET state = 'CANCELLED' WHERE chatId = :chatId AND state = 'STREAMING'")
-    suspend fun cancelStreamingForChat(chatId: String)
+    /** [elapsedMs] is recorded as [Message.generationMs] so the time already spent survives the
+     *  cancellation. Without it a chat cancelled mid-reasoning came back showing "Thought for 0s":
+     *  the bubble's elapsed counter is UI-local `remember` state that dies with the composable, and
+     *  this row was the only durable place the duration could have been kept. COALESCE so a row that
+     *  somehow already has a duration keeps its real one. */
+    @Query(
+        "UPDATE messages SET state = 'CANCELLED', generationMs = COALESCE(generationMs, :elapsedMs) " +
+            "WHERE chatId = :chatId AND state = 'STREAMING'"
+    )
+    suspend fun cancelStreamingForChat(chatId: String, elapsedMs: Long)
 
     @Query("UPDATE messages SET state = 'COMPLETE' WHERE chatId = :chatId AND state = 'STREAMING'")
     suspend fun completeStreamingForChat(chatId: String)

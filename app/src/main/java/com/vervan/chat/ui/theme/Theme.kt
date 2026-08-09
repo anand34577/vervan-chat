@@ -146,15 +146,17 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     scrim = Color.Black
 )
 
+// Deliberately tighter than the M3 Expressive scale this app used to carry (10/12/16/24/32):
+// at that size every surface — cards, sheets, dialogs, menus — read as visibly bubbly, and the
+// roundness stopped distinguishing anything because it was on everything. This sits close to
+// Material 3's own defaults: still soft, but corners now read as a finish rather than a feature.
+// Chips/badges stay full pills (see VervanExtraShapes.pill) so they remain distinct from cards.
 private val VervanShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    // M3 Expressive pushes `large` past 16dp toward 20–24dp for surfaces that should feel soft
-    // and friendly (cards, sheets, composer). 24dp here gives bubbles and modern surfaces a
-    // rounder, more "physical" feel than the previous conservative 24 already on large.
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp)
 )
 
 /** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions).
@@ -163,14 +165,18 @@ private val VervanShapes = Shapes(
  *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
  *  - extra-extra-large (48dp) is the M3 Expressive max — used for hero gradients and big FABs. */
 object VervanExtraShapes {
-    val hero = RoundedCornerShape(28.dp)
-    val composer = RoundedCornerShape(28.dp)
-    val userBubble = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp)
-    val assistantBubble = RoundedCornerShape(20.dp)
-    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape. */
+    val hero = RoundedCornerShape(20.dp)
+    val composer = RoundedCornerShape(20.dp)
+    // The 4dp "tail" corner stays proportionally smaller than the other three so the bubble keeps
+    // its direction cue — it scaled down with the rest (was 20/6) rather than being left behind.
+    val userBubble = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 4.dp)
+    val assistantBubble = RoundedCornerShape(14.dp)
+    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape.
+     *  Intentionally NOT scaled down with the rest: chips/badges staying pill-shaped is what
+     *  keeps them readable as chips now that cards are square-ish. */
     val pill = RoundedCornerShape(100.dp)
     val datePill = RoundedCornerShape(100.dp)
-    val extraExtraLarge = RoundedCornerShape(48.dp)
+    val extraExtraLarge = RoundedCornerShape(28.dp)
 }
 
 /** Reserved for technical/metadata text (timestamps, token counts, model backend
