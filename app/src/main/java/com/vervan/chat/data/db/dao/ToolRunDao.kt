@@ -10,6 +10,9 @@ interface ToolRunDao : BaseDao<ToolRun> {
     @Query("SELECT * FROM tool_runs WHERE deletedAt IS NULL ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<ToolRun>>
 
+    @Query("SELECT * FROM tool_runs WHERE deletedAt IS NULL AND (toolName LIKE '%' || :q || '%' OR input LIKE '%' || :q || '%' OR output LIKE '%' || :q || '%') ORDER BY updatedAt DESC LIMIT 20")
+    suspend fun search(q: String): List<ToolRun>
+
     @Query("SELECT * FROM tool_runs WHERE deletedAt IS NULL ORDER BY updatedAt DESC LIMIT :limit")
     fun observeRecent(limit: Int = 12): Flow<List<ToolRun>>
 

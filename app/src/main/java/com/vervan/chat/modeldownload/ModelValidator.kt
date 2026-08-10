@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.ai.edge.litertlm.Capabilities
 import com.vervan.chat.data.db.entities.ModelErrorCode
 import com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer
+import com.vervan.chat.model.readBytesLimited
 import java.io.File
 import java.security.MessageDigest
 import org.tensorflow.lite.Interpreter
@@ -71,7 +72,7 @@ class ModelValidator {
      * load time so a corrupt tokenizer fails here instead of surfacing later as a load crash. */
     fun validateSentencePieceTokenizer(file: File) {
         try {
-            SentencePieceTokenizer(file.readBytes())
+            SentencePieceTokenizer(file.inputStream().use { it.readBytesLimited(64L * 1024 * 1024) })
         } catch (t: Throwable) {
             Log.w(TAG, "validateSentencePieceTokenizer() failed for ${file.name}: ${t.message}")
             throw ModelDownloadException(ModelErrorCode.TOKENIZER_MISSING, "${file.name} could not be parsed as a SentencePiece tokenizer", t)

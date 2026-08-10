@@ -12,6 +12,9 @@ interface WorkflowDao : BaseDao<Workflow> {
     @Query("SELECT * FROM workflows WHERE deletedAt IS NULL ORDER BY isBuiltIn DESC, name ASC")
     fun observeAll(): Flow<List<Workflow>>
 
+    @Query("SELECT * FROM workflows WHERE deletedAt IS NULL AND (name LIKE '%' || :q || '%' OR description LIKE '%' || :q || '%') ORDER BY isBuiltIn DESC, name ASC LIMIT 20")
+    suspend fun search(q: String): List<Workflow>
+
     @Query("SELECT * FROM workflows WHERE id = :id")
     suspend fun get(id: String): Workflow?
 

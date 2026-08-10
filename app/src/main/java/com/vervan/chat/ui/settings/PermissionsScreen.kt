@@ -82,7 +82,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                     }
                 }
                 Card(
-                    Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                    Modifier.fillMaxWidth().padding(vertical = Space.sm),
                     colors = SurfaceRole.Card.cardColors(),
                     border = SurfaceRole.Card.border()
                 ) {

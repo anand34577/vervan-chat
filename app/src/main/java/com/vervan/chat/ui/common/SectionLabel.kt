@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import com.vervan.chat.ui.theme.Space
 
 /**
@@ -32,10 +33,12 @@ import com.vervan.chat.ui.theme.Space
 fun SectionLabel(
     title: String,
     modifier: Modifier = Modifier,
-    count: Int? = null
+    count: Int? = null,
+    topPadding: Dp = Space.lg,
+    bottomPadding: Dp = Space.sm
 ) {
     val base = modifier
-        .padding(top = Space.lg, bottom = Space.sm)
+        .padding(top = topPadding, bottom = bottomPadding)
         .semantics { heading() }
     if (count == null) {
         Text(

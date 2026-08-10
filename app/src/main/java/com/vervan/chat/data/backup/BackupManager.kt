@@ -28,7 +28,15 @@ import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.system.toUserMessage
 import androidx.room.withTransaction
 import java.io.InputStream
+import java.io.ByteArrayInputStream
 import java.io.OutputStream
+import java.security.SecureRandom
+import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -36,7 +44,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * JSON export/import for user-authored Room content. Model files,
+ * JSON export/import for user-authored Room content. New exports are password-encrypted when the
+ * UI supplies a password; plain JSON remains readable for backward compatibility. Model files,
  * imported document files and media attachments are deliberately not included — those are large
  * binary assets tied to on-device paths, re-importing them belongs to Models/Knowledge, not
  * a content backup. Knowledge-base definitions are included, but their imported document
@@ -48,8 +57,18 @@ object BackupManager {
     private const val FORMAT_VERSION = 2
     private const val MIN_SUPPORTED_FORMAT_VERSION = 1
     private const val MAX_ITEMS_PER_COLLECTION = 100_000
+    private const val ENCRYPTED_FORMAT = "vervan-encrypted-backup-v1"
+    private const val PBKDF2_ITERATIONS = 210_000
+    private const val SALT_BYTES = 16
+    private const val IV_BYTES = 12
+    private const val GCM_TAG_BITS = 128
 
     suspend fun export(db: AppDatabase, out: OutputStream) {
+        exportEncrypted(db, out, password = null)
+    }
+
+    /** Writes the complete backup using password-based AES-GCM when [password] is supplied. */
+    suspend fun exportEncrypted(db: AppDatabase, out: OutputStream, password: String?) {
         val root = JSONObject()
         root.put("formatVersion", FORMAT_VERSION)
         root.put("exportedAt", System.currentTimeMillis())
@@ -81,7 +100,7 @@ object BackupManager {
             JSONArray(db.transcriptionProjectDao().observeAll().firstList().map { transcriptionProjectToJson(it) })
         )
 
-        out.writer().use { it.write(root.toString(2)) }
+        writePayload(root.toString(2).toByteArray(Charsets.UTF_8), out, password)
     }
 
     /**
@@ -93,6 +112,10 @@ object BackupManager {
      * [import] reads either shape identically — it just upserts whatever categories are present.
      */
     suspend fun exportWorkspace(db: AppDatabase, workspaceId: String, out: OutputStream) {
+        exportWorkspaceEncrypted(db, workspaceId, out, password = null)
+    }
+
+    suspend fun exportWorkspaceEncrypted(db: AppDatabase, workspaceId: String, out: OutputStream, password: String?) {
         val workspace = db.workspaceDao().get(workspaceId) ?: throw IllegalArgumentException("No such workspace")
         val root = JSONObject()
         root.put("formatVersion", FORMAT_VERSION)
@@ -106,13 +129,13 @@ object BackupManager {
         root.put("messages", JSONArray(allMessages.map { messageToJson(it) }))
         root.put("folders", JSONArray(db.folderDao().observeForWorkspace(workspaceId).firstList().map { folderToJson(it) }))
 
-        out.writer().use { it.write(root.toString(2)) }
+        writePayload(root.toString(2).toByteArray(Charsets.UTF_8), out, password)
     }
 
     /** Returns a short summary of what was restored, or throws with a readable message on
      * malformed input. Every row upserts on its own primary key, so importing the same file
      * twice is a no-op the second time, not a duplicate. */
-    suspend fun import(db: AppDatabase, input: InputStream): BackupSummary {
+    suspend fun import(db: AppDatabase, input: InputStream, password: String? = null): BackupSummary {
         // The doc comment above claims "throws with a readable message on malformed input", but
         // nothing here actually did that translation — a missing field (org.json's own
         // JSONException, e.g. "No value for createdAt") or an unrecognized enum value from a
@@ -120,7 +143,9 @@ object BackupManager {
         // the caller as whatever raw internal message the parser happened to produce. Wrapping
         // the whole parse in one place makes that claim actually true.
         try {
-            return importUnchecked(db, input)
+            val encoded = input.readBytesLimited(ImportLimits.MAX_BACKUP_BYTES)
+            val decoded = decodePayload(encoded, password)
+            return importUnchecked(db, ByteArrayInputStream(decoded))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
@@ -197,6 +222,64 @@ object BackupManager {
     private fun JSONArray.toObjectList(): List<JSONObject> {
         require(length() <= MAX_ITEMS_PER_COLLECTION) { "Backup contains too many records in one collection" }
         return (0 until length()).map { getJSONObject(it) }
+    }
+
+    private fun writePayload(payload: ByteArray, out: OutputStream, password: String?) {
+        if (password.isNullOrBlank()) {
+            out.write(payload)
+            return
+        }
+        require(password.length >= 8) { "Backup password must be at least 8 characters" }
+        val random = SecureRandom()
+        val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
+        val iv = ByteArray(IV_BYTES).also(random::nextBytes)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt), GCMParameterSpec(GCM_TAG_BITS, iv))
+        val ciphertext = cipher.doFinal(payload)
+        val envelope = JSONObject()
+            .put("format", ENCRYPTED_FORMAT)
+            .put("kdf", "PBKDF2WithHmacSHA256")
+            .put("iterations", PBKDF2_ITERATIONS)
+            .put("salt", Base64.getEncoder().encodeToString(salt))
+            .put("iv", Base64.getEncoder().encodeToString(iv))
+            .put("ciphertext", Base64.getEncoder().encodeToString(ciphertext))
+        out.write(envelope.toString(2).toByteArray(Charsets.UTF_8))
+    }
+
+    private fun decodePayload(encoded: ByteArray, password: String?): ByteArray {
+        val root = JSONObject(encoded.toString(Charsets.UTF_8))
+        if (root.optString("format") != ENCRYPTED_FORMAT) return encoded
+        require(!password.isNullOrBlank()) { "This backup is encrypted. Enter its password to restore it." }
+        val iterations = root.optInt("iterations", 0)
+        require(iterations in 100_000..500_000) { "This backup uses an unsupported encryption setting." }
+        val salt = Base64.getDecoder().decode(root.getString("salt"))
+        val iv = Base64.getDecoder().decode(root.getString("iv"))
+        val ciphertext = Base64.getDecoder().decode(root.getString("ciphertext"))
+        return try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, deriveKey(password, salt, iterations), GCMParameterSpec(GCM_TAG_BITS, iv))
+            cipher.doFinal(ciphertext)
+        } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
+            throw IllegalArgumentException("The backup password is incorrect or the file was modified.", t)
+        }
+    }
+
+    private fun deriveKey(password: String, salt: ByteArray, iterations: Int = PBKDF2_ITERATIONS): SecretKeySpec {
+        val chars = password.toCharArray()
+        return try {
+            val spec = PBEKeySpec(chars, salt, iterations, 256)
+            try {
+                val raw = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+                val key = SecretKeySpec(raw, "AES")
+                raw.fill(0)
+                key
+            } finally {
+                spec.clearPassword()
+            }
+        } finally {
+            chars.fill('\u0000')
+        }
     }
 
     private fun workspaceToJson(w: Workspace) = JSONObject().apply {

@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +34,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.ContentCard
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.data.settings.ThemeMode
 import com.vervan.chat.ui.theme.Space
@@ -59,51 +61,69 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
         }
     ) { padding ->
         ScrollablePage(padding) {
+            FeatureHero(
+                icon = Icons.Filled.Palette,
+                eyebrow = "Personalize your workspace",
+                title = "Make Vervan feel at home",
+                body = "Choose the visual mood, color source, and display contrast that feel comfortable throughout the app."
+            )
             ContentCard {
-                Column(Modifier.padding(Space.lg)) {
-                    Text("Theme", style = MaterialTheme.typography.bodyMedium)
-                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        ThemeMode.entries.forEach { mode ->
-                            VervanFilterChip(
-                                selected = themeMode == mode,
-                                onClick = { vm.setThemeMode(mode) },
-                                label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                            )
+                Column(
+                    Modifier.padding(Space.lg),
+                    verticalArrangement = Arrangement.spacedBy(Space.lg)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text("Theme", style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                        ) {
+                            ThemeMode.entries.forEach { mode ->
+                                VervanFilterChip(
+                                    selected = themeMode == mode,
+                                    onClick = { vm.setThemeMode(mode) },
+                                    label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                )
+                            }
                         }
                     }
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         Row(
-                            Modifier.fillMaxWidth().padding(top = Space.lg),
+                            Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                             Switch(checked = dynamicColor, onCheckedChange = { vm.setDynamicColor(it) })
                         }
                     }
-                    Text(
-                        "Accent color",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(top = Space.lg)
-                    )
-                    Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                        AccentTheme.entries.forEach { accent ->
-                            AccentSwatch(
-                                accent = accent,
-                                selected = accentTheme == accent,
-                                onClick = { vm.setAccentTheme(accent) }
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text(
+                            "Accent color",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(Space.md)
+                        ) {
+                            AccentTheme.entries.forEach { accent ->
+                                AccentSwatch(
+                                    accent = accent,
+                                    selected = accentTheme == accent,
+                                    onClick = { vm.setAccentTheme(accent) }
+                                )
+                            }
+                        }
+                        if (dynamicColor) {
+                            Text(
+                                "Custom accent colors are ignored while device color is on.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                    if (dynamicColor) {
-                        Text(
-                            "Custom accent colors are ignored while device color is on.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                     Row(
-                        Modifier.fillMaxWidth().padding(top = Space.lg),
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))

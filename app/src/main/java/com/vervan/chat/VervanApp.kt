@@ -665,7 +665,11 @@ class VervanApp : Application() {
                 container.db.modelDao().observeModels().first().find { it.filePath == filePath }?.displayName
             }.getOrNull() ?: java.io.File(filePath).nameWithoutExtension
             withContext(Dispatchers.Main) {
-                android.widget.Toast.makeText(this@VervanApp, "Low memory — unloaded $name", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(
+                    this@VervanApp,
+                    getString(R.string.notification_low_memory, name),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
@@ -18,8 +19,14 @@ import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.Workflow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class RecycleBinState(
@@ -42,43 +49,70 @@ data class RecycleBinState(
         memories.isEmpty() && savedOutputs.isEmpty()
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
     // combine's fixed-arity overloads top out at 5 flows — 10 categories needs the
     // array-based form instead.
-    val state: StateFlow<RecycleBinState> = combine(
-        listOf(
-            db.chatDao().observeDeleted(),
-            db.noteDao().observeDeleted(),
-            db.documentDao().observeDeleted(),
-            db.folderDao().observeDeleted(),
-            db.personaDao().observeDeleted(),
-            db.workflowDao().observeDeleted(),
-            db.promptTemplateDao().observeDeleted(),
-            db.projectDao().observeDeleted(),
-            db.memoryDao().observeDeleted(),
-            db.savedOutputDao().observeDeleted()
-        )
-    ) { results ->
-        @Suppress("UNCHECKED_CAST")
-        RecycleBinState(
-            chats = results[0] as List<Chat>,
-            notes = results[1] as List<Note>,
-            documents = results[2] as List<Document>,
-            folders = results[3] as List<Folder>,
-            personas = results[4] as List<Persona>,
-            workflows = results[5] as List<Workflow>,
-            templates = results[6] as List<PromptTemplate>,
-            projects = results[7] as List<Project>,
-            memories = results[8] as List<Memory>,
-            savedOutputs = results[9] as List<SavedOutput>
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecycleBinState())
+    val state: StateFlow<RecycleBinState> = reload
+        .flatMapLatest {
+            combine(
+                listOf(
+                    db.chatDao().observeDeleted(),
+                    db.noteDao().observeDeleted(),
+                    db.documentDao().observeDeleted(),
+                    db.folderDao().observeDeleted(),
+                    db.personaDao().observeDeleted(),
+                    db.workflowDao().observeDeleted(),
+                    db.promptTemplateDao().observeDeleted(),
+                    db.projectDao().observeDeleted(),
+                    db.memoryDao().observeDeleted(),
+                    db.savedOutputDao().observeDeleted()
+                )
+            ) { results ->
+                @Suppress("UNCHECKED_CAST")
+                RecycleBinState(
+                    chats = results[0] as List<Chat>,
+                    notes = results[1] as List<Note>,
+                    documents = results[2] as List<Document>,
+                    folders = results[3] as List<Folder>,
+                    personas = results[4] as List<Persona>,
+                    workflows = results[5] as List<Workflow>,
+                    templates = results[6] as List<PromptTemplate>,
+                    projects = results[7] as List<Project>,
+                    memories = results[8] as List<Memory>,
+                    savedOutputs = results[9] as List<SavedOutput>
+                )
+            }
+        }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.message ?: "Recycle bin could not be loaded."
+            emit(RecycleBinState())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecycleBinState())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun restoreChat(chat: Chat) { viewModelScope.launch { db.chatDao().update(chat.copy(deletedAt = null)) } }
     fun deleteChatForever(chat: Chat) {
         viewModelScope.launch {
+            Log.i(TAG, "Permanently deleting chat ${chat.id}")
             // Reads (and deletes) the messages' attachment files before the transaction below
             // removes the rows that name them — file IO doesn't belong inside a DB transaction.
             MessageAttachmentCleanup.deleteOrphanedFiles(db, chat.id)
@@ -92,14 +126,15 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun restoreNote(note: Note) { viewModelScope.launch { db.noteDao().update(note.copy(deletedAt = null)) } }
-    fun deleteNoteForever(note: Note) { viewModelScope.launch { db.noteDao().delete(note) } }
+    fun deleteNoteForever(note: Note) { viewModelScope.launch { Log.i(TAG, "Permanently deleting note ${note.id}"); db.noteDao().delete(note) } }
 
     fun restoreDocument(document: Document) { viewModelScope.launch { app.container.documentImportManager.restore(document) } }
-    fun deleteDocumentForever(document: Document) { viewModelScope.launch { app.container.documentImportManager.delete(document) } }
+    fun deleteDocumentForever(document: Document) { viewModelScope.launch { Log.i(TAG, "Permanently deleting document ${document.id}"); app.container.documentImportManager.delete(document) } }
 
     fun restoreFolder(folder: Folder) { viewModelScope.launch { db.folderDao().update(folder.copy(deletedAt = null)) } }
     fun deleteFolderForever(folder: Folder) {
         viewModelScope.launch {
+            Log.i(TAG, "Permanently deleting folder ${folder.id}")
             db.withTransaction {
                 db.chatDao().clearFolder(folder.id)
                 db.noteDao().clearFolder(folder.id)
@@ -111,6 +146,7 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     fun restorePersona(persona: Persona) { viewModelScope.launch { db.personaDao().upsert(persona.copy(deletedAt = null)) } }
     fun deletePersonaForever(persona: Persona) {
         viewModelScope.launch {
+            Log.i(TAG, "Permanently deleting persona ${persona.id}")
             // File IO doesn't belong inside the DB transaction below — read (and delete) the
             // avatar file first.
             PersonaAvatarCleanup.deleteOrphanedAvatar(db, persona)
@@ -125,14 +161,15 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun restoreWorkflow(workflow: Workflow) { viewModelScope.launch { db.workflowDao().upsert(workflow.copy(deletedAt = null)) } }
-    fun deleteWorkflowForever(workflow: Workflow) { viewModelScope.launch { db.workflowDao().delete(workflow) } }
+    fun deleteWorkflowForever(workflow: Workflow) { viewModelScope.launch { Log.i(TAG, "Permanently deleting workflow ${workflow.id}"); db.workflowDao().delete(workflow) } }
 
     fun restoreTemplate(template: PromptTemplate) { viewModelScope.launch { db.promptTemplateDao().upsert(template.copy(deletedAt = null)) } }
-    fun deleteTemplateForever(template: PromptTemplate) { viewModelScope.launch { db.promptTemplateDao().delete(template) } }
+    fun deleteTemplateForever(template: PromptTemplate) { viewModelScope.launch { Log.i(TAG, "Permanently deleting template ${template.id}"); db.promptTemplateDao().delete(template) } }
 
     fun restoreProject(project: Project) { viewModelScope.launch { db.projectDao().upsert(project.copy(deletedAt = null)) } }
     fun deleteProjectForever(project: Project) {
         viewModelScope.launch {
+            Log.i(TAG, "Permanently deleting project ${project.id}")
             db.withTransaction {
                 db.chatDao().clearProject(project.id)
                 db.noteDao().clearProject(project.id)
@@ -143,10 +180,10 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun restoreMemory(memory: Memory) { viewModelScope.launch { db.memoryDao().update(memory.copy(deletedAt = null)) } }
-    fun deleteMemoryForever(memory: Memory) { viewModelScope.launch { db.memoryDao().delete(memory) } }
+    fun deleteMemoryForever(memory: Memory) { viewModelScope.launch { Log.i(TAG, "Permanently deleting memory ${memory.id}"); db.memoryDao().delete(memory) } }
 
     fun restoreSavedOutput(output: SavedOutput) { viewModelScope.launch { db.savedOutputDao().upsert(output.copy(deletedAt = null)) } }
-    fun deleteSavedOutputForever(output: SavedOutput) { viewModelScope.launch { db.savedOutputDao().delete(output) } }
+    fun deleteSavedOutputForever(output: SavedOutput) { viewModelScope.launch { Log.i(TAG, "Permanently deleting saved output ${output.id}"); db.savedOutputDao().delete(output) } }
 
     fun restoreAll() = state.value.also { s ->
         s.chats.forEach(::restoreChat); s.notes.forEach(::restoreNote); s.documents.forEach(::restoreDocument)
@@ -160,5 +197,9 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
         s.folders.forEach(::deleteFolderForever); s.personas.forEach(::deletePersonaForever); s.workflows.forEach(::deleteWorkflowForever)
         s.templates.forEach(::deleteTemplateForever); s.projects.forEach(::deleteProjectForever); s.memories.forEach(::deleteMemoryForever)
         s.savedOutputs.forEach(::deleteSavedOutputForever)
+    }
+
+    companion object {
+        private const val TAG = "RecycleBinViewModel"
     }
 }

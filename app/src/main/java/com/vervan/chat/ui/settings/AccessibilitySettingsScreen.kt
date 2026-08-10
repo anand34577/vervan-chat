@@ -34,6 +34,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.rememberReducedMotion
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionLabel
@@ -64,6 +65,12 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         ScrollablePage(padding) {
+            FeatureHero(
+                icon = Icons.Filled.TouchApp,
+                eyebrow = "Comfort and clarity",
+                title = "Make every control easier to use",
+                body = "Adjust text, contrast, touch targets, feedback, and motion to match how you use your device."
+            )
             SectionLabel("Reading")
             androidx.compose.material3.Card {
                 Column(Modifier.padding(Space.lg)) {

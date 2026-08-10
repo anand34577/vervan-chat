@@ -10,19 +10,50 @@ import com.vervan.chat.data.db.entities.Project
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.vervan.chat.system.toUserMessage
 
 class ProjectsListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
+    // Cold-start gate — without this, the empty state could flash "No projects yet" for a
+    // frame before the workspace-scoped query's first real emission lands (same fix already
+    // applied to ChatListViewModel.isLoading).
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+    private val reload = MutableStateFlow(0)
+
     // Scoped to the active workspace — projects now live inside a workspace like chats and folders.
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val projects: StateFlow<List<Project>> = app.container.settingsRepository.activeWorkspaceId
+    val projects: StateFlow<List<Project>> = reload
+        .flatMapLatest { app.container.settingsRepository.activeWorkspaceId }
         .flatMapLatest { db.projectDao().observeForWorkspace(it) }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun createProject(name: String) {
         if (name.isBlank()) return
@@ -50,10 +81,28 @@ class ProjectsListViewModel(private val app: VervanApp) : ViewModel() {
     }
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ProjectDashboardViewModel(private val app: VervanApp, private val projectId: String) : ViewModel() {
     private val db = app.container.db
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
-    val project: StateFlow<Project?> = db.projectDao().observe(projectId)
+    val project: StateFlow<Project?> = reload
+        .flatMapLatest { db.projectDao().observe(projectId) }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(null)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val chats: StateFlow<List<Chat>> = db.chatDao().observeForProject(projectId)
@@ -61,6 +110,11 @@ class ProjectDashboardViewModel(private val app: VervanApp, private val projectI
 
     val notes: StateFlow<List<Note>> = db.noteDao().observeForProject(projectId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun saveInstructions(instructions: String) {
         viewModelScope.launch { project.value?.let { db.projectDao().upsert(it.copy(instructions = instructions)) } }

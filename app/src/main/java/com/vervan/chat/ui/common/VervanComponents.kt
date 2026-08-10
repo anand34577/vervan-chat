@@ -207,7 +207,10 @@ fun FeatureHero(
                 tint = MaterialTheme.colorScheme.primary,
                 containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
             )
-            Column(Modifier.weight(1f).padding(start = Space.md)) {
+            Column(
+                Modifier.weight(1f).padding(start = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
                 Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -248,9 +251,10 @@ fun VervanSectionHeader(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     topPadding: Dp = Space.lg,
+    bottomPadding: Dp = Space.sm,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(top = topPadding, bottom = Space.sm),
+        modifier = modifier.fillMaxWidth().padding(top = topPadding, bottom = bottomPadding),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

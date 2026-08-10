@@ -20,6 +20,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -34,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -62,6 +65,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var code by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         topBar = {
@@ -69,7 +73,8 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 title = { Text("Developer workspace") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
@@ -108,9 +113,18 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                     Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(Space.md))
                 }
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                    TextButton(onClick = { clipboard.setText(output, scope) }) { Text("Copy") }
-                    TextButton(onClick = { vm.saveAsNote(code.take(60)) }) { Text("Add to note") }
-                    TextButton(onClick = { vm.saveToLibrary() }) { Text("Save to library") }
+                    TextButton(onClick = {
+                        clipboard.setText(output, scope)
+                        scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
+                    }) { Text("Copy") }
+                    TextButton(onClick = {
+                        vm.saveAsNote(code.take(60))
+                        scope.launch { snackbarHostState.showSnackbar("Added to notes") }
+                    }) { Text("Add to note") }
+                    TextButton(onClick = {
+                        vm.saveToLibrary()
+                        scope.launch { snackbarHostState.showSnackbar("Saved to library") }
+                    }) { Text("Save to library") }
                 }
             }
         }

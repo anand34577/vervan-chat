@@ -166,10 +166,17 @@
   function openModal(title, fields, onSave, extraButtons) {
     var modal = el("modal");
     var html = "<h2>" + esc(title) + "</h2>";
+    var defaultMax = {
+      title: 120, name: 100, description: 1000, content: 100000, body: 24000,
+      text: 50000, system_instruction: 16000, instructions: 12000,
+      label: 100, query: 200, reason: 200
+    };
     fields.forEach(function (f) {
       html += '<label class="field"><span>' + esc(f.label) + "</span>";
+      var maxLength = Number(f.maxLength || defaultMax[f.key] || 100000);
+      var maxAttr = maxLength > 0 ? ' maxlength="' + maxLength + '"' : "";
       if (f.type === "textarea") {
-        html += '<textarea id="mf_' + f.key + '" rows="' + (f.rows || 4) + '">' + esc(f.value || "") + "</textarea>";
+        html += '<textarea id="mf_' + f.key + '"' + maxAttr + ' rows="' + (f.rows || 4) + '"' + '>' + esc(f.value || "") + "</textarea>";
       } else if (f.type === "select") {
         html += '<select id="mf_' + f.key + '">' + f.options.map(function (o) {
           return '<option value="' + esc(o.value) + '"' + (o.value === f.value ? " selected" : "") + ">" + esc(o.label) + "</option>";
@@ -177,7 +184,7 @@
       } else if (f.type === "checkbox") {
         html += '<input type="checkbox" id="mf_' + f.key + '"' + (f.value ? " checked" : "") + ">";
       } else {
-        html += '<input type="text" id="mf_' + f.key + '" value="' + esc(f.value || "") + '">';
+        html += '<input type="text" id="mf_' + f.key + '"' + maxAttr + ' value="' + esc(f.value || "") + '">';
       }
       html += "</label>";
     });

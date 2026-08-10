@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.repo.resolveEditId
+import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.ValidationLimits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -26,15 +29,47 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
     private val _isBuiltIn = MutableStateFlow(false)
     val isBuiltIn: StateFlow<Boolean> = _isBuiltIn
 
+    private val _isLoading = MutableStateFlow(templateId != null)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError
+
+    private val _recordFound = MutableStateFlow(templateId == null)
+    val recordFound: StateFlow<Boolean> = _recordFound
+
     init {
-        if (templateId != null) {
-            viewModelScope.launch {
-                db.promptTemplateDao().get(templateId)?.let { t ->
+        load()
+    }
+
+    fun retryLoad() {
+        load()
+    }
+
+    private fun load() {
+        if (templateId == null) {
+            _isLoading.value = false
+            _recordFound.value = true
+            return
+        }
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadError.value = null
+            try {
+                val template = db.promptTemplateDao().get(templateId)
+                _recordFound.value = template != null
+                template?.let { t ->
                     _name.value = t.name
                     _description.value = t.description
                     _body.value = t.body
                     _isBuiltIn.value = t.isBuiltIn
                 }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _recordFound.value = false
+                _loadError.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -45,6 +80,10 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _body.value.isBlank()) return false
+        if (_name.value.length > ValidationLimits.TEMPLATE_TITLE ||
+            _description.value.length > ValidationLimits.TEMPLATE_DESCRIPTION ||
+            _body.value.length > ValidationLimits.TEMPLATE_BODY
+        ) return false
         val template = PromptTemplate(
             id = resolveEditId(templateId, _isBuiltIn.value),
             name = _name.value.trim(),

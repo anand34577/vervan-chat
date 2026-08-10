@@ -52,6 +52,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
@@ -65,6 +67,8 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: StudyReviewViewModel = viewModel(factory = viewModelFactory { initializer { StudyReviewViewModel(app, setName) } })
     val cards by vm.cards.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.error.collectAsState()
     val missedOnly by vm.missedOnly.collectAsState()
     val reducedMotion = rememberReducedMotion()
 
@@ -107,7 +111,17 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-          Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
+          when {
+            loadError != null -> OperationErrorCard(
+                title = "Study deck unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your study progress is safe. Retry loading this deck.",
+                actionLabel = "Retry",
+                onAction = vm::retry,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+            else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             ResponsiveActions {
                 VervanFilterChip(
                     selected = missedOnly,
@@ -227,6 +241,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 }
             } else {
                 Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text("Reveal answer") }
+            }
             }
           }
         }

@@ -47,6 +47,8 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
@@ -55,6 +57,8 @@ import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +67,8 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: FoldersViewModel = viewModel(factory = viewModelFactory { initializer { FoldersViewModel(app) } })
     val folders by vm.folders.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -79,29 +85,40 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                     onToggleSelectAll = { selected = if (selected.size == folders.size && folders.isNotEmpty()) emptySet() else folders.map { it.id }.toSet() },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = { confirmBulkDelete = true },
-                    deleteContentDescription = "Delete selected folders"
+                    deleteContentDescription = stringResource(R.string.folder_delete_selected_accessibility)
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Folders") },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                    title = { Text(stringResource(R.string.folder_list_title)) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
                     // Long-press a row to enter selection mode — no separate top-bar entry
                     // point, matching every other list screen in the app.
                 )
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New folder") }
+            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.folder_new)) }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-          if (folders.isEmpty()) {
+          if (error != null) {
+            OperationErrorCard(
+                title = stringResource(R.string.folders_unavailable),
+                message = error ?: stringResource(R.string.folders_unavailable_message),
+                recovery = stringResource(R.string.folders_unavailable_recovery),
+                modifier = Modifier.padding(top = Space.md),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = vm::retry
+            )
+          } else if (isLoading) {
+            LoadingSkeletonList(rows = 5, modifier = Modifier.padding(top = Space.md))
+          } else if (folders.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.Folder,
-                title = "No folders yet",
-                body = "Group chats and notes with shared AI defaults.",
-                actionLabel = "Create a folder",
+                title = stringResource(R.string.folder_no_items),
+                body = stringResource(R.string.folder_no_items_body),
+                actionLabel = stringResource(R.string.folder_create),
                 onAction = { showCreate = true }
             )
           } else {
@@ -126,12 +143,15 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                                 IconAffordance(Icons.Filled.Folder, size = IconAffordanceSize.Default)
                                 androidx.compose.foundation.layout.Spacer(Modifier.width(Space.md))
                             }
-                            Column(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f)) {
                                 Text(folder.name, style = MaterialTheme.typography.titleMedium)
+                                val personaDefaultLabel = stringResource(R.string.folder_default_persona)
+                                val modelDefaultLabel = stringResource(R.string.folder_default_model)
+                                val sourceDefaultLabel = stringResource(R.string.folder_default_sources).lowercase()
                                 val defaults = buildList {
-                                    if (folder.defaultPersonaId != null) add("persona")
-                                    if (folder.defaultModelId != null) add("model")
-                                    if (folder.kbIdList().isNotEmpty()) add("${folder.kbIdList().size} source${if (folder.kbIdList().size > 1) "s" else ""}")
+                                    if (folder.defaultPersonaId != null) add(personaDefaultLabel)
+                                    if (folder.defaultModelId != null) add(modelDefaultLabel)
+                                    if (folder.kbIdList().isNotEmpty()) add("${folder.kbIdList().size} $sourceDefaultLabel")
                                 }
                                 if (defaults.isNotEmpty()) {
                                     Text(defaults.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs))
@@ -149,26 +169,27 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("New folder") },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = "Name", singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.create(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text("Create") } },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } }
+            title = { Text(stringResource(R.string.folder_new)) },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
+            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.create(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_create)) } },
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     if (confirmBulkDelete) {
         val count = selected.size
+        val deletedMessage = stringResource(R.string.folder_deleted_many, count)
         ConfirmDialog(
-            title = "Delete selected folders?",
-            body = "Delete $count folder${if (count == 1) "" else "s"}? Their items will become unfiled.",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.folder_delete_many_title),
+            body = stringResource(R.string.folder_delete_many_body, count),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = {
                 confirmBulkDelete = false
                 vm.deleteAll(selected)
                 selected = emptySet()
                 selectionMode = false
-                scope.launch { snackbarHostState.showSnackbar("Deleted $count folder${if (count == 1) "" else "s"}") }
+                scope.launch { snackbarHostState.showSnackbar(deletedMessage) }
             },
             onDismiss = { confirmBulkDelete = false }
         )

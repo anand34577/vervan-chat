@@ -44,7 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanSuccess
@@ -72,7 +74,7 @@ internal fun ClarificationCard(
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("One detail before I continue", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+                Text(stringResource(R.string.chat_clarification_title), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
             }
             Text(request.question, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.sm))
             if (request.options.isNotEmpty()) {
@@ -87,7 +89,7 @@ internal fun ClarificationCard(
                 }
             }
             Text(
-                if (enabled) "Choose an answer or type your own below." else "Answered in the conversation.",
+                if (enabled) stringResource(R.string.chat_clarification_choose) else stringResource(R.string.chat_clarification_answered),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.sm)
@@ -103,13 +105,15 @@ internal fun ClarificationCard(
  * preview (see [com.vervan.chat.ui.chat.MessageBubble]'s `quotableText`).
  */
 fun chatPreviewText(content: String, isUser: Boolean): String {
-    if (isUser || content.isBlank()) return content
+    if (content.isBlank()) return ""
     val stripped = com.vervan.chat.tools.ToolCallParser.stripForDisplay(content)
-    val answer = com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
+    // User text is not reasoning, but it still passes through the lightweight cleanup so a
+    // malformed/partial model tag copied into a draft cannot become a noisy list preview.
+    val answer = if (isUser) stripped else com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
     val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
     // Fall back to the request's question, never to the pre-clarification `answer` — that still
     // has the <clarify> tag in it whenever the tag's own JSON failed to parse into a question.
-    val text = clarification.answer.ifBlank { clarification.request?.question ?: "" }.trim()
+    val text = clarification.answer.ifBlank { clarification.request?.question ?: answer }.trim()
     return stripMarkdownForPreview(text)
 }
 
@@ -144,6 +148,10 @@ private fun stripMarkdownForPreview(text: String): String {
     // correctness guarantee (the real message bubble parses these properly).
     s = s.replace(Regex("<\\|[^|>]*\\|?>"), "")
     s = s.replace(Regex("</?[a-zA-Z_][\\w:-]*(?:\\s[^<>]*)?>"), "")
+    // Streaming can leave the final tag fragment without a closing angle bracket. It is not
+    // meaningful preview content, so hide only that dangling suffix instead of leaking `<thi`.
+    s = s.replace(Regex("<\\|[^|>]*$"), "")
+    s = s.replace(Regex("</?[a-zA-Z_][\\w:-]*(?:\\s[^<>]*)?$"), "")
     return s.replace(Regex("\\s+"), " ").trim()
 }
 
@@ -189,6 +197,12 @@ private fun matchStrength(score: Double): String = when {
 internal fun SourceCards(
     sourcesJson: String,
     onOpenPassage: (String) -> Unit = {},
+    // A citation whose chunk carries a pageNumber came from a PDF with a real text layer (see
+    // Chunk.pageNumber's doc comment) — for those, jump straight into the PDF page viewer
+    // instead of forcing a stop at Source Passage first just to tap its own "view PDF page"
+    // button. Source Passage (onOpenPassage) stays available for the neighbors/context view,
+    // and remains the only option for a non-PDF source, which has no page to jump to.
+    onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> },
     // Small-model recovery (P1): shown only in the "grounding was attempted, found nothing"
     // empty state below — a plain missing-KB-selection case has nothing to recover from here.
     onRetryWithQuality: () -> Unit = {},
@@ -212,7 +226,7 @@ internal fun SourceCards(
                 color = MaterialTheme.colorScheme.error
             )
             Row(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                TextButton(onClick = onRetryWithQuality) { Text("Try Quality mode", style = MaterialTheme.typography.labelSmall) }
+                TextButton(onClick = onRetryWithQuality) { Text(stringResource(R.string.chat_try_quality), style = MaterialTheme.typography.labelSmall) }
             }
             betterModelName?.let {
                 Text(
@@ -227,7 +241,7 @@ internal fun SourceCards(
     }
     com.vervan.chat.ui.common.AssistantSubCard(
         kind = com.vervan.chat.ui.common.SubCardKind.Sources,
-        title = "Sources (${array.length()})",
+        title = stringResource(R.string.chat_sources_count, array.length()),
         collapsible = false,
         modifier = Modifier.padding(top = Space.sm).fillMaxWidth()
     ) {
@@ -288,15 +302,22 @@ internal fun SourceCards(
                         verticalArrangement = Arrangement.spacedBy(Space.xs)
                     ) {
                         TextButton(onClick = { clipboard.setText(source.optString("excerpt"), scope) }) {
-                            Text("Copy excerpt", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.chat_copy_excerpt), style = MaterialTheme.typography.labelSmall)
                         }
                         TextButton(onClick = {
                             val citation = "[${index + 1}] ${source.optString("documentName")}" +
                                 source.optString("sectionPath").let { if (it.isNotBlank()) " — $it" else "" }
                             clipboard.setText(citation, scope)
-                        }) { Text("Copy citation", style = MaterialTheme.typography.labelSmall) }
+                        }) { Text(stringResource(R.string.chat_copy_citation), style = MaterialTheme.typography.labelSmall) }
                         TextButton(onClick = { hiddenIndices.add(index); selected = null }) {
-                            Text("Mark irrelevant", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.chat_mark_irrelevant), style = MaterialTheme.typography.labelSmall)
+                        }
+                        val page = source.optInt("pageNumber", -1)
+                        val documentId = source.optString("documentId").takeIf { it.isNotBlank() }
+                        if (page > 0 && documentId != null) {
+                            TextButton(onClick = { selected = null; onOpenPdfPage(documentId, page) }) {
+                                Text(stringResource(R.string.chat_open_pdf_page, page), style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -304,14 +325,14 @@ internal fun SourceCards(
             confirmButton = {
                 val chunkId = source.optString("chunkId")
                 if (chunkId.isNotBlank()) {
-                    TextButton(onClick = { selected = null; onOpenPassage(chunkId) }) { Text("Open in context") }
+                    TextButton(onClick = { selected = null; onOpenPassage(chunkId) }) { Text(stringResource(R.string.chat_open_context)) }
                 } else {
-                    TextButton(onClick = { selected = null }) { Text("Close") }
+                    TextButton(onClick = { selected = null }) { Text(stringResource(R.string.action_close)) }
                 }
             },
             dismissButton = {
                 if (source.optString("chunkId").isNotBlank()) {
-                    TextButton(onClick = { selected = null }) { Text("Close") }
+                    TextButton(onClick = { selected = null }) { Text(stringResource(R.string.action_close)) }
                 }
             }
         )
@@ -345,7 +366,7 @@ internal fun MemoryActivityCard(memoryActivityJson: String) {
         initiallyExpanded = saved.isNotEmpty()
     ) {
         if (saved.isNotEmpty()) {
-            Text("SAVED", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.chat_saved_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             saved.forEach { item ->
                 val indexLabel = if (item.optBoolean("indexed")) " · semantic ready" else ""
                 Text(
@@ -430,14 +451,14 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
             if (expanded) {
                 Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
                 HorizontalDivider(Modifier.padding(top = Space.sm, bottom = Space.sm), color = MaterialTheme.colorScheme.outlineVariant)
-                Text("Request", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.chat_request), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     callObj?.optJSONObject("params")?.toString(2) ?: "(no parameters)",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = com.vervan.chat.ui.theme.VervanMono,
                     modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
                 )
-                Text("Response", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.chat_response), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     obj.toString(2),
                     style = MaterialTheme.typography.bodySmall,
@@ -489,8 +510,8 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
                 }
             }
             Row(Modifier.padding(top = Space.sm)) {
-                TextButton(onClick = { onConfirm(true) }, enabled = acknowledged) { Text("Allow") }
-                TextButton(onClick = { onConfirm(false) }) { Text("Deny") }
+                TextButton(onClick = { onConfirm(true) }, enabled = acknowledged) { Text(stringResource(R.string.action_allow)) }
+                TextButton(onClick = { onConfirm(false) }) { Text(stringResource(R.string.action_deny)) }
             }
         }
     }
@@ -504,7 +525,7 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
 internal fun FeedbackReasonDialog(onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("What was wrong with this answer?") },
+        title = { Text(stringResource(R.string.chat_feedback_title)) },
         text = {
             androidx.compose.foundation.layout.FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -515,6 +536,6 @@ internal fun FeedbackReasonDialog(onDismiss: () -> Unit, onSelect: (String) -> U
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Skip") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_skip)) } }
     )
 }

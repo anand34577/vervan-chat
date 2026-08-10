@@ -20,6 +20,13 @@ class ThinkingParserTest {
         assertEquals("Done.", parsed.answer)
     }
 
+    @Test
+    fun `supports the thinks tag spelling too`() {
+        val parsed = ThinkingParser.parse("<thinks>hmm</thinks>Done.")
+        assertEquals("hmm", parsed.reasoning)
+        assertEquals("Done.", parsed.answer)
+    }
+
     // The OFF-mode guarantee: whenever thinking is OFF, ChatViewModel strips via .answer, so a
     // model that ignores the instruction and emits a block anyway must not leak it to the user.
     @Test

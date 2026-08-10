@@ -38,10 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
-import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ScrollablePage
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
 
@@ -50,13 +54,19 @@ import kotlinx.coroutines.launch
 fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
-    val models by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
-    val active by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsState(initial = null)
-    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
-    val chats by app.container.db.chatDao().observeAllChats().collectAsState(initial = emptyList())
-    val notes by app.container.db.noteDao().observeAll().collectAsState(initial = emptyList())
-    val thermal by app.container.thermalMonitor.level.collectAsState()
-    val networkEntries by app.container.networkAuditLog.entries.collectAsState()
+    val vm: DiagnosticsViewModel = viewModel(factory = viewModelFactory {
+        initializer { DiagnosticsViewModel(app) }
+    })
+    val state by vm.state.collectAsState()
+    val models = state.models
+    val active = state.activeModel
+    val documents = state.documents
+    val chats = state.chats
+    val notes = state.notes
+    val thermal = state.thermal
+    val networkEntries = state.networkEntries
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.error.collectAsState()
     val memory = ActivityManager.MemoryInfo().also(context.getSystemService(ActivityManager::class.java)::getMemoryInfo)
     val free = StatFs(context.filesDir.path).availableBytes
     val sections = listOf(
@@ -114,30 +124,43 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(padding) {
-            sections.forEach { (title, rows) -> DiagnosticCard(title, rows) }
-            CrashReportsCard(
-                logs = crashLogs,
-                onShare = { file ->
-                    val text = runCatching { file.readText() }.getOrDefault("")
-                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Vervan crash report ${file.nameWithoutExtension}")
-                        putExtra(android.content.Intent.EXTRA_TEXT, text)
-                    }
-                    context.startActivity(android.content.Intent.createChooser(send, "Share crash report"))
-                },
-                onClear = {
-                    app.crashLogManager.clear()
-                    crashLogs = emptyList()
-                    scope.launch { snackbarHostState.showSnackbar("Crash reports cleared") }
+            when {
+                loadError != null -> OperationErrorCard(
+                    title = "Diagnostics unavailable",
+                    message = loadError.orEmpty(),
+                    recovery = "Your local data is safe. Retry loading the diagnostic snapshot.",
+                    actionLabel = "Retry",
+                    onAction = vm::retry,
+                    modifier = Modifier.padding(bottom = Space.md)
+                )
+                isLoading -> LoadingSkeletonList(rows = 7)
+                else -> {
+                    sections.forEach { (title, rows) -> DiagnosticCard(title, rows) }
+                    CrashReportsCard(
+                        logs = crashLogs,
+                        onShare = { file ->
+                            val text = runCatching { file.readText() }.getOrDefault("")
+                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Vervan crash report ${file.nameWithoutExtension}")
+                                putExtra(android.content.Intent.EXTRA_TEXT, text)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(send, "Share crash report"))
+                        },
+                        onClear = {
+                            app.crashLogManager.clear()
+                            crashLogs = emptyList()
+                            scope.launch { snackbarHostState.showSnackbar("Crash reports cleared") }
+                        }
+                    )
+                    Text(
+                        "Compatibility is tested during import, not guessed from filenames.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.sm)
+                    )
                 }
-            )
-            Text(
-                "Compatibility is tested during import, not guessed from filenames.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.sm)
-            )
+            }
         }
     }
 }

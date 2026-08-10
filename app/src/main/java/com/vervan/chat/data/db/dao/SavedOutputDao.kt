@@ -10,6 +10,9 @@ interface SavedOutputDao : BaseDao<SavedOutput> {
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<SavedOutput>>
 
+    @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL AND (label LIKE '%' || :q || '%' OR content LIKE '%' || :q || '%') ORDER BY createdAt DESC LIMIT 20")
+    suspend fun search(q: String): List<SavedOutput>
+
     // Recycle bin coverage.
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<SavedOutput>>

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -51,11 +52,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -92,7 +96,7 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = { text = it.take(InputLimits.TTS_TEXT_CHARS) },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     label = { Text("Text") },
                     placeholder = { Text("Type or paste text to convert to speech.") }
@@ -186,7 +190,7 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                     }
                 }
                 (phase as? TextToSpeechViewModel.Phase.Failed)?.let {
-                    Text(it.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                    ErrorCard(title = "Couldn't generate audio", body = it.message, modifier = Modifier.padding(top = Space.sm))
                 }
                 (phase as? TextToSpeechViewModel.Phase.Done)?.let { done ->
                     AudioPlaybackCard(
@@ -201,8 +205,14 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                     )
                 }
 
-                if (projects.isNotEmpty()) {
-                    Text("History", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+                Text("History", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+                if (projects.isEmpty()) {
+                    EmptyState(
+                        icon = Icons.Filled.RecordVoiceOver,
+                        title = "No generated audio yet",
+                        body = "Audio you generate above will show up here."
+                    )
+                } else {
                     LazyColumn(Modifier.weight(1f, fill = false)) {
                         items(projects, key = { it.id }) { p ->
                             Card(

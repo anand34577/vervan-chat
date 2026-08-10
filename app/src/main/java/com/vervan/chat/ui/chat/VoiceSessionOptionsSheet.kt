@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 
 @Composable
@@ -53,9 +55,9 @@ internal fun VoiceSessionOptionsSheet(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Space.xl, vertical = Space.md)
     ) {
-        Text("Voice session", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.voice_session), style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Change how this conversation listens and responds.",
+            stringResource(R.string.voice_session_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.lg)
@@ -69,29 +71,29 @@ internal fun VoiceSessionOptionsSheet(
             Column(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
                 SessionOptionToggle(
                     icon = Icons.AutoMirrored.Filled.VolumeUp,
-                    title = "Voice replies",
-                    description = "Read assistant responses aloud",
+                    title = stringResource(R.string.voice_replies),
+                    description = stringResource(R.string.voice_replies_hint),
                     checked = speechOutputEnabled,
                     onCheckedChange = { onToggleSpeechOutput() }
                 )
                 SessionOptionToggle(
                     icon = Icons.Filled.MicOff,
-                    title = "Microphone mute",
-                    description = "Keep the microphone closed",
+                    title = stringResource(R.string.voice_microphone),
+                    description = stringResource(R.string.voice_microphone_hint),
                     checked = microphoneMuted,
                     onCheckedChange = { onToggleMute() }
                 )
                 SessionOptionToggle(
                     icon = Icons.Filled.Fullscreen,
-                    title = "Immersive view",
-                    description = "Focus on the live voice conversation",
+                    title = stringResource(R.string.voice_immersive),
+                    description = stringResource(R.string.voice_immersive_hint),
                     checked = immersiveEnabled,
                     onCheckedChange = { onToggleImmersive() }
                 )
                 SessionOptionToggle(
                     icon = Icons.Filled.FrontHand,
-                    title = "Push to talk",
-                    description = "Hold the mic instead of using silence detection",
+                    title = stringResource(R.string.voice_push_to_talk),
+                    description = stringResource(R.string.voice_push_to_talk_hint),
                     checked = pushToTalkEnabled,
                     onCheckedChange = { onTogglePushToTalk() }
                 )
@@ -99,7 +101,7 @@ internal fun VoiceSessionOptionsSheet(
         }
 
         Text(
-            "SESSION TOOLS",
+            stringResource(R.string.voice_session_tools),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xl, bottom = Space.xs, start = Space.xs)
@@ -110,8 +112,8 @@ internal fun VoiceSessionOptionsSheet(
             color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
-                SessionNavigationRow(Icons.Filled.Psychology, "Switch local model", onSwitchModel)
-                SessionNavigationRow(Icons.Filled.Settings, "All voice settings", onOpenSettings)
+                SessionNavigationRow(Icons.Filled.Psychology, stringResource(R.string.voice_switch_model), onSwitchModel)
+                SessionNavigationRow(Icons.Filled.Settings, stringResource(R.string.voice_all_settings), onOpenSettings)
             }
         }
 
@@ -119,7 +121,7 @@ internal fun VoiceSessionOptionsSheet(
             onClick = onDismiss,
             modifier = Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm)
         ) {
-            Text("Done")
+            Text(stringResource(R.string.action_done))
         }
     }
 }

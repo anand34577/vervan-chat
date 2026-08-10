@@ -45,6 +45,8 @@ import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
@@ -162,17 +164,28 @@ fun TranslationScreen(onBack: () -> Unit) {
         if (success && file != null) {
             isOcrRunning = true
             scope.launch {
-                ImageUtils.fixOrientation(file)
+                try {
+                    if (file.length() > ImportLimits.MAX_IMAGE_SOURCE_BYTES || !ImageUtils.normalizeForModel(file)) {
+                        errorText = "The captured image is too large or unreadable."
+                        return@launch
+                    }
                 // Only the extracted text is kept — the copied JPEG has no further use once OCR
                 // has read it, and this screen never displays it, so it's deleted immediately
                 // instead of leaking into filesDir/images (same pattern as
                 // FlashcardsFromPhotoScreen.runOcr).
-                val text = withContext(Dispatchers.IO) {
-                    runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("").also { file.delete() }
+                    val text = withContext(Dispatchers.IO) {
+                        OcrExtractor.extractFromImage(file)
+                    }
+                    sourceText = text.take(InputLimits.TRANSLATION_TEXT_CHARS)
+                    if (text.isNotBlank()) translate()
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    errorText = t.toUserMessage()
+                } finally {
+                    file.delete()
+                    isOcrRunning = false
                 }
-                sourceText = text
-                isOcrRunning = false
-                if (text.isNotBlank()) translate()
             }
         } else file?.delete()
     }
@@ -236,7 +249,7 @@ fun TranslationScreen(onBack: () -> Unit) {
             }
             OutlinedTextField(
                 value = sourceText,
-                onValueChange = { sourceText = it },
+                onValueChange = { sourceText = it.take(InputLimits.TRANSLATION_TEXT_CHARS) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                 minLines = 4,
                 shape = MaterialTheme.shapes.large,
@@ -274,7 +287,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                 translated.isNotBlank() -> {
                     OutlinedTextField(
                         value = translated,
-                        onValueChange = { translated = it },
+                        onValueChange = { translated = it.take(InputLimits.TRANSLATION_TEXT_CHARS) },
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                         minLines = 4,
                         shape = MaterialTheme.shapes.large,

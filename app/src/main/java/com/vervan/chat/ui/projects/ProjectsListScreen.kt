@@ -47,7 +47,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.DeleteMenuItem
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.IconAffordance
@@ -56,6 +58,8 @@ import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,6 +67,8 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ProjectsListViewModel = viewModel(factory = viewModelFactory { initializer { ProjectsListViewModel(app) } })
     val projects by vm.projects.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Project?>(null) }
     var pendingDelete by remember { mutableStateOf<Project?>(null) }
@@ -70,36 +76,47 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Projects") },
+                title = { Text(stringResource(R.string.project_list_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New project") }
+            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.project_new)) }
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
-          if (projects.isEmpty()) {
+          if (error != null) {
+            OperationErrorCard(
+                title = stringResource(R.string.projects_unavailable),
+                message = error ?: stringResource(R.string.projects_unavailable_message),
+                recovery = stringResource(R.string.projects_unavailable_recovery),
+                modifier = Modifier.padding(top = Space.md),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = vm::retry
+            )
+          } else if (isLoading) {
+            LoadingSkeletonList(rows = 5, modifier = Modifier.padding(top = Space.md))
+          } else if (projects.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.Workspaces,
-                title = "No projects yet",
-                body = "Keep related chats, notes, and instructions together.",
+                title = stringResource(R.string.project_no_items),
+                body = stringResource(R.string.project_no_items_body),
                 modifier = Modifier,
-                actionLabel = "New project",
+                actionLabel = stringResource(R.string.project_new),
                 onAction = { showCreate = true }
             )
           } else {
             Column(Modifier.fillMaxSize()) {
               FeatureHero(
                 icon = Icons.Filled.Workspaces,
-                eyebrow = "Focused work",
-                title = "Projects",
-                body = "Create a focused space for related work.",
+                eyebrow = stringResource(R.string.project_hero_eyebrow),
+                title = stringResource(R.string.project_list_title),
+                body = stringResource(R.string.project_hero_body),
                 modifier = Modifier.padding(top = Space.sm)
               )
-              VervanSectionHeader("All projects", count = projects.size, actionLabel = "New", onAction = { showCreate = true })
+              VervanSectionHeader(stringResource(R.string.project_all), count = projects.size, actionLabel = stringResource(R.string.action_new), onAction = { showCreate = true })
               LazyColumn(Modifier.fillMaxSize()) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
@@ -119,10 +136,10 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("New project") },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = "Name", singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.createProject(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text("Create") } },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } }
+            title = { Text(stringResource(R.string.project_new)) },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
+            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.createProject(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_create)) } },
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
@@ -130,18 +147,18 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
         var name by remember(project.id) { mutableStateOf(project.name) }
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("Rename project") },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = "Name", singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(project, name.trim()); editing = null } }, enabled = name.isNotBlank()) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } }
+            title = { Text(stringResource(R.string.action_rename) + " " + stringResource(R.string.project_list_title).lowercase().dropLast(1)) },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
+            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(project, name.trim()); editing = null } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_save)) } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     pendingDelete?.let { project ->
         ConfirmDialog(
-            title = "Move project to recycle bin?",
-            body = "Move \"${project.name}\" to the bin? Its chats and notes are kept.",
-            confirmLabel = "Move to recycle bin",
+            title = stringResource(R.string.project_delete_title),
+            body = stringResource(R.string.project_delete_body, project.name),
+            confirmLabel = stringResource(R.string.project_delete_action),
             destructive = true,
             onConfirm = { vm.delete(project); pendingDelete = null },
             onDismiss = { pendingDelete = null }
@@ -166,7 +183,7 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onRename: () -> U
                     style = MaterialTheme.typography.titleSmall
                 )
                 Text(
-                    project.instructions.takeIf { it.isNotBlank() } ?: "Open project workspace",
+                    project.instructions.takeIf { it.isNotBlank() } ?: stringResource(R.string.project_open_workspace),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -174,9 +191,9 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onRename: () -> U
                 )
             }
             Box {
-                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Project actions") }
+                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.project_actions)) }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { showMenu = false; onRename() })
                     DeleteMenuItem(onClick = { showMenu = false; onDelete() })
                 }
             }

@@ -16,6 +16,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +24,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.ValidationLimits
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +50,8 @@ import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +66,8 @@ fun ProjectDashboardScreen(
     val project by vm.project.collectAsState()
     val chats by vm.chats.collectAsState()
     val notes by vm.notes.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val scope = rememberCoroutineScope()
 
     var instructions by remember { mutableStateOf("") }
@@ -78,22 +86,39 @@ fun ProjectDashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { OverflowTooltipText(project?.name ?: "Project") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { OverflowTooltipText(project?.name ?: stringResource(R.string.project_list_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
-                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Project menu") }
+                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.project_actions)) }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; editingName = true })
-                        DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenu = false; pendingDelete = true })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { showMenu = false; editingName = true })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, onClick = { showMenu = false; pendingDelete = true })
                     }
                 }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
-            Text("Instructions", style = MaterialTheme.typography.titleSmall)
+            when {
+                error != null -> OperationErrorCard(
+                    title = stringResource(R.string.project_unavailable),
+                    message = error ?: stringResource(R.string.project_unavailable_message),
+                    recovery = stringResource(R.string.project_unavailable_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry
+                )
+                isLoading -> LoadingSkeletonList(rows = 7)
+                project == null -> EmptyState(
+                    icon = Icons.Filled.Workspaces,
+                    title = stringResource(R.string.project_not_found),
+                    body = stringResource(R.string.project_not_found_body),
+                    actionLabel = stringResource(R.string.action_back),
+                    onAction = onBack
+                )
+                else -> {
+            Text(stringResource(R.string.project_instructions), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Applied to every chat in this project, alongside its persona.",
+                stringResource(R.string.project_instructions_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -101,19 +126,19 @@ fun ProjectDashboardScreen(
                 value = instructions,
                 onValueChange = { instructions = it; vm.saveInstructions(it) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.xs, bottom = Space.lg),
-                placeholder = "Example: Use formal English and cite available sources.",
+                placeholder = stringResource(R.string.project_instructions_placeholder),
                 maxLength = ValidationLimits.PROJECT_INSTRUCTIONS
             )
 
             ResponsiveActions {
-                OutlinedButton(onClick = { scope.launch { onOpenChat(vm.createChat()) } }) { Text("New chat") }
-                OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text("New note") }
+                OutlinedButton(onClick = { scope.launch { onOpenChat(vm.createChat()) } }) { Text(stringResource(R.string.project_new_chat)) }
+                OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text(stringResource(R.string.project_new_note)) }
             }
 
-            VervanSectionHeader("Chats", count = chats.size)
+            VervanSectionHeader(stringResource(R.string.folder_chats), count = chats.size)
             if (chats.isEmpty()) {
                 Text(
-                    "Chats you start here stay grouped with this project.",
+                    stringResource(R.string.project_chats_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -132,10 +157,10 @@ fun ProjectDashboardScreen(
                 )
             }
 
-            VervanSectionHeader("Notes", count = notes.size)
+            VervanSectionHeader(stringResource(R.string.folder_notes), count = notes.size)
             if (notes.isEmpty()) {
                 Text(
-                    "Notes created here stay grouped with this project.",
+                    stringResource(R.string.project_notes_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -153,6 +178,8 @@ fun ProjectDashboardScreen(
                     }
                 )
             }
+                }
+            }
         }
     }
 
@@ -160,18 +187,18 @@ fun ProjectDashboardScreen(
         var name by remember(project!!.id) { mutableStateOf(project!!.name) }
         AlertDialog(
             onDismissRequest = { editingName = false },
-            title = { Text("Rename project") },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = "Name", singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(name.trim()); editingName = false } }, enabled = name.isNotBlank()) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { editingName = false }) { Text("Cancel") } }
+            title = { Text(stringResource(R.string.action_rename) + " " + stringResource(R.string.project_list_title).lowercase().dropLast(1)) },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
+            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(name.trim()); editingName = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_save)) } },
+            dismissButton = { TextButton(onClick = { editingName = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     if (pendingDelete && project != null) {
         ConfirmDialog(
-            title = "Delete \"${project!!.name}\"?",
-            body = "Chats and notes stay available but leave this project.",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.project_delete_one_title, project!!.name),
+            body = stringResource(R.string.project_delete_one_body),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = { vm.delete(); pendingDelete = false; onBack() },
             onDismiss = { pendingDelete = false }

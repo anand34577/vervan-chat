@@ -1,11 +1,13 @@
 package com.vervan.chat.ui.tools
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.WavRecorder
 import com.vervan.chat.data.db.entities.KnowledgeBase
+import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.TranscriptionProject
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.llm.ToolRunContext
@@ -13,6 +15,10 @@ import com.vervan.chat.system.pruneOldExports
 import com.vervan.chat.voice.AudioDecoder
 import com.vervan.chat.voice.WavPcmDecoder
 import com.vervan.chat.voice.WhisperCppSttEngine
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -85,11 +91,12 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
     fun importFile(uri: Uri, displayName: String) {
         viewModelScope.launch {
             val id = UUID.randomUUID().toString()
-            val dest = File(projectDir(id), displayName.ifBlank { "audio" })
+            val safeName = displayName.substringAfterLast('/').substringAfterLast('\\').ifBlank { "audio" }.take(180)
+            val dest = File(projectDir(id), safeName)
             val copied = withContext(Dispatchers.IO) {
                 runCatching {
                     app.contentResolver.openInputStream(uri)?.use { input ->
-                        dest.outputStream().use { output -> input.copyTo(output) }
+                        dest.outputStream().use { output -> input.copyToLimited(output, 50L * 1024 * 1024) }
                     } != null
                 }.getOrDefault(false)
             }
@@ -171,8 +178,11 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 val file = File(project.audioPath)
                 val (pcm, durationMs) = withContext(Dispatchers.Default) {
                     if (file.extension.equals("wav", ignoreCase = true)) {
-                        val audio = WavPcmDecoder.decode(file.readBytes())
-                        audio.samples to (audio.samples.size * 1000L / audio.sampleRateHz)
+                        require(file.length() <= 50L * 1024 * 1024) { "Audio file exceeds the 50 MB limit" }
+                        val audio = file.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
+                        val duration = audio.samples.size * 1000L / audio.sampleRateHz
+                        require(duration <= InputLimits.MAX_AUDIO_DURATION_MS) { "Audio must be 30 minutes or shorter" }
+                        audio.samples to duration
                     } else {
                         AudioDecoder.decodeToPcm16k(file)
                     }
@@ -243,6 +253,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
     }
 
     fun updateTranscript(id: String, text: String) {
+        if (text.length > InputLimits.TRANSCRIPT_CHARS) return
         viewModelScope.launch {
             val project = dao.get(id) ?: return@launch
             dao.upsert(project.copy(transcript = text, updatedAt = System.currentTimeMillis()))
@@ -262,6 +273,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
      * user can delete rather than destroying their edited text. [label] is both the button text
      * and the heading written into the transcript. */
     fun runAiAction(id: String, label: String, promptTemplate: (String) -> String) {
+        if (_aiActionState.value is AiActionState.Running) return
         viewModelScope.launch {
             val project = dao.get(id) ?: return@launch
             if (project.transcript.isBlank()) return@launch
@@ -271,12 +283,18 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                     app, promptTemplate(project.transcript),
                     runContext = ToolRunContext("tools/transcribe", label, project.transcript)
                 )
-            }.getOrNull()
+            }.onFailure { Log.e(TAG, "runAiAction($label) failed", it) }.getOrNull()
             if (result.isNullOrBlank()) {
                 _aiActionState.value = AiActionState.Failed("Could not generate \"$label\" — no active model, or it produced nothing.")
                 return@launch
             }
             val updated = project.transcript.trimEnd() + "\n\n## $label\n\n${result.trim()}\n"
+            if (updated.length > InputLimits.TRANSCRIPT_CHARS) {
+                _aiActionState.value = AiActionState.Failed(
+                    "The generated section would exceed the ${InputLimits.TRANSCRIPT_CHARS}-character transcript limit."
+                )
+                return@launch
+            }
             dao.upsert(project.copy(transcript = updated, updatedAt = System.currentTimeMillis()))
             _aiActionState.value = AiActionState.Idle
         }
@@ -296,6 +314,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
      * existing chunk/embed pipeline, same as every other document import in the app, so an
      * indexed transcript is immediately askable via the Knowledge screen's chat. */
     fun saveToKnowledgeBase(id: String, existingKbId: String?, newKbName: String?) {
+        if (_saveState.value == SaveState.Saving) return
         viewModelScope.launch {
             val project = dao.get(id) ?: return@launch
             if (project.transcript.isBlank()) return@launch
@@ -306,9 +325,16 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                     app.container.db.knowledgeBaseDao().upsert(kb)
                     kb.id
                 }
-                app.container.documentImportManager.importRawText(kbId, project.fileName, project.transcript)
-                _saveState.value = SaveState.Saved
+                val document = app.container.documentImportManager.importRawText(kbId, project.fileName, project.transcript)
+                if (document.status == DocumentStatus.READY) {
+                    _saveState.value = SaveState.Saved
+                } else {
+                    _saveState.value = SaveState.Failed(
+                        document.failureReason ?: "The document could not be indexed (${document.status.name})."
+                    )
+                }
             } catch (t: Throwable) {
+                Log.e(TAG, "saveToKnowledgeBase failed for project=$id", t)
                 _saveState.value = SaveState.Failed(t.message ?: "Could not save to Knowledge Base.")
             }
         }
@@ -367,5 +393,9 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
     override fun onCleared() {
         recorder?.cancel()
         whisperEngine.release()
+    }
+
+    companion object {
+        private const val TAG = "TranscriptionViewModel"
     }
 }

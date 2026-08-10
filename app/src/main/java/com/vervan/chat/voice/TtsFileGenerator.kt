@@ -1,6 +1,7 @@
 package com.vervan.chat.voice
 
 import java.io.File
+import com.vervan.chat.validation.InputLimits
 
 /** Converts arbitrary text into one WAV file via a chosen [TtsEngine] — the Text-to-Speech
  * screen's batch (not realtime-playback) synthesis path. Reuses [SentenceChunker] purely as a
@@ -16,8 +17,10 @@ object TtsFileGenerator {
     data class SentenceResult(val text: String, val audio: TtsAudio?)
 
     fun splitSentences(text: String): List<String> {
+        require(text.length <= InputLimits.TTS_TEXT_CHARS) { "Text is too long for speech" }
         val sentences = mutableListOf<String>()
         SentenceChunker { sentences.add(it) }.apply { append(text); flush() }
+        require(sentences.size <= InputLimits.TTS_MAX_SENTENCES) { "Text contains too many sentences" }
         return sentences
     }
 
@@ -47,6 +50,12 @@ object TtsFileGenerator {
     fun mergeToFile(results: List<SentenceResult>, outputFile: File, pauseMs: Int = 250): File {
         val sampleRate = results.firstNotNullOfOrNull { it.audio?.sampleRateHz }
             ?: throw IllegalStateException("The selected voice produced no audio")
+        require(pauseMs in 0..5_000) { "Pause must be between 0 and 5000 milliseconds" }
+        val estimatedSamples = results.sumOf { it.audio?.samples?.size?.toLong() ?: 0L } +
+            (sampleRate.toLong() * pauseMs / 1000L * results.size)
+        require(estimatedSamples <= InputLimits.MAX_DECODED_AUDIO_BYTES / 2) {
+            "The generated audio would be too large to save safely"
+        }
         val silence = ShortArray((sampleRate * pauseMs / 1000).coerceAtLeast(0))
         val samples = ArrayList<Short>(results.sumOf { it.audio?.samples?.size ?: 0 } + silence.size * results.size)
         results.forEachIndexed { index, r ->

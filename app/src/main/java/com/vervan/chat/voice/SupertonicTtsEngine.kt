@@ -121,11 +121,20 @@ class SupertonicTtsEngine(
         }?.filePath ?: return@withLock
         runCatching {
             val (ttl, dp) = loadVoiceStyle(File(voiceDir, "voice_style_default.json"), ortEnv)
-            styleTtl?.close()
-            styleDp?.close()
-            styleTtl = ttl
-            styleDp = dp
-            loadedVariant = variant
+            // inferenceLock (not just loadMutex) around the actual swap: runInference() reads
+            // styleTtl/styleDp under inferenceLock.read for the whole multi-step denoising call,
+            // but this function only held loadMutex — a coroutine changing voices mid-synthesis
+            // could close() the exact tensors another coroutine's runInference() was still using,
+            // a native use-after-free release() itself already guards against via this same lock.
+            // loadVoiceStyle() above is deliberately outside the write lock (blocking file/native
+            // I/O) — only the fast close-and-reassign needs exclusivity against readers.
+            inferenceLock.write {
+                styleTtl?.close()
+                styleDp?.close()
+                styleTtl = ttl
+                styleDp = dp
+                loadedVariant = variant
+            }
         }.onFailure { Log.w(TAG, "Failed to load Supertonic voice style for '$variant'", it) }
     }
 

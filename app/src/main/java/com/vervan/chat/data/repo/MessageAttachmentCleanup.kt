@@ -1,7 +1,10 @@
 package com.vervan.chat.data.repo
 
+import android.util.Log
 import com.vervan.chat.data.db.AppDatabase
 import java.io.File
+
+private const val TAG = "MessageAttachmentCleanup"
 
 /**
  * Deletes the on-disk files a chat's messages point at (imagePath/audioPath/voiceRecordingPath)
@@ -32,6 +35,7 @@ object MessageAttachmentCleanup {
         for (path in paths) {
             if (db.messageDao().countOtherReferencesToPath(chatId, path) == 0) {
                 runCatching { File(path).delete() }
+                    .onFailure { Log.w(TAG, "Failed to delete orphaned attachment $path", it) }
             }
         }
     }

@@ -61,6 +61,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.MarkdownLiteText
@@ -68,6 +69,7 @@ import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -139,9 +141,9 @@ fun OverlayResultPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAffordance(icon = Icons.Filled.ScreenSearchDesktop, size = IconAffordanceSize.Default)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text("SCREEN ASSIST", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.screen_assist_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(
-                        if (busy) "Analyzing your screen" else "Ready for follow-ups",
+                        stringResource(if (busy) R.string.screen_assist_analyzing else R.string.screen_assist_ready),
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -149,7 +151,7 @@ fun OverlayResultPanel(
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.ExpandMore, contentDescription = "Minimize Screen Assist")
+                    Icon(Icons.Filled.ExpandMore, contentDescription = stringResource(R.string.action_close))
                 }
             }
             Surface(
@@ -161,7 +163,7 @@ fun OverlayResultPanel(
                 Box(Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 260.dp).padding(Space.md)) {
                     LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
                         item(key = "answer") {
-                            MarkdownLiteText(text.ifBlank { if (busy) "Reading the screenshot…" else "(no response)" })
+                            MarkdownLiteText(text.ifBlank { if (busy) stringResource(R.string.screen_assist_reading) else stringResource(R.string.screen_assist_no_response) })
                         }
                         item(key = "answer-end") { Spacer(Modifier.size(1.dp)) }
                     }
@@ -183,7 +185,10 @@ fun OverlayResultPanel(
                             contentColor = if (busy) MaterialTheme.colorScheme.onPrimary
                             else MaterialTheme.colorScheme.onPrimaryContainer
                         ) {
-                            Icon(Icons.Filled.ExpandMore, if (busy) "New response" else "Jump to latest")
+                            Icon(
+                                Icons.Filled.ExpandMore,
+                                stringResource(if (busy) R.string.screen_assist_new_response else R.string.screen_assist_jump_latest)
+                            )
                         }
                     }
                 }
@@ -204,8 +209,8 @@ fun OverlayResultPanel(
                         value = question,
                         onValueChange = { question = it.take(ValidationLimits.CHAT_COMPOSER) },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Ask a follow-up") },
-                        placeholder = { Text("What would you like to know?") },
+                        label = { Text(stringResource(R.string.screen_assist_follow_up_label)) },
+                        placeholder = { Text(stringResource(R.string.screen_assist_follow_up_hint)) },
                         minLines = 1,
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -216,7 +221,7 @@ fun OverlayResultPanel(
                         enabled = question.isNotBlank() && !busy,
                         modifier = Modifier.padding(start = Space.sm).size(52.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send follow-up question")
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.screen_assist_send_follow_up))
                     }
                 }
             }
@@ -227,7 +232,7 @@ fun OverlayResultPanel(
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 ) {
                     Icon(Icons.Filled.ScreenSearchDesktop, null, Modifier.size(18.dp))
-                    Text("  Show current screen")
+                    Text(stringResource(R.string.screen_assist_show_current))
                 }
             }
             Row(
@@ -237,12 +242,12 @@ fun OverlayResultPanel(
             ) {
                 TextButton(onClick = onCopy, enabled = text.isNotBlank()) {
                     Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
-                    Text("  Copy")
+                    Text(stringResource(R.string.action_copy))
                 }
                 if (onOpen != null) {
                     TextButton(onClick = onOpen) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))
-                        Text("  Open chat")
+                        Text(stringResource(R.string.action_open_chat))
                     }
                 }
             }
@@ -277,48 +282,48 @@ fun QuickBubbleMenu(
             ) {
                 IconAffordance(icon = Icons.Filled.AutoAwesome, size = IconAffordanceSize.Default)
                 Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                    Text("QUICK", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Understand this screen", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.screen_assist_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.screen_assist_quick_title), style = MaterialTheme.typography.titleMedium)
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close quick actions")
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.screen_assist_close_quick))
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = Space.sm))
             if (onResume != null) {
                 QuickMenuAction(
                     icon = Icons.Filled.ScreenSearchDesktop,
-                    title = "Continue Screen Assist",
-                    supporting = "Return to the current conversation",
+                    title = stringResource(R.string.screen_assist_continue),
+                    supporting = stringResource(R.string.screen_assist_return_chat),
                     onClick = onResume,
                 )
                 HorizontalDivider(Modifier.padding(vertical = Space.sm))
             }
             QuickMenuAction(
                 icon = Icons.Filled.ScreenSearchDesktop,
-                title = "Explain screen",
-                supporting = "Capture everything visible",
+                title = stringResource(R.string.screen_assist_explain),
+                supporting = stringResource(R.string.screen_assist_capture_visible),
                 onClick = onExplainScreen
             )
             QuickMenuAction(
                 icon = Icons.Filled.CropFree,
-                title = "Select an area",
-                supporting = "Crop before asking Vervan",
+                title = stringResource(R.string.screen_assist_select_area),
+                supporting = stringResource(R.string.screen_assist_crop_before_asking),
                 onClick = onCaptureArea
             )
             if (captureAppAvailable) {
                 QuickMenuAction(
                     icon = Icons.Filled.Apps,
-                    title = "Choose an app",
-                    supporting = "Use Android's app capture",
+                    title = stringResource(R.string.screen_assist_choose_app),
+                    supporting = stringResource(R.string.screen_assist_android_capture),
                     onClick = onCaptureApp
                 )
             }
             HorizontalDivider(Modifier.padding(vertical = Space.sm))
             QuickMenuAction(
                 icon = Icons.Filled.VisibilityOff,
-                title = "Hide for now",
-                supporting = "Show again next time Vervan opens",
+                title = stringResource(R.string.screen_assist_hide),
+                supporting = stringResource(R.string.screen_assist_show_next_time),
                 onClick = onHide,
                 emphasized = false
             )
@@ -328,7 +333,7 @@ fun QuickBubbleMenu(
                 contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm)
             ) {
                 Icon(Icons.Filled.PowerSettingsNew, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                Text("  Turn off Quick", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.screen_assist_turn_off), color = MaterialTheme.colorScheme.error)
             }
         }
     }

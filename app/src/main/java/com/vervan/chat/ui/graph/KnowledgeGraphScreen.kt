@@ -2,6 +2,7 @@ package com.vervan.chat.ui.graph
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,9 +52,11 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -97,28 +100,51 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (query.isNotBlank()) {
                 if (searchResults.isEmpty()) {
-                    Text(
-                        "No matches",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(Space.lg)
+                    EmptyState(
+                        icon = Icons.Filled.AutoAwesome,
+                        title = "No matches yet",
+                        body = "Try a shorter name or search for a workspace, chat, note, document, or memory."
                     )
                 } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(searchResults, key = { it.type.name + it.id }) { node ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clickable { vm.open(node) }
-                                    .padding(horizontal = Space.lg, vertical = Space.sm),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(nodeIcon(node.type), contentDescription = null, tint = nodeColor(node.type))
-                                Column(Modifier.padding(start = Space.md).weight(1f)) {
-                                    Text(node.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(node.type.name.lowercase().replace('_', ' '), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PageContainer(Modifier.fillMaxSize(), maxContentWidth = 840.dp) {
+                        Card(
+                            Modifier.fillMaxSize().padding(vertical = Space.sm),
+                            colors = SurfaceRole.Card.cardColors(),
+                            border = SurfaceRole.Card.border(),
+                            shape = MaterialTheme.shapes.extraLarge
+                        ) {
+                            LazyColumn {
+                                items(searchResults, key = { it.type.name + it.id }) { node ->
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable { vm.open(node) }
+                                            .padding(horizontal = Space.lg, vertical = Space.md),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = nodeColor(node.type).copy(alpha = 0.16f)
+                                        ) {
+                                            Icon(
+                                                nodeIcon(node.type),
+                                                contentDescription = null,
+                                                tint = nodeColor(node.type),
+                                                modifier = Modifier.padding(Space.sm)
+                                            )
+                                        }
+                                        Column(Modifier.padding(start = Space.md).weight(1f)) {
+                                            Text(node.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(node.type.name.lowercase().replace('_', ' '), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.OpenInNew,
+                                            contentDescription = "Open ${node.label}",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    androidx.compose.material3.HorizontalDivider()
                                 }
                             }
-                            androidx.compose.material3.HorizontalDivider()
                         }
                     }
                 }
@@ -157,14 +183,33 @@ private fun GraphCanvas(
                 centerOffset.y + (radiusPx * sin(angle)).toFloat()
             )
         }
+        val graphLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
 
         Canvas(Modifier.fillMaxSize()) {
             positions.forEach { (_, pos) ->
                 drawLine(
-                    color = Color.Gray.copy(alpha = 0.35f),
+                    color = graphLineColor,
                     start = centerOffset,
                     end = pos,
                     strokeWidth = 2f
+                )
+            }
+        }
+
+        Card(
+            modifier = Modifier.align(Alignment.TopStart).padding(Space.lg),
+            colors = SurfaceRole.Card.cardColors(),
+            border = SurfaceRole.Card.border(),
+            shape = MaterialTheme.shapes.extraLarge
+        ) {
+            Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
+                Text("Connected context", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "${neighbors.size} connection${if (neighbors.size == 1) "" else "s"} around ${center.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -228,7 +273,9 @@ private fun NodeChip(
         onClick = onClick ?: {},
         colors = CardDefaults.cardColors(
             containerColor = if (emphasized) nodeColor(node.type).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+        ),
+        border = if (emphasized) BorderStroke(1.dp, nodeColor(node.type).copy(alpha = 0.58f)) else SurfaceRole.Raised.border(),
+        shape = if (emphasized) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large
     ) {
         Row(Modifier.padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = CircleShape, color = nodeColor(node.type).copy(alpha = 0.25f)) {

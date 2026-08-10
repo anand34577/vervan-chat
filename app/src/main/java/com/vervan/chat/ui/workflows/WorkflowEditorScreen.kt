@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -43,6 +44,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
@@ -61,6 +65,9 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
     val description by vm.description.collectAsState()
     val steps by vm.steps.collectAsState()
     val isBuiltIn by vm.isBuiltIn.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
+    val recordFound by vm.recordFound.collectAsState()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -73,7 +80,24 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Workflow unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your other workflows are safe. Retry the lookup or return to the library.",
+                actionLabel = "Retry",
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+            workflowId != null && !recordFound -> EmptyState(
+                icon = Icons.Filled.Description,
+                title = "Workflow not found",
+                body = "This workflow may have been deleted or moved to the recycle bin.",
+                actionLabel = "Back",
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Name",
                 maxLength = ValidationLimits.WORKFLOW_NAME, singleLine = true,
@@ -127,13 +151,14 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }
                 }
             }
+            }
         }
-        }
+    }
     }
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = "Delete workflow?",
-            body = "\"$name\" and its steps will be permanently deleted.",
+            body = "\"$name\" and its steps will move to the recycle bin and can be restored.",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },

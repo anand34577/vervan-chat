@@ -77,6 +77,10 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -113,24 +117,34 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
     // ML Kit's own scanner already crops/deskews each page, so its results land straight in
     // `pages`, skipping [PageCropDialog] entirely.
     fun importGmsScanResult(scanResult: GmsDocumentScanningResult) {
-        val uris = scanResult.pages?.map { it.imageUri } ?: return
+        val allUris = scanResult.pages?.map { it.imageUri } ?: return
+        val uris = allUris.take(InputLimits.MAX_DOCUMENT_SCAN_PAGES)
         if (uris.isEmpty()) return
         isImportingScan = true
         scope.launch {
-            val imported = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 val dir = File(context.filesDir, "scans").apply { mkdirs() }
+                var failures = 0
                 uris.mapNotNull { uri ->
                     val file = File(dir, "page-${System.currentTimeMillis()}-${uri.hashCode()}.jpg")
-                    runCatching {
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            file.outputStream().use { output -> input.copyTo(output) }
+                    val ok = runCatching {
+                        (context.contentResolver.openInputStream(uri) ?: error("Couldn't open scan page")).use { input ->
+                            file.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
                         }
-                    }
-                    file.takeIf { it.exists() }?.absolutePath
-                }
+                        require(file.length() > 0) { "Scan page is empty" }
+                        require(ImageUtils.normalizeForModel(file)) { "Scan page could not be decoded" }
+                    }.isSuccess
+                    if (!ok) { failures++; file.delete(); null } else file.absolutePath
+                } to failures
             }
             isImportingScan = false
-            pages = pages + imported
+            pages = pages + result.first
+            statusMessage = when {
+                result.first.isEmpty() -> "Couldn't import the scan pages. Try scanning again."
+                result.second > 0 -> "Imported ${result.first.size} page(s); ${result.second} page(s) were rejected because they could not be read or were too large."
+                allUris.size > uris.size -> "Imported the first ${InputLimits.MAX_DOCUMENT_SCAN_PAGES} pages."
+                else -> null
+            }
         }
     }
 
@@ -213,8 +227,17 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
     // statusMessage set to an explanation) when text recognition found nothing on any page —
     // callers must not silently save/process an empty result as if it succeeded.
     suspend fun extractPagesTextOrNull(): String? {
-        val text = withContext(Dispatchers.IO) {
-            pages.joinToString("\n\n") { path -> runCatching { OcrExtractor.extractFromImage(File(path)) }.getOrDefault("") }
+        val text = try {
+            withContext(Dispatchers.IO) {
+                pages.map { path -> OcrExtractor.extractFromImage(File(path)) }.joinToString("\n\n")
+            }
+        } catch (t: Throwable) {
+            statusMessage = "Couldn't read scan text: ${t.toUserMessage()}"
+            return null
+        }
+        if (text.length > com.vervan.chat.ui.common.ValidationLimits.OCR_TEXT) {
+            statusMessage = "OCR text is too long to process (maximum ${com.vervan.chat.ui.common.ValidationLimits.OCR_TEXT} characters)."
+            return null
         }
         if (text.isBlank()) {
             statusMessage = "No text could be recognized in these pages. Try clearer, evenly lit captures."

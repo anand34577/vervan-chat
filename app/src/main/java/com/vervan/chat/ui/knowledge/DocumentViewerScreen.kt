@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +26,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
@@ -32,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -39,6 +45,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.theme.VervanMono
+import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +58,10 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
     val chunks by vm.chunks.collectAsState()
     val reindexing by vm.reindexing.collectAsState()
     val error by vm.error.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -57,37 +69,59 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 title = { Text("Document preview", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
-                    IconButton(
-                        enabled = document?.filePath?.let { java.io.File(it).exists() } == true,
-                        onClick = {
-                            val doc = document ?: return@IconButton
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                java.io.File(doc.filePath)
-                            )
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                                .setDataAndType(uri, doc.mimeType)
-                                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Open with…")) }
-                        }
-                    ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open with another app") }
+                    // "Open externally" lives on the document card below (tap the whole card) —
+                    // this used to also have its own copy of the same action in the top bar,
+                    // two buttons doing the identical thing on one small screen.
+                    if (chunks.isNotEmpty()) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val file = vm.exportExtractedText()
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, document?.displayName ?: "Extracted text")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(send, "Export extracted text"))
+                            }
+                        }) { Icon(Icons.Filled.Share, contentDescription = "Export extracted text") }
+                    }
                     if (reindexing) {
                         androidx.compose.foundation.layout.Box(Modifier.size(48.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else {
-                        IconButton(onClick = { vm.reindex() }) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
                     }
                 }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize()) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = stringResource(R.string.document_unavailable),
+                message = loadError ?: stringResource(R.string.document_unavailable_message),
+                recovery = stringResource(R.string.document_unavailable_recovery),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = vm::retryLoad
+            )
+            isLoading -> LoadingSkeletonList(rows = 7)
+            document == null -> EmptyState(
+                icon = Icons.Filled.Description,
+                title = stringResource(R.string.document_not_found),
+                body = stringResource(R.string.document_not_found_body),
+                actionLabel = stringResource(R.string.action_back),
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
+                val fileExists = java.io.File(doc.filePath).exists()
                 Card(
-                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+                    onClick = { if (fileExists) com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)
+                        .semantics { contentDescription = "${doc.displayName}. Open original document." },
                     colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -113,13 +147,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             )
                             Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text("Private on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
+                                Text("Stored on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
-                        IconButton(
-                            enabled = java.io.File(doc.filePath).exists(),
-                            onClick = { com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) }
-                        ) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original document") }
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = if (fileExists) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        )
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
@@ -128,7 +163,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 }
             }
             error?.let {
-                com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = Space.md, vertical = Space.xs))
+                OperationErrorCard(
+                    title = "Couldn't rebuild this index",
+                    message = it,
+                    recovery = "Check the original file, then try again.",
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
+                    actionLabel = "Retry",
+                    onAction = vm::reindex
+                )
             }
             VervanSectionHeader(
                 title = "Searchable text",
@@ -168,6 +210,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                     }
                 }
             }
+        }
         }
         }
     }

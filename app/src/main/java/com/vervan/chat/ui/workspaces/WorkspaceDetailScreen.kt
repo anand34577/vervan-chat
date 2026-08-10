@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -50,10 +51,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ArchiveMenuItem
 import com.vervan.chat.ui.common.ConfirmDialog
@@ -67,6 +70,7 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.chat.chatPreviewText
 import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
@@ -101,17 +105,31 @@ fun WorkspaceDetailScreen(
         "vervan-workspace-${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())}.json"
     }
     var exportResult by remember { mutableStateOf<String?>(null) }
+    var showExportPassword by remember { mutableStateOf(false) }
+    var exportPassword by remember { mutableStateOf("") }
+    var exportPasswordConfirmation by remember { mutableStateOf("") }
     val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null) {
+            exportPassword = ""
+            exportPasswordConfirmation = ""
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             exportResult = try {
-                app.contentResolver.openOutputStream(uri)?.use { com.vervan.chat.data.backup.BackupManager.exportWorkspace(app.container.db, workspaceId, it) }
+                val output = requireNotNull(app.contentResolver.openOutputStream(uri)) {
+                    "The selected location could not be opened."
+                }
+                output.use {
+                    com.vervan.chat.data.backup.BackupManager.exportWorkspaceEncrypted(app.container.db, workspaceId, it, exportPassword)
+                }
                 "Workspace exported."
             } catch (e: Exception) {
                 "Export failed. ${e.toUserMessage()}"
             }
+            exportPassword = ""
+            exportPasswordConfirmation = ""
         }
     }
 
@@ -130,6 +148,57 @@ fun WorkspaceDetailScreen(
     }
     LaunchedEffect(confirmationMessage) {
         confirmationMessage?.let { snackbarHostState.showSnackbar(it); vm.clearConfirmation() }
+    }
+
+    if (showExportPassword) {
+        AlertDialog(
+            onDismissRequest = {
+                showExportPassword = false
+                exportPassword = ""
+                exportPasswordConfirmation = ""
+            },
+                title = { Text(stringResource(R.string.workspace_protect_export)) },
+            text = {
+                Column {
+                    Text(
+                        "Use at least 8 characters. You will need this password to restore the export; Vervan cannot recover it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = exportPassword,
+                        onValueChange = { exportPassword = it.take(128) },
+                label = { Text(stringResource(R.string.workspace_export_password)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        isError = exportPassword.isNotEmpty() && exportPassword.length < 8,
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                    )
+                    OutlinedTextField(
+                        value = exportPasswordConfirmation,
+                        onValueChange = { exportPasswordConfirmation = it.take(128) },
+                label = { Text(stringResource(R.string.backup_password_confirm_label)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        isError = exportPasswordConfirmation.isNotEmpty() && exportPasswordConfirmation != exportPassword,
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = { showExportPassword = false; exportLauncher.launch(exportFileName) },
+                    enabled = exportPassword.length >= 8 && exportPassword == exportPasswordConfirmation
+            ) { Text(stringResource(R.string.backup_choose_file)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showExportPassword = false
+                    exportPassword = ""
+                    exportPasswordConfirmation = ""
+            }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
     }
 
     val ws = workspace
@@ -156,12 +225,12 @@ fun WorkspaceDetailScreen(
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(ws?.name ?: "Workspace") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
-                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Workspace menu") }
+                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.workspace_menu)) }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         if (!isActive) {
-                            DropdownMenuItem(text = { Text("Set active") }, onClick = {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.workspace_set_active)) }, onClick = {
                                 showMenu = false
                                 if (ws?.lockEnabled == true) {
                                     app.container.appLockManager.lockNow()
@@ -172,10 +241,10 @@ fun WorkspaceDetailScreen(
                             })
                         }
                         if (ws != null) {
-                            DropdownMenuItem(text = { Text("Export workspace") }, onClick = { showMenu = false; exportLauncher.launch(exportFileName) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.workspace_export_encrypted)) }, onClick = { showMenu = false; showExportPassword = true })
                         }
                         if (ws?.isDefault == false) {
-                            DropdownMenuItem(text = { Text("Edit workspace") }, onClick = { showMenu = false; editing = true })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.workspace_edit)) }, onClick = { showMenu = false; editing = true })
                             ArchiveMenuItem(archived = ws.archived, onClick = {
                                 showMenu = false
                                 if (ws.archived) vm.restore() else vm.archive()
@@ -210,22 +279,23 @@ fun WorkspaceDetailScreen(
             )
             ContextGuideCard(
                 icon = Icons.AutoMirrored.Filled.Chat,
-                title = "One space, one working context",
+            title = stringResource(R.string.workspace_one_space),
                 body = "New chats inherit this space's persona, response profile, and knowledge sources.",
                 modifier = Modifier.padding(top = Space.md),
                 accentIndex = 2,
             )
 
-            // status summary — horizontally scrollable stat cards (phone space rule:
-            // "show four or fewer primary statistics at once").
+            // Keep the four primary counts in one equal-width row. The old horizontally scrolling
+            // cards had different intrinsic widths, so labels and values appeared to drift as the
+            // user swiped the row. Equal cells make the summary scan as one coherent status bar.
             Row(
-                Modifier.fillMaxWidth().padding(vertical = Space.md).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                Modifier.fillMaxWidth().padding(vertical = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
-                StatCard("Chats", activeChatCount.toString())
-                StatCard("Projects", projects.size.toString())
-                StatCard("Folders", folderCount.toString())
-                StatCard("Documents", documentCount.toString())
+                StatCard("Chats", activeChatCount.toString(), Modifier.weight(1f))
+                StatCard("Projects", projects.size.toString(), Modifier.weight(1f))
+                StatCard("Folders", folderCount.toString(), Modifier.weight(1f))
+                StatCard("Documents", documentCount.toString(), Modifier.weight(1f))
             }
 
             val newChat: () -> Unit = { scope.launch { onOpenChat(vm.createChat()) } }
@@ -235,7 +305,7 @@ fun WorkspaceDetailScreen(
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error
                 )
             } else {
-                OutlinedButton(onClick = newChat) { Text("New chat") }
+            OutlinedButton(onClick = newChat) { Text(stringResource(R.string.workspace_new_chat)) }
             }
 
             // Chat Screen — workspace-scoped auto title generation toggle.
@@ -245,7 +315,7 @@ fun WorkspaceDetailScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Automatically generate chat titles", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.workspace_auto_titles), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Applies to every chat in this workspace; manually renamed titles are never overwritten.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -266,7 +336,7 @@ fun WorkspaceDetailScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Lock this workspace", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.workspace_lock), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         if (lockCredentialsExist) "Requires biometrics or your PIN to switch into this workspace."
                         else "Set up app lock in Settings → Privacy & security first.",
@@ -281,7 +351,7 @@ fun WorkspaceDetailScreen(
             }
 
             // per-workspace defaults for chats created inside it (WorkspaceManager.applyDefaults).
-            Text("Default for new chats in this workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
+                Text(stringResource(R.string.workspace_default_new_chats), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
             Row(Modifier.padding(top = Space.xs).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
                     androidx.compose.material3.FilterChip(
@@ -312,7 +382,7 @@ fun WorkspaceDetailScreen(
 
             HorizontalDivider(Modifier.padding(vertical = Space.md))
 
-            Text("Folders (${folders.size})", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.workspace_folders, folders.size), style = MaterialTheme.typography.titleSmall)
             if (folders.isNotEmpty()) {
                 SectionCard(
                     modifier = Modifier.padding(top = Space.xs),
@@ -334,8 +404,8 @@ fun WorkspaceDetailScreen(
                         TextButton(
                             onClick = { showBatchTitleOptions = true },
                             enabled = selectedChatIds.isNotEmpty()
-                        ) { Text("Generate titles") }
-                        TextButton(onClick = { selectionMode = false; selectedChatIds = emptySet() }) { Text("Cancel") }
+            ) { Text(stringResource(R.string.workspace_generate_titles)) }
+            TextButton(onClick = { selectionMode = false; selectedChatIds = emptySet() }) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
             }
@@ -346,7 +416,7 @@ fun WorkspaceDetailScreen(
                 ) {
                     IconAffordance(icon = Icons.AutoMirrored.Filled.Chat, size = IconAffordanceSize.Default)
                     Column(Modifier.padding(start = Space.md)) {
-                        Text("No chats yet", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.workspace_empty_chats), style = MaterialTheme.typography.titleSmall)
                         Text(
                             "Tap to start the first chat in this workspace.",
                             style = MaterialTheme.typography.bodySmall,
@@ -396,9 +466,9 @@ fun WorkspaceDetailScreen(
 
     if (pendingDelete && ws != null) {
         ConfirmDialog(
-            title = "Delete workspace forever?",
+            title = stringResource(R.string.workspace_delete_title),
             body = "Permanently delete \"${ws.name}\" and all its content?",
-            confirmLabel = "Delete forever",
+            confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { scope.launch { vm.delete(); pendingDelete = false; onBack() } },
             onDismiss = { pendingDelete = false }
@@ -409,8 +479,8 @@ fun WorkspaceDetailScreen(
     if (showBatchTitleOptions) {
         AlertDialog(
             onDismissRequest = { showBatchTitleOptions = false },
-            title = { Text("Generate titles for ${selectedChatIds.size} chats") },
-            text = { Text("Custom titles stay unchanged. Only default or generated titles are replaced.") },
+            title = { Text(stringResource(R.string.workspace_generate_selected_title, selectedChatIds.size)) },
+            text = { Text(stringResource(R.string.workspace_generate_selected_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.startTitleBatch(selectedChatIds.toList(), onlyUntitled = true)
@@ -418,40 +488,40 @@ fun WorkspaceDetailScreen(
                     showBatchTitleOptions = false
                     selectionMode = false
                     selectedChatIds = emptySet()
-                }) { Text("Generate") }
+            }) { Text(stringResource(R.string.workspace_generate)) }
             },
-            dismissButton = { TextButton(onClick = { showBatchTitleOptions = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showBatchTitleOptions = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     batchProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = { if (progress.done) vm.dismissBatchProgress() },
-            title = { Text(if (progress.done) "Titles generated" else "Generating chat titles") },
+            title = { Text(stringResource(if (progress.done) R.string.workspace_titles_generated else R.string.workspace_generating_titles)) },
             text = {
                 Column {
-                    Text("${progress.completed} of ${progress.total} completed")
+                    Text(stringResource(R.string.workspace_progress, progress.completed, progress.total))
                     androidx.compose.material3.LinearProgressIndicator(
                         progress = { if (progress.total == 0) 0f else progress.completed.toFloat() / progress.total },
                         modifier = Modifier.fillMaxWidth().padding(vertical = Space.sm)
                     )
-                    if (!progress.done) progress.currentChatTitle?.let { Text("Current: $it", style = MaterialTheme.typography.bodySmall) }
-                    if (progress.failed > 0) Text("${progress.failed} failed", style = MaterialTheme.typography.labelSmall)
-                    if (progress.skipped > 0) Text("${progress.skipped} skipped (already titled)", style = MaterialTheme.typography.labelSmall)
+                    if (!progress.done) progress.currentChatTitle?.let { Text(stringResource(R.string.workspace_current, it), style = MaterialTheme.typography.bodySmall) }
+                    if (progress.failed > 0) Text(stringResource(R.string.workspace_failed_count, progress.failed), style = MaterialTheme.typography.labelSmall)
+                    if (progress.skipped > 0) Text(stringResource(R.string.workspace_skipped_count, progress.skipped), style = MaterialTheme.typography.labelSmall)
                 }
             },
             confirmButton = {
                 if (progress.done) {
-                    TextButton(onClick = { vm.dismissBatchProgress() }) { Text("Done") }
+                    TextButton(onClick = { vm.dismissBatchProgress() }) { Text(stringResource(R.string.action_done)) }
                 } else if (batchPaused) {
-                    TextButton(onClick = { vm.resumeTitleBatch(); batchPaused = false }) { Text("Resume") }
+                    TextButton(onClick = { vm.resumeTitleBatch(); batchPaused = false }) { Text(stringResource(R.string.workspace_resume)) }
                 } else {
-                    TextButton(onClick = { vm.pauseTitleBatch(); batchPaused = true }) { Text("Pause") }
+                    TextButton(onClick = { vm.pauseTitleBatch(); batchPaused = true }) { Text(stringResource(R.string.workspace_pause)) }
                 }
             },
             dismissButton = {
                 if (!progress.done) {
-                    TextButton(onClick = { vm.cancelTitleBatch(); batchPaused = false }) { Text("Cancel") }
+                    TextButton(onClick = { vm.cancelTitleBatch(); batchPaused = false }) { Text(stringResource(R.string.action_cancel)) }
                 }
             }
         )
@@ -489,7 +559,12 @@ private fun WorkspaceChatCard(
     var preview by remember(chat.id) { mutableStateOf<String?>(null) }
     var messageCount by remember(chat.id) { mutableStateOf(0) }
     LaunchedEffect(chat.id, chat.updatedAt) {
-        preview = app.container.db.messageDao().getLatestForChat(chat.id)?.content
+        preview = app.container.db.messageDao().getLatestForChat(chat.id)?.let { latest ->
+            chatPreviewText(
+                latest.content,
+                latest.role == com.vervan.chat.data.db.entities.MessageRole.USER
+            ).takeIf { it.isNotBlank() }
+        }
         messageCount = app.container.db.messageDao().countForChat(chat.id)
     }
     val accent = vervanAccentFor((chat.title.hashCode() and Int.MAX_VALUE) % 6)
@@ -539,11 +614,21 @@ private fun WorkspaceChatCard(
                         modifier = Modifier.padding(start = Space.sm),
                     )
                 }
-                preview?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = Space.xs)
-                    )
+                // Always reserve one preview line. This keeps every recent-chat card aligned even
+                // when a message is reasoning-only, empty after sanitization, or simply shorter
+                // than its neighbours.
+                androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxWidth().heightIn(min = 20.dp).padding(top = Space.xs)
+                ) {
+                    preview?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Text(
                     listOfNotNull(folderName ?: "No folder", personaName, "$messageCount messages").joinToString(" · "),
@@ -556,14 +641,25 @@ private fun WorkspaceChatCard(
 }
 
 @Composable
-private fun StatCard(label: String, value: String) {
-    Card(modifier = Modifier.widthIn(min = 88.dp)) {
+private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
+    ) {
         Column(
-            Modifier.padding(Space.md).fillMaxWidth(),
+            Modifier.padding(horizontal = Space.xs, vertical = Space.md).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(value, style = MaterialTheme.typography.titleLarge)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -585,25 +681,25 @@ private fun EditWorkspaceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit workspace") },
+        title = { Text(stringResource(R.string.workspace_edit)) },
         text = {
             Column {
                 BoundedTextField(
-                    value = nameField, onValueChange = { nameField = it }, placeholder = "Name",
+                    value = nameField, onValueChange = { nameField = it }, placeholder = stringResource(R.string.workspace_name),
                     singleLine = true, maxLength = ValidationLimits.WORKSPACE_NAME,
                     modifier = Modifier.fillMaxWidth()
                 )
                 BoundedTextField(
-                    value = descriptionField, onValueChange = { descriptionField = it }, placeholder = "Description",
+                    value = descriptionField, onValueChange = { descriptionField = it }, placeholder = stringResource(R.string.workspace_description),
                     maxLength = ValidationLimits.WORKSPACE_DESCRIPTION,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 )
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = Space.sm)) {
                     OutlinedTextField(
-                        value = selectedPersona?.name ?: "Select persona",
+                        value = selectedPersona?.name ?: stringResource(R.string.workspace_select_persona),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Persona") },
+                        label = { Text(stringResource(R.string.workspace_persona)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
@@ -620,9 +716,9 @@ private fun EditWorkspaceDialog(
                 onClick = { selectedPersona?.let { onSave(nameField.trim(), descriptionField.trim(), it.id) } },
                 enabled = nameField.isNotBlank() && nameField.length <= ValidationLimits.WORKSPACE_NAME &&
                     descriptionField.length <= ValidationLimits.WORKSPACE_DESCRIPTION && selectedPersona != null
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -640,11 +736,11 @@ private fun WorkspaceKbPickerDialog(
     var selected by remember { mutableStateOf(initiallySelected) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Default knowledge bases") },
+        title = { Text(stringResource(R.string.workspace_default_knowledge)) },
         text = {
             Column {
                 if (kbs.isEmpty()) {
-                    Text("No knowledge bases yet. Import a document in Knowledge.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.workspace_no_knowledge), style = MaterialTheme.typography.bodySmall)
                 }
                 kbs.forEach { kb ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -660,7 +756,7 @@ private fun WorkspaceKbPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(stringResource(R.string.action_done)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }

@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.knowledge
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -12,14 +13,40 @@ import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
-    val knowledgeBases: StateFlow<List<KnowledgeBase>> = db.knowledgeBaseDao().observeAll()
+    // Cold-start gate — without this, "Build your first knowledge base" could flash for a
+    // frame before Room's first emission lands, same fix as ChatListViewModel.isLoading.
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+    private val reload = MutableStateFlow(0)
+
+    val knowledgeBases: StateFlow<List<KnowledgeBase>> = reload
+        .flatMapLatest { db.knowledgeBaseDao().observeAll() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentDocuments: StateFlow<List<Document>> = db.documentDao().observeAll()
@@ -33,6 +60,11 @@ class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
     val indexingDocuments: StateFlow<List<Document>> = db.documentDao().observeIndexing()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
+
     fun createKnowledgeBase(name: String) {
         if (name.isBlank()) return
         viewModelScope.launch { db.knowledgeBaseDao().upsert(KnowledgeBase(name = name)) }
@@ -40,17 +72,40 @@ class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
 
     fun delete(kb: KnowledgeBase) {
         viewModelScope.launch {
+            Log.i(TAG, "Deleting knowledge base ${kb.id}")
             db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
             db.knowledgeBaseDao().delete(kb)
         }
     }
+
+    companion object {
+        private const val TAG = "KnowledgeViewModel"
+    }
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId: String) : ViewModel() {
     private val db = app.container.db
     private val docImport = app.container.documentImportManager
+    private val reload = MutableStateFlow(0)
+    private val _documentsLoading = MutableStateFlow(true)
+    val documentsLoading: StateFlow<Boolean> = _documentsLoading
+    private val _documentsLoadError = MutableStateFlow<String?>(null)
+    val documentsLoadError: StateFlow<String?> = _documentsLoadError
 
-    val documents = db.documentDao().observeForKb(kbId)
+    val documents = reload
+        .flatMapLatest { db.documentDao().observeForKb(kbId) }
+        .onStart { _documentsLoading.value = true }
+        .onEach {
+            _documentsLoading.value = false
+            _documentsLoadError.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _documentsLoading.value = false
+            _documentsLoadError.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _importing = MutableStateFlow(false)
@@ -64,7 +119,13 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
     private val _pendingVersionConflict = MutableStateFlow<com.vervan.chat.model.DocumentImportOutcome.VersionConflict?>(null)
     val pendingVersionConflict: StateFlow<com.vervan.chat.model.DocumentImportOutcome.VersionConflict?> = _pendingVersionConflict
 
+    fun retryDocumentsLoad() {
+        _documentsLoadError.value = null
+        reload.value += 1
+    }
+
     fun importDocument(uri: Uri) {
+        if (_importing.value) return
         viewModelScope.launch {
             _importing.value = true
             _error.value = null
@@ -76,6 +137,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                     is com.vervan.chat.model.DocumentImportOutcome.Imported -> { /* observed via documents Flow */ }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "importDocument failed for kb=$kbId uri=$uri", e)
                 _error.value = "Import failed. ${e.toUserMessage()}"
             }
             _importing.value = false
@@ -158,10 +220,15 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
     fun deleteKnowledgeBase(onDone: () -> Unit) {
         viewModelScope.launch {
             db.knowledgeBaseDao().get(kbId)?.let { kb ->
+                Log.i(TAG, "Deleting knowledge base ${kb.id}")
                 db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
                 db.knowledgeBaseDao().delete(kb)
             }
             onDone()
         }
+    }
+
+    companion object {
+        private const val TAG = "KnowledgeBaseDetailVM"
     }
 }

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.notes
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -9,17 +10,45 @@ import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class NotesListViewModel(app: VervanApp) : ViewModel() {
     private val db = app.container.db
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
-    val notes: StateFlow<List<Note>> = db.noteDao().observeAll()
+    val notes: StateFlow<List<Note>> = reload
+        .flatMapLatest { db.noteDao().observeAll() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     suspend fun createNote(): String {
         val note = Note()
@@ -39,6 +68,11 @@ class NotesListViewModel(app: VervanApp) : ViewModel() {
             notes.value.filter { it.id in ids }.forEach { db.noteDao().update(it.copy(deletedAt = now)) }
         }
     }
+
+    /** Undo counterpart to [deleteAll]'s snackbar, mirroring ChatListViewModel.restoreFromTrash. */
+    fun restoreAll(notes: List<Note>) {
+        viewModelScope.launch { notes.forEach { db.noteDao().update(it.copy(deletedAt = null)) } }
+    }
 }
 
 enum class NoteAction(val label: String, val instruction: String) {
@@ -56,6 +90,15 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     private val _note = MutableStateFlow<Note?>(null)
     val note: StateFlow<Note?> = _note
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError
+
+    private val _recordFound = MutableStateFlow(false)
+    val recordFound: StateFlow<Boolean> = _recordFound
+
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running
 
@@ -67,7 +110,28 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     private var saveJob: Job? = null
 
     init {
-        viewModelScope.launch { _note.value = db.noteDao().get(noteId) }
+        load()
+    }
+
+    fun retryLoad() {
+        load()
+    }
+
+    private fun load() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadError.value = null
+            try {
+                _note.value = db.noteDao().get(noteId)
+                _recordFound.value = _note.value != null
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _recordFound.value = false
+                _loadError.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     fun delete() {
@@ -129,9 +193,14 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { result += it }
                 onResult(result)
             } catch (t: Throwable) {
+                Log.e(TAG, "runAction(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }
+    }
+
+    companion object {
+        private const val TAG = "NoteEditorViewModel"
     }
 }

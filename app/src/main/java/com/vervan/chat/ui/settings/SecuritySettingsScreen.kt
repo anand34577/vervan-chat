@@ -48,11 +48,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.core.content.ContextCompat
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
@@ -83,29 +85,29 @@ fun SecuritySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Privacy & security") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.security_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Privacy dashboard", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.security_dashboard), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "See what's stored, what's indexed, and what has ever left this device.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = Space.sm)
                     )
-                    OutlinedButton(onClick = onOpenPrivacyDashboard) { Text("Open") }
+                    OutlinedButton(onClick = onOpenPrivacyDashboard) { Text(stringResource(R.string.action_open)) }
                 }
             }
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("App lock", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.security_app_lock), style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 "Require biometrics or a PIN when opening Vervan.",
                                 style = MaterialTheme.typography.labelSmall,
@@ -122,7 +124,7 @@ fun SecuritySettingsScreen(
                     }
                     if (enabled || showPinSetup) {
                         Spacer(Modifier.height(Space.md))
-                        Text("Unlock method", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.security_unlock_method), style = MaterialTheme.typography.labelMedium)
                         androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm)) {
                             listOf("BIOMETRIC" to "Biometric", "PIN" to "PIN", "BOTH" to "Both").forEach { (value, label) ->
                                 VervanFilterChip(
@@ -142,14 +144,15 @@ fun SecuritySettingsScreen(
                             }
                         }
                         Spacer(Modifier.height(Space.md))
-                        Text("Auto-lock after ${timeoutSeconds}s in the background", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.security_auto_lock, timeoutSeconds), style = MaterialTheme.typography.labelMedium)
+                        val autoLockDescription = stringResource(R.string.security_auto_lock_description, timeoutSeconds)
                         Slider(
                             value = timeoutSeconds.toFloat(),
                             onValueChange = { vm.setAutoLockTimeoutSeconds(it.toInt()) },
                             valueRange = 0f..600f,
                             steps = 11,
                             modifier = Modifier.semantics {
-                                contentDescription = "Auto-lock timeout, $timeoutSeconds seconds"
+                                contentDescription = autoLockDescription
                             }
                         )
                         Text(
@@ -162,11 +165,11 @@ fun SecuritySettingsScreen(
                 }
             }
             val screenshotBlocking by vm.screenshotBlockingEnabled.collectAsState()
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Block screenshots & screen recording", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.security_block_screenshots), style = MaterialTheme.typography.bodyMedium)
                             Text(
                             "Hide app content in screenshots, recordings, and recent apps.",
                                 style = MaterialTheme.typography.labelSmall,
@@ -182,29 +185,29 @@ fun SecuritySettingsScreen(
 
             QuickActionBubbleCard(vm)
 
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Local API server", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.security_local_api), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Let trusted apps use the active model through a local API.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = Space.sm)
                     )
-                    OutlinedButton(onClick = onOpenApiServer) { Text("Open") }
+                    OutlinedButton(onClick = onOpenApiServer) { Text(stringResource(R.string.action_open)) }
                 }
             }
 
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Data privacy", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.security_data_privacy), style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Vervan sends no analytics or crash reports. Diagnostics stay on this device.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
                     )
-                    OutlinedButton(onClick = onOpenPermissions) { Text("See all permissions") }
+                    OutlinedButton(onClick = onOpenPermissions) { Text(stringResource(R.string.security_permissions)) }
                 }
             }
 
@@ -212,11 +215,11 @@ fun SecuritySettingsScreen(
                 // Vertical-only padding, same as every other card on this screen: PageContainer
                 // already owns the horizontal gutter, so an extra horizontal padding here just
                 // inset this one card 24dp narrower than its siblings.
-                Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                Modifier.fillMaxWidth().padding(vertical = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Danger zone", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(stringResource(R.string.security_danger_zone), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
 
                     Text(
                         if (retentionDays == 0) "Auto-delete old chats: off" else "Auto-delete chats untouched for $retentionDays days",
@@ -241,7 +244,7 @@ fun SecuritySettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = Space.sm))
 
-                    Text("Panic wipe", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(stringResource(R.string.security_panic_wipe), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
                     Text(
                         "Erases all local content and models, then closes Vervan. Export a backup first.",
                         style = MaterialTheme.typography.labelSmall,
@@ -260,9 +263,9 @@ fun SecuritySettingsScreen(
 
     if (confirmWipeStep1) {
         ConfirmDialog(
-            title = "Wipe everything?",
+            title = stringResource(R.string.security_wipe_title),
             body = "Permanently erase all local content and models?",
-            confirmLabel = "Continue",
+            confirmLabel = stringResource(R.string.action_continue),
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
             onDismiss = { confirmWipeStep1 = false }
@@ -270,9 +273,9 @@ fun SecuritySettingsScreen(
     }
     if (confirmWipeStep2) {
         ConfirmDialog(
-            title = "Are you sure?",
+            title = stringResource(R.string.security_are_you_sure),
             body = "This cannot be undone. The app will close when the wipe starts.",
-            confirmLabel = "Wipe everything",
+            confirmLabel = stringResource(R.string.security_wipe_everything),
             destructive = true,
             onConfirm = {
                 confirmWipeStep2 = false
@@ -302,13 +305,13 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     val mismatch = confirm.isNotEmpty() && pin != confirm
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set a PIN") },
+        title = { Text(stringResource(R.string.security_set_pin)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { if (it.length <= 12) pin = it.filter(Char::isDigit) },
-                    label = { Text("PIN (4+ digits)") },
+            label = { Text(stringResource(R.string.security_pin_label)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
@@ -317,9 +320,9 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                 OutlinedTextField(
                     value = confirm,
                     onValueChange = { if (it.length <= 12) confirm = it.filter(Char::isDigit) },
-                    label = { Text("Confirm PIN") },
+            label = { Text(stringResource(R.string.security_confirm_pin)) },
                     isError = mismatch,
-                    supportingText = if (mismatch) { { Text("PINs don't match") } } else null,
+            supportingText = if (mismatch) { { Text(stringResource(R.string.security_pin_mismatch)) } } else null,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
@@ -328,9 +331,9 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(pin) }, enabled = pin.length >= 4 && pin == confirm) { Text("Save") }
+        TextButton(onClick = { onConfirm(pin) }, enabled = pin.length >= 4 && pin == confirm) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -360,9 +363,9 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
         if (calendar && !hasPermission(android.Manifest.permission.READ_CALENDAR)) vm.setCalendarToolEnabled(false)
     }
 
-    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+    Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
-            Text("On-device data sources", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.security_data_sources), style = MaterialTheme.typography.titleSmall)
             Text(
             "Choose which local data Vervan can use. Processing stays on-device.",
                 style = MaterialTheme.typography.labelSmall,
@@ -428,11 +431,11 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
         if (enabled && !android.provider.Settings.canDrawOverlays(context)) vm.setQuickActionBubbleEnabled(false)
     }
 
-    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
+    Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Quick-action bubble", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.security_quick_bubble), style = MaterialTheme.typography.bodyMedium)
                     Text(
                             "Show a floating button for screenshot questions. Requires overlay permission; each capture still needs approval.",
                         style = MaterialTheme.typography.labelSmall,
@@ -456,7 +459,7 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
     if (showPermissionExplanation) {
         AlertDialog(
             onDismissRequest = { showPermissionExplanation = false },
-            title = { Text("Allow the quick-action bubble?") },
+            title = { Text(stringResource(R.string.security_allow_quick)) },
             text = {
                 Text(
                     "The bubble appears above other apps with a quiet notification. Vervan captures " +
@@ -474,10 +477,10 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
                     } else {
                         requestOverlayOrEnable()
                     }
-                }) { Text("Continue") }
+        }) { Text(stringResource(R.string.action_continue)) }
             },
             dismissButton = {
-                TextButton(onClick = { showPermissionExplanation = false }) { Text("Not now") }
+        TextButton(onClick = { showPermissionExplanation = false }) { Text(stringResource(R.string.action_not_now)) }
             }
         )
     }

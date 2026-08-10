@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
@@ -88,19 +89,21 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                 )?.trim()
                 if (raw == null) {
                     errorText = "No model is ready. Open Settings → AI models, load one, then generate again."
+                } else if (raw.length > 100_000) {
+                    errorText = "The generated quiz response was too large. Try again with shorter material."
                 } else {
                     val jsonText = raw.substringAfter("[", "").let { if (it.isBlank()) raw else "[$it" }.substringBeforeLast("]", "").let { if (it.isBlank()) raw else "$it]" }
                     questions = runCatching {
                         val arr = JSONArray(jsonText)
-                        (0 until arr.length()).map { i ->
+                        (0 until minOf(arr.length(), 5)).map { i ->
                             val obj = arr.getJSONObject(i)
                             val opts = obj.optJSONArray("options")
                             QuizQuestion(
                                 type = obj.optString("type", "short_answer"),
                                 question = obj.optString("question"),
-                                options = opts?.let { o -> (0 until o.length()).map { o.optString(it) } }.orEmpty(),
-                                correctAnswer = obj.optString("correctAnswer"),
-                                explanation = obj.optString("explanation")
+                                options = opts?.let { o -> (0 until minOf(o.length(), 4)).map { o.optString(it).take(1_000) } }.orEmpty(),
+                                correctAnswer = obj.optString("correctAnswer").take(1_000),
+                                explanation = obj.optString("explanation").take(2_000)
                             )
                         }
                     }.getOrDefault(emptyList())
@@ -143,7 +146,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                 body = "Add study material and create a five-question local quiz."
             )
             OutlinedTextField(
-                value = sourceText, onValueChange = { sourceText = it },
+                value = sourceText, onValueChange = { sourceText = it.take(100_000) },
                 modifier = Modifier.fillMaxWidth(), minLines = 4,
                 placeholder = { Text("Paste study material to generate a quiz from") }
             )
@@ -205,7 +208,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                             }
                             else -> OutlinedTextField(
                                 value = answers[i].orEmpty(),
-                                onValueChange = { answers = answers + (i to it) },
+                                onValueChange = { answers = answers + (i to it.take(1_000)) },
                                 enabled = !submitted,
                                 placeholder = { Text("Your answer") },
                                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)

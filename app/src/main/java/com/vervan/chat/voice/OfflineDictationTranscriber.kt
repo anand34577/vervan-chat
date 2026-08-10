@@ -2,6 +2,8 @@ package com.vervan.chat.voice
 
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.modelload.LoadTrigger
 import kotlinx.coroutines.flow.first
 import java.io.File
@@ -21,7 +23,11 @@ object OfflineDictationTranscriber {
          * stays TTL-managed rather than becoming permanently resident. */
         loadTrigger: LoadTrigger = LoadTrigger.VOICE_SESSION,
     ): Result<TranscriptionResult> = runCatching {
-        val decoded = WavPcmDecoder.decode(wavFile.readBytes())
+        require(wavFile.isFile) { "Recorded audio file is missing" }
+        require(wavFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
+        val decoded = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
+        val durationMs = decoded.samples.size * 1_000L / decoded.sampleRateHz
+        require(durationMs <= InputLimits.MAX_AUDIO_DURATION_MS) { "Recorded audio is longer than 30 minutes" }
         require(decoded.samples.isNotEmpty()) { "No speech was recorded" }
         val model = generationModelId?.let { app.container.db.modelDao().get(it) }
             ?: app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)

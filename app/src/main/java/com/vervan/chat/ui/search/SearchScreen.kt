@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -76,11 +78,20 @@ import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.R
+import androidx.annotation.StringRes
 
-private enum class SearchScope(val label: String) {
-    All("All"), Chats("Chats"), Messages("Messages"), Content("Content"), Organize("Organize"), Reusable("Reusable"), Tools("Tools")
+private enum class SearchScope(@param:StringRes val labelRes: Int) {
+    All(R.string.search_scope_all),
+    Chats(R.string.search_scope_chats),
+    Messages(R.string.search_scope_messages),
+    Content(R.string.search_scope_content),
+    Organize(R.string.search_scope_organize),
+    Reusable(R.string.search_scope_reusable),
+    Tools(R.string.search_scope_tools)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,9 +120,15 @@ fun SearchScreen(
     val query by vm.query.collectAsState()
     val results by vm.results.collectAsState()
     val searching by vm.searching.collectAsState()
+    val error by vm.error.collectAsState()
     val focusRequester = remember { FocusRequester() }
+    var restoredQuery by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        if (restoredQuery.isNotBlank() && query != restoredQuery) vm.setQuery(restoredQuery)
+    }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    var scope by remember { mutableStateOf(SearchScope.All) }
+    var scopeName by rememberSaveable { mutableStateOf(SearchScope.All.name) }
+    val scope = SearchScope.entries.firstOrNull { it.name == scopeName } ?: SearchScope.All
 
     Scaffold(
         topBar = {
@@ -123,8 +140,13 @@ fun SearchScreen(
                     // borderless field reads as a search bar instead of a full form field.
                     VervanSearchField(
                         value = query,
-                        onValueChange = { if (it.length <= ValidationLimits.SEARCH_QUERY) vm.setQuery(it) },
-                        placeholder = "Search your workspace",
+                        onValueChange = {
+                            if (it.length <= ValidationLimits.SEARCH_QUERY) {
+                                restoredQuery = it
+                                vm.setQuery(it)
+                            }
+                        },
+                        placeholder = stringResource(R.string.search_placeholder),
                         modifier = Modifier.focusRequester(focusRequester)
                     )
                 },
@@ -140,7 +162,7 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
                     items(SearchScope.entries) { s ->
-                        com.vervan.chat.ui.common.VervanFilterChip(selected = scope == s, onClick = { scope = s }, label = { Text(s.label) })
+                        com.vervan.chat.ui.common.VervanFilterChip(selected = scope == s, onClick = { scopeName = s.name }, label = { Text(stringResource(s.labelRes)) })
                     }
                 }
             }
@@ -148,17 +170,25 @@ fun SearchScreen(
                 when {
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
-                        title = "Search your private workspace",
-                        body = "Find chats, files, tools, and saved work."
+                        title = stringResource(R.string.search_empty_title),
+                        body = stringResource(R.string.search_empty_body)
                     )
                     searching -> LoadingSkeletonList(
                         rows = 6,
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
                     )
+                    error != null -> OperationErrorCard(
+                        title = stringResource(R.string.search_unavailable),
+                        message = error ?: stringResource(R.string.search_unavailable_message),
+                        recovery = stringResource(R.string.search_unavailable_recovery),
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                        actionLabel = stringResource(R.string.action_retry),
+                        onAction = { vm.setQuery(query) }
+                    )
                     results.isEmpty -> EmptyState(
                         icon = Icons.Filled.Search,
-                        title = "No results for \"$query\"",
-                        body = "Try fewer words or another filter."
+                        title = stringResource(R.string.search_no_results, query),
+                        body = stringResource(R.string.search_no_results_body)
                     )
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         if (results.chats.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Chats)) {
@@ -244,7 +274,11 @@ fun SearchScreen(
                         ) {
                             item {
                                 Text(
-                                    "No ${scope.label.lowercase()} match \"$query\"",
+                                    stringResource(
+                                        R.string.search_scope_no_match,
+                                        stringResource(scope.labelRes).lowercase(),
+                                        query
+                                    ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = Space.xxl)

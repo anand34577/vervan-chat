@@ -67,7 +67,6 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -160,7 +159,11 @@ private inline fun String.indexOfFirstFrom(start: Int, predicate: (Char) -> Bool
 }
 
 @Composable
-fun MarkdownLiteText(text: String, modifier: Modifier = Modifier) {
+fun MarkdownLiteText(
+    text: String,
+    modifier: Modifier = Modifier,
+    isStreaming: Boolean = false
+) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val segments = remember(text) { splitMarkdownSegments(text) }
@@ -168,7 +171,7 @@ fun MarkdownLiteText(text: String, modifier: Modifier = Modifier) {
         segments.forEach { segment ->
             when (segment) {
                 is MdSegment.Prose -> if (segment.text.isNotBlank() || segments.size == 1) {
-                    MarkdownProse(segment.text)
+                    MarkdownProse(segment.text, renderTables = !isStreaming)
                 }
                 is MdSegment.CodeBlock -> CodeSurface(
                     language = segment.language.ifBlank { "code" },
@@ -185,46 +188,28 @@ fun MarkdownLiteText(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MarkdownProse(markdown: String) {
+private fun MarkdownProse(markdown: String, renderTables: Boolean) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
     val textSizePx = with(density) { 16.sp.toPx() }
-    val markwon = remember(context, textSizePx, colors.onSurface) {
+    val markwon = remember(context, textSizePx, colors.onSurface, renderTables) {
         Markwon.builder(context)
             .usePlugin(MarkwonInlineParserPlugin.create())
             .usePlugin(JLatexMathPlugin.create(textSizePx) {
                 it.inlinesEnabled(true)
                 it.theme().textColor(colors.onSurface.toArgb())
             })
-            .usePlugin(TablePlugin.create(context))
+            // Markwon's table layout calculates every column width from every row. During
+            // streaming, the table is incomplete and this causes the AndroidView to repeatedly
+            // resize the row and the whole LazyColumn to jump. Keep streaming prose stable and
+            // enable table formatting once the response is complete.
+            .apply { if (renderTables) usePlugin(TablePlugin.create(context)) }
             .usePlugin(TaskListPlugin.create(context))
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(LinkifyPlugin.create())
             .build()
     }
-    // Markwon's TablePlugin measures every row's column widths across the whole table on each
-    // setMarkdown() call — cheap for a paragraph, not for a table. A streaming message updates its
-    // content roughly every 80ms (ChatViewModel.STREAM_PERSIST_INTERVAL_MS), so a table growing row
-    // by row was getting fully re-measured and re-laid-out at that same cadence, which is what read
-    // as the screen flickering/glitching while a table streamed in. Throttling to one relayout per
-    // TABLE_RENDER_THROTTLE_MS fixes that without slowing down the far more common case of plain
-    // streaming prose, which still updates on every tick.
-    val containsTable = remember(markdown) { TABLE_ROW.containsMatchIn(markdown) }
-    // ponytail: a real throttle, not a debounce — the loop's own delay() cadence gates the
-    // update, decoupled from `markdown`'s key. Keying the effect on `markdown` (as a prior
-    // version of this did) restarts the delay on every streaming tick, and since ticks arrive
-    // faster than the throttle window, the wait never elapses and the table sits frozen mid-stream.
-    val latestMarkdown = rememberUpdatedState(markdown)
-    var throttled by remember { mutableStateOf(markdown) }
-    LaunchedEffect(containsTable) {
-        if (!containsTable) return@LaunchedEffect
-        while (true) {
-            throttled = latestMarkdown.value
-            delay(TABLE_RENDER_THROTTLE_MS)
-        }
-    }
-    val displayed = if (containsTable) throttled else markdown
     AndroidView(
         modifier = Modifier.fillMaxWidth(),
         factory = { ctx ->
@@ -240,16 +225,10 @@ private fun MarkdownProse(markdown: String) {
         update = { view ->
             view.setTextColor(colors.onSurface.toArgb())
             view.setLinkTextColor(colors.primary.toArgb())
-            markwon.setMarkdown(view, normalizeLatexDelimiters(displayed))
+            markwon.setMarkdown(view, normalizeLatexDelimiters(markdown))
         }
     )
 }
-
-/** Matches a GFM table row/separator line (`| a | b |`, `| --- | --- |`) — used only to decide
- * whether the streaming throttle above applies, not for parsing (Markwon's TablePlugin does the
- * real parsing). */
-private val TABLE_ROW = Regex("(?m)^\\s*\\|.*\\|\\s*$")
-private const val TABLE_RENDER_THROTTLE_MS = 300L
 
 @Composable
 private fun CodeSurface(language: String, code: String, onCopy: () -> Unit) {

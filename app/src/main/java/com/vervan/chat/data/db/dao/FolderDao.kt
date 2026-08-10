@@ -12,6 +12,9 @@ interface FolderDao : BaseDao<Folder> {
     @Query("SELECT * FROM folders WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<Folder>>
 
+    @Query("SELECT * FROM folders WHERE deletedAt IS NULL AND name LIKE '%' || :q || '%' ORDER BY name ASC LIMIT 20")
+    suspend fun search(q: String): List<Folder>
+
     @Query("SELECT * FROM folders WHERE id = :id")
     suspend fun get(id: String): Folder?
 

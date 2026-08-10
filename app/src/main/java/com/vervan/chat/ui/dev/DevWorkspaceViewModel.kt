@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.dev
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -52,10 +53,15 @@ class DevWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 com.vervan.chat.llm.OneShotLlm.stream(app, "${action.instruction}\n\n```\n$code\n```")
                     ?.collect { chunk -> _output.value += chunk }
             } catch (t: Throwable) {
+                Log.e(TAG, "run(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }
             _running.value = false
         }
+    }
+
+    companion object {
+        private const val TAG = "DevWorkspaceViewModel"
     }
 
     fun saveToLibrary() {

@@ -10,8 +10,10 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 
 /**
@@ -26,27 +28,28 @@ fun ResultActions(
     modifier: Modifier = Modifier,
     onRegenerate: (() -> Unit)? = null,
     onSave: (() -> Unit)? = null,
-    saveLabel: String = "Save"
+    saveLabel: String = ""
 ) {
+    val resolvedSaveLabel = saveLabel.ifBlank { stringResource(R.string.action_save) }
     ResponsiveActions(modifier) {
         OutlinedButton(onClick = onCopy) {
             Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-            androidx.compose.material3.Text("Copy", modifier = Modifier.padding(start = Space.sm))
+            androidx.compose.material3.Text(stringResource(R.string.action_copy), modifier = Modifier.padding(start = Space.sm))
         }
         onRegenerate?.let {
             OutlinedButton(onClick = it) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                androidx.compose.material3.Text("Regenerate", modifier = Modifier.padding(start = Space.sm))
+                androidx.compose.material3.Text(stringResource(R.string.action_regenerate), modifier = Modifier.padding(start = Space.sm))
             }
         }
         OutlinedButton(onClick = onShare) {
             Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-            androidx.compose.material3.Text("Share", modifier = Modifier.padding(start = Space.sm))
+            androidx.compose.material3.Text(stringResource(R.string.action_share), modifier = Modifier.padding(start = Space.sm))
         }
         onSave?.let {
             OutlinedButton(onClick = it) {
                 Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                androidx.compose.material3.Text(saveLabel, modifier = Modifier.padding(start = Space.sm))
+            androidx.compose.material3.Text(resolvedSaveLabel, modifier = Modifier.padding(start = Space.sm))
             }
         }
     }

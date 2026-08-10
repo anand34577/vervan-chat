@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,6 +54,7 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
@@ -63,6 +63,9 @@ import com.vervan.chat.ui.common.ValidationMessage
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -90,20 +93,20 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     onToggleSelectAll = { selected = if (selected.size == sets.size && sets.isNotEmpty()) emptySet() else names.toSet() },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = { confirmBulkDelete = true },
-                    deleteContentDescription = "Delete selected sets"
+                    deleteContentDescription = stringResource(R.string.study_delete_selected)
                 )
             } else {
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Study")
-                            Text("${sets.size} deck${if (sets.size == 1) "" else "s"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.study_title))
+                            Text(if (sets.size == 1) stringResource(R.string.study_deck_count_one) else stringResource(R.string.study_deck_count_many, sets.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                     actions = {
                         IconButton(onClick = { vm.clearError(); showGenerate = true }) {
-                            Icon(Icons.Filled.Add, contentDescription = "Create study deck")
+                            Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.study_create_deck))
                         }
                     }
                 )
@@ -114,9 +117,9 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
         if (sets.isEmpty()) {
             EmptyState(
                 icon = Icons.Filled.School,
-                title = "Build your first study deck",
-                body = "Turn study material into cards and review what you miss.",
-                actionLabel = "Create deck",
+                title = stringResource(R.string.study_empty_title),
+                body = stringResource(R.string.study_empty_body),
+                actionLabel = stringResource(R.string.study_create),
                 onAction = { vm.clearError(); showGenerate = true },
                 modifier = Modifier.fillMaxSize()
             )
@@ -126,19 +129,20 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 item {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = Space.xs)
-                    ) {
-                        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Column(Modifier.padding(start = Space.md)) {
-                                Text("Small reviews, stronger recall", style = MaterialTheme.typography.titleSmall)
-                                Text("Answer before revealing each card.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                    FeatureHero(
+                        icon = Icons.Filled.School,
+                        eyebrow = stringResource(R.string.study_workspace),
+                        title = stringResource(R.string.study_recall_title),
+                        body = stringResource(R.string.study_recall_body),
+                        trailing = {
+                            Text(
+                                stringResource(R.string.study_decks_count, sets.size),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                    }
+                    )
+                    StudySnapshotCard(sets, modifier = Modifier.padding(top = Space.md, bottom = Space.xs))
                 }
                 items(sets, key = { it.name }) { set ->
                     StudySetCard(
@@ -158,9 +162,9 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
 
     pendingSingleDelete?.let { name ->
         ConfirmDialog(
-            title = "Delete study deck?",
-            body = "Permanently delete \"$name\" and all its cards?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.study_delete_title),
+            body = stringResource(R.string.study_delete_body, name),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = { vm.deleteSet(name); pendingSingleDelete = null },
             onDismiss = { pendingSingleDelete = null }
@@ -170,9 +174,9 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     if (confirmBulkDelete) {
         val count = selected.size
         ConfirmDialog(
-            title = "Delete selected decks?",
-            body = "Permanently delete $count deck${if (count == 1) "" else "s"} and all their cards?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.study_delete_many_title),
+            body = stringResource(R.string.study_delete_many_body, count),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = {
                 selected.forEach(vm::deleteSet)
@@ -192,7 +196,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
         var cardStyle by remember { mutableStateOf("balanced") }
         AlertDialog(
             onDismissRequest = { if (!generating) showGenerate = false },
-            title = { Text("Create a study deck") },
+            title = { Text(stringResource(R.string.study_create_title)) },
             text = {
                 if (generating) {
                     Surface(
@@ -207,14 +211,14 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                             }
                             Text(generationStage, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.md))
                             Text(
-                                "This can take a moment when the model needs to load.",
+                                stringResource(R.string.study_generation_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.xs)
                             )
                             LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.lg))
                             Text(
-                                "Everything stays on this device.",
+                                stringResource(R.string.study_privacy_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.sm)
@@ -222,29 +226,34 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         }
                     }
                 } else Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Add what you want to learn. You can refine the deck before creating it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.study_form_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BoundedTextField(
-                        value = setName, onValueChange = { setName = it }, label = "Deck name",
+                        value = setName, onValueChange = { setName = it }, label = stringResource(R.string.study_deck_name),
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
                         modifier = Modifier.fillMaxWidth().padding(top = Space.md), enabled = !generating
                     )
                     BoundedTextField(
-                        value = sourceText, onValueChange = { sourceText = it }, label = "Study material",
+                        value = sourceText, onValueChange = { sourceText = it }, label = stringResource(R.string.study_material),
                         minLines = 5, maxLength = ValidationLimits.STUDY_SOURCE,
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm), enabled = !generating
                     )
                     BoundedTextField(
-                        value = focus, onValueChange = { focus = it }, label = "Learning goal (optional)",
+                        value = focus, onValueChange = { focus = it }, label = stringResource(R.string.study_goal),
                         singleLine = true, maxLength = ValidationLimits.STUDY_SET_NAME,
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm), enabled = !generating
                     )
-                    Text("Card style", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+                    Text(stringResource(R.string.study_card_style), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        listOf("balanced" to "Balanced", "active-recall" to "Active recall", "concept-focused" to "Concepts").forEach { (value, label) ->
+                        val cardStyles = listOf(
+                            "balanced" to stringResource(R.string.persona_balanced),
+                            "active-recall" to stringResource(R.string.study_active_recall),
+                            "concept-focused" to stringResource(R.string.study_concepts)
+                        )
+                        cardStyles.forEach { (value, label) ->
                             VervanFilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
                         }
                     }
-                    Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+                    Text(stringResource(R.string.study_cards_count, cardCount.toInt()), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
                     Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..30f, steps = 24, enabled = !generating)
                     error?.let { ValidationMessage(it, modifier = Modifier.padding(top = Space.sm)) }
                 }
@@ -253,10 +262,50 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 TextButton(
                     onClick = { vm.generateSet(setName.trim(), sourceText, cardCount.toInt(), focus, cardStyle) { showGenerate = false; onOpenSet(setName.trim()) } },
                     enabled = !generating && setName.isNotBlank() && sourceText.isNotBlank()
-                ) { Text("Generate deck") }
+                ) { Text(stringResource(R.string.study_generate)) }
             },
-            dismissButton = { TextButton(onClick = { showGenerate = false }, enabled = !generating) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showGenerate = false }, enabled = !generating) { Text(stringResource(R.string.action_cancel)) } }
         )
+    }
+}
+
+@Composable
+private fun StudySnapshotCard(sets: List<StudySetSummary>, modifier: Modifier = Modifier) {
+    val totalCards = sets.sumOf { it.cardCount }
+    val masteredCards = sets.sumOf { it.masteredCount }
+    val remainingCards = (totalCards - masteredCards).coerceAtLeast(0)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = SurfaceRole.Raised.cardColors(),
+        border = SurfaceRole.Raised.border(),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            StudyMetric(sets.size.toString(), stringResource(R.string.study_decks), Modifier.weight(1f))
+            StudyMetric(totalCards.toString(), stringResource(R.string.study_cards), Modifier.weight(1f))
+            StudyMetric(
+                if (remainingCards == 0 && totalCards > 0) stringResource(R.string.study_done) else remainingCards.toString(),
+                if (remainingCards == 0 && totalCards > 0) stringResource(R.string.study_mastered) else stringResource(R.string.study_to_review),
+                Modifier.weight(1f),
+                accent = if (remainingCards == 0 && totalCards > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudyMetric(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    accent: androidx.compose.ui.graphics.Color? = null,
+) {
+    Column(modifier.padding(horizontal = Space.sm, vertical = Space.xs)) {
+        Text(value, style = MaterialTheme.typography.titleMedium, color = accent ?: MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -277,10 +326,12 @@ private fun StudySetCard(
         else -> Triple(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
     }
     val masteryLabel = when {
-        set.masteredCount == set.cardCount && set.cardCount > 0 -> "Mastered"
-        set.masteredCount > 0 -> "In progress"
-        else -> "New deck"
+        set.masteredCount == set.cardCount && set.cardCount > 0 -> stringResource(R.string.study_mastered)
+        set.masteredCount > 0 -> stringResource(R.string.study_in_progress)
+        else -> stringResource(R.string.study_new_deck)
     }
+    val cardsReadyLabel = stringResource(R.string.study_cards_ready, set.cardCount)
+    val accuracyLabel = set.accuracyPercent?.let { stringResource(R.string.study_accuracy, it) }
     Card(
         modifier = Modifier.fillMaxWidth().selectableItem(selectionMode, onOpen, onToggleSelected, onEnterSelection),
         shape = MaterialTheme.shapes.extraLarge,
@@ -316,7 +367,7 @@ private fun StudySetCard(
                         }
                     }
                     Text(
-                        set.description.ifBlank { "${set.cardCount} cards ready to review" },
+                        set.description.ifBlank { cardsReadyLabel },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2
@@ -331,12 +382,12 @@ private fun StudySetCard(
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${set.masteredCount} of ${set.cardCount} mastered", style = MaterialTheme.typography.labelMedium, color = accent)
+                    Text(stringResource(R.string.study_mastery, set.masteredCount, set.cardCount), style = MaterialTheme.typography.labelMedium, color = accent)
                     Text(
                         listOfNotNull(
-                            set.accuracyPercent?.let { "$it% accuracy" },
+                            accuracyLabel,
                             set.lastStudiedAt?.let { DateUtils.getRelativeTimeSpanString(it).toString() }
-                        ).joinToString(" · ").ifBlank { "Not reviewed yet" },
+                        ).joinToString(" · ").ifBlank { stringResource(R.string.study_not_reviewed) },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -347,7 +398,7 @@ private fun StudySetCard(
                     TextButton(
                         onClick = onDelete,
                         modifier = Modifier.padding(start = Space.sm),
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.action_delete)) }
                 }
             }
         }

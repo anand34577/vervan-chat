@@ -13,6 +13,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanSuccess
 
@@ -33,7 +35,7 @@ fun DiffViewer(
     onCancel: (() -> Unit)? = null
 ) {
     Column(modifier.fillMaxWidth()) {
-        Text("Original", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.diff_original), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth().padding(top = Space.xs, bottom = Space.md)) {
             Text(
                 original,
@@ -47,7 +49,7 @@ fun DiffViewer(
                     .padding(Space.md)
             )
         }
-        Text("Suggested", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.diff_suggested), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth().padding(top = Space.xs)) {
             Text(
                 transformed,
@@ -61,10 +63,10 @@ fun DiffViewer(
         }
         if (onReplace != null || onInsertBelow != null || onCopy != null || onCancel != null) {
             ResponsiveActions(Modifier.padding(top = Space.md)) {
-                onCancel?.let { TextButton(onClick = it) { Text("Cancel") } }
-                onCopy?.let { TextButton(onClick = it) { Text("Copy") } }
-                onInsertBelow?.let { TextButton(onClick = it) { Text("Insert below") } }
-                onReplace?.let { TextButton(onClick = it) { Text("Replace") } }
+                onCancel?.let { TextButton(onClick = it) { Text(stringResource(R.string.action_cancel)) } }
+                onCopy?.let { TextButton(onClick = it) { Text(stringResource(R.string.action_copy)) } }
+                onInsertBelow?.let { TextButton(onClick = it) { Text(stringResource(R.string.action_insert_below)) } }
+                onReplace?.let { TextButton(onClick = it) { Text(stringResource(R.string.action_replace)) } }
             }
         }
     }

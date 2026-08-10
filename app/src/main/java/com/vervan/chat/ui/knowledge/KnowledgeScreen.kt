@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.knowledge
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -51,6 +52,7 @@ import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.AdaptiveCardFlow
 import com.vervan.chat.ui.common.ActionTile
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
@@ -58,6 +60,7 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.system.toUserMessage
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -66,10 +69,14 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: KnowledgeViewModel = viewModel(factory = viewModelFactory { initializer { KnowledgeViewModel(app) } })
     val kbs by vm.knowledgeBases.collectAsState()
+    val kbsLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val kbStats by vm.kbStats.collectAsState()
     val indexing by vm.indexingDocuments.collectAsState()
     val recentDocuments by vm.recentDocuments.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
+    val totalDocuments = kbStats.values.sumOf { it.first }
+    val readyBases = kbStats.values.count { it.second }
 
     Scaffold(
         topBar = {
@@ -90,10 +97,35 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 eyebrow = "Grounded answers",
                 title = "Your private knowledge",
-                body = "Organize documents for private search and cited answers."
+                body = "Organize documents for private search and cited answers.",
+                trailing = {
+                    SemanticChip(
+                        text = if (indexing.isEmpty()) "On-device" else "Processing",
+                        tone = if (indexing.isEmpty()) ChipTone.Success else ChipTone.Warning
+                    )
+                }
+            )
+            KnowledgeSnapshotCard(
+                knowledgeBaseCount = kbs.size,
+                documentCount = totalDocuments,
+                readyBaseCount = readyBases,
+                indexingCount = indexing.size
             )
             VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
-            if (kbs.isEmpty()) {
+            if (error != null) {
+                OperationErrorCard(
+                    title = stringResource(com.vervan.chat.R.string.knowledge_unavailable),
+                    message = error ?: stringResource(com.vervan.chat.R.string.knowledge_unavailable_message),
+                    recovery = stringResource(com.vervan.chat.R.string.knowledge_unavailable_recovery),
+                    modifier = Modifier.padding(vertical = Space.md),
+                    actionLabel = stringResource(com.vervan.chat.R.string.action_retry),
+                    onAction = vm::retry
+                )
+            } else if (kbsLoading) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 200.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                }
+            } else if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Build your first knowledge base",
@@ -103,6 +135,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
                 )
             }
+            if (error == null && !kbsLoading) {
             AdaptiveCardFlow {
                 kbs.forEach { kb ->
                     val stats = kbStats[kb.id]
@@ -131,7 +164,12 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 
             if (indexing.isNotEmpty()) {
                 VervanSectionHeader("Indexing queue", count = indexing.size)
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = SurfaceRole.Card.cardColors(),
+                    border = SurfaceRole.Card.border()
+                ) {
                     Column(Modifier.padding(Space.lg)) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = Space.sm))
                         indexing.forEach { doc -> DocRow(doc) }
@@ -141,11 +179,17 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 
             if (recentDocuments.isNotEmpty()) {
                 VervanSectionHeader("Recent documents", count = recentDocuments.size)
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = SurfaceRole.Card.cardColors(),
+                    border = SurfaceRole.Card.border()
+                ) {
                     Column(Modifier.padding(Space.lg)) {
                         recentDocuments.take(8).forEach { doc -> DocRow(doc) }
                     }
                 }
+            }
             }
             Box(Modifier.padding(bottom = Space.xxl))
           }
@@ -179,24 +223,79 @@ private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick:
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border()
     ) {
         Column(Modifier.padding(Space.lg)) {
-            Box(
-                Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
-            OverflowTooltipText(
-                text = kb.name,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(top = Space.xl)
-            )
-            Text(
-                "$docCount document(s) · ${if (allReady) "ready" else "indexing"}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    OverflowTooltipText(text = kb.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "$docCount ${if (docCount == 1) "document" else "documents"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SemanticChip(
+                    text = if (allReady) "Ready" else "Indexing",
+                    tone = if (allReady) ChipTone.Success else ChipTone.Warning
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun KnowledgeSnapshotCard(
+    knowledgeBaseCount: Int,
+    documentCount: Int,
+    readyBaseCount: Int,
+    indexingCount: Int,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = Space.md),
+        colors = SurfaceRole.Raised.cardColors(),
+        border = SurfaceRole.Raised.border(),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            KnowledgeMetric(knowledgeBaseCount.toString(), "Bases", Modifier.weight(1f))
+            KnowledgeMetric(documentCount.toString(), "Documents", Modifier.weight(1f))
+            KnowledgeMetric(
+                if (indexingCount == 0) "$readyBaseCount" else "$indexingCount",
+                if (indexingCount == 0) "Ready" else "Indexing",
+                Modifier.weight(1f),
+                accent = if (indexingCount == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
             )
         }
+    }
+}
+
+@Composable
+private fun KnowledgeMetric(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    accent: androidx.compose.ui.graphics.Color? = null,
+) {
+    Column(modifier.padding(horizontal = Space.sm, vertical = Space.xs)) {
+        Text(value, style = MaterialTheme.typography.titleMedium, color = accent ?: MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

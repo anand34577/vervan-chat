@@ -45,6 +45,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.study.StudyWorkspaceViewModel
@@ -78,17 +81,31 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     }
     var cardCount by remember { mutableFloatStateOf(10f) }
     var ocrRunning by remember { mutableStateOf(false) }
+    var ocrError by remember { mutableStateOf<String?>(null) }
 
     fun runOcr(files: List<File>) {
         if (files.isEmpty()) return
         ocrRunning = true
+        ocrError = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                files.joinToString("\n\n") { f ->
-                    runCatching { OcrExtractor.extractFromImage(f) }.getOrDefault("").also { f.delete() } // only the text is needed
-                }
+            val result = withContext(Dispatchers.IO) {
+                var failures = 0
+                val text = files.mapNotNull { f ->
+                    runCatching { OcrExtractor.extractFromImage(f) }
+                        .onFailure { failures++ }
+                        .getOrNull()
+                        .also { f.delete() }
+                }.joinToString("\n\n")
+                text to failures
             }
-            sourceText = (sourceText + "\n\n" + text).trim()
+            if (result.second > 0) {
+                ocrError = "Could not read ${result.second} selected image(s). They were skipped; try clearer or smaller images."
+            }
+            if (result.first.isBlank() && result.second > 0) {
+                ocrRunning = false
+                return@launch
+            }
+            sourceText = (sourceText + "\n\n" + result.first).trim().take(ValidationLimits.STUDY_SOURCE)
             ocrRunning = false
         }
     }
@@ -97,17 +114,22 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { uris ->
         if (uris.isNotEmpty()) {
             scope.launch {
-                val files = withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     uris.mapNotNull { uri ->
                         runCatching {
                             val dir = File(app.filesDir, "scans").apply { mkdirs() }
                             val out = File(dir, "card-${System.currentTimeMillis()}-${uri.hashCode()}.jpg")
-                            app.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
-                            out.takeIf { it.length() > 0 }?.also { ImageUtils.fixOrientation(it) }
+                            app.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyToLimited(it, ImportLimits.MAX_IMAGE_SOURCE_BYTES) } }
+                            require(out.length() > 0) { "Selected image is empty" }
+                            require(ImageUtils.normalizeForModel(out)) { "Selected image could not be decoded" }
+                            out
                         }.getOrNull()
                     }
                 }
-                runOcr(files)
+                if (result.size < uris.size) {
+                    ocrError = "${uris.size - result.size} selected image(s) were rejected because they could not be read or were too large."
+                }
+                runOcr(result)
             }
         }
     }
@@ -117,8 +139,8 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
         val file = pendingCamera
         pendingCamera = null
         if (success && file != null) {
-            ImageUtils.fixOrientation(file)
-            runOcr(listOf(file))
+            if (runCatching { require(ImageUtils.normalizeForModel(file)) }.isSuccess) runOcr(listOf(file))
+            else { file.delete(); ocrError = "The captured image could not be read. Please try again." }
         }
     }
     val requestCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -162,7 +184,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 }
                 OutlinedTextField(
                     value = sourceText,
-                    onValueChange = { sourceText = it },
+                    onValueChange = { sourceText = it.take(ValidationLimits.STUDY_SOURCE) },
                     label = { Text("Study material (editable)") },
                     minLines = 5,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md),
@@ -170,7 +192,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 )
                 OutlinedTextField(
                     value = deckName,
-                    onValueChange = { deckName = it },
+                    onValueChange = { deckName = it.take(ValidationLimits.STUDY_SET_NAME) },
                     label = { Text("Deck name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
@@ -201,6 +223,9 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     }
                 }
                 error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                }
+                ocrError?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
                 }
         }

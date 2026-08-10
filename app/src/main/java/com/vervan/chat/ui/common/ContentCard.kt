@@ -11,9 +11,9 @@ import com.vervan.chat.ui.theme.SurfaceRole
 
 /**
  * The standard page-content card shell: a full-width [SurfaceRole.Card] with the standard
- * border and a `Space.xs` vertical gap to its neighbours. This is the shape every
+ * border and a `Space.sm` vertical gap to its neighbours. This is the shape every
  * settings/detail screen used to re-implement as a one-liner
- * `Card(Modifier.fillMaxWidth().padding(vertical = ...xs), colors = ...cardColors(), border = ...border())`
+ * `Card(Modifier.fillMaxWidth().padding(vertical = ...sm), colors = ...cardColors(), border = ...border())`
  * — often with `Space`/`SurfaceRole` written fully-qualified inline (the single biggest source
  * of FQ noise in the app). Centralising it here locks the container tint, border prominence,
  * and outer gap to the design tokens so they stop drifting per screen.
@@ -29,7 +29,7 @@ fun ContentCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = modifier.fillMaxWidth().padding(vertical = Space.xs),
+        modifier = modifier.fillMaxWidth().padding(vertical = Space.sm),
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border(),
         content = content

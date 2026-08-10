@@ -86,7 +86,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     ) { padding ->
         ScrollablePage(padding) {
             SectionLabel("Search & context")
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Text("Default retrieval mode", style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.foundation.layout.FlowRow(
@@ -174,7 +174,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             SectionLabel("Response style")
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(
                         "Sets the default style for new responses.",
@@ -205,7 +205,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
 
             if (expertMode) {
             SectionLabel("Raw generation parameters")
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     GenerationSlider("Temperature", temperature, "%.2f", 0f..2f, onChange = vm::setTemperature)
                     GenerationSlider("Top-p", topP, "%.2f", 0.1f..1f, onChange = vm::setTopP)
@@ -225,7 +225,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         OutlinedTextField(
                             value = seedText,
                             onValueChange = { input ->
-                                seedText = input.filter { it.isDigit() }
+                                seedText = input.filter { it.isDigit() }.take(10)
                                 vm.setRandomSeed(seedText.toIntOrNull() ?: -1)
                             },
                             singleLine = true,
@@ -240,7 +240,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
             } else {
                 SectionLabel("Response behavior")
-                Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                     Column(Modifier.padding(Space.lg)) {
                         Text("Creativity", style = MaterialTheme.typography.titleSmall)
                         Text(
@@ -285,7 +285,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
 
             if (expertMode) {
                 SectionLabel("Advanced (llama.cpp)")
-                Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                     Column(Modifier.padding(Space.lg)) {
                         Text(
                             "Defaults for llama.cpp GGUF models. Per-model settings can override them.",
@@ -320,7 +320,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             SectionLabel("Model engine")
-            Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(
                         "Default loading options. Per-model choices take priority.",

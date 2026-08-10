@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,13 +30,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.backup.BackupManager
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
-import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.SystemStatusStrip
@@ -53,12 +58,20 @@ fun BackupScreen(onBack: () -> Unit) {
     var resultMessage by remember { mutableStateOf<String?>(null) }
     var resultIsError by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var showExportPassword by remember { mutableStateOf(false) }
+    var exportPassword by remember { mutableStateOf("") }
+    var exportPasswordConfirmation by remember { mutableStateOf("") }
+    var importPassword by remember { mutableStateOf("") }
 
     val fileName = remember {
         "vervan-backup-${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}.json"
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null) {
+            exportPassword = ""
+            exportPasswordConfirmation = ""
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             busy = true
             // B12: BACKUP is one of the job types the Job Queue screen promised would show up
@@ -67,7 +80,10 @@ fun BackupScreen(onBack: () -> Unit) {
             app.container.db.jobDao().upsert(job)
             resultIsError = false
             resultMessage = try {
-                app.contentResolver.openOutputStream(uri)?.use { BackupManager.export(app.container.db, it) }
+                val output = requireNotNull(app.contentResolver.openOutputStream(uri)) {
+                    "The selected location could not be opened."
+                }
+                output.use { BackupManager.exportEncrypted(app.container.db, it, exportPassword) }
                 app.container.db.jobDao().upsert(job.copy(state = JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
                 "Backup saved."
             } catch (e: Exception) {
@@ -76,27 +92,33 @@ fun BackupScreen(onBack: () -> Unit) {
                 "Export failed. ${e.toUserMessage()}"
             }
             busy = false
+            exportPassword = ""
+            exportPasswordConfirmation = ""
         }
     }
     // File selection just stages the URI — the actual merge (which overwrites any item with a
-    // matching ID) only runs once the user confirms via the ConfirmDialog below, matching every
+    // matching ID) only runs once the user confirms via the password dialog below, matching every
     // other destructive/overwriting action in the app.
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) pendingImportUri = uri
+        if (uri != null) {
+            pendingImportUri = uri
+            importPassword = ""
+        }
     }
-    fun runImport(uri: Uri) {
+    fun runImport(uri: Uri, password: String) {
         scope.launch {
             busy = true
             val job = JobRecord(type = JobType.BACKUP, label = "Restore backup", state = JobState.RUNNING)
             app.container.db.jobDao().upsert(job)
             resultIsError = false
             resultMessage = try {
-                val summary = app.contentResolver.openInputStream(uri)?.use { BackupManager.import(app.container.db, it) }
-                app.container.db.jobDao().upsert(job.copy(state = JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
+                val summary = app.contentResolver.openInputStream(uri)?.use { BackupManager.import(app.container.db, it, password) }
                 if (summary != null) {
+                    app.container.db.jobDao().upsert(job.copy(state = JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
                     "Restored ${summary.chats} chats, ${summary.notes} notes, ${summary.projects} projects, " +
                         "${summary.workspaces} workspaces, and other saved items."
                 } else {
+                    app.container.db.jobDao().upsert(job.copy(state = JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = "The selected file could not be opened."))
                     resultIsError = true
                     "Could not open the selected file."
                 }
@@ -106,13 +128,14 @@ fun BackupScreen(onBack: () -> Unit) {
                 "Restore failed. ${e.toUserMessage()}"
             }
             busy = false
+            importPassword = ""
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Backup & restore") },
+                title = { Text(stringResource(R.string.backup_screen_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
         }
@@ -120,66 +143,148 @@ fun BackupScreen(onBack: () -> Unit) {
         ScrollablePage(padding) {
             Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Export backup", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.backup_export_title), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Includes your saved conversations, notes, workspaces, library content, tool history, and project metadata. " +
-                            "Model files, imported documents, media attachments, app settings, and tool favourites are not included.",
+                        stringResource(R.string.backup_export_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
                     )
-                    Button(onClick = { exportLauncher.launch(fileName) }, enabled = !busy) { Text("Export to file") }
+                    Button(onClick = { showExportPassword = true }, enabled = !busy) { Text(stringResource(R.string.backup_encrypted_export)) }
                 }
             }
-            Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+            Card(Modifier.fillMaxWidth().padding(top = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Restore backup", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.backup_restore_title), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Adds saved content and replaces matching items. Attachments and links to model or document files " +
-                            "work only when those original files are still available on this device.",
+                        stringResource(R.string.backup_restore_body),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
                     )
-                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }, enabled = !busy) { Text("Choose backup file") }
+                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }, enabled = !busy) {
+                        Text(stringResource(R.string.backup_choose_backup_file))
+                    }
                 }
             }
             if (busy) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Processing backup",
-                    body = "Keep this screen open until the work finishes.",
-                    modifier = Modifier.padding(top = Space.lg)
+                    title = stringResource(R.string.backup_processing_title),
+                    body = stringResource(R.string.backup_processing_body),
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             resultMessage?.let {
                 if (resultIsError) {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Backup operation failed",
+                        title = stringResource(R.string.backup_operation_failed),
                         message = it,
-                        recovery = "Your data is safe. Check the file and free storage, then try again.",
-                        modifier = Modifier.padding(top = Space.lg)
+                        recovery = stringResource(R.string.backup_operation_recovery),
+                        modifier = Modifier.padding(top = Space.sm)
                     )
                 } else {
                     SystemStatusStrip(
-                        title = "Done",
+                        title = stringResource(R.string.backup_done),
                         body = it,
                         tone = StatusTone.Ready,
-                        modifier = Modifier.padding(top = Space.lg)
+                        modifier = Modifier.padding(top = Space.sm)
                     )
                 }
             }
         }
     }
 
+    if (showExportPassword) {
+        AlertDialog(
+            onDismissRequest = {
+                showExportPassword = false
+                exportPassword = ""
+                exportPasswordConfirmation = ""
+            },
+            title = { Text(stringResource(R.string.backup_protect_title)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.backup_password_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = exportPassword,
+                        onValueChange = { exportPassword = it.take(InputLimits.BACKUP_PASSWORD_CHARS) },
+                        label = { Text(stringResource(R.string.backup_password_label)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        isError = exportPassword.isNotEmpty() && exportPassword.length < 8,
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                    )
+                    OutlinedTextField(
+                        value = exportPasswordConfirmation,
+                        onValueChange = { exportPasswordConfirmation = it.take(InputLimits.BACKUP_PASSWORD_CHARS) },
+                        label = { Text(stringResource(R.string.backup_password_confirm_label)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        isError = exportPasswordConfirmation.isNotEmpty() && exportPasswordConfirmation != exportPassword,
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showExportPassword = false; exportLauncher.launch(fileName) },
+                    enabled = exportPassword.length >= 8 && exportPassword == exportPasswordConfirmation
+                ) { Text(stringResource(R.string.backup_choose_file)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showExportPassword = false
+                    exportPassword = ""
+                    exportPasswordConfirmation = ""
+                }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
+    }
+
     pendingImportUri?.let { uri ->
-        ConfirmDialog(
-            title = "Restore this backup?",
-            body = "Matching saved content will be replaced. App settings and other local data stay unchanged. " +
-                "Backups do not contain model, document, or media files.",
-            confirmLabel = "Restore",
-            destructive = true,
-            onConfirm = { pendingImportUri = null; runImport(uri) },
-            onDismiss = { pendingImportUri = null }
+        AlertDialog(
+            onDismissRequest = {
+                pendingImportUri = null
+                importPassword = ""
+            },
+            title = { Text(stringResource(R.string.backup_restore_confirm_title)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.backup_restore_password_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = importPassword,
+                        onValueChange = { importPassword = it.take(InputLimits.BACKUP_PASSWORD_CHARS) },
+                        label = { Text(stringResource(R.string.backup_restore_password_label)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingImportUri = null
+                    val password = importPassword
+                    importPassword = ""
+                    runImport(uri, password)
+                }) {
+                    Text(stringResource(R.string.backup_restore_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingImportUri = null
+                    importPassword = ""
+                }) { Text(stringResource(R.string.action_cancel)) }
+            }
         )
     }
 }

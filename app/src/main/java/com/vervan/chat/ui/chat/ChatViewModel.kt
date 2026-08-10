@@ -25,6 +25,8 @@ import com.vervan.chat.data.db.entities.displayName
 import com.vervan.chat.data.db.entities.reconcileCapabilities
 import com.vervan.chat.model.ChatDefaults
 import com.vervan.chat.model.DocumentImportOutcome
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.llm.ModelProfiles
 import com.vervan.chat.llm.TitleGenerator
@@ -35,6 +37,7 @@ import com.vervan.chat.retrieval.RetrievalMode
 import com.vervan.chat.llm.ThinkingPolicy
 import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.tools.ToolCallParser
 import com.vervan.chat.tools.ToolRegistry
 import com.vervan.chat.tools.ToolResult
@@ -525,18 +528,21 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * URI that failed to materialize, or malformed EXIF — callers already treat null as
      * "couldn't attach this image", so this used to crash the app for the same cases. */
     suspend fun copyImage(uri: Uri): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        var copied: java.io.File? = null
         try {
             val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
             val dest = java.io.File(dir, "${System.currentTimeMillis()}.jpg")
+            copied = dest
             app.contentResolver.openInputStream(uri)?.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+                dest.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
             } ?: return@withContext null
             // Orientation fix — bakes the EXIF rotation into the pixels so
             // the vision model (which has no EXIF awareness) doesn't see a sideways image.
-            com.vervan.chat.model.ImageUtils.fixOrientation(dest)
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
             dest.absolutePath
         } catch (t: Throwable) {
             Log.e(TAG, "copyImage failed", t)
+            copied?.delete()
             null
         }
     }
@@ -563,23 +569,37 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Runs on-device ML Kit OCR (see [com.vervan.chat.model.OcrExtractor]) over a picked
      * gallery image. */
     suspend fun extractOcr(uri: Uri): Result<OcrResult> = withContext(Dispatchers.IO) {
+        var copied: java.io.File? = null
         runCatching {
             val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
             val dest = java.io.File(dir, "${System.currentTimeMillis()}_ocr.jpg")
+            copied = dest
             app.contentResolver.openInputStream(uri)?.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+                dest.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
             } ?: throw java.io.IOException("Could not read image")
-            com.vervan.chat.model.ImageUtils.fixOrientation(dest)
-            OcrResult(dest.absolutePath, com.vervan.chat.model.OcrExtractor.extractFromImage(dest))
-        }.onFailure { Log.e(TAG, "OCR extraction failed", it) }
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
+            val text = com.vervan.chat.model.OcrExtractor.extractFromImage(dest)
+            require(text.length <= InputLimits.OCR_TEXT_CHARS) {
+                "OCR produced too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)"
+            }
+            OcrResult(dest.absolutePath, text)
+        }.onFailure {
+            copied?.delete()
+            Log.e(TAG, "OCR extraction failed", it)
+        }
     }
 
     /** Same as [extractOcr] but for a camera capture already materialized as a file (via
      * [newCameraImageFile]). */
     suspend fun extractOcrFromFile(file: java.io.File): Result<OcrResult> = withContext(Dispatchers.IO) {
         runCatching {
-            com.vervan.chat.model.ImageUtils.fixOrientation(file)
-            OcrResult(file.absolutePath, com.vervan.chat.model.OcrExtractor.extractFromImage(file))
+            require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { "Image exceeds the 64 MB limit" }
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { "The captured file is not a readable image" }
+            val text = com.vervan.chat.model.OcrExtractor.extractFromImage(file)
+            require(text.length <= InputLimits.OCR_TEXT_CHARS) {
+                "OCR produced too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)"
+            }
+            OcrResult(file.absolutePath, text)
         }.onFailure { Log.e(TAG, "OCR extraction failed", it) }
     }
 
@@ -795,6 +815,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     private val _titleGenerating = MutableStateFlow(false)
     val titleGenerating: StateFlow<Boolean> = _titleGenerating
+    // If the user sends another message while the fire-and-forget auto-title request is still
+    // running, launchGeneration cancels that request to keep interactive generation responsive.
+    // Remember the interruption so the next completed reply gets one retry instead of leaving the
+    // first-message placeholder forever.
+    private var titleRetryPending = false
 
     // Manual "Generate title" / "Regenerate title" — an AI-produced title stays
     // eligible for later auto-regeneration (titleIsCustom = false), unlike a hand-typed rename.
@@ -816,7 +841,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                         // judgment on the best title, so don't claim it is (see B: "hi" chats
                         // reporting "still the best title" when the model never got a chance to
                         // answer at all).
-                        result.isFallback -> "The model spent its reply on reasoning and didn't return a title — used the first message as a placeholder instead"
+                        result.isFallback -> "The model did not return a usable title — used the first message as a placeholder instead"
                         // Told the model to avoid this exact title and it still landed here — a
                         // thin/ambiguous conversation genuinely doesn't support a different one
                         // right now, not a wiring bug. Say so plainly instead of a "Title updated"
@@ -862,12 +887,21 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 val ws = db.workspaceDao().get(chatRow.workspaceId)
                 if (ws?.autoTitleGeneration != true) return@launch
                 val assistantReplies = getAllMessages().count { it.role == MessageRole.ASSISTANT && it.state == MessageState.COMPLETE }
-                if (assistantReplies != AUTO_TITLE_TRIGGER_REPLIES) return@launch
-                val result = TitleGenerator.generate(app, chatId) ?: return@launch
+                val retryingInterruptedTitle = titleRetryPending && assistantReplies > AUTO_TITLE_TRIGGER_REPLIES
+                if (assistantReplies != AUTO_TITLE_TRIGGER_REPLIES && !retryingInterruptedTitle) return@launch
+                val result = TitleGenerator.generate(app, chatId) ?: run {
+                    titleRetryPending = true
+                    return@launch
+                }
                 db.chatDao().getChat(chatId)?.let {
                     if (!it.titleIsCustom) db.chatDao().update(it.copy(title = result.title, previousTitle = it.title, updatedAt = System.currentTimeMillis()))
                 }
+                titleRetryPending = false
+            } catch (cancelled: CancellationException) {
+                titleRetryPending = true
+                throw cancelled
             } catch (t: Throwable) {
+                titleRetryPending = true
                 Log.e(TAG, "[$chatId] auto title generation failed", t)
             }
         }
@@ -1527,6 +1561,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (!_isGenerating.compareAndSet(expect = false, update = true)) return
         // Preempt any background title/summary generation from the previous turn — both hold the
         // generation mutex for their whole decode, and interactive work must not wait on them.
+        if (titleJob?.isActive == true) titleRetryPending = true
         titleJob?.cancel()
         summaryJob?.cancel()
         generationJob = viewModelScope.launch {

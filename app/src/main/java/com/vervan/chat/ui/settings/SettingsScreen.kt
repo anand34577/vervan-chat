@@ -67,7 +67,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
-import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.EmptyState
@@ -114,12 +113,15 @@ fun SettingsScreen(
     onOpenHelp: () -> Unit = {}
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val modelCount by app.container.db.modelDao().observeModels().collectAsStateWithLifecycle(initialValue = emptyList())
-    val memoryCount by app.container.db.memoryDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsStateWithLifecycle(initialValue = 0)
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
-    val userName by app.container.settingsRepository.userName.collectAsStateWithLifecycle(initialValue = "")
-    val userOccupation by app.container.settingsRepository.userOccupation.collectAsStateWithLifecycle(initialValue = "")
+    val vm: SettingsOverviewViewModel = viewModel(
+        factory = viewModelFactory { initializer { SettingsOverviewViewModel(app) } }
+    )
+    val modelCount by vm.models.collectAsStateWithLifecycle()
+    val memoryCount by vm.memories.collectAsStateWithLifecycle()
+    val pendingSuggestions by vm.pendingSuggestions.collectAsStateWithLifecycle()
+    val activeModel by vm.activeModel.collectAsStateWithLifecycle()
+    val userName by vm.userName.collectAsStateWithLifecycle()
+    val userOccupation by vm.userOccupation.collectAsStateWithLifecycle()
     // Live build label from PackageInfo — the footer used to hardcode "version 0.1", which drifted
     // from the actual release on every bump. Read once; it can't change during the session.
     val versionLabel = remember {
@@ -131,19 +133,7 @@ fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
-            "Help",
-            listOf(
-                SettingsDestination(
-                    Icons.AutoMirrored.Filled.Help,
-                    "Help & troubleshooting",
-                    "Guides, fixes, and diagnostics",
-                    listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
-                    onOpenHelp
-                )
-            )
-        ),
-        SettingsSection(
-            "Look & feel",
+            "Personalize",
             listOf(
                 SettingsDestination(
                     Icons.Filled.Palette, "Appearance", "Theme, colors, and dark mode",
@@ -152,10 +142,6 @@ fun SettingsScreen(
                 SettingsDestination(
                     Icons.Filled.Accessibility, "Accessibility", "Text, contrast, motion, and touch size",
                     listOf("TalkBack", "screen reader", "vibration"), onOpenAccessibility
-                ),
-                SettingsDestination(
-                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, voice models",
-                    listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
                 )
             )
         ),
@@ -176,13 +162,17 @@ fun SettingsScreen(
                     listOf("generation", "sampling", "temperature", "top p", "semantic", "keyword", "summary"), onOpenGeneration
                 ),
                 SettingsDestination(
+                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, voice models",
+                    listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
+                ),
+                SettingsDestination(
                     Icons.AutoMirrored.Filled.List, "Tools", "Choose what AI can use in chats",
                     listOf("model tools", "calculator", "date", "time"), onOpenTools
                 )
             )
         ),
         SettingsSection(
-            "Personalization",
+            "Memory & personalization",
             listOf(
                 SettingsDestination(
                     Icons.Filled.Psychology, "Memory", "${memoryCount.size} saved",
@@ -204,6 +194,18 @@ fun SettingsScreen(
                 SettingsDestination(
                     Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, diagnostics",
                     listOf("export", "restore", "recycle bin", "jobs", "index", "cache"), onOpenStorage
+                )
+            )
+        ),
+        SettingsSection(
+            "Help & support",
+            listOf(
+                SettingsDestination(
+                    Icons.AutoMirrored.Filled.Help,
+                    "Help & troubleshooting",
+                    "Guides, fixes, and diagnostics",
+                    listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
+                    onOpenHelp
                 )
             )
         )
@@ -229,7 +231,10 @@ fun SettingsScreen(
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
-          Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
+          Column(
+              Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.lg),
+              verticalArrangement = Arrangement.spacedBy(Space.lg)
+          ) {
             // Profile header — the modern settings anchor: who this workspace belongs to, with a
             // one-tap path to the full profile. Replaces the generic hero card, which repeated
             // the privacy message the About footer already carries.
@@ -278,8 +283,15 @@ fun SettingsScreen(
                 value = query,
                 onValueChange = { query = it },
                 placeholder = "Search settings",
-                modifier = Modifier.padding(top = Space.lg)
             )
+            if (query.isBlank()) {
+                SettingsSetupCard(
+                    activeModelName = activeModel?.displayName,
+                    modelCount = modelCount.size,
+                    memoryCount = memoryCount.size,
+                    pendingSuggestions = pendingSuggestions
+                )
+            }
             if (visibleSections.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.Tune,
@@ -288,57 +300,116 @@ fun SettingsScreen(
                 )
             } else {
                 visibleSections.forEach { section ->
-                    SectionLabel(section.title)
-                    SettingsGroup(section.destinations)
+                    Column(Modifier.fillMaxWidth()) {
+                        SectionLabel(section.title, topPadding = 0.dp, bottomPadding = Space.sm)
+                        SettingsGroup(section.destinations)
+                    }
                 }
             }
-            SectionLabel("About")
-            com.vervan.chat.ui.common.SectionCard(
-                modifier = Modifier.padding(bottom = Space.xxl),
-                items = listOf(
-                    {
-                        com.vervan.chat.ui.common.SectionRow(
-                            title = "Vervan Chat",
-                            icon = Icons.Filled.AutoAwesome,
-                            subtitle = "Private on-device AI workspace · $versionLabel"
+            if (query.isBlank()) {
+                Column(Modifier.fillMaxWidth()) {
+                    SectionLabel("About", topPadding = 0.dp, bottomPadding = Space.sm)
+                    com.vervan.chat.ui.common.SectionCard(
+                        items = listOf(
+                        {
+                            com.vervan.chat.ui.common.SectionRow(
+                                title = "Vervan Chat",
+                                icon = Icons.Filled.AutoAwesome,
+                                subtitle = "Private AI workspace with local and remote model options · $versionLabel"
+                            )
+                        },
+                        {
+                            com.vervan.chat.ui.common.SectionRow(
+                                title = "Source code on GitHub",
+                                subtitle = "github.com/anand34577/vervan-chat",
+                                icon = Icons.Filled.Code,
+                                onClick = {
+                                    // applicationContext startActivity needs NEW_TASK for an outbound
+                                    // view intent; runCatching swallows the rare no-handler case
+                                    // (a device with no browser) instead of crashing Settings.
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(GITHUB_REPOSITORY_URL)
+                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    runCatching { app.startActivity(intent) }
+                                },
+                                trailing = {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            )
+                        },
+                        {
+                            Text(
+                                "Chats and documents are stored on this device. A remote model can receive content when you choose to use one.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(Space.lg)
+                            )
+                        }
                         )
-                    },
-                    {
-                        com.vervan.chat.ui.common.SectionRow(
-                            title = "Source code on GitHub",
-                            subtitle = "github.com/anand34577/vervan-chat",
-                            icon = Icons.Filled.Code,
-                            onClick = {
-                                // applicationContext startActivity needs NEW_TASK for an outbound
-                                // view intent; runCatching swallows the rare no-handler case
-                                // (a device with no browser) instead of crashing Settings.
-                                val intent = android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse(GITHUB_REPOSITORY_URL)
-                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                runCatching { app.startActivity(intent) }
-                            },
-                            trailing = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.OpenInNew,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        )
-                    },
-                    {
-                        Text(
-                            "Chats and documents stay on this device. Verify important answers.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(Space.lg)
-                        )
-                    }
-                )
-            )
+                    )
+                }
+            }
           }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSetupCard(
+    activeModelName: String?,
+    modelCount: Int,
+    memoryCount: Int,
+    pendingSuggestions: Int
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Space.lg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Column(
+                Modifier.weight(1f).padding(start = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
+                Text("Your setup", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    activeModelName?.takeIf { it.isNotBlank() } ?: "No generation model selected",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "$modelCount model${if (modelCount == 1) "" else "s"} · " +
+                        "$memoryCount memor${if (memoryCount == 1) "y" else "ies"} saved" +
+                        if (pendingSuggestions > 0) " · $pendingSuggestions to review" else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (pendingSuggestions > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -443,7 +514,7 @@ fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun SettingsRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     SectionCard(
-        modifier = Modifier.padding(vertical = Space.xs),
+        modifier = Modifier.padding(vertical = Space.sm),
         items = listOf(
             {
                 SectionRow(

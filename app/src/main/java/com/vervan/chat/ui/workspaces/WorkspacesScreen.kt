@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,6 +64,9 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -81,6 +85,8 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
     val activeId by vm.activeWorkspaceId.collectAsStateWithLifecycle()
     val personas by vm.personas.collectAsStateWithLifecycle()
     val chatCounts by vm.chatCounts.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val personaNamesById = remember(personas) { personas.associate { it.id to it.name } }
     var showCreate by remember { mutableStateOf(false) }
     var showArchived by remember { mutableStateOf(false) }
@@ -108,12 +114,12 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                     },
                     onExit = { selected = emptySet(); selectionMode = false },
                     onDelete = { pendingBulkDelete = true },
-                    deleteContentDescription = "Delete selected workspaces forever"
+                    deleteContentDescription = stringResource(com.vervan.chat.R.string.workspace_delete_selected_accessibility)
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Workspaces") },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                    title = { Text(stringResource(com.vervan.chat.R.string.workspace_list_title)) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) } }
                     // Long-press a row to enter selection mode — no separate top-bar entry
                     // point, matching every other list screen in the app.
                 )
@@ -121,7 +127,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New workspace") }
+            FloatingActionButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(com.vervan.chat.R.string.workspace_new)) }
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
@@ -129,19 +135,47 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
             item {
                 FeatureHero(
                     icon = Icons.Filled.Dashboard,
-                    eyebrow = "Separate contexts",
-                    title = "Your workspaces",
-                    body = "Separate personal, work, and research content and defaults.",
+                    eyebrow = stringResource(com.vervan.chat.R.string.workspace_hero_eyebrow),
+                    title = stringResource(com.vervan.chat.R.string.workspace_hero_title),
+                    body = stringResource(com.vervan.chat.R.string.workspace_hero_body),
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
-            item { VervanSectionHeader("Active workspaces", count = workspaces.size, actionLabel = "New", onAction = { showCreate = true }) }
+            item { VervanSectionHeader(stringResource(com.vervan.chat.R.string.workspace_active_title), count = workspaces.size, actionLabel = stringResource(com.vervan.chat.R.string.action_new), onAction = { showCreate = true }) }
+            if (error != null) {
+                item {
+                    OperationErrorCard(
+                        title = stringResource(com.vervan.chat.R.string.workspaces_unavailable),
+                        message = error ?: stringResource(com.vervan.chat.R.string.workspaces_unavailable_message),
+                        recovery = stringResource(com.vervan.chat.R.string.workspaces_unavailable_recovery),
+                        modifier = Modifier.padding(top = Space.md),
+                        actionLabel = stringResource(com.vervan.chat.R.string.action_retry),
+                        onAction = vm::retry
+                    )
+                }
+            } else if (isLoading) {
+                item { LoadingSkeletonList(rows = 5, modifier = Modifier.padding(top = Space.md)) }
+            } else if (workspaces.isEmpty()) {
+                // Defensive — the Default Workspace always exists in practice, but every other
+                // list screen in the app falls back to EmptyState instead of rendering nothing,
+                // so this stays consistent if that ever changes (e.g. mid-archive/delete race).
+                item {
+                    EmptyState(
+                        icon = Icons.Filled.Dashboard,
+                        title = stringResource(com.vervan.chat.R.string.workspace_no_items),
+                        body = stringResource(com.vervan.chat.R.string.workspace_no_items_body),
+                        actionLabel = stringResource(com.vervan.chat.R.string.workspace_new),
+                        onAction = { showCreate = true }
+                    )
+                }
+            }
+            if (error == null && !isLoading) {
             items(workspaces, key = { it.id }) { workspace ->
                 WorkspaceCard(
                     workspace = workspace,
                     isActive = workspace.id == activeId,
                     chatCount = chatCounts[workspace.id] ?: 0,
-                    personaName = personaNamesById[workspace.personaId] ?: "—",
+                    personaName = personaNamesById[workspace.personaId] ?: stringResource(com.vervan.chat.R.string.workspace_no_persona),
                     onClick = { onOpenWorkspace(workspace.id) },
                     onSetActive = { vm.setActive(workspace) },
                     onArchive = { vm.archive(workspace) },
@@ -160,12 +194,12 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "Archived (${archived.size})",
+                            stringResource(com.vervan.chat.R.string.workspace_archived_count, archived.size),
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier.padding(start = Space.sm)
                         )
                         TextButton(onClick = { showArchived = !showArchived }) {
-                            Text(if (showArchived) "Hide" else "Show")
+                            Text(stringResource(if (showArchived) com.vervan.chat.R.string.workspace_hide else com.vervan.chat.R.string.workspace_show))
                         }
                     }
                 }
@@ -175,7 +209,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                             workspace = workspace,
                             isActive = false,
                             chatCount = chatCounts[workspace.id] ?: 0,
-                            personaName = personaNamesById[workspace.personaId] ?: "—",
+                            personaName = personaNamesById[workspace.personaId] ?: stringResource(com.vervan.chat.R.string.workspace_no_persona),
                             onClick = { onOpenWorkspace(workspace.id) },
                             onRestore = { vm.restore(workspace) },
                             onDelete = { pendingDelete = workspace },
@@ -186,6 +220,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                         )
                     }
                 }
+            }
             }
           }
         }
@@ -204,9 +239,9 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
 
     pendingDelete?.let { workspace ->
         ConfirmDialog(
-            title = "Delete workspace forever?",
-            body = "Permanently delete \"${workspace.name}\" and all its content?",
-            confirmLabel = "Delete forever",
+            title = stringResource(com.vervan.chat.R.string.workspace_delete_one_title),
+            body = stringResource(com.vervan.chat.R.string.workspace_delete_one_body, workspace.name),
+            confirmLabel = stringResource(com.vervan.chat.R.string.workspace_delete_forever),
             destructive = true,
             onConfirm = { vm.delete(workspace); pendingDelete = null },
             onDismiss = { pendingDelete = null }
@@ -216,9 +251,9 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
     if (pendingBulkDelete) {
         val toDelete = selectableWorkspaces.filter { it.id in selected }
         ConfirmDialog(
-            title = "Delete selected workspaces forever?",
-            body = "Permanently delete ${toDelete.size} workspace${if (toDelete.size == 1) "" else "s"} and all their content?",
-            confirmLabel = "Delete forever",
+            title = stringResource(com.vervan.chat.R.string.workspace_delete_selected_title),
+            body = stringResource(com.vervan.chat.R.string.workspace_delete_many_body, toDelete.size),
+            confirmLabel = stringResource(com.vervan.chat.R.string.workspace_delete_forever),
             destructive = true,
             onConfirm = {
                 vm.deleteAll(toDelete)
@@ -282,19 +317,25 @@ private fun WorkspaceCard(
                     )
                     if (isActive) {
                         Icon(
-                            Icons.Filled.CheckCircle, contentDescription = "Active",
+                            Icons.Filled.CheckCircle, contentDescription = stringResource(com.vervan.chat.R.string.workspace_active),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = Space.xs)
                         )
                     }
                     if (workspace.archived) {
-                        Icon(Icons.Filled.Archive, contentDescription = "Archived", modifier = Modifier.padding(start = Space.xs))
+                        Icon(Icons.Filled.Archive, contentDescription = stringResource(com.vervan.chat.R.string.workspace_archived), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 // Compact card fields only (Android phone space rule): persona, chat
                 // count, last activity — advanced stats live on the detail screen.
                 Text(
-                    "$personaName · $chatCount chat${if (chatCount == 1) "" else "s"} · ${relativeTime(workspace.lastActiveAt)}",
+                    stringResource(
+                        com.vervan.chat.R.string.workspace_card_summary,
+                        personaName,
+                        if (chatCount == 1) stringResource(com.vervan.chat.R.string.workspace_chat_count_one)
+                        else stringResource(com.vervan.chat.R.string.workspace_chat_count_many, chatCount),
+                        relativeTime(workspace.lastActiveAt)
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -302,10 +343,10 @@ private fun WorkspaceCard(
                 )
             }
             Box {
-                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Workspace actions") }
+                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(com.vervan.chat.R.string.workspace_actions)) }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     if (onSetActive != null && !isActive) {
-                        DropdownMenuItem(text = { Text("Set active") }, onClick = { showMenu = false; onSetActive() })
+                        DropdownMenuItem(text = { Text(stringResource(com.vervan.chat.R.string.workspace_set_active)) }, onClick = { showMenu = false; onSetActive() })
                     }
                     if (onArchive != null && !workspace.isDefault) {
                         ArchiveMenuItem(archived = false, onClick = { showMenu = false; onArchive() })
@@ -336,25 +377,25 @@ private fun CreateWorkspaceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New workspace") },
+        title = { Text(stringResource(com.vervan.chat.R.string.workspace_create_title)) },
         text = {
             Column {
                 BoundedTextField(
-                    value = name, onValueChange = { name = it }, placeholder = "Name",
+                    value = name, onValueChange = { name = it }, placeholder = stringResource(com.vervan.chat.R.string.workspace_name),
                     singleLine = true, maxLength = ValidationLimits.WORKSPACE_NAME,
                     modifier = Modifier.fillMaxWidth()
                 )
                 BoundedTextField(
-                    value = description, onValueChange = { description = it }, placeholder = "Description",
+                    value = description, onValueChange = { description = it }, placeholder = stringResource(com.vervan.chat.R.string.workspace_description),
                     maxLength = ValidationLimits.WORKSPACE_DESCRIPTION,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 )
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = Space.sm)) {
                     OutlinedTextField(
-                        value = selectedPersona?.name ?: "Select persona",
+                        value = selectedPersona?.name ?: stringResource(com.vervan.chat.R.string.workspace_select_persona),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Persona") },
+                        label = { Text(stringResource(com.vervan.chat.R.string.workspace_persona)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
@@ -374,8 +415,8 @@ private fun CreateWorkspaceDialog(
                 onClick = { selectedPersona?.let { onCreate(name.trim(), description.trim(), it.id) } },
                 enabled = name.isNotBlank() && name.length <= ValidationLimits.WORKSPACE_NAME &&
                     description.length <= ValidationLimits.WORKSPACE_DESCRIPTION && selectedPersona != null
-            ) { Text("Create") }
+            ) { Text(stringResource(com.vervan.chat.R.string.workspace_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(com.vervan.chat.R.string.workspace_cancel)) } }
     )
 }

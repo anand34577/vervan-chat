@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.graph
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -76,7 +77,9 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
         _searchResults.value = emptyList()
         viewModelScope.launch {
             _loading.value = true
-            _neighbors.value = runCatching { loadNeighbors(node) }.getOrDefault(emptyList())
+            _neighbors.value = runCatching { loadNeighbors(node) }
+                .onFailure { Log.e(TAG, "loadNeighbors failed for ${node.id}", it) }
+                .getOrDefault(emptyList())
             _loading.value = false
         }
     }
@@ -87,7 +90,9 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
         _canGoBack.value = backStack.isNotEmpty()
         viewModelScope.launch {
             _loading.value = true
-            _neighbors.value = runCatching { loadNeighbors(prev) }.getOrDefault(emptyList())
+            _neighbors.value = runCatching { loadNeighbors(prev) }
+                .onFailure { Log.e(TAG, "loadNeighbors failed for ${prev.id}", it) }
+                .getOrDefault(emptyList())
             _loading.value = false
         }
     }
@@ -337,5 +342,9 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
             edges += GraphEdge(GraphNode(it.id, GraphNodeType.MEMORY, it.text.take(60)), "scoped here")
         }
         return edges
+    }
+
+    companion object {
+        private const val TAG = "KnowledgeGraphViewModel"
     }
 }

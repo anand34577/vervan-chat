@@ -53,7 +53,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
@@ -109,6 +108,7 @@ import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionLabel
@@ -246,6 +246,19 @@ fun ModelManagerScreen(
     ) { padding ->
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
+            FeatureHero(
+                icon = Icons.Filled.Bolt,
+                eyebrow = "Private runtime",
+                title = "Make the right model choice",
+                body = "Install, import, and tune the models that power chat, search, and voice on this device.",
+                trailing = {
+                    SemanticChip(
+                        text = if (generationLoadInfo.currentModelId != null) "Ready" else "Setup",
+                        tone = if (generationLoadInfo.currentModelId != null) ChipTone.Success else ChipTone.Warning
+                    )
+                },
+                modifier = Modifier.padding(bottom = Space.lg)
+            )
             // readiness summary — the model manager used to open straight into the
             // import card with no at-a-glance answer to "is anything actually usable right now."
             run {
@@ -386,7 +399,14 @@ fun ModelManagerScreen(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.sm))
                 }
 
-                if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
+                if (!modelsLoaded) {
+                    // Cold-start gap between compose-in and Room's first emission — the previous
+                    // behavior showed "no models installed" here for a frame even with models
+                    // present, same class of bug ChatListScreen's isLoading gate already fixed.
+                    Box(Modifier.fillMaxWidth().padding(top = Space.xl), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (generationModels.isEmpty() && embeddingModels.isEmpty() && downloadedVoiceStates.isEmpty()) {
                     EmptyModelLibrary(
                         onDiscover = { showingDiscover = true },
                         onImport = { showImportOptions = true }

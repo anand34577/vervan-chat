@@ -106,6 +106,8 @@ import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.model.readTextLimited
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.PageContainer
@@ -237,12 +239,20 @@ internal fun ModelEditDialog(
     val pickTemplateFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             loraScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val text = runCatching {
-                    loraApp.contentResolver.openInputStream(it)?.use { s -> String(s.readBytes(), Charsets.UTF_8) }
-                }.getOrNull()
-                if (!text.isNullOrBlank() && text.length <= 128_000) {
-                    chatTemplateOverride = text.trim()
-                    chatTemplateOverrideOn = true
+                runCatching {
+                    loraApp.contentResolver.openInputStream(it)?.use { s ->
+                        s.reader(Charsets.UTF_8).use { reader -> reader.readTextLimited(InputLimits.MAX_CHAT_TEMPLATE_CHARS) }
+                    } ?: error("Couldn't open the selected template file")
+                }.onSuccess { text ->
+                    if (text.isBlank()) {
+                        loraError = "The selected template file is empty"
+                    } else {
+                        chatTemplateOverride = text.trim()
+                        chatTemplateOverrideOn = true
+                        loraError = null
+                    }
+                }.onFailure { error ->
+                    loraError = "Couldn't read chat template: ${error.toUserMessage()}"
                 }
             }
         }
@@ -353,7 +363,7 @@ internal fun ModelEditDialog(
                         )
                         OutlinedTextField(
                             value = remoteApiKey,
-                            onValueChange = { remoteApiKey = it },
+                            onValueChange = { remoteApiKey = it.take(128) },
                             label = { Text("API key") },
                             supportingText = { Text("Leave blank to keep the existing key") },
                             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -682,7 +692,8 @@ internal fun ModelEditDialog(
                             OverrideField("RoPE freq scale", ropeFreqScaleOn, { ropeFreqScaleOn = it }, ropeFreqScale, { ropeFreqScale = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
                             OverrideField(
                                 "Chat template override", chatTemplateOverrideOn, { chatTemplateOverrideOn = it }, chatTemplateOverride,
-                                { chatTemplateOverride = it }, "From model (embedded)", singleLine = false
+                                { chatTemplateOverride = it }, "From model (embedded)", singleLine = false,
+                                maxLength = InputLimits.MAX_CHAT_TEMPLATE_CHARS
                             )
                             if (chatTemplateOverrideOn) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -828,7 +839,8 @@ internal fun OverrideField(
     value: String,
     onValueChange: (String) -> Unit,
     defaultLabel: String,
-    singleLine: Boolean = true
+    singleLine: Boolean = true,
+    maxLength: Int = 128
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -843,7 +855,7 @@ internal fun OverrideField(
         }
         if (override) {
             OutlinedTextField(
-                value, onValueChange, singleLine = singleLine,
+                value, { onValueChange(it.take(maxLength)) }, singleLine = singleLine,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
         }

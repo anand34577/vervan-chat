@@ -24,8 +24,6 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,9 +31,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
-import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.theme.Space
@@ -56,7 +54,6 @@ fun ExperienceControlsSettingsScreen(
     val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsState()
     val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsState()
     val fastCapableRoutingEnabled by vm.fastCapableRoutingEnabled.collectAsState()
-    var confirmExpert by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -71,6 +68,12 @@ fun ExperienceControlsSettingsScreen(
         }
     ) { padding ->
         ScrollablePage(padding) {
+            FeatureHero(
+                icon = Icons.Filled.Tune,
+                eyebrow = "Calm by default, powerful on demand",
+                title = "Shape how Vervan works",
+                body = "Keep the everyday experience simple, or expose more control over models, routing, and response behavior."
+            )
             SystemStatusStrip(
                 title = if (expertMode) "Expert mode active" else "Standard mode",
                 body = if (expertMode) {
@@ -82,7 +85,7 @@ fun ExperienceControlsSettingsScreen(
             )
 
             SectionLabel("Mode")
-            androidx.compose.material3.Card(Modifier.padding(top = Space.xs)) {
+            androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
                     headlineContent = { Text("Expert mode") },
                     supportingContent = { Text("Show advanced model and response controls.") },
@@ -91,7 +94,7 @@ fun ExperienceControlsSettingsScreen(
                         Switch(
                             checked = expertMode,
                             onCheckedChange = { enabled ->
-                                if (enabled && !expertMode) confirmExpert = true else vm.setExpertMode(enabled)
+                                vm.setExpertMode(enabled)
                             }
                         )
                     }
@@ -163,15 +166,5 @@ fun ExperienceControlsSettingsScreen(
                 modifier = Modifier.padding(top = Space.lg)
             )
         }
-    }
-
-    if (confirmExpert) {
-        ConfirmDialog(
-            title = "Enable Expert mode?",
-            body = "Shows advanced model and response controls. Your current values stay unchanged.",
-            confirmLabel = "Enable",
-            onConfirm = { vm.setExpertMode(true); confirmExpert = false },
-            onDismiss = { confirmExpert = false }
-        )
     }
 }

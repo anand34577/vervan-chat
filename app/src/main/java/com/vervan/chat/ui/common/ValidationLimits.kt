@@ -1,14 +1,16 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.validation.InputLimits
+
 /**
  * Central length-limit matrix — product guardrails, not database limits. Every persisted
  * or submitted text field should reference a constant here (via [BoundedTextField]) instead of
  * an unbounded `OutlinedTextField`, so limits stay consistent and are defined in exactly one place.
  */
 object ValidationLimits {
-    const val SEARCH_QUERY = 200
+    const val SEARCH_QUERY = InputLimits.SEARCH_QUERY_CHARS
     const val CHAT_TITLE = 120
-    const val CHAT_COMPOSER = 12_000
+    const val CHAT_COMPOSER = InputLimits.CHAT_TEXT_CHARS
     const val FIND_IN_CONVERSATION = 200
     const val TEMPLATE_COMMAND_NAME = 32
     const val MEMORY_TEXT = 1_000
@@ -57,4 +59,10 @@ object ValidationLimits {
     const val FLASHCARD_QUESTION = 1_000
     const val FLASHCARD_ANSWER = 4_000
     const val BACKUP_LABEL = 100
+
+    const val GENERAL_TOOL_INPUT = InputLimits.GENERAL_TOOL_INPUT_CHARS
+    const val OCR_TEXT = InputLimits.OCR_TEXT_CHARS
+    const val TRANSLATION_TEXT = InputLimits.TRANSLATION_TEXT_CHARS
+    const val TRANSCRIPT = InputLimits.TRANSCRIPT_CHARS
+    const val TTS_TEXT = InputLimits.TTS_TEXT_CHARS
 }

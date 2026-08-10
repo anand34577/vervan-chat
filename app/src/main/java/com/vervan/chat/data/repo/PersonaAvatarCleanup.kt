@@ -1,8 +1,11 @@
 package com.vervan.chat.data.repo
 
+import android.util.Log
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.entities.Persona
 import java.io.File
+
+private const val TAG = "PersonaAvatarCleanup"
 
 /**
  * Deletes a persona's on-disk avatar file (a picked/imported image copied into
@@ -23,6 +26,7 @@ object PersonaAvatarCleanup {
         if (path.startsWith("emoji:")) return
         if (db.personaDao().countOtherReferencesToAvatarPath(persona.id, path) == 0) {
             runCatching { File(path).delete() }
+                .onFailure { Log.w(TAG, "Failed to delete orphaned avatar $path", it) }
         }
     }
 }

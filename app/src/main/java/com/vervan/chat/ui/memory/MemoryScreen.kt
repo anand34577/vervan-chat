@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.memory
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +50,8 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.ui.theme.VervanContentWidth
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,22 +91,33 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
             FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = "Add memory") }
         }
     ) { padding ->
-        PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+        PageContainer(Modifier.padding(padding), maxContentWidth = VervanContentWidth.standard) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(vertical = Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
+        ) {
             item {
                 FeatureHero(
                     eyebrow = "Private and approved",
                     title = "What the assistant remembers",
-            body = "Review details saved for future chats. Vervan uses relevant memories when available.",
-                    icon = Icons.Filled.Lightbulb,
-                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
+                    body = "Review details saved for future chats. Vervan uses relevant memories when available.",
+                    icon = Icons.Filled.Lightbulb
+                )
+            }
+            item {
+                MemorySnapshotCard(
+                    total = memories.size,
+                    enabled = memories.count { it.enabled }
                 )
             }
             item {
                 VervanSectionHeader(
                     title = "Saved memories",
                     count = memories.size,
-                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
+                    topPadding = 0.dp,
+                    bottomPadding = 0.dp
                 )
             }
             if (memories.isEmpty()) {
@@ -117,14 +132,20 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
             items(memories, key = { it.id }) { memory ->
                 val highlighted = memory.id == highlightMemoryId
                 Card(
-                    Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
+                    Modifier.fillMaxWidth(),
                     colors = if (highlighted) {
                         androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                     } else {
-                        androidx.compose.material3.CardDefaults.cardColors()
-                    }
+                        SurfaceRole.Card.cardColors()
+                    },
+                    border = if (highlighted) {
+                        androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                    } else {
+                        SurfaceRole.Card.border()
+                    },
+                    shape = MaterialTheme.shapes.extraLarge
                 ) {
-                    Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                             Text(memory.text, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "") +
@@ -202,5 +223,40 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
             },
             onDismiss = { pendingDelete = null }
         )
+    }
+}
+
+@Composable
+private fun MemorySnapshotCard(total: Int, enabled: Int, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = SurfaceRole.Raised.cardColors(),
+        border = SurfaceRole.Raised.border(),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Space.lg),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+        ) {
+            MemoryMetric(total.toString(), "Saved", Modifier.weight(1f))
+            MemoryMetric(enabled.toString(), "Enabled", Modifier.weight(1f), MaterialTheme.colorScheme.primary)
+            MemoryMetric((total - enabled).coerceAtLeast(0).toString(), "Paused", Modifier.weight(1f), MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MemoryMetric(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color? = null,
+) {
+    androidx.compose.foundation.layout.Column(
+        modifier.padding(vertical = Space.xs),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, style = MaterialTheme.typography.titleMedium, color = color ?: MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

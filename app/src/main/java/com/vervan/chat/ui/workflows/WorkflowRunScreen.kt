@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -64,6 +68,9 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
         initializer { WorkflowRunViewModel(app, workflowId) }
     })
     val workflow by vm.workflow.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
+    val workflowFound by vm.workflowFound.collectAsState()
     val steps by vm.steps.collectAsState()
     val running by vm.running.collectAsState()
     val paused by vm.paused.collectAsState()
@@ -85,7 +92,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 title = { OverflowTooltipText(workflow?.name ?: "Workflow") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
-                    IconButton(onClick = { showSourcePicker = true }) {
+                    IconButton(onClick = { showSourcePicker = true }, enabled = workflowFound && !isLoading) {
                         Icon(
                             Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Sources",
                             tint = if (sourceKbIds.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -96,7 +103,24 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
         }
     ) { padding ->
       PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg)) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Workflow unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your workflow is safe. Retry loading it or return to the workflow list.",
+                actionLabel = "Retry",
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 7, modifier = Modifier.padding(Space.md))
+            !workflowFound -> EmptyState(
+                icon = Icons.Filled.Description,
+                title = "Workflow not found",
+                body = "This workflow may have been deleted or moved to the recycle bin.",
+                actionLabel = "Back",
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -168,7 +192,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                     }
                 }
             }
-        }
+            }
       }
     }
 
@@ -200,4 +224,5 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { showSourcePicker = false }) { Text("Cancel") } }
         )
     }
+}
 }

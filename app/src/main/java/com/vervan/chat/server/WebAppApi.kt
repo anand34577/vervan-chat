@@ -16,6 +16,7 @@ import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolRegistry
+import com.vervan.chat.validation.InputLimits
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
@@ -51,6 +52,8 @@ import org.json.JSONObject
  * [handle] is ever called; this class assumes an authorized request.
  */
 internal class WebAppApi(private val app: VervanApp) {
+
+    private class ClientInputException(message: String) : IllegalArgumentException(message)
 
     companion object {
         private const val TAG = "WebAppApi"
@@ -136,7 +139,8 @@ internal class WebAppApi(private val app: VervanApp) {
         } catch (t: Throwable) {
             if (t is VirtualMachineError) throw t
             Log.e(TAG, "handler failed for ${session.method} ${session.uri}", t)
-            error(Response.Status.INTERNAL_ERROR, t.toUserMessage())
+            if (t is ClientInputException) error(Response.Status.BAD_REQUEST, t.message ?: "Invalid input")
+            else error(Response.Status.INTERNAL_ERROR, t.toUserMessage())
         }
     }
 
@@ -195,6 +199,9 @@ internal class WebAppApi(private val app: VervanApp) {
      * reused rather than re-implemented here so the browser and the phone agree on what matches. */
     private fun handleSearch(session: IHTTPSession): Response {
         val query = session.parameters["q"]?.firstOrNull()?.trim().orEmpty()
+        if (query.length > InputLimits.SEARCH_QUERY_CHARS) {
+            return error(Response.Status.BAD_REQUEST, "Search query is too long (maximum ${InputLimits.SEARCH_QUERY_CHARS} characters)")
+        }
         if (query.isBlank()) return json(JSONObject().put("results", JSONArray()))
         return runBlocking {
             val db = app.container.db
@@ -511,7 +518,10 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val db = app.container.db
             val chat = db.chatDao().getChat(body.optString("chat_id")) ?: return@runBlocking notFound("chat")
-            val name = body.optString("name").ifBlank { "document" }
+            val name = boundedText(body, "name", "document", com.vervan.chat.ui.common.ValidationLimits.DOCUMENT_DISPLAY_NAME)
+                .ifBlank { "document" }
+            // Untrusted request field — never let it dictate a filesystem path (path traversal via "../..").
+            val safeName = name.replace(Regex("[/\\\\]"), "_").let { if (it == ".." || it == ".") "document" else it }
             val base64 = body.optString("data").takeIf { it.isNotBlank() }
                 ?: return@runBlocking badRequest("data (base64) is required")
             val bytes = runCatching { android.util.Base64.decode(base64, android.util.Base64.DEFAULT) }
@@ -521,7 +531,7 @@ internal class WebAppApi(private val app: VervanApp) {
             }
 
             val kb = com.vervan.chat.data.db.entities.KnowledgeBase(name = "Attached: $name")
-            val temp = java.io.File(app.cacheDir, "webui-attach-${System.currentTimeMillis()}-$name")
+            val temp = java.io.File(app.cacheDir, "webui-attach-${System.currentTimeMillis()}-$safeName")
             try {
                 temp.writeBytes(bytes)
                 db.knowledgeBaseDao().upsert(kb)
@@ -606,8 +616,11 @@ internal class WebAppApi(private val app: VervanApp) {
             val temp = java.io.File(app.cacheDir, "webui-ocr-${System.currentTimeMillis()}.jpg")
             try {
                 temp.writeBytes(bytes)
-                com.vervan.chat.model.ImageUtils.fixOrientation(temp)
+                check(com.vervan.chat.model.ImageUtils.normalizeForModel(temp)) { "The image is not readable" }
                 val text = com.vervan.chat.model.OcrExtractor.extractFromImage(temp)
+                if (text.length > InputLimits.OCR_TEXT_CHARS) {
+                    return@runBlocking error(Response.Status.PAYLOAD_TOO_LARGE, "OCR text is too long")
+                }
                 json(JSONObject().put("text", text).put("empty", text.isBlank()))
             } finally {
                 temp.delete()
@@ -627,12 +640,12 @@ internal class WebAppApi(private val app: VervanApp) {
             val dao = app.container.db.noteDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
             val note = (existing ?: Note()).copy(
-                title = body.optString("title", existing?.title ?: "Untitled note").ifBlank { "Untitled note" },
-                content = body.optString("content", existing?.content.orEmpty()),
+                title = boundedText(body, "title", existing?.title ?: "Untitled note", com.vervan.chat.ui.common.ValidationLimits.NOTE_TITLE).ifBlank { "Untitled note" },
+                content = boundedText(body, "content", existing?.content.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.NOTE_CONTENT),
                 projectId = body.optString("project_id").takeIf { it.isNotBlank() } ?: existing?.projectId,
                 folderId = body.optString("folder_id").takeIf { it.isNotBlank() } ?: existing?.folderId,
                 pinned = body.optBoolean("pinned", existing?.pinned ?: false),
-                tags = body.optString("tags", existing?.tags.orEmpty()),
+                tags = boundedText(body, "tags", existing?.tags.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.NOTE_TAG_COUNT * com.vervan.chat.ui.common.ValidationLimits.NOTE_TAG),
                 updatedAt = System.currentTimeMillis()
             )
             dao.upsert(note)
@@ -660,21 +673,21 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.memoryDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
-            val text = body.optString("text", existing?.text.orEmpty()).trim()
+            val text = boundedText(body, "text", existing?.text.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.MEMORY_TEXT, required = true).trim()
             if (text.isBlank()) return@runBlocking badRequest("A memory needs some text")
-            val scope = runCatching {
-                MemoryScope.valueOf(body.optString("scope", existing?.scope?.name ?: "GLOBAL"))
-            }.getOrDefault(MemoryScope.GLOBAL)
+            val scopeRaw = body.optString("scope", existing?.scope?.name ?: "GLOBAL")
+            val scope = runCatching { MemoryScope.valueOf(scopeRaw) }
+                .getOrElse { throw ClientInputException("Unknown memory scope") }
             // The stored embedding belongs to the *old* text; keeping it after an edit would make
             // this memory retrievable by its previous wording. Cleared so it is rebuilt on demand.
             val textChanged = existing != null && existing.text != text
             val memory = (existing ?: Memory(text = text)).copy(
                 text = text,
                 scope = scope,
-                scopeRefId = body.optString("scope_ref_id").takeIf { it.isNotBlank() }
+                scopeRefId = boundedText(body, "scope_ref_id", "", 128).takeIf { it.isNotBlank() }
                     ?: existing?.scopeRefId.takeIf { scope == existing?.scope },
                 enabled = body.optBoolean("enabled", existing?.enabled ?: true),
-                key = body.optString("key").takeIf { it.isNotBlank() } ?: existing?.key,
+                key = boundedText(body, "key", "", com.vervan.chat.ui.common.ValidationLimits.MEMORY_KEY).takeIf { it.isNotBlank() } ?: existing?.key,
                 embedding = if (textChanged) null else existing?.embedding,
                 embeddingModelId = if (textChanged) null else existing?.embeddingModelId
             )
@@ -709,18 +722,18 @@ internal class WebAppApi(private val app: VervanApp) {
             if (existing?.isBuiltIn == true) {
                 return@runBlocking badRequest("Built-in personas can't be edited — duplicate it and edit the copy")
             }
-            val name = body.optString("name", existing?.name.orEmpty()).trim()
+            val name = boundedText(body, "name", existing?.name.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.PERSONA_NAME).trim()
             if (name.isBlank()) return@runBlocking badRequest("A persona needs a name")
             val persona = (existing ?: Persona(name = name, systemInstruction = "")).copy(
                 name = name,
-                description = body.optString("description", existing?.description.orEmpty()),
-                systemInstruction = body.optString("system_instruction", existing?.systemInstruction.orEmpty()),
-                tone = body.optString("tone", existing?.tone ?: "NEUTRAL"),
-                formality = body.optString("formality", existing?.formality ?: "NEUTRAL"),
-                conciseness = body.optString("conciseness", existing?.conciseness ?: "NORMAL"),
-                creativity = body.optDouble("creativity", (existing?.creativity ?: 0.5f).toDouble()).toFloat(),
-                responseLength = body.optString("response_length", existing?.responseLength ?: "BALANCED"),
-                language = body.optString("language", existing?.language.orEmpty())
+                description = boundedText(body, "description", existing?.description.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.PERSONA_ROLE),
+                systemInstruction = boundedText(body, "system_instruction", existing?.systemInstruction.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.PERSONA_SYSTEM_INSTRUCTION),
+                tone = allowedValue(body, "tone", existing?.tone ?: "NEUTRAL", setOf("NEUTRAL", "WARM", "DIRECT", "PLAYFUL")),
+                formality = allowedValue(body, "formality", existing?.formality ?: "NEUTRAL", setOf("NEUTRAL", "CASUAL", "FORMAL")),
+                conciseness = allowedValue(body, "conciseness", existing?.conciseness ?: "NORMAL", setOf("NORMAL", "TERSE", "ELABORATE")),
+                creativity = finiteNumber(body, "creativity", (existing?.creativity ?: 0.5f).toDouble(), 0.0, 1.0).toFloat(),
+                responseLength = allowedValue(body, "response_length", existing?.responseLength ?: "BALANCED", setOf("BALANCED", "SHORT", "LONG")),
+                language = boundedText(body, "language", existing?.language.orEmpty(), 80)
             )
             dao.upsert(persona)
             json(JSONObject().put("persona", personaJson(persona)))
@@ -750,8 +763,8 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.promptTemplateDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
-            val name = body.optString("name", existing?.name.orEmpty()).trim().removePrefix("/")
-            val templateBody = body.optString("body", existing?.body.orEmpty())
+            val name = boundedText(body, "name", existing?.name.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.TEMPLATE_COMMAND_NAME).trim().removePrefix("/")
+            val templateBody = boundedText(body, "body", existing?.body.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.TEMPLATE_BODY)
             // Mirrors the built-in persona rule above and the delete guard below: /shorten and
             // friends are fixed built-ins, and silently rewriting one through the web app would
             // change what that slash command does everywhere, including on the phone.
@@ -762,7 +775,7 @@ internal class WebAppApi(private val app: VervanApp) {
             if (templateBody.isBlank()) return@runBlocking badRequest("A template needs a body")
             val template = (existing ?: PromptTemplate(name = name, body = templateBody)).copy(
                 name = name,
-                description = body.optString("description", existing?.description.orEmpty()),
+                description = boundedText(body, "description", existing?.description.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.TEMPLATE_DESCRIPTION),
                 body = templateBody
             )
             dao.upsert(template)
@@ -795,11 +808,11 @@ internal class WebAppApi(private val app: VervanApp) {
             // insert a second row under a fresh id instead of replacing the first.
             val existing = body.optString("id").takeIf { it.isNotBlank() }
                 ?.let { id -> dao.observeAll().first().find { it.id == id } }
-            val content = body.optString("content", existing?.content.orEmpty()).trim()
+            val content = boundedText(body, "content", existing?.content.orEmpty(), InputLimits.GENERAL_TOOL_INPUT_CHARS).trim()
             if (content.isBlank()) return@runBlocking badRequest("Nothing to save")
             val output = (existing ?: SavedOutput(content = content)).copy(
                 content = content,
-                label = body.optString("label", existing?.label.orEmpty()),
+                label = boundedText(body, "label", existing?.label.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.BACKUP_LABEL),
                 sourceChatId = body.optString("source_chat_id").takeIf { it.isNotBlank() } ?: existing?.sourceChatId
             )
             dao.upsert(output)
@@ -829,11 +842,11 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.projectDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
-            val name = body.optString("name", existing?.name.orEmpty()).trim()
+            val name = boundedText(body, "name", existing?.name.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.PROJECT_NAME).trim()
             if (name.isBlank()) return@runBlocking badRequest("A project needs a name")
             val project = (existing ?: Project(name = name)).copy(
                 name = name,
-                instructions = body.optString("instructions", existing?.instructions.orEmpty()),
+                instructions = boundedText(body, "instructions", existing?.instructions.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.PROJECT_INSTRUCTIONS),
                 personaId = body.optString("persona_id").takeIf { it.isNotBlank() } ?: existing?.personaId,
                 workspaceId = body.optString("workspace_id").takeIf { it.isNotBlank() }
                     ?: existing?.workspaceId ?: Workspace.DEFAULT_WORKSPACE_ID
@@ -868,7 +881,7 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.workspaceDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
-            val name = body.optString("name", existing?.name.orEmpty()).trim()
+            val name = boundedText(body, "name", existing?.name.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.WORKSPACE_NAME).trim()
             if (name.isBlank()) return@runBlocking badRequest("A workspace needs a name")
             // A workspace requires a persona; a brand-new one created from the browser inherits
             // whichever persona the default workspace uses rather than inventing one.
@@ -885,7 +898,7 @@ internal class WebAppApi(private val app: VervanApp) {
             val workspace = (existing ?: Workspace(name = name, personaId = fallbackPersona)).copy(
                 name = if (isDefaultWorkspace) existing.name else name,
                 description = if (isDefaultWorkspace) existing.description
-                    else body.optString("description", existing?.description.orEmpty()),
+                    else boundedText(body, "description", existing?.description.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.WORKSPACE_DESCRIPTION),
                 personaId = if (isDefaultWorkspace) existing.personaId
                     else body.optString("persona_id").takeIf { it.isNotBlank() } ?: fallbackPersona,
                 archived = if (isDefaultWorkspace) false else body.optBoolean("archived", existing?.archived ?: false),
@@ -923,11 +936,13 @@ internal class WebAppApi(private val app: VervanApp) {
         runBlocking {
             val dao = app.container.db.folderDao()
             val existing = body.optString("id").takeIf { it.isNotBlank() }?.let { dao.get(it) }
-            val name = body.optString("name", existing?.name.orEmpty()).trim()
+            val name = boundedText(body, "name", existing?.name.orEmpty(), com.vervan.chat.ui.common.ValidationLimits.FOLDER_NAME).trim()
             if (name.isBlank()) return@runBlocking badRequest("A folder needs a name")
             val folder = (existing ?: Folder(name = name)).copy(
                 name = name,
-                color = body.optString("color", existing?.color ?: "#E8A33D"),
+                color = boundedText(body, "color", existing?.color ?: "#E8A33D", 7).also {
+                    if (!it.matches(Regex("#[0-9A-Fa-f]{6}"))) throw ClientInputException("color must be a #RRGGBB value")
+                },
                 workspaceId = body.optString("workspace_id").takeIf { it.isNotBlank() }
                     ?: existing?.workspaceId ?: Workspace.DEFAULT_WORKSPACE_ID
             )
@@ -970,7 +985,7 @@ internal class WebAppApi(private val app: VervanApp) {
                     "Tools are off for API clients — turn on \"Let API clients use this device's tools\" in Settings"
                 )
             }
-            val name = body.optString("tool").trim()
+            val name = boundedText(body, "tool", maxChars = 128, required = true).trim()
             val definition = ToolRegistry.find(name) ?: return@runBlocking notFound("tool \"$name\"")
             if (definition.risk != com.vervan.chat.tools.ToolRisk.READ_ONLY &&
                 !settings.apiServerAllowWriteTools.first()
@@ -981,6 +996,9 @@ internal class WebAppApi(private val app: VervanApp) {
                 )
             }
             val params = body.optJSONObject("params") ?: JSONObject()
+            if (params.toString().length > InputLimits.GENERAL_TOOL_INPUT_CHARS) {
+                return@runBlocking error(Response.Status.PAYLOAD_TOO_LARGE, "Tool parameters are too large")
+            }
             val result = runCatching { definition.execute(app, params) }.getOrElse { t ->
                 if (t is VirtualMachineError) throw t
                 com.vervan.chat.tools.ToolResult(success = false, summary = t.toUserMessage())
@@ -1181,13 +1199,42 @@ internal class WebAppApi(private val app: VervanApp) {
         runCatching { session.parseBody(map) }.onFailure {
             return badRequest("Could not read the request body")
         }
-        val parsed = runCatching { JSONObject(map["postData"] ?: "{}") }
+        val postData = map["postData"] ?: "{}"
+        if (postData.toByteArray(Charsets.UTF_8).size > maxBytes) {
+            return error(Response.Status.PAYLOAD_TOO_LARGE, "Request body too large")
+        }
+        val parsed = runCatching { JSONObject(postData) }
             .getOrElse { return badRequest("Request body must be valid JSON") }
         return block(parsed)
     }
 
-    private fun json(body: JSONObject): Response =
-        newFixedLengthResponse(Response.Status.OK, "application/json", body.toString())
+    private fun json(body: JSONObject): Response {
+        val encoded = body.toString()
+        return if (encoded.toByteArray(Charsets.UTF_8).size > InputLimits.API_MAX_RESPONSE_BYTES) {
+            error(Response.Status.PAYLOAD_TOO_LARGE, "Response is too large; narrow the request or use a smaller page")
+        } else {
+            newFixedLengthResponse(Response.Status.OK, "application/json", encoded)
+        }
+    }
+
+    private fun boundedText(body: JSONObject, key: String, fallback: String = "", maxChars: Int, required: Boolean = false): String {
+        val value = body.optString(key, fallback)
+        if (required && value.trim().isBlank()) throw ClientInputException("$key is required")
+        if (value.length > maxChars) throw ClientInputException("$key is too long (maximum $maxChars characters)")
+        return value
+    }
+
+    private fun allowedValue(body: JSONObject, key: String, fallback: String, allowed: Set<String>): String {
+        val value = body.optString(key, fallback)
+        if (value !in allowed) throw ClientInputException("Unsupported $key value")
+        return value
+    }
+
+    private fun finiteNumber(body: JSONObject, key: String, fallback: Double, min: Double, max: Double): Double {
+        val value = if (body.has(key)) body.optDouble(key, Double.NaN) else fallback
+        if (!value.isFinite() || value !in min..max) throw ClientInputException("$key must be between $min and $max")
+        return value
+    }
 
     private fun ok(): Response = json(JSONObject().put("ok", true))
 

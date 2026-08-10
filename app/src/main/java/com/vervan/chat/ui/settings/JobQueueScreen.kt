@@ -48,6 +48,8 @@ import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -57,7 +59,13 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private val ACTIVE_STATES = setOf(JobState.WAITING, JobState.PREPARING, JobState.RUNNING, JobState.PAUSED)
@@ -68,10 +76,34 @@ private val STOPPABLE_TYPES = setOf(
 )
 private enum class JobView(val label: String) { ACTIVE("Active"), HISTORY("History"), ALL("All") }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class JobQueueViewModel(app: VervanApp) : ViewModel() {
     private val dao = app.container.db.jobDao()
-    val jobs: StateFlow<List<JobRecord>> = dao.observeAll()
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    val jobs: StateFlow<List<JobRecord>> = reload
+        .flatMapLatest { dao.observeAll() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun stop(job: JobRecord) {
         if (job.state !in ACTIVE_STATES || job.type !in STOPPABLE_TYPES) return
@@ -87,6 +119,8 @@ fun JobQueueScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: JobQueueViewModel = viewModel(factory = viewModelFactory { initializer { JobQueueViewModel(app) } })
     val jobs by vm.jobs.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     var view by remember { mutableStateOf(JobView.ACTIVE) }
     var confirmClear by remember { mutableStateOf(false) }
     val active = jobs.filter { it.state in ACTIVE_STATES }
@@ -112,33 +146,46 @@ fun JobQueueScreen(onBack: () -> Unit) {
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             Column(Modifier.fillMaxSize().padding(top = Space.sm)) {
-                JobSummary(active = active.size, waiting = active.count { it.state == JobState.WAITING }, history = history.size)
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = Space.md),
-                    horizontalArrangement = Arrangement.spacedBy(Space.sm)
-                ) {
-                    JobView.entries.forEach { option ->
-                        VervanFilterChip(
-                            selected = view == option,
-                            onClick = { view = option },
-                            label = { Text("${option.label} (${if (option == JobView.ACTIVE) active.size else if (option == JobView.HISTORY) history.size else jobs.size})") }
-                        )
-                    }
-                }
-                if (visible.isEmpty()) {
-                    EmptyState(
-                        icon = if (view == JobView.HISTORY) Icons.Filled.History else Icons.AutoMirrored.Filled.ListAlt,
-                        title = if (view == JobView.HISTORY) "No job history" else "Nothing is running",
-                        body = if (view == JobView.HISTORY) "Completed and stopped jobs appear here." else "Background work will appear here automatically.",
-                        modifier = Modifier.fillMaxSize()
+                when {
+                    error != null -> OperationErrorCard(
+                        title = "Job queue unavailable",
+                        message = error.orEmpty(),
+                        recovery = "Background work is not cancelled by this screen. Retry loading the queue.",
+                        actionLabel = "Retry",
+                        onAction = vm::retry,
+                        modifier = Modifier.padding(Space.md)
                     )
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        items(visible, key = { it.id }) { job -> JobCard(job, onStop = { vm.stop(job) }) }
+                    isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+                    else -> {
+                        JobSummary(active = active.size, waiting = active.count { it.state == JobState.WAITING }, history = history.size)
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = Space.md),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                        ) {
+                            JobView.entries.forEach { option ->
+                                VervanFilterChip(
+                                    selected = view == option,
+                                    onClick = { view = option },
+                                    label = { Text("${option.label} (${if (option == JobView.ACTIVE) active.size else if (option == JobView.HISTORY) history.size else jobs.size})") }
+                                )
+                            }
+                        }
+                        if (visible.isEmpty()) {
+                            EmptyState(
+                                icon = if (view == JobView.HISTORY) Icons.Filled.History else Icons.AutoMirrored.Filled.ListAlt,
+                                title = if (view == JobView.HISTORY) "No job history" else "Nothing is running",
+                                body = if (view == JobView.HISTORY) "Completed and stopped jobs appear here." else "Background work will appear here automatically.",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                                items(visible, key = { it.id }) { job -> JobCard(job, onStop = { vm.stop(job) }) }
+                            }
+                        }
                     }
-                }
             }
         }
+    }
     }
 
     if (confirmClear) {

@@ -8,10 +8,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.system.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
@@ -51,22 +53,34 @@ class ModelDownloadService : Service() {
         runCatching { startForeground(NOTIFICATION_ID, buildNotification(null)) }
             .onFailure { stopSelf(); return }
         val repository = (application as VervanApp).container.modelDownloadRepository
+        // SupervisorJob only isolates sibling coroutines from each other — it does NOT stop an
+        // unhandled exception in this coroutine itself from reaching the thread's default
+        // handler and crashing the whole process. recoverOnStartup()/uiStates.collect() do real
+        // DB/file work with no other guard, unlike ApiServerService's equivalent startup path
+        // (wrapped in runCatching) or GenerationService's.
         watchJob = scope.launch {
-            repository.recoverOnStartup()
-            repository.uiStates.collect { states ->
-                val active = states.firstOrNull { it.status in NOTIFY_STATUSES }
-                if (active == null) {
-                    stopSelf()
-                } else {
-                    val canPostNotifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                        ContextCompat.checkSelfPermission(
-                            this@ModelDownloadService,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                    if (canPostNotifications) runCatching {
-                        NotificationManagerCompat.from(this@ModelDownloadService).notify(NOTIFICATION_ID, buildNotification(active))
+            try {
+                repository.recoverOnStartup()
+                repository.uiStates.collect { states ->
+                    val active = states.firstOrNull { it.status in NOTIFY_STATUSES }
+                    if (active == null) {
+                        stopSelf()
+                    } else {
+                        val canPostNotifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(
+                                this@ModelDownloadService,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                        if (canPostNotifications) runCatching {
+                            NotificationManagerCompat.from(this@ModelDownloadService).notify(NOTIFICATION_ID, buildNotification(active))
+                        }
                     }
                 }
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                Log.e(TAG, "watchJob failed", t)
+                stopSelf()
             }
         }
     }
@@ -77,8 +91,14 @@ class ModelDownloadService : Service() {
         val version = intent?.getStringExtra(EXTRA_VERSION)
         if (modelId != null && version != null) {
             when (intent.action) {
-                ACTION_PAUSE -> scope.launch { repository.pauseDownload(modelId, version) }
-                ACTION_STOP -> scope.launch { repository.cancelDownload(modelId, version, keepPartial = false) }
+                ACTION_PAUSE -> scope.launch {
+                    runCatching { repository.pauseDownload(modelId, version) }
+                        .onFailure { Log.e(TAG, "pauseDownload($modelId, $version) failed", it) }
+                }
+                ACTION_STOP -> scope.launch {
+                    runCatching { repository.cancelDownload(modelId, version, keepPartial = false) }
+                        .onFailure { Log.e(TAG, "cancelDownload($modelId, $version) failed", it) }
+                }
             }
         }
         return START_STICKY
@@ -98,31 +118,33 @@ class ModelDownloadService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
 
         if (active == null) {
-            return builder.setContentTitle("Preparing model download…").build()
+            return builder.setContentTitle(getString(R.string.notification_download_prepare)).build()
         }
 
         val progress = if (active.totalBytes != null && active.totalBytes > 0) {
             ((active.downloadedBytes.toFloat() / active.totalBytes) * 100).toInt().coerceIn(0, 100)
         } else null
         val statusLine = when (active.status) {
-            ModelStatus.WAITING_FOR_NETWORK -> "Waiting for network…"
-            ModelStatus.WAITING_FOR_WIFI -> "Waiting for Wi-Fi…"
-            ModelStatus.VERIFYING -> "Verifying…"
-            ModelStatus.IMPORTING -> "Importing…"
+            ModelStatus.WAITING_FOR_NETWORK -> getString(R.string.notification_waiting_network)
+            ModelStatus.WAITING_FOR_WIFI -> getString(R.string.notification_waiting_wifi)
+            ModelStatus.VERIFYING -> getString(R.string.notification_verifying)
+            ModelStatus.IMPORTING -> getString(R.string.notification_importing)
             else -> {
-                val fileNote = if (active.totalFileCount > 1) "File ${active.completedFileCount + 1} of ${active.totalFileCount} — " else ""
+                val fileNote = if (active.totalFileCount > 1) {
+                    getString(R.string.notification_download_file, active.completedFileCount + 1, active.totalFileCount)
+                } else ""
                 val bytesNote = if (active.totalBytes != null) "${StorageManager.formatBytes(active.downloadedBytes)} of ${StorageManager.formatBytes(active.totalBytes)}" else StorageManager.formatBytes(active.downloadedBytes)
                 val speedNote = active.speedBytesPerSecond?.takeIf { it > 0 }
-                    ?.let { " · ${StorageManager.formatBytes(it)}/s" }.orEmpty()
+                    ?.let { getString(R.string.notification_download_speed, StorageManager.formatBytes(it)) }.orEmpty()
                 fileNote + bytesNote + speedNote
             }
         }
-        builder.setContentTitle("Downloading ${active.displayName}").setContentText(statusLine)
+        builder.setContentTitle(getString(R.string.notification_download_title, active.displayName)).setContentText(statusLine)
         if (progress != null) builder.setProgress(100, progress, false) else builder.setProgress(0, 0, true)
 
         if (active.status in PAUSABLE_NOTIFY_STATUSES) {
-            builder.addAction(0, "Pause", actionIntent(ACTION_PAUSE, active))
-            builder.addAction(0, "Stop", actionIntent(ACTION_STOP, active))
+            builder.addAction(0, getString(R.string.action_pause), actionIntent(ACTION_PAUSE, active))
+            builder.addAction(0, getString(R.string.action_stop), actionIntent(ACTION_STOP, active))
         }
         return builder.build()
     }
@@ -138,6 +160,7 @@ class ModelDownloadService : Service() {
     }
 
     companion object {
+        private const val TAG = "ModelDownloadService"
         private const val NOTIFICATION_ID = 4201
         private const val EXTRA_MODEL_ID = "modelId"
         private const val EXTRA_VERSION = "version"

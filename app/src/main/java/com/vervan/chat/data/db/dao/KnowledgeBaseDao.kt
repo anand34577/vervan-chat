@@ -10,6 +10,9 @@ interface KnowledgeBaseDao : BaseDao<KnowledgeBase> {
     @Query("SELECT * FROM knowledge_bases ORDER BY name ASC")
     fun observeAll(): Flow<List<KnowledgeBase>>
 
+    @Query("SELECT * FROM knowledge_bases WHERE name LIKE '%' || :q || '%' OR description LIKE '%' || :q || '%' ORDER BY name ASC LIMIT 20")
+    suspend fun search(q: String): List<KnowledgeBase>
+
     @Query("SELECT * FROM knowledge_bases WHERE id = :id")
     suspend fun get(id: String): KnowledgeBase?
 

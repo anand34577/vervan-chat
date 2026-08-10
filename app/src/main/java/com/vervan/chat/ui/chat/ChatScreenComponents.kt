@@ -11,6 +11,7 @@ import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,6 +53,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -152,8 +154,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.automirrored.filled.ManageSearch
@@ -173,17 +176,17 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.audio.WavRecorder
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.DatePill
-import com.vervan.chat.ui.common.SectionCard
-import com.vervan.chat.ui.common.SectionRow
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.MessageAction
 import com.vervan.chat.ui.common.MessageActionsSheet
@@ -204,9 +207,9 @@ import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanAccent
 import com.vervan.chat.ui.theme.VervanBreakpoints
 import com.vervan.chat.ui.theme.VervanContentWidth
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.VervanMotion
 import com.vervan.chat.ui.theme.vervanAccentFor
-import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
 import com.vervan.chat.data.db.entities.KnowledgeBase
@@ -239,10 +242,10 @@ internal fun SavedResponsesDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Saved responses") },
+        title = { Text(stringResource(R.string.chat_saved_responses)) },
         text = {
             if (outputs.isEmpty()) {
-                Text("Bookmarked responses appear here.")
+                Text(stringResource(R.string.chat_saved_responses_hint))
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
@@ -267,7 +270,7 @@ internal fun SavedResponsesDialog(
                                 IconButton(onClick = { onRemove(output) }) {
                                     Icon(
                                         Icons.Filled.Bookmark,
-                                        contentDescription = "Remove bookmark",
+                                        contentDescription = stringResource(R.string.chat_remove_bookmark),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -277,7 +280,7 @@ internal fun SavedResponsesDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 
@@ -344,13 +347,13 @@ internal fun ModelReadinessPanel(
                 when (state) {
                     ChatViewModel.ModelLoadState.NoModel -> {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = onOpenModels) { Text("Models") }
+            TextButton(onClick = onOpenModels) { Text(stringResource(R.string.chat_models)) }
                         }
                     }
                     is ChatViewModel.ModelLoadState.NotLoaded,
                     is ChatViewModel.ModelLoadState.Failed -> {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = onLoad) { Text("Load") }
+            TextButton(onClick = onLoad) { Text(stringResource(R.string.action_load)) }
                         }
                     }
                     else -> Unit
@@ -391,9 +394,11 @@ internal fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
             Modifier.widthIn(max = VervanContentWidth.standard).padding(horizontal = Space.lg, vertical = Space.xs),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            shape = VervanExtraShapes.pill,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
         ) {
-            Row(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(
                     "${String.format("%.1f", stats.tokensPerSecond)} tok/s · ${stats.tokens} tokens · ${stats.availMemMb}/${stats.totalMemMb} MB free",
@@ -443,7 +448,7 @@ internal fun ChatMoreOptionsSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
-            Text("Chat options", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.chat_options), style = MaterialTheme.typography.headlineSmall)
             Text(
                 "Manage this conversation",
                 style = MaterialTheme.typography.bodySmall,
@@ -547,75 +552,79 @@ internal fun MoreOptionRow(
 internal fun ChatEmptyState(
     personaName: String?,
     modelName: String?,
+    modelRunsOnDevice: Boolean = true,
     modifier: Modifier = Modifier,
     onSuggestion: (String) -> Unit
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xxl),
+        modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xl),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            modifier = Modifier.size(72.dp),
-            shape = androidx.compose.foundation.shape.CircleShape,
+            modifier = Modifier.size(60.dp),
+            shape = VervanExtraShapes.extraExtraLarge,
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(32.dp))
+                Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(28.dp))
             }
         }
         Text(
-            if (personaName != null) "How can $personaName help?" else "What can we work on?",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.padding(top = Space.xl)
+            "NEW CONVERSATION",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = Space.md),
         )
         Text(
-            "Private on this device. Type, speak, or add a file.",
+            if (personaName != null) "How can $personaName help?" else "What can we work on?",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(top = Space.xs)
+        )
+        Text(
+            if (modelName == null) {
+                "No generation model selected. Choose one before sending."
+            } else if (modelRunsOnDevice) {
+                "Private on this device. Type, speak, or add a file."
+            } else {
+                "This chat uses a remote model. Selected content may leave this device."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier.widthIn(max = 420.dp).padding(top = Space.sm)
         )
-        val activeContext = listOfNotNull(personaName, modelName).joinToString(" · ")
-        if (activeContext.isNotBlank()) {
-            Text(
-                activeContext,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = Space.md)
-            )
-        }
-        // Starter prompts as tappable rows in a grouped card (adopts SectionCard/SectionRow).
-        // Each carries a distinct display line and an inserted prompt *stem* the user finishes
-        // typing — so the composer opens with intent rather than a full canned sentence.
+        // Starter prompts stay as one compact horizontal action row. Each still inserts the same
+        // prompt stem; the supporting explanations are intentionally removed from the idle canvas.
         val starters = listOf(
-            ChatStarter(Icons.Filled.Lightbulb, "Think through an idea", "Brainstorm and pressure-test options", "Help me think through an idea: "),
-            ChatStarter(Icons.Filled.Description, "Summarize a document", "Attach a file, get the key points", "Summarize the key points of this: "),
-            ChatStarter(Icons.Filled.Edit, "Draft something", "A clear first version to refine", "Help me draft ")
+            ChatStarter(Icons.Filled.Lightbulb, "Think through an idea", "Help me think through an idea: "),
+            ChatStarter(Icons.Filled.Description, "Summarize a document", "Summarize the key points of this: "),
+            ChatStarter(Icons.Filled.Edit, "Draft something", "Help me draft ")
         )
-        SectionCard(
-            modifier = Modifier.widthIn(max = 520.dp).padding(top = Space.xl),
-            items = starters.map { starter ->
-                @Composable {
-                    SectionRow(
-                        icon = starter.icon,
-                        title = starter.title,
-                        subtitle = starter.subtitle,
-                        onClick = { onSuggestion(starter.prompt) }
-                    )
-                }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 520.dp)
+                .padding(top = Space.lg)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            starters.forEach { starter ->
+                AssistChip(
+                    onClick = { onSuggestion(starter.prompt) },
+                    label = { Text(starter.title, maxLines = 1) },
+                    leadingIcon = { Icon(starter.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                )
             }
-        )
+        }
         Text(
-            "Tip: tap a message for quick actions, hold it for reactions and more, or swipe right to quote.",
+            "Type a message, attach a file, or use voice input.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 520.dp).padding(top = Space.md),
+            modifier = Modifier.padding(top = Space.md),
         )
     }
 }
@@ -623,19 +632,50 @@ internal fun ChatEmptyState(
 internal data class ChatStarter(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val title: String,
-    val subtitle: String,
     val prompt: String
 )
 
+/** A slim, text-free context meter for the space directly below the chat app bar. */
+@Composable
+internal fun ChatContextProgressBar(
+    contextTokens: Int,
+    contextLimit: Int,
+    contextPercent: Int,
+    modifier: Modifier = Modifier
+) {
+    val progress = (contextPercent / 100f).coerceIn(0f, 1f)
+    val contextUsageDescription = stringResource(R.string.chat_context_usage, contextTokens, contextLimit, contextPercent)
+    val animatedProgress by animateFloatAsState(progress, label = "contextProgress")
+    val progressColor = when {
+        contextPercent >= 90 -> MaterialTheme.colorScheme.error
+        contextPercent > 80 -> MaterialTheme.colorScheme.vervanWarning
+        else -> MaterialTheme.colorScheme.primary
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(VervanExtraShapes.pill)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .semantics {
+                contentDescription = contextUsageDescription
+            }
+    ) {
+        if (animatedProgress > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth(animatedProgress)
+                    .fillMaxHeight()
+                    .background(progressColor)
+            )
+        }
+    }
+}
+
 /**
- * Chat Screen — context strip. Previously up to six separate chips (workspace, folder,
- * persona, model+thinking, sources, context%) in a horizontally-scrolling row with no wrap, which
- * meant the model chip — arguably the most important one — could scroll off-screen entirely with
- * no indication anything was hidden. Now a single compact summary chip ("Default · Gemma · 2
- * sources") that opens the full breakdown in [ChatContextDetailsSheet] on tap; only genuinely
- * exceptional state (no model selected, context nearly full) stays inline next to it, since that's
- * the state a user needs to notice without tapping anything. Hidden entirely when there's nothing
- * useful to show (a brand new chat with no persona/sources/thinking mode set).
+ * Chat context controls. Each piece of context is independently visible and tappable so users
+ * can understand and change the current chat setup without opening a generic settings surface.
+ * The row scrolls horizontally on compact screens; the message list remains the visual focus.
  */
 @Composable
 internal fun ChatContextStrip(
@@ -655,75 +695,70 @@ internal fun ChatContextStrip(
     onSourcesClick: () -> Unit,
     onContextClick: () -> Unit
 ) {
-    if (workspaceName == null && folderName == null && personaName == null && modelName == null && sourceCount == null) return
     var showDetails by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs)) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val summary = listOfNotNull(
-                folderName ?: workspaceName,
-                modelName,
-                sourceCount?.let { "$it source${if (it == 1) "" else "s"}" }
-            ).joinToString(" · ").ifBlank { "Chat settings" }
-            AssistChip(
-                onClick = { showDetails = true },
-                label = { Text(summary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-                leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.weight(1f, fill = false)
+            workspaceName?.let {
+                ChatContextChip(
+                    icon = Icons.Filled.AccountTree,
+                    label = stringResource(R.string.chat_scope_workspace, it),
+                    contentDescription = stringResource(R.string.chat_scope_workspace_description, it),
+                    onClick = onWorkspaceClick,
+                )
+            }
+            folderName?.let {
+                ChatContextChip(
+                    icon = Icons.Filled.Folder,
+                    label = stringResource(R.string.chat_scope_folder, it),
+                    contentDescription = stringResource(R.string.chat_scope_folder_description, it),
+                    onClick = onFolderClick,
+                )
+            }
+            ChatContextChip(
+                icon = Icons.Filled.Bolt,
+                label = modelName?.let { stringResource(R.string.chat_model_chip, it) } ?: stringResource(R.string.chat_choose_model),
+                contentDescription = modelName?.let { stringResource(R.string.chat_model_description, it) } ?: stringResource(R.string.chat_choose_model_description),
+                onClick = onModelClick,
+                iconTint = if (modelName == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
-            // Exceptional state only — the normal case (a model is loaded, context has room) adds
-            // nothing here; the summary chip above already covers it.
-            if (modelName == null) {
-                AssistChip(
+            personaName?.let {
+                ChatContextChip(
+                    icon = Icons.Filled.Psychology,
+                    label = stringResource(R.string.chat_scope_persona, it),
+                    contentDescription = stringResource(R.string.chat_scope_persona_description, it),
+                    onClick = onPersonaClick,
+                )
+            }
+            thinkingMode?.let {
+                ChatContextChip(
+                    icon = Icons.Filled.AutoAwesome,
+                    label = stringResource(R.string.chat_scope_thinking, it.lowercase().replaceFirstChar { c -> c.uppercase() }),
+                    contentDescription = stringResource(R.string.chat_scope_thinking_description, it),
                     onClick = onModelClick,
-                    label = { Text("No model", color = MaterialTheme.colorScheme.error) },
-                    leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) }
                 )
             }
-            if (contextPercent > 80) {
-                val warn = MaterialTheme.colorScheme.vervanWarning
-                AssistChip(
-                    onClick = onContextClick,
-                    label = { Text("Context nearly full · ~$contextPercent%", color = warn) },
-                    leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null, tint = warn, modifier = Modifier.size(18.dp)) },
-                    border = BorderStroke(1.dp, warn.copy(alpha = 0.5f))
+            sourceCount?.let {
+                ChatContextChip(
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    label = stringResource(R.string.chat_scope_sources, it),
+                    contentDescription = stringResource(R.string.chat_scope_sources_description, it),
+                    onClick = onSourcesClick,
                 )
             }
-        }
-        val contextColor = when {
-            contextPercent >= 90 -> MaterialTheme.colorScheme.error
-            contextPercent > 75 -> MaterialTheme.colorScheme.vervanWarning
-            else -> MaterialTheme.colorScheme.primary
-        }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = Space.xs)
-                .clickable(onClick = onContextClick)
-                .semantics {
-                    contentDescription =
-                        "Estimated context: about $contextTokens of $contextLimit tokens, $contextPercent percent used"
+            ChatContextChip(
+                icon = Icons.Filled.Info,
+                label = stringResource(R.string.chat_scope_context, contextPercent),
+                contentDescription = stringResource(R.string.chat_context_usage, contextTokens, contextLimit, contextPercent),
+                onClick = { showDetails = true },
+                iconTint = when {
+                    contextPercent >= 90 -> MaterialTheme.colorScheme.error
+                    contextPercent > 80 -> MaterialTheme.colorScheme.vervanWarning
+                    else -> MaterialTheme.colorScheme.primary
                 },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Estimated context",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            LinearProgressIndicator(
-                progress = { (contextPercent / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier.weight(1f).padding(horizontal = Space.sm).height(4.dp),
-                color = contextColor,
-                trackColor = contextColor.copy(alpha = 0.16f)
-            )
-            Text(
-                "~${compactTokenCount(contextTokens)} of ${compactTokenCount(contextLimit)} tokens · $contextPercent%",
-                style = MaterialTheme.typography.labelSmall,
-                color = contextColor
             )
         }
     }
@@ -740,6 +775,37 @@ internal fun ChatContextStrip(
             onContextClick = { showDetails = false; onContextClick() }
         )
     }
+}
+
+@Composable
+private fun ChatContextChip(
+    icon: ImageVector,
+    label: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.widthIn(max = 240.dp),
+    iconTint: Color? = null,
+) {
+    val resolvedIconTint = iconTint ?: MaterialTheme.colorScheme.primary
+    AssistChip(
+        onClick = onClick,
+        modifier = modifier.semantics { this.contentDescription = contentDescription },
+        label = {
+            Text(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingIcon = {
+            Icon(icon, contentDescription = null, tint = resolvedIconTint, modifier = Modifier.size(18.dp))
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            labelColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -765,7 +831,7 @@ internal fun ChatContextDetailsSheet(
             Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
         ) {
-            Text("Chat context", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.chat_context), style = MaterialTheme.typography.headlineSmall)
             Text(
                 "What this chat is currently using",
                 style = MaterialTheme.typography.bodySmall,
@@ -790,7 +856,7 @@ internal fun ChatContextDetailsSheet(
             )
             MoreOptionRow(
                 Icons.Filled.Info, "Context usage",
-                subtitle = "~$contextPercent% of this model's context window used",
+            subtitle = stringResource(R.string.chat_context_window_used, contextPercent),
                 danger = contextPercent > 80,
                 onClick = onContextClick
             )
@@ -800,18 +866,6 @@ internal fun ChatContextDetailsSheet(
 
 // A trailing ".0" (4.0k, 32.0k) is noise when the value is exact — only show the decimal when
 // it's non-zero (4.2k), matching how anyone would actually write a round number by hand.
-private fun compactTokenCount(tokens: Int): String = when {
-    tokens >= 1_000_000 -> compactUnit(tokens, 1_000_000, "M")
-    tokens >= 1_000 -> compactUnit(tokens, 1_000, "k")
-    else -> tokens.toString()
-}
-
-private fun compactUnit(tokens: Int, unit: Int, suffix: String): String {
-    val whole = tokens / unit
-    val tenth = (tokens / (unit / 10)) % 10
-    return if (tenth == 0) "$whole$suffix" else "$whole.$tenth$suffix"
-}
-
 /**
  * Chat Screen — an archived workspace remains viewable (history, branches,
  * sources all intact) but blocks new messages until the workspace is restored.
@@ -825,13 +879,13 @@ internal fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
     ) {
         Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Archived Workspace", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.chat_archived_workspace), style = MaterialTheme.typography.labelLarge)
                 Text(
                     "Restore this workspace to send new messages.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            TextButton(onClick = onRestore) { Text("Restore and continue") }
+        TextButton(onClick = onRestore) { Text(stringResource(R.string.chat_restore_continue)) }
         }
     }
 }
@@ -860,19 +914,19 @@ internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit,
         VervanSearchField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Find in conversation",
+            placeholder = stringResource(R.string.chat_find_conversation),
             modifier = Modifier.weight(1f)
         )
         if (matches.isNotEmpty()) {
-            Text("${matchIndex + 1}/${matches.size}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm))
+            Text(stringResource(R.string.chat_match_count, matchIndex + 1, matches.size), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm))
             IconButton(onClick = { matchIndex = (matchIndex - 1 + matches.size) % matches.size; onJumpTo(matches[matchIndex]) }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous match")
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.chat_previous_match))
             }
             IconButton(onClick = { matchIndex = (matchIndex + 1) % matches.size; onJumpTo(matches[matchIndex]) }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next match")
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.chat_next_match))
             }
         }
-        IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close search") }
+        IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.chat_close_search)) }
     }
 }
 
@@ -923,7 +977,7 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
                         Modifier.fillMaxWidth().padding(top = Space.xs),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = onDismiss) { Text("Close") }
+                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
                     }
                 }
             }
@@ -941,7 +995,7 @@ internal fun CompareBranchCard(index: Int, sibling: Message, onUse: (String) -> 
         )
     ) {
         Column(Modifier.fillMaxSize().padding(Space.sm)) {
-            Text("Branch ${index + 1}", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.chat_branch_number, index + 1), style = MaterialTheme.typography.labelMedium)
             Text(
                 sibling.content.ifBlank { "(empty)" },
                 style = MaterialTheme.typography.bodySmall,
@@ -952,7 +1006,7 @@ internal fun CompareBranchCard(index: Int, sibling: Message, onUse: (String) -> 
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = Space.xs)
             )
-            TextButton(onClick = { onUse(sibling.id) }) { Text("Use this") }
+        TextButton(onClick = { onUse(sibling.id) }) { Text(stringResource(R.string.chat_use_branch)) }
         }
     }
 }
@@ -983,7 +1037,7 @@ internal fun ModeSettingsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Mode & model") },
+        title = { Text(stringResource(R.string.chat_mode_model)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -999,7 +1053,7 @@ internal fun ModeSettingsDialog(
                         selected = thinkingMode == null,
                         enabled = true,
                         onClick = { onThinkingChange(null) },
-                        label = { Text("Default") }
+                        label = { Text(stringResource(R.string.chat_default)) }
                     )
                     com.vervan.chat.llm.ThinkingPolicy.MODES.forEach { mode ->
                         VervanFilterChip(
@@ -1010,7 +1064,7 @@ internal fun ModeSettingsDialog(
                         )
                     }
                 }
-                Text("Profile", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.chat_profile), style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.padding(top = Space.sm, bottom = Space.lg).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     com.vervan.chat.llm.ModelProfileType.entries.forEach { p ->
                         VervanFilterChip(
@@ -1022,36 +1076,36 @@ internal fun ModeSettingsDialog(
                 }
                 HorizontalDivider(Modifier.padding(bottom = Space.sm))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenModelPicker() }.padding(vertical = Space.md)) {
-                    Text("Chat model", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.chat_model), modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenPersonaPicker() }.padding(vertical = Space.md)) {
-                    Text("Persona", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.chat_persona), modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
                 HorizontalDivider(Modifier.padding(vertical = Space.sm))
                 // Per-chat sampler overrides — the slider always shows the
                 // effective value (override or inherited default); dragging it sets a
                 // chat-specific override, Reset clears back to inherited.
-                Text("Generation (this chat)", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.chat_generation_this), style = MaterialTheme.typography.labelLarge)
                 SamplerOverrideRow(
-                    label = "Temperature", value = temperature ?: defaultTemperature, isOverridden = temperature != null,
+                    label = stringResource(R.string.chat_temperature), value = temperature ?: defaultTemperature, isOverridden = temperature != null,
                     range = 0f..2f, format = { "%.2f".format(it) },
                     onChange = { onTemperatureChange(it) }, onReset = { onTemperatureChange(null) }
                 )
                 SamplerOverrideRow(
-                    label = "Top-P", value = topP ?: defaultTopP, isOverridden = topP != null,
+                    label = stringResource(R.string.chat_top_p), value = topP ?: defaultTopP, isOverridden = topP != null,
                     range = 0.1f..1f, format = { "%.2f".format(it) },
                     onChange = { onTopPChange(it) }, onReset = { onTopPChange(null) }
                 )
                 SamplerOverrideRow(
-                    label = "Top-K", value = (topK ?: defaultTopK).toFloat(), isOverridden = topK != null,
+                    label = stringResource(R.string.chat_top_k), value = (topK ?: defaultTopK).toFloat(), isOverridden = topK != null,
                     range = 1f..64f, format = { it.roundToInt().toString() },
                     onChange = { onTopKChange(it.roundToInt()) }, onReset = { onTopKChange(null) }
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) } }
     )
 }
 
@@ -1067,9 +1121,9 @@ internal fun SamplerOverrideRow(
 ) {
     Column(Modifier.padding(top = Space.xs)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$label: ${format(value)}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.chat_value_label, label, format(value)), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             if (isOverridden) {
-                TextButton(onClick = onReset, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.sm)) { Text("Reset") }
+                TextButton(onClick = onReset, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.sm)) { Text(stringResource(R.string.action_reset)) }
             }
         }
         androidx.compose.material3.Slider(value = value, onValueChange = onChange, valueRange = range)
@@ -1090,16 +1144,16 @@ internal fun SourcePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ground answers in sources") },
+        title = { Text(stringResource(R.string.chat_ground_sources)) },
         text = {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Use selected knowledge bases", modifier = Modifier.weight(1f))
+                    Text(stringResource(R.string.chat_use_selected_sources), modifier = Modifier.weight(1f))
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
                 HorizontalDivider(Modifier.padding(vertical = Space.sm))
                 if (kbs.isEmpty()) {
-                    Text("No knowledge bases yet. Import a document in Knowledge.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.chat_no_sources_import), style = MaterialTheme.typography.bodySmall)
                 }
                 kbs.forEach { kb: KnowledgeBase ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1114,8 +1168,8 @@ internal fun SourcePickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(enabled, selected) }) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = { onConfirm(enabled, selected) }) { Text(stringResource(R.string.action_done)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -1135,7 +1189,7 @@ internal fun ChatToolsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Chat tools") },
+        title = { Text(stringResource(R.string.chat_tools)) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                 // The per-tool overrides below only take effect once tools are actually turned
@@ -1143,7 +1197,7 @@ internal fun ChatToolsDialog(
                 // flag on at all, so every chat silently stayed toolless regardless of overrides.
                 Row(Modifier.fillMaxWidth().padding(bottom = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Tools for this chat", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.chat_tools_for_chat), style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "The model discovers tools itself (list_tools, then tool_details) instead of " +
                                 "getting every description up front — see the tools below.",
@@ -1155,7 +1209,7 @@ internal fun ChatToolsDialog(
                 }
                 HorizontalDivider(Modifier.padding(bottom = Space.sm))
                 Text(
-                "Choose which tools this chat can use.",
+                    stringResource(R.string.chat_choose_tools),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = Space.sm)
@@ -1174,13 +1228,13 @@ internal fun ChatToolsDialog(
                             VervanFilterChip(
                                 selected = override == true,
                                 onClick = { onSetOverride(tool.name, true) },
-                                label = { Text("On") },
+                                label = { Text(stringResource(R.string.privacy_on)) },
                                 modifier = Modifier.padding(start = Space.sm)
                             )
                             VervanFilterChip(
                                 selected = override == false,
                                 onClick = { onSetOverride(tool.name, false) },
-                                label = { Text("Off") },
+                                label = { Text(stringResource(R.string.privacy_off)) },
                                 modifier = Modifier.padding(start = Space.sm)
                             )
                         }
@@ -1195,7 +1249,7 @@ internal fun ChatToolsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) } }
     )
 }
 
@@ -1215,14 +1269,14 @@ internal fun RenameChatDialog(initialTitle: String, onDismiss: () -> Unit, onRen
     var title by remember { mutableStateOf(initialTitle) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename chat") },
+        title = { Text(stringResource(R.string.chat_rename)) },
         text = {
             BoundedTextField(value = title, onValueChange = { title = it }, maxLength = 120, singleLine = true, modifier = Modifier.fillMaxWidth())
         },
         confirmButton = {
-            TextButton(onClick = { onRename(title) }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text("Save") }
+            TextButton(onClick = { onRename(title) }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -1279,7 +1333,7 @@ internal fun WorkspaceOptionsDialog(
         title = { Text(workspace.name) },
         text = {
             Column {
-                Text("Open workspace", modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = Space.md))
+                Text(stringResource(R.string.chat_open_workspace), modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = Space.md))
                 if (!isChatWorkspaceActive) {
                     Text(
                         "Set as active workspace",
@@ -1287,7 +1341,7 @@ internal fun WorkspaceOptionsDialog(
                     )
                 }
                 HorizontalDivider()
-                Text("Move to another workspace", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+                Text(stringResource(R.string.chat_move_workspace), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
                 otherWorkspaces.filter { it.id != workspace.id }.forEach { ws ->
                     Text(
                         ws.name,
@@ -1296,7 +1350,7 @@ internal fun WorkspaceOptionsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 
@@ -1310,18 +1364,18 @@ internal fun MoveToWorkspaceConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Move to \"$targetName\"?") },
+        title = { Text(stringResource(R.string.chat_move_to, targetName)) },
         text = {
             Column {
-                Text("From: $fromWorkspaceName")
-                Text("To: $targetName")
-                if (folderName != null) Text("This chat will leave \"$folderName\" and become unfiled.")
-                Text("Messages, branches, attachments, and history are kept.")
-                Text("Chat-specific model and persona choices are also kept.")
+                Text(stringResource(R.string.chat_from_workspace, fromWorkspaceName))
+                Text(stringResource(R.string.chat_to_workspace, targetName))
+                if (folderName != null) Text(stringResource(R.string.chat_leave_folder, folderName))
+                Text(stringResource(R.string.chat_content_kept))
+                Text(stringResource(R.string.chat_choices_kept))
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Move") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.chat_move)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -1329,15 +1383,15 @@ internal fun MoveToWorkspaceConfirmDialog(
 internal fun ResetChatSettingsDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reset chat settings?") },
+        title = { Text(stringResource(R.string.chat_reset_title)) },
         text = {
             Column {
-                Text("Resets AI, source, tool, and knowledge settings to workspace defaults.")
-                Text("Messages, attachments, workspace, and folder stay unchanged.", modifier = Modifier.padding(top = Space.sm))
+                Text(stringResource(R.string.chat_reset_body))
+                Text(stringResource(R.string.chat_reset_unchanged), modifier = Modifier.padding(top = Space.sm))
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Reset") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.action_reset)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -1346,17 +1400,17 @@ internal fun ChatStatsDialog(stats: ChatViewModel.ChatStats, onDismiss: () -> Un
     val dateFormat = remember { java.text.SimpleDateFormat("MMM d, yyyy HH:mm", java.util.Locale.getDefault()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Chat details") },
+        title = { Text(stringResource(R.string.chat_details)) },
         text = {
             Column {
-                Text("Messages: ${stats.totalMessages} (${stats.userMessages} user, ${stats.assistantMessages} assistant)")
-                Text("Attachments: ${stats.attachments}")
-                Text("Branches: ${stats.branchPoints}")
-                Text("Created: ${dateFormat.format(java.util.Date(stats.createdAt))}")
-                Text("Last updated: ${dateFormat.format(java.util.Date(stats.updatedAt))}")
+                Text(stringResource(R.string.chat_messages_detail, stats.totalMessages, stats.userMessages, stats.assistantMessages))
+                Text(stringResource(R.string.chat_attachments_detail, stats.attachments))
+                Text(stringResource(R.string.chat_branches_detail, stats.branchPoints))
+                Text(stringResource(R.string.chat_created, dateFormat.format(java.util.Date(stats.createdAt))))
+                Text(stringResource(R.string.chat_updated, dateFormat.format(java.util.Date(stats.updatedAt))))
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 
@@ -1364,11 +1418,11 @@ internal fun ChatStatsDialog(stats: ChatViewModel.ChatStats, onDismiss: () -> Un
 internal fun AddToKnowledgeBaseDialog(knowledgeBases: List<KnowledgeBase>, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to knowledge base") },
+        title = { Text(stringResource(R.string.chat_add_to_knowledge)) },
         text = {
             Column {
                 if (knowledgeBases.isEmpty()) {
-                    Text("No knowledge bases yet. Create one in Knowledge.")
+                    Text(stringResource(R.string.chat_no_sources_create))
                 }
                 knowledgeBases.forEach { kb ->
                     Text(
@@ -1378,7 +1432,7 @@ internal fun AddToKnowledgeBaseDialog(knowledgeBases: List<KnowledgeBase>, onDis
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -1386,12 +1440,12 @@ internal fun AddToKnowledgeBaseDialog(knowledgeBases: List<KnowledgeBase>, onDis
 internal fun PersonaPickerDialog(personas: List<Persona>, selectedPersonaId: String?, onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Persona") },
+        title = { Text(stringResource(R.string.chat_persona)) },
         text = {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(null) }) {
                     androidx.compose.material3.RadioButton(selected = selectedPersonaId == null, onClick = null)
-                    Text("No persona", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.chat_no_persona), modifier = Modifier.padding(start = Space.sm))
                 }
                 personas.forEach { option ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(option.id) }) {
@@ -1401,7 +1455,7 @@ internal fun PersonaPickerDialog(personas: List<Persona>, selectedPersonaId: Str
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 
@@ -1409,12 +1463,12 @@ internal fun PersonaPickerDialog(personas: List<Persona>, selectedPersonaId: Str
 internal fun ChatModelPickerDialog(models: List<ModelInfo>, selectedModelId: String?, onDismiss: () -> Unit, onSelect: (String?) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Chat model") },
+        title = { Text(stringResource(R.string.chat_model)) },
         text = {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(null) }) {
                     androidx.compose.material3.RadioButton(selected = selectedModelId == null, onClick = null)
-                    Text("Use active default", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.chat_use_active_default), modifier = Modifier.padding(start = Space.sm))
                 }
                 models.forEach { model ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(model.id) }) {
@@ -1424,7 +1478,7 @@ internal fun ChatModelPickerDialog(models: List<ModelInfo>, selectedModelId: Str
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 
@@ -1432,7 +1486,7 @@ internal fun ChatModelPickerDialog(models: List<ModelInfo>, selectedModelId: Str
 internal fun ContextBreakdownDialog(breakdown: ContextBreakdown, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Context for the next message") },
+        title = { Text(stringResource(R.string.chat_context_next_message)) },
         text = {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                 val palette = listOf(
@@ -1459,7 +1513,7 @@ internal fun ContextBreakdownDialog(breakdown: ContextBreakdown, onDismiss: () -
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } }
     )
 }
 

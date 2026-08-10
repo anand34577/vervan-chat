@@ -71,8 +71,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.VervanApp
-import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanSectionHeader
@@ -81,6 +82,10 @@ import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanGridMinWidth
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.compose.ui.res.stringResource
 
 private data class ToolEntry(
     val icon: ImageVector,
@@ -202,8 +207,10 @@ internal val searchableTools: List<SearchableTool> = categories.flatMap { catego
 fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val app = context.applicationContext as VervanApp
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
-    val recentRuns by app.container.db.toolRunDao().observeRecent(12).collectAsStateWithLifecycle(initialValue = emptyList())
+    val vm: AllToolsViewModel = viewModel(factory = viewModelFactory { initializer { AllToolsViewModel(app) } })
+    val activeModel by vm.activeModel.collectAsStateWithLifecycle()
+    val recentRuns by vm.recentRuns.collectAsStateWithLifecycle()
+    val dataError by vm.error.collectAsStateWithLifecycle()
     val legacyPrefs = remember { context.getSharedPreferences("vervan", 0) }
     // Migrate the old raw-SharedPreferences set once, then keep DataStore as the single durable
     // source alongside the rest of the app's user settings.
@@ -359,6 +366,19 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 }
                             }
                         }
+                    }
+                }
+
+                if (dataError != null) {
+                    item(key = "status-error", span = { GridItemSpan(maxLineSpan) }) {
+                        OperationErrorCard(
+                            title = stringResource(R.string.tools_data_unavailable),
+                            message = dataError ?: stringResource(R.string.tools_data_unavailable_message),
+                            recovery = stringResource(R.string.tools_data_unavailable_recovery),
+                            modifier = Modifier.padding(top = Space.sm),
+                            actionLabel = stringResource(R.string.action_retry),
+                            onAction = vm::retry
+                        )
                     }
                 }
 

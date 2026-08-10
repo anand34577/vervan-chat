@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,13 +23,14 @@ import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.SurfaceRole
 
 @Composable
 internal fun ToolIntro(
     icon: ImageVector,
     title: String,
     body: String,
-    eyebrow: String = "Runs privately on this device",
+    eyebrow: String = "Uses the active model's privacy setting",
     modifier: Modifier = Modifier,
 ) {
     FeatureHero(
@@ -42,8 +41,8 @@ internal fun ToolIntro(
         modifier = modifier,
         trailing = {
             Icon(
-                Icons.Filled.Lock,
-                contentDescription = "Private and offline",
+                Icons.Filled.Info,
+                contentDescription = "Privacy depends on the active model",
                 tint = MaterialTheme.colorScheme.primary
             )
         }
@@ -60,8 +59,9 @@ internal fun ToolSection(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border(),
+        shape = MaterialTheme.shapes.extraLarge
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -94,6 +94,7 @@ internal fun ToolResultHeader(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        border = SurfaceRole.Raised.border(),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
     ) {
         Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {

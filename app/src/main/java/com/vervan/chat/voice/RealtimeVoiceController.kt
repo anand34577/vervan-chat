@@ -7,6 +7,8 @@ import com.vervan.chat.audio.VoiceActivityDetector
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.modelload.LoadTrigger
 import java.io.File
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -514,10 +516,12 @@ class RealtimeVoiceController(
         val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
         if (!loaded.success || !app.container.audioEnabled(model)) return@runCatching null
         val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
-        val durationMs = runCatching {
-            val decoded = WavPcmDecoder.decode(File(audioPath).readBytes())
-            decoded.samples.size * 1_000L / decoded.sampleRateHz
-        }.getOrDefault(0L)
+        val audioFile = File(audioPath)
+        require(audioFile.isFile) { "Recorded audio file is missing" }
+        require(audioFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
+        val decoded = audioFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
+        val durationMs = decoded.samples.size * 1_000L / decoded.sampleRateHz
+        require(durationMs <= InputLimits.MAX_AUDIO_DURATION_MS) { "Recorded audio is longer than 30 minutes" }
         val builder = StringBuilder()
         app.container.generate(
             model, TRANSCRIBE_PROMPT, null, audioPath,
@@ -542,21 +546,24 @@ class RealtimeVoiceController(
         val turnSamples = ArrayList<Short>()
         var turnSampleRate = 0
         var enteredSpeaking = false
-        playbackQueue.startTurn { samples, sampleRateHz ->
-            if (!enteredSpeaking) {
-                enteredSpeaking = true
-                _state.value = VoiceControllerState.SPEAKING
-            }
-            turnSampleRate = sampleRateHz
-            synchronized(turnSamples) { for (s in samples) turnSamples.add(s) }
-            val snapshot = synchronized(turnSamples) { turnSamples.toShortArray() }
-            _turns.update { turns -> turns.map { turn ->
-                if (turn.id == turnId) turn.copy(
-                    waveform = buildWaveform(snapshot),
-                    durationMs = (snapshot.size * 1000L / sampleRateHz).toInt()
-                ) else turn
-            } }
-        }
+        playbackQueue.startTurn(
+            onSample = { samples, sampleRateHz ->
+                if (!enteredSpeaking) {
+                    enteredSpeaking = true
+                    _state.value = VoiceControllerState.SPEAKING
+                }
+                turnSampleRate = sampleRateHz
+                synchronized(turnSamples) { for (s in samples) turnSamples.add(s) }
+                val snapshot = synchronized(turnSamples) { turnSamples.toShortArray() }
+                _turns.update { turns -> turns.map { turn ->
+                    if (turn.id == turnId) turn.copy(
+                        waveform = buildWaveform(snapshot),
+                        durationMs = (snapshot.size * 1000L / sampleRateHz).toInt()
+                    ) else turn
+                } }
+            },
+            onError = { message -> _modelLoadError.value = message }
+        )
         _ttsLabel.value = if (_speechOutputEnabled.value) {
             engineSelector.resolve()?.engineName ?: "No TTS available"
         } else {
@@ -677,6 +684,19 @@ class RealtimeVoiceController(
             audioCapture.frames.takeWhile { frame ->
                 _hasEchoCancellation.value = audioCapture.hasEchoCancellation
                 if (!audioCapture.hasEchoCancellation) return@takeWhile false
+                // This watcher is launched the instant a reply starts generating — well before
+                // there's any TTS audio yet (the whole silent "Thinking" phase, plus however
+                // long the first sentence takes to synthesize). Without this gate, the mic was
+                // "armed" that entire time despite the class doc saying "while TTS plays": the
+                // user still trailing off, or plain room noise, during Thinking could rack up
+                // BARGE_IN_TRIGGER_MS of "speech" and cancel the reply before it ever produced
+                // anything — every voice turn, not just genuine interruptions. isSpeaking (real
+                // audio hitting the AudioTrack), not isPlaying (true the instant the loop job
+                // launches, before it's synthesized anything) is the correct gate here.
+                if (!playbackQueue.isSpeaking) {
+                    speechFrames = 0
+                    return@takeWhile true
+                }
                 val speaking = vad.isSpeech(frame)
                 speechFrames = if (speaking) speechFrames + 1 else 0
                 val triggered = speechFrames * CAPTURE_FRAME_MS >= BARGE_IN_TRIGGER_MS
