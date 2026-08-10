@@ -8,17 +8,42 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Folder
 import com.vervan.chat.data.db.entities.Note
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.vervan.chat.system.toUserMessage
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FoldersViewModel(app: VervanApp) : ViewModel() {
     private val db = app.container.db
     private val settingsRepository = app.container.settingsRepository
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
-    val folders: StateFlow<List<Folder>> = db.folderDao().observeAll()
+    val folders: StateFlow<List<Folder>> = reload
+        .flatMapLatest { db.folderDao().observeAll() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val personas = db.personaDao().observePersonas()
@@ -26,6 +51,11 @@ class FoldersViewModel(app: VervanApp) : ViewModel() {
 
     val models = db.modelDao().observeModels()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun create(name: String) {
         if (name.isBlank()) return
@@ -66,11 +96,29 @@ class FoldersViewModel(app: VervanApp) : ViewModel() {
     }
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FolderDetailViewModel(private val app: VervanApp, private val folderId: String) : ViewModel() {
     private val db = app.container.db
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
-    val folder: StateFlow<Folder?> = db.folderDao().observeAll()
+    val folder: StateFlow<Folder?> = reload
+        .flatMapLatest { db.folderDao().observeAll() }
         .map { list -> list.find { it.id == folderId } }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(null)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val chats: StateFlow<List<Chat>> = db.chatDao().observeForFolder(folderId)
@@ -84,6 +132,14 @@ class FolderDetailViewModel(private val app: VervanApp, private val folderId: St
 
     val models = db.modelDao().observeModels()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val knowledgeBases = db.knowledgeBaseDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun setDefaultPersona(personaId: String?) {
         viewModelScope.launch { folder.value?.let { db.folderDao().update(it.copy(defaultPersonaId = personaId)) } }

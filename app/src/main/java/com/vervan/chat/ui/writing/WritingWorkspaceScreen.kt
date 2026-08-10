@@ -81,7 +81,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = targetLanguage, onValueChange = { targetLanguage = it },
+                value = targetLanguage, onValueChange = { targetLanguage = it.take(80) },
                 label = { Text("Target language (for Translate)") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )

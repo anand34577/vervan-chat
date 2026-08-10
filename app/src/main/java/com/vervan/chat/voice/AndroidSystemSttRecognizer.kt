@@ -16,6 +16,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 
 /** Thin, lifecycle-safe wrapper around the device speech service. It owns microphone capture,
  * so callers must stop their AudioRecord session before invoking it. */
@@ -55,7 +57,12 @@ object AndroidSystemSttRecognizer {
             return Result.failure(IllegalStateException("Android file transcription requires Android 13 or newer"))
         }
         return runCatching {
-            val decoded = WavPcmDecoder.decode(wavFile.readBytes())
+            require(wavFile.isFile) { "Recorded audio file is missing" }
+            require(wavFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
+            val decoded = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
+            require(decoded.samples.size * 1_000L / decoded.sampleRateHz <= InputLimits.MAX_AUDIO_DURATION_MS) {
+                "Recorded audio is longer than 30 minutes"
+            }
             val rawFile = File.createTempFile("android-stt-", ".pcm", context.cacheDir)
             try {
                 val encoded = WavPcmDecoder.encode(decoded.samples, decoded.sampleRateHz)

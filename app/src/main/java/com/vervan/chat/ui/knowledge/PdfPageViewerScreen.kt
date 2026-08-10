@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,6 +35,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -42,7 +47,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
-import com.vervan.chat.data.db.entities.Document
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,23 +64,27 @@ import kotlinx.coroutines.withContext
 fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
+    val vm: PdfPageViewerViewModel = viewModel(factory = viewModelFactory {
+        initializer { PdfPageViewerViewModel(app, documentId) }
+    })
+    val loadedDocument by vm.document.collectAsStateWithLifecycle()
+    val documentLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val documentError by vm.error.collectAsStateWithLifecycle()
 
-    var document by remember { mutableStateOf<Document?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
     // 0-based, matching PdfRenderer's own page indexing — initialPage (from Chunk.pageNumber) is 1-based.
     var pageIndex by remember { mutableIntStateOf((initialPage - 1).coerceAtLeast(0)) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var pdfReloadKey by remember { mutableIntStateOf(0) }
     var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
 
-    LaunchedEffect(documentId) {
-        document = app.container.db.documentDao().get(documentId)
-    }
-
-    DisposableEffect(document?.filePath) {
-        val doc = document
+    DisposableEffect(loadedDocument?.filePath, pdfReloadKey) {
+        val doc = loadedDocument
         if (doc != null) {
+            bitmap = null
+            error = null
             runCatching {
                 val opened = ParcelFileDescriptor.open(File(doc.filePath), ParcelFileDescriptor.MODE_READ_ONLY)
                 val opendRenderer = PdfRenderer(opened)
@@ -114,7 +122,7 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(document?.displayName ?: "PDF", maxLines = 1) },
+                title = { Text(loadedDocument?.displayName ?: "PDF", maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
             )
         }
@@ -122,9 +130,28 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
         Column(Modifier.padding(padding).fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 when {
-                    error != null -> Text(
-                        error.orEmpty(),
-                        color = MaterialTheme.colorScheme.error,
+                    documentError != null -> com.vervan.chat.ui.common.OperationErrorCard(
+                        title = "PDF unavailable",
+                        message = documentError.orEmpty(),
+                        recovery = "Return to the source passage and try opening the page again.",
+                        actionLabel = "Retry",
+                        onAction = vm::retry,
+                        modifier = Modifier.padding(24.dp)
+                    )
+                    documentLoading -> CircularProgressIndicator()
+                    loadedDocument == null -> com.vervan.chat.ui.common.EmptyState(
+                        icon = Icons.Filled.PictureAsPdf,
+                        title = "Document not found",
+                        body = "This source document may have been deleted or moved to the recycle bin.",
+                        actionLabel = "Back",
+                        onAction = onBack
+                    )
+                    error != null -> com.vervan.chat.ui.common.OperationErrorCard(
+                        title = "Page unavailable",
+                        message = error.orEmpty(),
+                        recovery = "Check that the original PDF is still available, then try again.",
+                        actionLabel = "Retry",
+                        onAction = { error = null; bitmap = null; pdfReloadKey++ },
                         modifier = Modifier.padding(24.dp)
                     )
                     bitmap != null -> ZoomableBitmap(bitmap!!)

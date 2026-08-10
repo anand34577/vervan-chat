@@ -10,6 +10,7 @@ import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
 import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.model.ModelFileSniffer
+import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.modeldownload.HttpRangeDownloader
 import com.vervan.chat.modeldownload.ModelDownloadException
 import com.vervan.chat.system.NetworkAuditLog
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import com.vervan.chat.validation.InputLimits
 
 sealed class TtsDownloadResult {
     data class Success(val model: TtsVoiceModel) : TtsDownloadResult()
@@ -88,11 +90,13 @@ class TtsModelDownloadManager(
             var totalBytes: Long? = null
             HttpRangeDownloader().download(archiveUrl, archiveFile, knownEtag = null, knownLastModified = null, authToken = null) { downloaded, total ->
                 if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
+                if (downloaded > InputLimits.MAX_TTS_ARCHIVE_BYTES) throw IOException("TTS archive exceeds the 1 GB limit")
                 totalBytes = total
                 val progress = if (total != null && total > 0) ((downloaded * 90) / total).toInt() else 0
                 jobDao.upsert(job.copy(progress = progress, detail = "Downloading…", updatedAt = System.currentTimeMillis()))
             }
             if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
+            require(archiveFile.length() <= InputLimits.MAX_TTS_ARCHIVE_BYTES) { "TTS archive exceeds the 1 GB limit" }
             jobDao.upsert(job.copy(progress = 90, detail = "Extracting…", updatedAt = System.currentTimeMillis()))
             extractTarBz2(archiveFile, voiceDir)
             if (!File(voiceDir, "model.onnx").isFile) {
@@ -209,6 +213,9 @@ class TtsModelDownloadManager(
                     while (true) {
                         val read = src.read(buffer)
                         if (read == -1) break
+                        if (bytesCopied > InputLimits.MAX_ADAPTER_BYTES - read) {
+                            throw IOException("Whisper model exceeds the 4 GB limit")
+                        }
                         output.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                         bytesCopied += read
@@ -267,15 +274,23 @@ class TtsModelDownloadManager(
     private fun extractTarBz2(archiveFile: File, destDir: File) {
         BZip2CompressorInputStream(archiveFile.inputStream().buffered()).use { bz2 ->
             TarArchiveInputStream(bz2).use { tar ->
+                var entryCount = 0
+                var extractedBytes = 0L
                 var entry = tar.nextEntry
                 while (entry != null) {
+                    if (++entryCount > InputLimits.MAX_TTS_ARCHIVE_ENTRIES) throw IOException("TTS archive contains too many files")
                     val relative = entry.name.substringAfter('/', missingDelimiterValue = "")
                     if (relative.isNotBlank() && !entry.isDirectory) {
                         val outFile = File(destDir, relative)
                         outFile.parentFile?.mkdirs()
                         // Guard against a malicious archive escaping destDir via "../" segments.
                         if (outFile.canonicalPath.startsWith(destDir.canonicalPath + File.separator)) {
-                            outFile.outputStream().use { out -> tar.copyTo(out) }
+                            if (entry.size > InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes) {
+                                throw IOException("Extracted TTS files exceed the 2 GB limit")
+                            }
+                            val remaining = InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes
+                            val copied = outFile.outputStream().use { out -> tar.copyToLimited(out, remaining) }
+                            extractedBytes += copied
                         }
                     }
                     entry = tar.nextEntry

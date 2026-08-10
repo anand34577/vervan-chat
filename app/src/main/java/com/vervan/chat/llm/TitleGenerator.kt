@@ -4,6 +4,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.branch.BranchUtil
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.ModelRole
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 /**
@@ -49,14 +50,25 @@ object TitleGenerator {
             ?: db.modelDao().getActiveModel(ModelRole.GENERATION) ?: return null
         // "Context too large" — recent meaningful exchanges only, not the full transcript.
         val transcript = history.takeLast(10).joinToString("\n") { m ->
-            "${if (m.role == MessageRole.USER) "User" else "Assistant"}: ${m.content.take(500)}"
+            val content = if (m.role == MessageRole.ASSISTANT) {
+                // API reasoners often send a large hidden preamble before the useful answer. Do
+                // not spend the title prompt's small context budget on that internal trace.
+                ThinkingParser.parse(m.content).answer
+            } else {
+                m.content
+            }
+            "${if (m.role == MessageRole.USER) "User" else "Assistant"}: ${content.take(500)}"
         }
         // Same "don't produce internal reasoning" instruction the main chat path sends for
         // thinking-OFF on a native reasoner (ThinkingPolicy.reasoningInstruction) — a title request
         // has no UI to show a reasoning card in, so a model that reasons by default (Qwen3.5,
         // Gemma's own template, DeepSeek-style models) needs to be told not to here too, not just
         // during real replies.
-        val suppressReasoning = ThinkingPolicy.reasoningInstruction("OFF", model.engine, isReasoningModel = true)
+        val suppressReasoning = ThinkingPolicy.reasoningInstruction(
+            "OFF",
+            model.engine,
+            isReasoningModel = model.supportsThinking == true
+        )
         val avoidClause = avoidTitle?.takeIf { it.isNotBlank() }?.let {
             " The current title is \"$it\" — give a different, more specific one; don't just repeat it " +
                 "or a trivial variant of it."
@@ -80,12 +92,22 @@ object TitleGenerator {
         // model can ignore, not a guarantee). No fixed budget makes this impossible — a "Deep"
         // profile can reason for thousands of tokens — so [isFallback] below is the actual guard,
         // not this number; it's just sized generously enough that hitting it is the exception.
-        val raw = OneShotLlm.run(app, prompt, model = model, maxOutputTokensOverride = 200) ?: return null
+        // Remote reasoners can spend more than a short local model on their internal trace even
+        // when asked for a three-word title. Give that path room to finish, but keep the title
+        // request bounded so it cannot compete with a real chat reply for a large context.
+        val maxTitleTokens = if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) 512 else 256
+        val raw = try {
+            OneShotLlm.run(app, prompt, model = model, maxOutputTokensOverride = maxTitleTokens)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            null
+        }
         // Strip reasoning the same way a real reply does — the model may reason regardless of what
         // was asked, and the raw text must never leak <think>/<|channel>thought/etc. as the title.
-        val visible = ThinkingParser.parse(raw).answer
+        val visible = raw?.let(::cleanTitle).orEmpty()
         val title = visible.trim().trim('"', '“', '”').lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().take(80)
-        return if (title.isNotBlank()) {
+        return if (title.isNotBlank() && !isGenericTitle(title)) {
             TitleResult(title, isFallback = false)
         } else {
             fallbackTitle(history)?.let { TitleResult(it, isFallback = true) }
@@ -97,8 +119,33 @@ object TitleGenerator {
      *  from the first real user message, same as a chat with auto-titling turned off would show
      *  until the user renames it, just without waiting for that. */
     private fun fallbackTitle(history: List<com.vervan.chat.data.db.entities.Message>): String? {
-        val firstUserMessage = history.firstOrNull { it.role == MessageRole.USER }?.content?.trim() ?: return null
-        val words = firstUserMessage.split(Regex("\\s+")).filter { it.isNotBlank() }.take(6)
+        val firstUserMessage = history.firstOrNull { it.role == MessageRole.USER }?.content ?: return null
+        val words = cleanTitle(firstUserMessage).split(Regex("\\s+")).filter { it.isNotBlank() }.take(6)
         return words.joinToString(" ").take(80).ifBlank { null }
     }
+
+    private fun cleanTitle(raw: String): String {
+        var candidate = ThinkingParser.parse(raw).answer
+            .replace(Regex("(?is)```[a-zA-Z0-9_+-]*\\s*|```"), "")
+            .lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        candidate = candidate
+            .replace(Regex("(?i)^(?:conversation\\s+)?title\\s*[:\\-]\\s*"), "")
+            .replace(Regex("<\\|[^>]*>|</?[a-zA-Z][^>]*>"), "")
+            .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
+            .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+            .replace(Regex("`([^`]+)`"), "$1")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trim('`', '"', '“', '”', '\'')
+            .trimEnd('.', ':', ';', '-', '—', '…')
+            .trim()
+        return candidate.take(80).trim()
+    }
+
+    private fun isGenericTitle(title: String): Boolean = title.lowercase() in setOf(
+        "new chat", "conversation", "chat", "title", "greeting", "hello"
+    )
 }

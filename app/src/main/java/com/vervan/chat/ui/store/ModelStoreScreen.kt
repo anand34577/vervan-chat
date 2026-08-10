@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -45,6 +46,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.store.eligibility.EligibilityVerdict
 import com.vervan.chat.store.model.ModelVariant
 import com.vervan.chat.ui.common.ContentCard
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.theme.Space
@@ -98,8 +100,16 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
           LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(Space.xs)
-          ) {
-            // A sync failure is advisory: the previously accepted catalogue is still on screen
+           ) {
+             item {
+                 FeatureHero(
+                     icon = Icons.Filled.CloudDownload,
+                     eyebrow = "Curated and device-aware",
+                     title = "Download a model with confidence",
+                     body = "Review runtime, size, licensing, and device eligibility before anything is installed."
+                 )
+             }
+             // A sync failure is advisory: the previously accepted catalogue is still on screen
             // below, so this must not read as a dead end.
             syncError?.let { error ->
                 item { NoticeCard("Catalogue update failed", error, isError = true) }

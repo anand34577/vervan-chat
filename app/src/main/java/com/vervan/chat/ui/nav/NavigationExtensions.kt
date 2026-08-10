@@ -15,8 +15,12 @@ internal fun NavHostController.navigatePrimaryRoot(route: String) {
         return
     }
     navigate(route) {
-        popUpTo(AppRoutes.HOME) { saveState = false }
+        // Preserve each primary destination's scroll, filter, pager, and detail state. The
+        // previous policy deliberately discarded it, which made switching tabs feel like the
+        // app forgot the user's place every time. The shell still keeps one copy of each root
+        // because launchSingleTop prevents duplicate destinations.
+        popUpTo(AppRoutes.HOME) { saveState = true }
         launchSingleTop = true
-        restoreState = false
+        restoreState = true
     }
 }

@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.validation.InputLimits
 
 /**
  * Reference pronunciation via TTS, attempt via the device's offline recognizer — a real phonetic
@@ -98,7 +99,7 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
                 body = "Hear a phrase, repeat it, and compare the offline transcript."
             )
             OutlinedTextField(
-                value = target, onValueChange = { target = it; heardText = null },
+                value = target, onValueChange = { target = it.take(InputLimits.PRONUNCIATION_TEXT_CHARS); heardText = null },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg), placeholder = { Text("Word or phrase to practice") }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

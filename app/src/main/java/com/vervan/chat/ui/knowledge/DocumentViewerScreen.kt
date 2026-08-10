@@ -26,6 +26,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
@@ -43,6 +46,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.theme.VervanMono
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +58,8 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
     val chunks by vm.chunks.collectAsState()
     val reindexing by vm.reindexing.collectAsState()
     val error by vm.error.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -85,14 +92,30 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else {
-                        IconButton(onClick = { vm.reindex() }) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
                     }
                 }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize()) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = stringResource(R.string.document_unavailable),
+                message = loadError ?: stringResource(R.string.document_unavailable_message),
+                recovery = stringResource(R.string.document_unavailable_recovery),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = vm::retryLoad
+            )
+            isLoading -> LoadingSkeletonList(rows = 7)
+            document == null -> EmptyState(
+                icon = Icons.Filled.Description,
+                title = stringResource(R.string.document_not_found),
+                body = stringResource(R.string.document_not_found_body),
+                actionLabel = stringResource(R.string.action_back),
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
                 val fileExists = java.io.File(doc.filePath).exists()
                 Card(
@@ -124,7 +147,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             )
                             Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text("Private on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
+                                Text("Stored on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                         Icon(
@@ -140,7 +163,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 }
             }
             error?.let {
-                com.vervan.chat.ui.common.ErrorCard("Couldn't rebuild this index", it, Modifier.padding(horizontal = Space.md, vertical = Space.xs))
+                OperationErrorCard(
+                    title = "Couldn't rebuild this index",
+                    message = it,
+                    recovery = "Check the original file, then try again.",
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
+                    actionLabel = "Retry",
+                    onAction = vm::reindex
+                )
             }
             VervanSectionHeader(
                 title = "Searchable text",
@@ -180,6 +210,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                     }
                 }
             }
+        }
         }
         }
     }

@@ -53,6 +53,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -122,8 +123,18 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
     }
 
     fun send(userText: String?) {
+        if (turns.size >= InputLimits.TURN_MAX_TURNS) {
+            turns = turns + ChatTurn(false, "⚠️ This session reached the ${InputLimits.TURN_MAX_TURNS}-turn limit. Save it and start a new session.")
+            return
+        }
+        if (userText != null && userText.length > InputLimits.CHAT_TEXT_CHARS) return
         isThinking = true
         if (userText != null) turns = turns + ChatTurn(true, userText)
+        if (transcriptText().length > InputLimits.TURN_TRANSCRIPT_CHARS) {
+            isThinking = false
+            turns = turns + ChatTurn(false, "⚠️ This transcript reached the ${InputLimits.TURN_TRANSCRIPT_CHARS}-character limit. Save it and start a new session.")
+            return
+        }
         genJob = scope.launch {
             try {
                 val prompt = buildString {
@@ -202,7 +213,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                         VervanSectionHeader("1 · Set the focus")
                         OutlinedTextField(
                             value = setup,
-                            onValueChange = { setup = it },
+                            onValueChange = { setup = it.take(InputLimits.CHAT_TEXT_CHARS) },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 3,
                             shape = MaterialTheme.shapes.large,
@@ -285,7 +296,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
-                            value = draft, onValueChange = { draft = it },
+                            value = draft, onValueChange = { draft = it.take(InputLimits.CHAT_TEXT_CHARS) },
                             modifier = Modifier.weight(1f), placeholder = { Text("Your response") }, enabled = !isThinking,
                             shape = MaterialTheme.shapes.large, maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(

@@ -19,6 +19,7 @@ object ImportLimits {
     const val MAX_CHARACTER_CARD_BYTES = 16L * 1024 * 1024
     const val MAX_IMAGE_SOURCE_BYTES = 64L * 1024 * 1024
     const val MAX_TOKENIZER_BYTES = 64L * 1024 * 1024
+    const val MAX_PRIMARY_MODEL_BYTES = 16L * 1024 * 1024 * 1024
 }
 
 fun InputStream.readBytesLimited(maxBytes: Long): ByteArray {
@@ -34,6 +35,24 @@ fun InputStream.readBytesLimited(maxBytes: Long): ByteArray {
         output.write(buffer, 0, read)
     }
     return output.toByteArray()
+}
+
+/** Copies an external stream while enforcing the limit as bytes arrive. */
+fun InputStream.copyToLimited(out: java.io.OutputStream, maxBytes: Long, bufferSize: Int = DEFAULT_BUFFER_SIZE): Long {
+    require(maxBytes > 0)
+    require(bufferSize > 0)
+    val buffer = ByteArray(bufferSize)
+    var total = 0L
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) {
+            throw InputLimitExceededException("Input exceeds ${maxBytes / (1024 * 1024)} MB")
+        }
+        out.write(buffer, 0, read)
+    }
+    return total
 }
 
 fun Reader.readTextLimited(maxChars: Int): String {

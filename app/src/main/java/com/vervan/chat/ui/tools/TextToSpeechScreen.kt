@@ -59,6 +59,7 @@ import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -95,7 +96,7 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = { text = it.take(InputLimits.TTS_TEXT_CHARS) },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     label = { Text("Text") },
                     placeholder = { Text("Type or paste text to convert to speech.") }

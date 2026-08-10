@@ -181,21 +181,34 @@ class DocumentImportManager(
      * the normal pipeline (chunk -> embed -> persist). Written to a real .txt file so the
      * document viewer and re-index still work on it like any other import. */
     suspend fun importRawText(kbId: String, name: String, content: String): Document = withContext(Dispatchers.IO) {
+        val displayName = safeFileName(name).take(180).ifBlank { "text-document" }
         if (content.length > ImportLimits.MAX_EXTRACTED_CHARS) {
             return@withContext Document(
                 knowledgeBaseId = kbId,
-                displayName = safeFileName(name),
+                displayName = displayName,
                 filePath = "",
                 mimeType = "text/plain",
                 status = DocumentStatus.FAILED,
                 failureReason = "Text is too large to process safely"
             ).also { documentDao.upsert(it) }
         }
-        val safeName = safeFileName(name)
+        val safeName = displayName
         val dest = File(docsDir, "${System.currentTimeMillis()}_$safeName.txt")
-        dest.writeText(content)
+        try {
+            dest.writeText(content)
+        } catch (t: Throwable) {
+            dest.delete()
+            return@withContext Document(
+                knowledgeBaseId = kbId,
+                displayName = displayName,
+                filePath = "",
+                mimeType = "text/plain",
+                status = DocumentStatus.FAILED,
+                failureReason = "Couldn't save text: ${t.toUserMessage()}"
+            ).also { documentDao.upsert(it) }
+        }
         val hash = MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) }
-        processLocalFile(kbId, name, dest, "text/plain", hash)
+        processLocalFile(kbId, displayName, dest, "text/plain", hash)
     }
 
     /** Caller's decision on a [DocumentImportOutcome.VersionConflict]: [replace] discards the
@@ -272,7 +285,7 @@ class DocumentImportManager(
                         throw cancelled
                     } catch (t: Throwable) {
                         Log.w(TAG, "OCR failed for $name", t)
-                        ""
+                        throw t
                     }
                     document = if (ocrText.isBlank()) {
                         document.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")

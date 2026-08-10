@@ -72,6 +72,9 @@ interface ChatDao : BaseDao<Chat> {
     @Query("SELECT * FROM chats WHERE deletedAt IS NULL AND title LIKE '%' || :q || '%' ORDER BY updatedAt DESC LIMIT 20")
     suspend fun search(q: String): List<Chat>
 
+    @Query("SELECT id FROM chats WHERE isTemporary = 1 AND deletedAt IS NULL")
+    suspend fun getTemporaryChatIds(): List<String>
+
     @Query("DELETE FROM chats WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 

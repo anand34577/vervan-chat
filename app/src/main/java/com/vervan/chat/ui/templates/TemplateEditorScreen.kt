@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,6 +37,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
@@ -51,6 +55,9 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
     val description by vm.description.collectAsState()
     val body by vm.body.collectAsState()
     val isBuiltIn by vm.isBuiltIn.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
+    val recordFound by vm.recordFound.collectAsState()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -68,7 +75,24 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Template unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your other templates are safe. Retry the lookup or return to the library.",
+                actionLabel = "Retry",
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 5, modifier = Modifier.padding(Space.md))
+            templateId != null && !recordFound -> EmptyState(
+                icon = Icons.Filled.Description,
+                title = "Template not found",
+                body = "This template may have been deleted or moved to the recycle bin.",
+                actionLabel = "Back",
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             if (isBuiltIn) {
                 Text(
                 "Saving creates an editable copy. The built-in stays unchanged.",
@@ -108,13 +132,14 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 onClick = { scope.launch { if (vm.save()) onBack() } },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
             ) { Text("Save") }
+            }
         }
-        }
+    }
     }
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = "Delete template?",
-            body = "\"/$name\" will be permanently deleted.",
+            body = "\"/$name\" will move to the recycle bin and can be restored.",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },

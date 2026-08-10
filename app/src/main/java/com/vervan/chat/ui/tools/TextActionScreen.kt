@@ -53,6 +53,8 @@ import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
@@ -174,7 +176,7 @@ fun TextActionScreen(
         val text = if (result.resultCode == Activity.RESULT_OK) {
             result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         } else null
-        if (!text.isNullOrBlank()) inputText = if (inputText.isBlank()) text else "$inputText $text"
+        if (!text.isNullOrBlank()) inputText = (if (inputText.isBlank()) text else "$inputText $text").take(InputLimits.GENERAL_TOOL_INPUT_CHARS)
     }
     val requestMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -199,15 +201,20 @@ fun TextActionScreen(
         if (success && file != null) {
             isOcrRunning = true
             scope.launch {
-                ImageUtils.fixOrientation(file)
+                if (file.length() > ImportLimits.MAX_IMAGE_SOURCE_BYTES || !ImageUtils.normalizeForModel(file)) {
+                    errorText = "The captured image is too large or unreadable."
+                    file.delete()
+                    isOcrRunning = false
+                    return@launch
+                }
                 // Only the extracted text is kept — the copied JPEG has no further use once OCR
                 // has read it, and this screen never displays it, so it's deleted immediately
                 // instead of leaking into filesDir/images (same pattern as
                 // FlashcardsFromPhotoScreen.runOcr).
                 val text = withContext(Dispatchers.IO) {
-                    runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("").also { file.delete() }
+                    runCatching { OcrExtractor.extractFromImage(file) }.getOrElse { throw IllegalStateException("Could not read OCR text: ${it.message}") }.also { file.delete() }
                 }
-                inputText = if (inputText.isBlank()) text else "$inputText\n$text"
+                inputText = (if (inputText.isBlank()) text else "$inputText\n$text").take(InputLimits.GENERAL_TOOL_INPUT_CHARS)
                 isOcrRunning = false
             }
         } else file?.delete()
@@ -240,7 +247,7 @@ fun TextActionScreen(
             VervanSectionHeader("1 · Add input")
             OutlinedTextField(
                 value = inputText,
-                onValueChange = { inputText = it },
+                onValueChange = { inputText = it.take(InputLimits.GENERAL_TOOL_INPUT_CHARS) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 4,
                 shape = MaterialTheme.shapes.large,
@@ -304,7 +311,7 @@ fun TextActionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Generating on this device…", modifier = Modifier.padding(start = Space.md).weight(1f))
+                            Text("Generating with the active model…", modifier = Modifier.padding(start = Space.md).weight(1f))
                             OutlinedButton(onClick = { stop() }) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
                                 Text("Stop", modifier = Modifier.padding(start = Space.sm))

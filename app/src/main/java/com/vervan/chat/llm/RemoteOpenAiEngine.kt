@@ -14,6 +14,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -308,7 +310,8 @@ class RemoteOpenAiEngine {
      *  the whole turn — same tolerance [deltaContent] uses for a malformed SSE chunk). */
     private fun encodeFileAsDataUri(path: String, defaultMime: String): String? {
         val file = java.io.File(path)
-        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        require(file.isFile) { "Attachment file could not be read: ${file.name}" }
+        val bytes = file.inputStream().use { it.readBytesLimited(InputLimits.MAX_NORMALIZED_IMAGE_BYTES) }
         val mime = android.webkit.MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(file.extension.lowercase())
             ?: defaultMime
@@ -321,7 +324,8 @@ class RemoteOpenAiEngine {
      *  or null if the file can't be read. */
     private fun encodeFileAsBase64(path: String): Pair<String, String>? {
         val file = java.io.File(path)
-        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        require(file.isFile) { "Audio attachment could not be read: ${file.name}" }
+        val bytes = file.inputStream().use { it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES) }
         val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         return base64 to file.extension.lowercase().ifBlank { "wav" }
     }

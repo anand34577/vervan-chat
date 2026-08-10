@@ -43,6 +43,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -91,7 +94,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     var customFieldsInput by remember { mutableStateOf("") }
     var lastFile by remember { mutableStateOf<File?>(null) }
     val activeFields = remember(kind, customFieldsInput) {
-        if (kind == ScanKind.CUSTOM) customFieldsInput.split(",").map { it.trim() }.filter { it.isNotBlank() }.map { it to it }
+        if (kind == ScanKind.CUSTOM) customFieldsInput.split(",").take(InputLimits.STRUCTURED_FIELD_COUNT)
+            .map { it.trim().take(InputLimits.STRUCTURED_FIELD_CHARS) }.filter { it.isNotBlank() }.map { it to it }
         else kind.fields
     }
 
@@ -106,7 +110,11 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         lineItems = ""
         scope.launch {
             try {
-                val ocrText = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) }.getOrDefault("") }
+                val ocrText = withContext(Dispatchers.IO) {
+                    runCatching { OcrExtractor.extractFromImage(file) }
+                        .getOrElse { throw IllegalStateException("Could not read OCR text: ${it.message}") }
+                }
+                if (ocrText.length > InputLimits.OCR_TEXT_CHARS) throw IllegalStateException("OCR text exceeds the safe limit")
                 if (ocrText.isBlank()) {
                     errorText = "No readable text was found in that image. Try a clearer, closer photo."
                     return@launch
@@ -174,8 +182,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 val dest = withContext(Dispatchers.IO) {
                     val (file, _) = newImageFile()
                     runCatching {
-                        context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-                        ImageUtils.fixOrientation(file)
+                        context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyToLimited(it, ImportLimits.MAX_IMAGE_SOURCE_BYTES) } }
+                        check(ImageUtils.normalizeForModel(file)) { "The selected image is not readable" }
                         file
                     }.getOrElse { file.delete(); null }
                 }
@@ -215,7 +223,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             VervanSectionHeader("1 · Choose what to capture")
             if (kind == ScanKind.CUSTOM) {
                 OutlinedTextField(
-                    value = customFieldsInput, onValueChange = { customFieldsInput = it },
+                    value = customFieldsInput, onValueChange = { customFieldsInput = it.take(InputLimits.STRUCTURED_FIELD_COUNT * (InputLimits.STRUCTURED_FIELD_CHARS + 1)) },
                     modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
                     label = { Text("Fields to extract") },
                     placeholder = { Text("e.g. name, ID number, date of birth, expiry date") }
@@ -266,7 +274,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             } else if (kind == ScanKind.TABLE) {
                 if (markdownTable.isNotBlank()) {
                     OutlinedTextField(
-                        value = markdownTable, onValueChange = { markdownTable = it },
+                        value = markdownTable, onValueChange = { markdownTable = it.take(InputLimits.OCR_TEXT_CHARS) },
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 6, label = { Text("Markdown table") }
                     )
                     ResponsiveActions(Modifier.padding(top = Space.sm)) {
@@ -280,14 +288,14 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                     activeFields.forEach { (key, label) ->
                         OutlinedTextField(
                             value = fields[key].orEmpty(),
-                            onValueChange = { fields = fields + (key to it) },
+                            onValueChange = { fields = fields + (key to it.take(4_000)) },
                             label = { Text(label) },
                             modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )
                     }
                     if (kind == ScanKind.RECEIPT) {
                         OutlinedTextField(
-                            value = lineItems, onValueChange = { lineItems = it },
+                            value = lineItems, onValueChange = { lineItems = it.take(20_000) },
                             label = { Text("Line items") }, minLines = 3,
                             modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )

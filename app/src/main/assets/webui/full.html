@@ -88,7 +88,7 @@
             <div class="card home-search-card">
               <div class="card-heading"><div><h3>Find anything</h3><p>Search chats, notes, memories, personas, and documents.</p></div><svg class="ui-icon heading-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></div>
               <label class="field" style="margin:0">
-                <input type="search" id="globalSearch" placeholder="Search your local workspace" autocomplete="off">
+                <input type="search" id="globalSearch" maxlength="200" placeholder="Search your local workspace" autocomplete="off">
               </label>
               <div id="searchResults"></div>
             </div>
@@ -135,7 +135,7 @@
       <div class="cols">
         <aside class="list-col" id="chatListCol">
           <div class="list-col-head">
-            <input type="search" id="chatSearch" placeholder="Search chats">
+                <input type="search" id="chatSearch" maxlength="200" placeholder="Search chats">
             <button class="primary button-with-icon" type="button" id="newChatBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
           </div>
           <div class="list-scroll" id="chatList"></div>
@@ -202,7 +202,7 @@
                     <button type="button" data-attach="ocr"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8M12 8v8"/></svg>Extract text from an image</button>
                   </div>
                 </div>
-                <textarea id="input" rows="1" placeholder="Message Vervan…"></textarea>
+                <textarea id="input" maxlength="12000" rows="1" placeholder="Message Vervan…"></textarea>
                 <button class="send-btn" type="button" id="sendBtn" aria-label="Send" title="Send message">
                   <svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
                 </button>
@@ -236,7 +236,7 @@
                   <option value="BATTERY_SAVER">Battery saver</option>
                 </select>
               </label>
-              <label class="field"><span>System prompt (this message only)</span><textarea id="systemPrompt" rows="3" placeholder="Optional"></textarea></label>
+              <label class="field"><span>System prompt (this message only)</span><textarea id="systemPrompt" maxlength="16000" rows="3" placeholder="Optional"></textarea></label>
             </div>
             <div class="opt-group">
               <h4>Knowledge</h4>

@@ -42,11 +42,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
-import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.ToolRunState
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanTopAppBar
@@ -54,6 +55,12 @@ import com.vervan.chat.ui.common.setSensitiveText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,12 +72,19 @@ fun ToolRunHistoryScreen(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
-    val runs by app.container.db.toolRunDao().observeAll().collectAsState(initial = emptyList())
-    var query by remember { mutableStateOf("") }
+    val vm: ToolRunHistoryViewModel = viewModel(factory = viewModelFactory { initializer { ToolRunHistoryViewModel(app) } })
+    val runs by vm.runs.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
+    var query by rememberSaveable { mutableStateOf("") }
     var expandedId by remember(highlightId) { mutableStateOf(highlightId) }
     var pendingDelete by remember { mutableStateOf<ToolRun?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val saveSuccessMessage = stringResource(R.string.tool_history_save_success)
+    val saveErrorMessage = stringResource(R.string.tool_history_save_error)
+    val deleteSuccessMessage = stringResource(R.string.tool_history_delete_success)
+    val deleteErrorMessage = stringResource(R.string.tool_history_delete_error)
     val filtered = remember(runs, query) {
         if (query.isBlank()) runs else runs.filter {
             it.toolName.contains(query, true) || it.input.contains(query, true) || it.output.contains(query, true)
@@ -89,8 +103,19 @@ fun ToolRunHistoryScreen(
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             Column(Modifier.fillMaxSize()) {
                 VervanSearchField(query, { query = it }, "Search tool results", Modifier.padding(vertical = Space.sm))
-                if (filtered.isEmpty()) {
-                EmptyState(Icons.Filled.History, "No tool runs yet", "Run a tool to see its result here.")
+                if (error != null) {
+                    OperationErrorCard(
+                        title = stringResource(R.string.tool_history_unavailable),
+                        message = error ?: stringResource(R.string.tool_history_unavailable_message),
+                        recovery = stringResource(R.string.tool_history_unavailable_recovery),
+                        modifier = Modifier.padding(top = Space.md),
+                        actionLabel = stringResource(R.string.action_retry),
+                        onAction = vm::retry
+                    )
+                } else if (isLoading) {
+                    LoadingSkeletonList(rows = 6, modifier = Modifier.padding(top = Space.md))
+                } else if (filtered.isEmpty()) {
+                    EmptyState(Icons.Filled.History, "No tool runs yet", "Run a tool to see its result here.")
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         items(filtered, key = { it.id }) { run ->
@@ -106,10 +131,8 @@ fun ToolRunHistoryScreen(
                                 },
                                 onSave = {
                                     scope.launch {
-                                        app.container.db.savedOutputDao().upsert(
-                                            SavedOutput(content = run.output.ifBlank { run.input }, label = run.toolName)
-                                        )
-                                        snackbarHostState.showSnackbar("Saved")
+                                        val result = vm.save(run).await()
+                                        snackbarHostState.showSnackbar(if (result.isSuccess) saveSuccessMessage else saveErrorMessage)
                                     }
                                 },
                                 onContinue = { onContinueInChat(run.output.ifBlank { run.input }) },
@@ -139,8 +162,8 @@ fun ToolRunHistoryScreen(
             onConfirm = {
                 pendingDelete = null
                 scope.launch {
-                    app.container.db.toolRunDao().softDelete(run.id)
-                    snackbarHostState.showSnackbar("Moved to recycle bin")
+                    val result = vm.delete(run).await()
+                    snackbarHostState.showSnackbar(if (result.isSuccess) deleteSuccessMessage else deleteErrorMessage)
                 }
             },
             onDismiss = { pendingDelete = null }

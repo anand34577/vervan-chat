@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Checklist
@@ -52,6 +53,9 @@ import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.ui.common.JobProgressCard
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
@@ -65,6 +69,8 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 private enum class DocFilter(val label: String) { ALL("All"), READY("Ready"), PROCESSING("Processing"), FAILED("Failed"), UNSUPPORTED("Unsupported") }
 
@@ -92,6 +98,8 @@ fun KnowledgeBaseDetailScreen(
         initializer { KnowledgeBaseDetailViewModel(app, kbId) }
     })
     val documents by vm.documents.collectAsState()
+    val documentsLoading by vm.documentsLoading.collectAsState()
+    val documentsLoadError by vm.documentsLoadError.collectAsState()
     val importing by vm.importing.collectAsState()
     val error by vm.error.collectAsState()
     val pendingVersionConflict by vm.pendingVersionConflict.collectAsState()
@@ -153,6 +161,12 @@ fun KnowledgeBaseDetailScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
+            FeatureHero(
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                eyebrow = "Document collection",
+                title = "Build a searchable source of truth",
+                body = "Import documents, watch indexing progress, and keep every source ready for cited answers."
+            )
             Button(
                 onClick = {
                     pickFile.launch(
@@ -177,6 +191,18 @@ fun KnowledgeBaseDetailScreen(
             }
             error?.let { ErrorCard("Couldn't import this document", it, Modifier.padding(top = Space.sm)) }
 
+            if (documentsLoadError != null) {
+                OperationErrorCard(
+                    title = stringResource(R.string.knowledge_documents_unavailable),
+                    message = documentsLoadError ?: stringResource(R.string.knowledge_documents_unavailable_message),
+                    recovery = stringResource(R.string.knowledge_documents_unavailable_recovery),
+                    modifier = Modifier.padding(top = Space.md),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retryDocumentsLoad
+                )
+            } else if (documentsLoading) {
+                LoadingSkeletonList(rows = 7, modifier = Modifier.padding(top = Space.md))
+            } else {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = Space.sm),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
@@ -213,6 +239,7 @@ fun KnowledgeBaseDetailScreen(
                         )
                     }
                 }
+            }
             }
         }
         }

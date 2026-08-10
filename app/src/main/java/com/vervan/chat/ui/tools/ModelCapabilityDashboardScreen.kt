@@ -22,6 +22,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
@@ -34,6 +36,51 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.traits
+import com.vervan.chat.system.toUserMessage
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ModelCapabilityDashboardViewModel(private val app: VervanApp) : ViewModel() {
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    val models: StateFlow<List<ModelInfo>> = reload
+        .flatMapLatest { app.container.db.modelDao().observeModels() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
+}
 
 /** Shows what each installed model declares support for — the same [ModelInfo] fields that
  * already gate the composer's photo/camera/voice buttons and the Tools/Reasoning toggles
@@ -42,7 +89,10 @@ import com.vervan.chat.data.db.entities.traits
 @Composable
 fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val models by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
+    val vm: ModelCapabilityDashboardViewModel = viewModel(factory = viewModelFactory { initializer { ModelCapabilityDashboardViewModel(app) } })
+    val models by vm.models.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.error.collectAsState()
 
     Scaffold(
         topBar = {
@@ -53,7 +103,17 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        if (models.isEmpty()) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Model capabilities unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Installed models are safe. Retry loading their capability details.",
+                actionLabel = "Retry",
+                onAction = vm::retry,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+            models.isEmpty() -> {
             Column(Modifier.fillMaxSize().padding(Space.md)) {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
@@ -66,7 +126,8 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                     body = "Import a model to see its features and device compatibility."
                 )
             }
-        } else {
+            }
+            else -> {
         LazyColumn(Modifier.fillMaxSize().padding(Space.md)) {
             item {
                 ToolIntro(
@@ -114,6 +175,7 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
         }
         }

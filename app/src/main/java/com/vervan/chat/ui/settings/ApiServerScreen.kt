@@ -61,6 +61,8 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -116,10 +118,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
     val allowWriteTools by vm.apiServerAllowWriteTools.collectAsState()
     var portText by remember(port) { mutableStateOf(port.toString()) }
     var ttlText by remember(modelTtl) { mutableStateOf(modelTtl.toString()) }
-    // Keyed on requireAuth, not `remember {}` with no keys: it arrives from DataStore as `false`
-    // on the first composition and only then emits its real value. An unkeyed remember captured
-    // that first `false` forever, so the key field and its Copy button stayed empty for a server
-    // that does require a key — leaving no way to get the token out of this screen at all.
+    var portError by remember { mutableStateOf<String?>(null) }
+    var ttlError by remember { mutableStateOf<String?>(null) }
+    // Keyed on requireAuth so the token presentation follows the current security choice. An
+    // unkeyed remember can capture the initial state forever, leaving the key field and Copy
+    // action empty after authentication is enabled.
     var token by remember(requireAuth) { mutableStateOf(if (requireAuth) vm.apiServerToken else "") }
     var confirmRegenerate by remember { mutableStateOf(false) }
 
@@ -245,8 +248,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 Text(
                     if (fullMode)
                         "The browser page is the full app: chat, RAG over your knowledge bases, document " +
-                            "upload, and vision/audio when the selected model supports them. Everything " +
-                            "still runs on this device."
+                            "upload, and vision/audio when the selected model supports them. The server " +
+                            "runs on this device, but prompts may still leave it if the selected model is remote."
                     else
                         "The browser page is a bare status/API page — just the OpenAI-compatible endpoints " +
                             "for other apps to call. Turn this on for the full chat experience in a browser " +
@@ -277,9 +280,16 @@ fun ApiServerScreen(onBack: () -> Unit) {
                     value = portText,
                     onValueChange = { text ->
                         portText = text.filter(Char::isDigit).take(5)
+                        portError = when {
+                            portText.isBlank() -> null
+                            portText.toIntOrNull() !in 1024..65535 -> "Port must be between 1024 and 65535"
+                            else -> null
+                        }
                         portText.toIntOrNull()?.let { if (it in 1024..65535) vm.setApiServerPort(it) }
                     },
                     label = { Text("Port") },
+                    isError = portError != null,
+                    supportingText = portError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -308,9 +318,16 @@ fun ApiServerScreen(onBack: () -> Unit) {
                     value = ttlText,
                     onValueChange = { text ->
                         ttlText = text.filter(Char::isDigit).take(5)
-                        ttlText.toIntOrNull()?.let { vm.setApiModelTtlSeconds(it) }
+                        ttlError = when {
+                            ttlText.isBlank() -> null
+                            ttlText.toIntOrNull() !in 0..86_400 -> "TTL must be between 0 and 86400 seconds"
+                            else -> null
+                        }
+                        ttlText.toIntOrNull()?.let { if (it in 0..86_400) vm.setApiModelTtlSeconds(it) }
                     },
                     suffix = { Text("seconds") },
+                    isError = ttlError != null,
+                    supportingText = ttlError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -402,7 +419,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             Card(
-                Modifier.fillMaxWidth().padding(vertical = Space.xs),
+                Modifier.fillMaxWidth().padding(vertical = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
@@ -480,7 +497,7 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
         else -> MaterialTheme.colorScheme.primary
     }
     Card(
-        Modifier.fillMaxWidth().padding(vertical = Space.xs),
+        Modifier.fillMaxWidth().padding(vertical = Space.sm),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(Modifier.padding(Space.md)) {
@@ -494,6 +511,8 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = tone,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(start = Space.sm)
                 )
                 Text(
@@ -515,6 +534,8 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
                     "last ${relativeSince(client.lastSeenAt)} · ${client.lastPath}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = Space.xs)
             )
             // Only meaningful while a key is actually required — with the key off, nothing was ever
@@ -558,13 +579,13 @@ private fun ApiSection(
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+    Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Text(
                     title, style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f).padding(start = Space.sm)
+                    modifier = Modifier.weight(1f).padding(start = Space.sm).semantics { heading() }
                 )
                 trailing?.invoke()
             }

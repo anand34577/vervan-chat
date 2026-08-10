@@ -33,6 +33,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.StatusTone
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.theme.Space
@@ -67,6 +68,12 @@ fun ExperienceControlsSettingsScreen(
         }
     ) { padding ->
         ScrollablePage(padding) {
+            FeatureHero(
+                icon = Icons.Filled.Tune,
+                eyebrow = "Calm by default, powerful on demand",
+                title = "Shape how Vervan works",
+                body = "Keep the everyday experience simple, or expose more control over models, routing, and response behavior."
+            )
             SystemStatusStrip(
                 title = if (expertMode) "Expert mode active" else "Standard mode",
                 body = if (expertMode) {
@@ -78,7 +85,7 @@ fun ExperienceControlsSettingsScreen(
             )
 
             SectionLabel("Mode")
-            androidx.compose.material3.Card(Modifier.padding(top = Space.xs)) {
+            androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
                     headlineContent = { Text("Expert mode") },
                     supportingContent = { Text("Show advanced model and response controls.") },

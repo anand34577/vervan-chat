@@ -36,8 +36,8 @@ class GenerationService : Service() {
         ensureChannel()
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setContentTitle("Generating response…")
-            .setContentText("Vervan Chat is running a model response")
+            .setContentTitle(getString(R.string.notification_generation_title))
+            .setContentText(getString(R.string.notification_generation_body))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -45,7 +45,7 @@ class GenerationService : Service() {
 
     private fun ensureChannel() {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Generation", NotificationManager.IMPORTANCE_LOW))
+        mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, getString(R.string.notification_generation_channel), NotificationManager.IMPORTANCE_LOW))
     }
 
     companion object {

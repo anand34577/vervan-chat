@@ -37,14 +37,21 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.Chunk
 import com.vervan.chat.data.db.entities.Document
+import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
 
 class SourcePassageViewModel(private val app: VervanApp, private val chunkId: String) : ViewModel() {
     private val db = app.container.db
@@ -58,15 +65,41 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
     private val _document = MutableStateFlow<Document?>(null)
     val document: StateFlow<Document?> = _document
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
     init {
+        load()
+    }
+
+    fun retry() {
+        load()
+    }
+
+    private fun load() {
         viewModelScope.launch {
-            val c = db.chunkDao().getChunk(chunkId)
-            _chunk.value = c
-            if (c != null) {
-                // Load all chunks for the same document so the passage is shown in context.
-                val all = db.chunkDao().observeForDocument(c.documentId).first()
-                _neighbors.value = all
-                _document.value = db.documentDao().get(c.documentId)
+            _isLoading.value = true
+            _error.value = null
+            try {
+                val c = db.chunkDao().getChunk(chunkId)
+                _chunk.value = c
+                if (c != null) {
+                    // Load all chunks for the same document so the passage is shown in context.
+                    val all = db.chunkDao().observeForDocument(c.documentId).first()
+                    _neighbors.value = all
+                    _document.value = db.documentDao().get(c.documentId)
+                } else {
+                    _neighbors.value = emptyList()
+                    _document.value = null
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _error.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -80,6 +113,8 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
     val chunk by vm.chunk.collectAsState()
     val neighbors by vm.neighbors.collectAsState()
     val document by vm.document.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(chunk, neighbors) {
@@ -106,28 +141,50 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(Space.sm)) {
-            items(neighbors, key = { it.id }) { c ->
-                val isTarget = c.id == chunk?.id
-                Card(
-                    Modifier.fillMaxWidth().padding(vertical = Space.xs)
-                ) {
-                    Column(Modifier.padding(Space.md)) {
-                        if (c.sectionPath.isNotBlank()) {
-                            Text(c.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                        }
-                        Text(
-                            c.text,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
-                        )
-                        if (isTarget) {
-                            Text("↳ cited passage", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            when {
+                error != null -> OperationErrorCard(
+                    title = stringResource(R.string.source_passage_unavailable),
+                    message = error.orEmpty(),
+                    recovery = stringResource(R.string.source_passage_unavailable_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry,
+                    modifier = Modifier.padding(Space.md)
+                )
+                isLoading -> LoadingSkeletonList(rows = 5, modifier = Modifier.padding(Space.md))
+                chunk == null -> EmptyState(
+                    icon = Icons.Filled.PictureAsPdf,
+                    title = stringResource(R.string.source_passage_not_found),
+                    body = stringResource(R.string.source_passage_not_found_body),
+                    actionLabel = stringResource(R.string.action_back),
+                    onAction = onBack
+                )
+                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(Space.sm)) {
+                    items(neighbors, key = { it.id }) { c ->
+                        val isTarget = c.id == chunk?.id
+                        Card(
+                            Modifier.fillMaxWidth().padding(vertical = Space.xs)
+                        ) {
+                            Column(Modifier.padding(Space.md)) {
+                                if (c.sectionPath.isNotBlank()) {
+                                    Text(c.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                                Text(
+                                    c.text,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
+                                )
+                                if (isTarget) {
+                                    Text(
+                                        stringResource(R.string.source_cited_passage),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
         }
     }
 }

@@ -48,10 +48,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.data.db.entities.TranscriptionProject
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.EmptyState
@@ -101,7 +104,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
             title = { Text(if (current != null) "Transcript" else "Transcribe") },
             navigationIcon = {
                 IconButton(onClick = { if (current != null) vm.closeCurrent() else onBack() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                 }
             }
         )
@@ -119,7 +122,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) }
                         ) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                            Text("Import file")
+                    Text(stringResource(R.string.transcription_import_file))
                         }
                         val recording = phase is TranscriptionViewModel.Phase.Recording
                         OutlinedButton(
@@ -139,24 +142,24 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                     }
                     if (installedWhisperVariants.isEmpty()) {
                         ErrorCard(
-                            title = "No whisper.cpp model downloaded",
+                        title = stringResource(R.string.transcription_no_model),
                             body = "Download one in Model Manager before transcribing.",
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     }
                     (phase as? TranscriptionViewModel.Phase.Failed)?.let {
                         ErrorCard(
-                            title = "Transcription failed",
+                        title = stringResource(R.string.transcription_failed),
                             body = it.message,
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     }
 
-                    Text("History", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+                Text(stringResource(R.string.transcription_history), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
                     if (projects.isEmpty()) {
                         EmptyState(
                             icon = Icons.Filled.Mic,
-                            title = "No transcriptions yet",
+                    title = stringResource(R.string.transcription_empty),
                             body = "Import an audio file or record directly to get started."
                         )
                     } else {
@@ -177,7 +180,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                                             )
                                         }
                                         IconButton(onClick = { vm.delete(p.id) }) {
-                                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete))
                                         }
                                     }
                                 }
@@ -271,7 +274,7 @@ private fun TranscriptionDetail(
                 ) {
                     OutlinedTextField(
                         value = selectedVariant, onValueChange = {}, readOnly = true,
-                        label = { Text("whisper.cpp model") },
+                    label = { Text(stringResource(R.string.transcription_model)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = variantMenuOpen) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
@@ -287,9 +290,9 @@ private fun TranscriptionDetail(
                 is TranscriptionViewModel.Phase.Transcribing -> {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                        Text("Transcribing…", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.transcription_running), style = MaterialTheme.typography.bodyMedium)
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                        OutlinedButton(onClick = onCancel) { Text("Cancel") }
+            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
                 else -> {
@@ -301,7 +304,7 @@ private fun TranscriptionDetail(
                 }
             }
             (phase as? TranscriptionViewModel.Phase.Failed)?.let {
-                ErrorCard(title = "Transcription failed", body = it.message, modifier = Modifier.padding(top = Space.sm))
+            ErrorCard(title = stringResource(R.string.transcription_failed), body = it.message, modifier = Modifier.padding(top = Space.sm))
             }
 
             if (segments.isNotEmpty()) {
@@ -310,10 +313,10 @@ private fun TranscriptionDetail(
 
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it; onEdit(it) },
+                onValueChange = { val next = it.take(InputLimits.TRANSCRIPT_CHARS); text = next; onEdit(next) },
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(top = Space.md),
-                label = { Text("Transcript") },
-                placeholder = { Text("Transcribe the audio, or type/paste text here.") }
+                    label = { Text(stringResource(R.string.transcription_transcript)) },
+                    placeholder = { Text(stringResource(R.string.transcription_placeholder)) }
             )
 
             Text(
@@ -324,12 +327,12 @@ private fun TranscriptionDetail(
 
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it },
-                    label = { Text("Find") }, singleLine = true, modifier = Modifier.weight(1f)
+                    value = searchQuery, onValueChange = { searchQuery = it.take(InputLimits.SEARCH_QUERY_CHARS) },
+                label = { Text(stringResource(R.string.transcription_find)) }, singleLine = true, modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
-                    value = replaceWith, onValueChange = { replaceWith = it },
-                    label = { Text("Replace with") }, singleLine = true, modifier = Modifier.weight(1f)
+                    value = replaceWith, onValueChange = { replaceWith = it.take(InputLimits.SEARCH_QUERY_CHARS) },
+                label = { Text(stringResource(R.string.transcription_replace_with)) }, singleLine = true, modifier = Modifier.weight(1f)
                 )
             }
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -345,7 +348,7 @@ private fun TranscriptionDetail(
                         applyMutation(replaced)
                     },
                     enabled = matchCount > 0
-                ) { Text("Replace all") }
+            ) { Text(stringResource(R.string.transcription_replace_all)) }
                 OutlinedButton(
                     onClick = {
                         val previous = undoStack.removeLastOrNull() ?: return@OutlinedButton
@@ -354,17 +357,17 @@ private fun TranscriptionDetail(
                     },
                     enabled = undoStack.isNotEmpty(),
                     modifier = Modifier.padding(start = Space.sm)
-                ) { Text("Undo") }
+            ) { Text(stringResource(R.string.action_undo)) }
             }
 
             ResponsiveActions(Modifier.padding(top = Space.md)) {
-                OutlinedButton(onClick = { onExport("txt") }, enabled = text.isNotBlank()) { Text("TXT") }
-                OutlinedButton(onClick = { onExport("md") }, enabled = text.isNotBlank()) { Text("Markdown") }
-                OutlinedButton(onClick = { onExport("pdf") }, enabled = text.isNotBlank()) { Text("PDF") }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
+            OutlinedButton(onClick = { onExport("txt") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_txt)) }
+            OutlinedButton(onClick = { onExport("md") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_markdown)) }
+            OutlinedButton(onClick = { onExport("pdf") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_pdf)) }
+            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete)) }
             }
 
-            Text("Ask the offline model", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                Text(stringResource(R.string.transcription_offline_model), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
             val running = (aiActionState as? TranscriptionViewModel.AiActionState.Running)?.label
             androidx.compose.foundation.layout.FlowRow(
                 modifier = Modifier.padding(top = 8.dp),
@@ -379,23 +382,23 @@ private fun TranscriptionDetail(
                 }
             }
             (aiActionState as? TranscriptionViewModel.AiActionState.Failed)?.let {
-                ErrorCard(title = "Action failed", body = it.message, modifier = Modifier.padding(top = Space.sm))
+            ErrorCard(title = stringResource(R.string.transcription_action_failed), body = it.message, modifier = Modifier.padding(top = Space.sm))
             }
 
             OutlinedButton(
                 onClick = { showSaveDialog = true },
                 enabled = text.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-            ) { Text("Save to Knowledge Base") }
+            ) { Text(stringResource(R.string.transcription_save_knowledge)) }
             when (val save = saveState) {
                 TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
-                    title = "Saved",
+            title = stringResource(R.string.transcription_saved),
                     body = "The transcript was saved to your knowledge base.",
                     tone = com.vervan.chat.ui.common.StatusTone.Ready,
                     modifier = Modifier.padding(top = Space.sm)
                 )
                 is TranscriptionViewModel.SaveState.Failed -> ErrorCard(
-                    title = "Couldn't save to Knowledge Base",
+            title = stringResource(R.string.transcription_save_failed),
                     body = save.message,
                     modifier = Modifier.padding(top = Space.sm)
                 )
@@ -427,18 +430,20 @@ private fun SaveToKnowledgeBaseDialog(vm: TranscriptionViewModel, onDismiss: () 
     var selectedKbId by remember { mutableStateOf<String?>(knowledgeBases.firstOrNull()?.id) }
     var newName by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
+    val defaultTitle = stringResource(R.string.transcription_default_title)
+    val newKnowledgeBaseLabel = stringResource(R.string.transcription_new_knowledge_base)
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Save to Knowledge Base") },
+        title = { Text(stringResource(R.string.transcription_save_title)) },
         text = {
             Column {
                 if (knowledgeBases.isNotEmpty()) {
                     ExposedDropdownMenuBox(expanded = menuOpen, onExpandedChange = { menuOpen = it }) {
                         OutlinedTextField(
-                            value = knowledgeBases.find { it.id == selectedKbId }?.name ?: "New Knowledge Base",
+                            value = knowledgeBases.find { it.id == selectedKbId }?.name ?: newKnowledgeBaseLabel,
                             onValueChange = {}, readOnly = true,
-                            label = { Text("Knowledge Base") },
+            label = { Text(stringResource(R.string.transcription_knowledge_base)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuOpen) },
                             modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                         )
@@ -446,23 +451,23 @@ private fun SaveToKnowledgeBaseDialog(vm: TranscriptionViewModel, onDismiss: () 
                             knowledgeBases.forEach { kb ->
                                 DropdownMenuItem(text = { Text(kb.name) }, onClick = { selectedKbId = kb.id; menuOpen = false })
                             }
-                            DropdownMenuItem(text = { Text("New Knowledge Base…") }, onClick = { selectedKbId = null; menuOpen = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.transcription_new_knowledge_base)) }, onClick = { selectedKbId = null; menuOpen = false })
                         }
                     }
                 }
                 if (selectedKbId == null) {
                     OutlinedTextField(
-                        value = newName, onValueChange = { newName = it },
-                        label = { Text("New Knowledge Base name") },
+                        value = newName, onValueChange = { newName = it.take(80) },
+                label = { Text(stringResource(R.string.transcription_new_knowledge_base_name)) },
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                     )
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(selectedKbId, newName.ifBlank { "Transcripts" }) }) { Text("Save") }
+            Button(onClick = { onSave(selectedKbId, newName.ifBlank { defaultTitle }) }) { Text(stringResource(R.string.action_save)) }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -512,7 +517,7 @@ private fun TimestampedPlaybackCard(
                         contentDescription = if (isPlaying) "Pause" else "Play"
                     )
                 }
-                Text("Timestamps", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.transcription_timestamps), style = MaterialTheme.typography.bodyMedium)
             }
             androidx.compose.foundation.lazy.LazyColumn(Modifier.height(160.dp)) {
                 items(segments) { seg ->

@@ -6,6 +6,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.repo.resolveEditId
 import com.vervan.chat.model.ImageUtils
+import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.ValidationLimits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +51,15 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError
 
+    private val _isLoading = MutableStateFlow(personaId != null)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError
+
+    private val _recordFound = MutableStateFlow(personaId == null)
+    val recordFound: StateFlow<Boolean> = _recordFound
+
     /** A freshly copied/imported avatar file created during this editing session that hasn't
      * been saved onto a Persona row yet — distinct from [_avatarPath], which right after
      * `init{}` runs for an existing persona is instead that persona's already-persisted avatar
@@ -58,21 +70,44 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     private var pendingScratchAvatarFile: File? = null
 
     init {
-        if (personaId != null) {
-            viewModelScope.launch {
-                db.personaDao().getPersona(personaId)?.let { persona ->
-                    _name.value = persona.name
-                    _description.value = persona.description
-                    _systemInstruction.value = persona.systemInstruction
-                    _isBuiltIn.value = persona.isBuiltIn
-                    _tone.value = persona.tone
-                    _formality.value = persona.formality
-                    _conciseness.value = persona.conciseness
-                    _creativity.value = persona.creativity
-                    _responseLength.value = persona.responseLength
-                    _language.value = persona.language
-                    _avatarPath.value = persona.avatarPath
+        load()
+    }
+
+    fun retryLoad() {
+        load()
+    }
+
+    private fun load() {
+        if (personaId == null) {
+            _isLoading.value = false
+            _recordFound.value = true
+            return
+        }
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadError.value = null
+            try {
+                val persona = db.personaDao().getPersona(personaId)
+                _recordFound.value = persona != null
+                persona?.let {
+                    _name.value = it.name
+                    _description.value = it.description
+                    _systemInstruction.value = it.systemInstruction
+                    _isBuiltIn.value = it.isBuiltIn
+                    _tone.value = it.tone
+                    _formality.value = it.formality
+                    _conciseness.value = it.conciseness
+                    _creativity.value = it.creativity
+                    _responseLength.value = it.responseLength
+                    _language.value = it.language
+                    _avatarPath.value = it.avatarPath
                 }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _recordFound.value = false
+                _loadError.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -145,6 +180,16 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
 
     suspend fun save(): Boolean {
         if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false
+        if (_name.value.length > ValidationLimits.PERSONA_NAME ||
+            _description.value.length > ValidationLimits.PERSONA_ROLE ||
+            _systemInstruction.value.length > ValidationLimits.PERSONA_SYSTEM_INSTRUCTION ||
+            _language.value.length > 80 ||
+            !_creativity.value.isFinite() || _creativity.value !in 0f..1f ||
+            _tone.value !in setOf("NEUTRAL", "WARM", "DIRECT", "PLAYFUL") ||
+            _formality.value !in setOf("CASUAL", "NEUTRAL", "FORMAL") ||
+            _conciseness.value !in setOf("NORMAL", "TERSE", "ELABORATE") ||
+            _responseLength.value !in setOf("BALANCED", "SHORT", "LONG")
+        ) return false
         val persona = Persona(
             id = resolveEditId(personaId, _isBuiltIn.value),
             name = _name.value.trim(),

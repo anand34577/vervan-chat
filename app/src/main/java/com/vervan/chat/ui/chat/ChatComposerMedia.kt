@@ -112,6 +112,7 @@ import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -137,6 +138,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
@@ -169,6 +171,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -284,9 +287,9 @@ internal fun DocumentComposerPreviewDialog(
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White)
                     }
-                    Text("Document preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.media_document_preview), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                 }
                 // Less surrounding chrome around the actual page thumbnail (user ask: "less
                 // bezel") — smaller outer/inner padding and a taller image area so the preview
@@ -310,7 +313,7 @@ internal fun DocumentComposerPreviewDialog(
                                 documentPreview.bitmap?.let {
                                     Image(
                                         it,
-                                        contentDescription = "First page preview",
+                                        contentDescription = stringResource(R.string.media_first_page_preview),
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Fit
                                     )
@@ -338,7 +341,7 @@ internal fun DocumentComposerPreviewDialog(
                             )
                             documentPreview.pageCount?.let { pages ->
                                 Text(
-                                    "$pages pages",
+                                    stringResource(R.string.media_pages, pages),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = Space.xs)
@@ -352,7 +355,7 @@ internal fun DocumentComposerPreviewDialog(
                             )
                             Row(Modifier.padding(top = Space.lg), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
-                                Text("Indexed privately after sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.media_indexed_private), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                     }
@@ -383,6 +386,7 @@ internal fun ModernChatAttachmentSheet(
     onRecordAudio: () -> Unit,
     onAudioFile: () -> Unit,
     onDocument: () -> Unit,
+    modelRunsOnDevice: Boolean = true,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -391,20 +395,29 @@ internal fun ModernChatAttachmentSheet(
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Share", style = MaterialTheme.typography.headlineSmall)
-                    Text("Prepared privately on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.media_share), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        if (modelRunsOnDevice) stringResource(R.string.media_private_prepare)
+                        else stringResource(R.string.media_remote_prepare),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Icon(Icons.Filled.Lock, contentDescription = "Private and offline", tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                    contentDescription = if (modelRunsOnDevice) stringResource(R.string.media_private_content) else stringResource(R.string.media_remote_content),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.Image, "Gallery", if (visionAvailable == false) "Unavailable" else "Photos", visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.PhotoCamera, "Camera", if (visionAvailable == false) "Unavailable" else "Take photo", visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Description, "Document", "PDF or file", true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Image, stringResource(R.string.media_gallery), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos), visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.PhotoCamera, stringResource(R.string.media_camera), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo), visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Description, stringResource(R.string.media_document), stringResource(R.string.media_pdf_file), true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.DocumentScanner, "Scan text", if (isRunningOcr) "Reading…" else "From photo", !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Mic, "Record", if (audioAvailable == true) "Transcribe" else "STT is off", audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) "Transcribing…" else "Audio", if (audioAvailable == true) "Transcribe file" else "STT is off", audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.DocumentScanner, stringResource(R.string.media_scan_text), if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo), !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.Mic, stringResource(R.string.media_record), if (audioAvailable == true) stringResource(R.string.media_transcribe) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
+                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_audio), if (audioAvailable == true) stringResource(R.string.media_transcribe_file) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
             }
             TextButton(
                 onClick = onOcrCamera,
@@ -412,7 +425,7 @@ internal fun ModernChatAttachmentSheet(
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.sm)
             ) {
                 Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = Space.xs))
-                Text("Scan text with camera")
+                Text(stringResource(R.string.media_scan_camera))
             }
         }
     }
@@ -605,8 +618,9 @@ internal fun AttachmentCaptionBar(
     onCaptionChange: (String) -> Unit,
     confirmEnabled: Boolean,
     onSend: () -> Unit,
-    placeholder: String = "Add a message"
+    placeholder: String? = null
 ) {
+    val resolvedPlaceholder = placeholder ?: stringResource(R.string.media_caption_placeholder)
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
             if (caption.length >= 9_600) {
@@ -625,14 +639,14 @@ internal fun AttachmentCaptionBar(
                 ) {
                     androidx.compose.foundation.text.BasicTextField(
                         value = caption,
-                        onValueChange = onCaptionChange,
+                        onValueChange = { onCaptionChange(it.take(12_000)) },
                         maxLines = 5,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp, max = 148.dp),
                         decorationBox = { inner ->
                             Box(Modifier.padding(horizontal = Space.lg, vertical = Space.md), contentAlignment = Alignment.CenterStart) {
-                                if (caption.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (caption.isEmpty()) Text(resolvedPlaceholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 inner()
                             }
                         }
@@ -649,7 +663,7 @@ internal fun AttachmentCaptionBar(
                     IconButton(onClick = onSend, enabled = confirmEnabled) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send attachment",
+                            contentDescription = stringResource(R.string.media_send_attachment),
                             tint = if (confirmEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -673,10 +687,10 @@ internal fun AudioComposerPreviewDialog(
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
-                    Text("Audio preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White) }
+                    Text(stringResource(R.string.media_audio_preview), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove audio", tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, stringResource(R.string.media_remove_audio), tint = androidx.compose.ui.graphics.Color.White) }
                 }
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
@@ -689,8 +703,8 @@ internal fun AudioComposerPreviewDialog(
                             Surface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
                                 Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.padding(Space.lg).size(44.dp))
                             }
-                            Text("Voice message", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg))
-                            Text("Preview before sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.media_voice_message), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg))
+                            Text(stringResource(R.string.media_preview_before_send), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Box(Modifier.fillMaxWidth().padding(top = Space.md)) { VoiceMessageRow(path) }
                         }
                     }
@@ -721,7 +735,7 @@ internal fun FullScreenImagePreview(
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 val context = LocalContext.current
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White) }
                     Text(
                         title,
                         color = androidx.compose.ui.graphics.Color.White,
@@ -731,12 +745,12 @@ internal fun FullScreenImagePreview(
                         modifier = Modifier.weight(1f).padding(horizontal = Space.xs)
                     )
                     onRemove?.let {
-                        IconButton(onClick = it) { Icon(Icons.Filled.Close, "Remove attachment", tint = androidx.compose.ui.graphics.Color.White) }
+                        IconButton(onClick = it) { Icon(Icons.Filled.Close, stringResource(R.string.media_remove_attachment), tint = androidx.compose.ui.graphics.Color.White) }
                     }
                     IconButton(onClick = {
                         com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(path), "image/*")
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open with…", tint = androidx.compose.ui.graphics.Color.White)
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.media_open_with), tint = androidx.compose.ui.graphics.Color.White)
                     }
                     if (caption == null && confirmLabel != null && onConfirm != null) {
                         TextButton(onClick = onConfirm) { Text(confirmLabel) }
@@ -756,7 +770,7 @@ internal fun FullScreenImagePreview(
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     bitmap?.let {
                         Image(
-                            it, "Image preview",
+                            it, stringResource(R.string.media_image_preview),
                             Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
@@ -815,13 +829,13 @@ internal fun OcrPreviewDialog(
         Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White) }
                     Column {
-                        Text("OCR preview", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
-                        Text("Image stays on this device", color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.media_ocr_preview), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.media_ocr_on_device), color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove OCR image", tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, stringResource(R.string.media_remove_ocr), tint = androidx.compose.ui.graphics.Color.White) }
                 }
 
                 val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
@@ -830,7 +844,7 @@ internal fun OcrPreviewDialog(
                     bitmap?.let {
                         Image(
                             it,
-                            contentDescription = "Scanned photo",
+                            contentDescription = stringResource(R.string.media_scanned_photo),
                             modifier = Modifier.fillMaxSize().padding(horizontal = Space.sm),
                             contentScale = ContentScale.Fit
                         )
@@ -845,7 +859,9 @@ internal fun OcrPreviewDialog(
                         Row(Modifier.padding(horizontal = Space.lg, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text(
-                                if (showExtractedText) "Hide extracted text" else if (text.isBlank()) "No text found · add manually" else "View extracted text",
+                                if (showExtractedText) stringResource(R.string.media_hide_extracted)
+                                else if (text.isBlank()) stringResource(R.string.media_no_text)
+                                else stringResource(R.string.media_view_extracted),
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(start = Space.sm)
                             )
@@ -858,16 +874,16 @@ internal fun OcrPreviewDialog(
                         Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).padding(start = Space.lg, end = Space.lg, top = Space.md)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Extracted text", style = MaterialTheme.typography.titleSmall)
-                                    Text("Review or correct it before sending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(stringResource(R.string.media_extracted_text), style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.media_review_extracted), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                IconButton(onClick = { showExtractedText = false }) { Icon(Icons.Filled.Close, "Hide extracted text") }
+                                IconButton(onClick = { showExtractedText = false }) { Icon(Icons.Filled.Close, stringResource(R.string.media_hide_extracted)) }
                             }
                             OutlinedTextField(
                                 value = text,
-                                onValueChange = onTextChange,
+                                onValueChange = { onTextChange(it.take(100_000)) },
                                 modifier = Modifier.fillMaxWidth().weight(1f).padding(bottom = Space.sm),
-                                placeholder = { Text("Type the text visible in the image") }
+                                placeholder = { Text(stringResource(R.string.media_text_placeholder)) }
                             )
                         }
                     }
@@ -878,7 +894,7 @@ internal fun OcrPreviewDialog(
                     onCaptionChange = onCaptionChange,
                     confirmEnabled = confirmEnabled,
                     onSend = onSend,
-                    placeholder = "Add a message about this text"
+                    placeholder = stringResource(R.string.media_caption_text_placeholder)
                 )
             }
         }

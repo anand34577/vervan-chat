@@ -171,10 +171,12 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.audio.WavRecorder
 import com.vervan.chat.system.toUserMessage
@@ -460,7 +462,7 @@ internal fun MessageBubble(
             Column(
                 Modifier.padding(
                     horizontal = if (isUser && !hasAttachment) Space.lg else Space.xs,
-                    vertical = if (isUser && !hasAttachment) Space.md else Space.xs
+                    vertical = if (isUser && !hasAttachment) Space.sm else Space.xs
                 )
             ) {
                 // Assistant messages carry a compact identity header (gradient avatar + name +
@@ -520,7 +522,7 @@ internal fun MessageBubble(
                     val bitmap = rememberThumbnail(path, previewPx)
                     bitmap?.let {
                         Image(
-                            it, contentDescription = "Attached image — tap to view",
+            it, contentDescription = stringResource(R.string.chat_attached_image),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 160.dp, max = 280.dp)
@@ -551,7 +553,7 @@ internal fun MessageBubble(
                             documentPreview.bitmap?.let {
                                 Image(
                                     it,
-                                    contentDescription = "First page preview",
+                contentDescription = stringResource(R.string.chat_first_page),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(180.dp)
@@ -591,7 +593,7 @@ internal fun MessageBubble(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open document preview", modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.chat_document_preview), modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -627,7 +629,7 @@ internal fun MessageBubble(
                     // disappears against the accent fill.
                     OutlinedTextField(
                         value = editText,
-                        onValueChange = { editText = it },
+                        onValueChange = { editText = it.take(12_000) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -641,8 +643,8 @@ internal fun MessageBubble(
                         TextButton(colors = editButtonColors, onClick = {
                             editing = false
                             if (editText.isNotBlank() && editText != message.content) onEditAndResend(editText)
-                        }) { Text("Send") }
-                        TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text("Cancel") }
+                    }) { Text(stringResource(R.string.chat_send)) }
+                    TextButton(colors = editButtonColors, onClick = { editing = false; editText = message.content }) { Text(stringResource(R.string.action_cancel)) }
                     }
                 } else {
                     // Media communicates the attachment itself; keep the compact source label so
@@ -728,7 +730,9 @@ internal fun MessageBubble(
                             title = thinkingTitle,
                             modifier = Modifier.padding(bottom = Space.sm)
                         ) {
-                            parsed.reasoning?.let { MarkdownLiteText(it) }
+                            parsed.reasoning?.let {
+                                MarkdownLiteText(it, isStreaming = message.state == MessageState.STREAMING)
+                            }
                                 ?: Text(
                                     "Reasoning is still in progress…",
                                     style = MaterialTheme.typography.bodySmall,
@@ -745,7 +749,12 @@ internal fun MessageBubble(
                             style = MaterialTheme.typography.bodyLarge
                         )
                     } else {
-                        if (clarification.answer.isNotBlank()) MarkdownLiteText(clarification.answer)
+                        if (clarification.answer.isNotBlank()) {
+                            MarkdownLiteText(
+                                clarification.answer,
+                                isStreaming = message.state == MessageState.STREAMING
+                            )
+                        }
                         clarification.request?.takeIf { message.state == MessageState.COMPLETE }?.let { request ->
                             ClarificationCard(
                                 request = request,
@@ -775,14 +784,14 @@ internal fun MessageBubble(
                     // streaming text and the indicator hides itself (visible = content is blank).
                     if (message.content.isBlank()) {
                         ThinkingIndicator(
-                            label = "Thinking",
+                            label = stringResource(R.string.chat_thinking),
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     } else {
                         Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             Text(
-                                if (modelRunsOnDevice) "Generating on device" else "Generating",
+                                if (modelRunsOnDevice) "Generating on device" else "Generating via remote model",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(start = Space.sm)
@@ -790,11 +799,11 @@ internal fun MessageBubble(
                         }
                     }
                 } else if (message.state == MessageState.INTERRUPTED) {
-                    TextButton(onClick = onRegenerate, enabled = !isGenerating) { Text("Continue with a new response") }
+                    TextButton(onClick = onRegenerate, enabled = !isGenerating) { Text(stringResource(R.string.chat_continue_response)) }
                 } else if (message.state == MessageState.FAILED) {
-                    TextButton(onClick = onRegenerate, enabled = !isGenerating) { Text("Try again") }
+                    TextButton(onClick = onRegenerate, enabled = !isGenerating) { Text(stringResource(R.string.action_try_again)) }
                 } else if (message.state == MessageState.CANCELLED) {
-                    Text("Partial response kept", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.chat_partial_kept), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 message.toolResultJson?.let { ToolResultCard(it, message.toolCallJson) }
                 message.memoryActivityJson?.let { MemoryActivityCard(it) }
@@ -824,11 +833,11 @@ internal fun MessageBubble(
                 if (siblingPosition.second > 1) {
                     Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { onSwitchBranch(-1) }, enabled = siblingPosition.first > 1) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous branch", modifier = Modifier.size(16.dp))
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.chat_previous_branch), modifier = Modifier.size(16.dp))
                         }
                         Text("${siblingPosition.first}/${siblingPosition.second}", style = MaterialTheme.typography.labelSmall)
                         IconButton(onClick = { onSwitchBranch(1) }, enabled = siblingPosition.first < siblingPosition.second) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next branch", modifier = Modifier.size(16.dp))
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.chat_next_branch), modifier = Modifier.size(16.dp))
                         }
                         // No custom colors — this sits on the plain background, not a
                         // primary-colored surface. onPrimary is meant for text ON TOP of a
@@ -836,7 +845,7 @@ internal fun MessageBubble(
                         // on a dark background in dark theme, effectively invisible.
                         // TextButton's own default (colorScheme.primary) is already correct.
                         TextButton(onClick = onCompare) {
-                            Text("Compare", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.chat_compare), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -850,7 +859,7 @@ internal fun MessageBubble(
             QuickReplyChips(
                 suggestions = defaultQuickReplies(),
                 onClick = onQuickReply,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.xs)
+                modifier = Modifier.fillMaxWidth()
             )
         }
         if (!isUser && message.modelName != null && !editing) {
@@ -907,7 +916,7 @@ internal fun MessageBubble(
             ) {
                 if (isUser && !isGenerating) {
                     IconButton(onClick = { editing = true }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Edit and resend", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.chat_edit_resend), modifier = Modifier.size(18.dp))
                     }
                 }
                 if (!isUser && message.state == MessageState.COMPLETE && message.content.isNotBlank()) {
@@ -916,7 +925,7 @@ internal fun MessageBubble(
                             onReadAloud(if (isUser) message.content else assistantSpokenText(message.content), message.id)
                         }
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Read aloud", modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.chat_read_aloud), modifier = Modifier.size(18.dp))
                     }
                     IconButton(
                         onClick = {
@@ -940,18 +949,18 @@ internal fun MessageBubble(
                     ) {
                         Icon(
                             if (savedOutput == null) Icons.Outlined.BookmarkBorder else Icons.Filled.Bookmark,
-                            contentDescription = if (savedOutput == null) "Bookmark response" else "Remove bookmark",
+                            contentDescription = if (savedOutput == null) stringResource(R.string.chat_bookmark_response) else stringResource(R.string.chat_remove_bookmark),
                             modifier = Modifier.size(18.dp),
                             tint = if (savedOutput == null) LocalContentColor.current else MaterialTheme.colorScheme.primary
                         )
                     }
                     if (!isGenerating) {
                         IconButton(onClick = onRegenerate) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Regenerate", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.chat_regenerate), modifier = Modifier.size(18.dp))
                         }
                     }
                     IconButton(onClick = onFork) {
-                        Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = "Fork chat from here", modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = stringResource(R.string.chat_fork_action), modifier = Modifier.size(18.dp))
                     }
                 }
                 // Reply stays gesture-only here; copy is the visible gesture alternative.
@@ -961,32 +970,32 @@ internal fun MessageBubble(
                         // nothing else has overwritten it since.
                         onClick = { clipboard.setSensitiveText(message.content, scope) }
                     ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(18.dp))
                     }
                     Box {
                         IconButton(onClick = { showMessageMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "More message actions", modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_more_message_actions), modifier = Modifier.size(18.dp))
                         }
                         DropdownMenu(expanded = showMessageMenu, onDismissRequest = { showMessageMenu = false }) {
                             // Assistant replies get a dedicated fork icon in the action row above;
                             // keep it in this menu only for user messages, which have no such icon.
                             if (isUser) {
                                 DropdownMenuItem(
-                                    text = { Text("Fork chat from here") },
+                                    text = { Text(stringResource(R.string.chat_fork_action)) },
                                     onClick = { onFork(); showMessageMenu = false }
                                 )
                             }
                             if (!isUser && message.state == MessageState.COMPLETE) {
                                 DropdownMenuItem(
-                                    text = { Text("Remember this") },
+                                    text = { Text(stringResource(R.string.chat_remember)) },
                                     onClick = { showRememberDialog = true; showMessageMenu = false }
                                 )
                             }
-                            DropdownMenuItem(text = { Text("Save as prompt template") }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_save_template)) }, onClick = {
                                 showSaveAsPromptDialog = true
                                 showMessageMenu = false
                             })
-                            DropdownMenuItem(text = { Text("Add to note") }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_add_note)) }, onClick = {
                                 scope.launch {
                                     app.container.db.noteDao().upsert(
                                         com.vervan.chat.data.db.entities.Note(
@@ -1009,23 +1018,23 @@ internal fun MessageBubble(
         var text by remember { mutableStateOf(message.content) }
         AlertDialog(
             onDismissRequest = { showRememberDialog = false },
-            title = { Text("Remember this?") },
+            title = { Text(stringResource(R.string.chat_remember_title)) },
             text = {
                 Column {
                     Text(
                     "Saved to Memory for future chats.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.padding(top = Space.sm))
+                    OutlinedTextField(value = text, onValueChange = { text = it.take(1_000) }, modifier = Modifier.padding(top = Space.sm))
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     onRemember(text)
                     showRememberDialog = false
-                }) { Text("Save") }
+                }) { Text(stringResource(R.string.action_save)) }
             },
-            dismissButton = { TextButton(onClick = { showRememberDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showRememberDialog = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
@@ -1089,13 +1098,13 @@ internal fun MessageBubble(
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showSaveAsPromptDialog = false },
-            title = { Text("Save as prompt template") },
+            title = { Text(stringResource(R.string.chat_save_template)) },
             text = {
                 Column {
-                    Text("Reusable via /name in any chat.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.chat_template_hint), style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
-                        value = name, onValueChange = { name = it }, singleLine = true,
-                        label = { Text("Command name (no spaces)") }, modifier = Modifier.padding(top = Space.sm)
+                        value = name, onValueChange = { name = it.take(32) }, singleLine = true,
+                        label = { Text(stringResource(R.string.chat_command_name)) }, modifier = Modifier.padding(top = Space.sm)
                     )
                 }
             },
@@ -1110,15 +1119,15 @@ internal fun MessageBubble(
                         }
                         showSaveAsPromptDialog = false
                     }
-                }) { Text("Save") }
+                }) { Text(stringResource(R.string.action_save)) }
             },
-            dismissButton = { TextButton(onClick = { showSaveAsPromptDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showSaveAsPromptDialog = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     if (showImagePreview) {
         message.imagePath?.let { path ->
-            FullScreenImagePreview(path = path, title = "Shared image", onDismiss = { showImagePreview = false })
+            FullScreenImagePreview(path = path, title = stringResource(R.string.chat_shared_image), onDismiss = { showImagePreview = false })
         }
     }
 }

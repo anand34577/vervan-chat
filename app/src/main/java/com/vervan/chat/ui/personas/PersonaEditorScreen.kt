@@ -45,6 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -60,6 +62,9 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ContextGuideCard
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.rememberThumbnail
@@ -86,6 +91,9 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val language by vm.language.collectAsState()
     val avatarPath by vm.avatarPath.collectAsState()
     val importError by vm.importError.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
+    val recordFound by vm.recordFound.collectAsState()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showAvatarChooser by remember { mutableStateOf(false) }
@@ -97,15 +105,15 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (personaId == null) "New persona" else "Edit persona") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(if (personaId == null) R.string.persona_new_title else R.string.persona_edit_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     if (personaId != null && onTest != null) {
-                        IconButton(onClick = { onTest(personaId) }) { Icon(Icons.Filled.Science, contentDescription = "Test bench") }
+                        IconButton(onClick = { onTest(personaId) }) { Icon(Icons.Filled.Science, contentDescription = stringResource(R.string.persona_test_bench_short)) }
                     }
                     if (personaId != null && !isBuiltIn) {
                         IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.persona_delete_accessibility))
                         }
                     }
                 }
@@ -113,7 +121,24 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = stringResource(R.string.persona_unavailable),
+                message = loadError.orEmpty(),
+                recovery = stringResource(R.string.persona_unavailable_recovery),
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 7, modifier = Modifier.padding(Space.md))
+            personaId != null && !recordFound -> EmptyState(
+                icon = Icons.Outlined.Person,
+                title = stringResource(R.string.persona_not_found),
+                body = stringResource(R.string.persona_not_found_body),
+                actionLabel = stringResource(R.string.action_back),
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
                 val avatarAccent = vervanAccentFor((name.hashCode() and Int.MAX_VALUE) % 6)
                 val avatarBitmap = rememberThumbnail(avatarPath?.takeUnless { it.startsWith("emoji:") }, 128)
@@ -145,7 +170,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             }
             if (isBuiltIn) {
                 Text(
-                "Saving creates an editable copy. The built-in stays unchanged.",
+                stringResource(R.string.persona_copy_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.md)
@@ -155,17 +180,17 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
                     TextButton(onClick = { showAvatarChooser = true }, modifier = Modifier.padding(top = Space.sm)) {
                         Icon(Icons.Filled.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(if (avatarPath != null) "Change icon" else "Choose icon", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(if (avatarPath != null) R.string.persona_change_icon else R.string.persona_choose_icon), modifier = Modifier.padding(start = Space.sm))
                     }
                     if (avatarPath != null) {
                         TextButton(onClick = vm::clearAvatar, modifier = Modifier.padding(top = Space.sm)) {
                             Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text("Remove", modifier = Modifier.padding(start = Space.sm))
+                            Text(stringResource(R.string.persona_remove_icon), modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                 }
                 Text(
-                    "Use a photo, an emoji, or the persona's first initial.",
+                    stringResource(R.string.persona_avatar_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -174,64 +199,66 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             }
             ContextGuideCard(
                 icon = Icons.Outlined.Person,
-                title = "What a persona changes",
-            body = "A persona sets the assistant's voice and behavior for a space or chat.",
+                title = stringResource(R.string.persona_changes_title),
+            body = stringResource(R.string.persona_changes_body),
                 modifier = Modifier.padding(top = Space.md),
                 accentIndex = 2,
             )
             if (importError != null) {
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = vm::dismissImportError,
-                    title = { Text("Couldn't use image") },
+                    title = { Text(stringResource(R.string.persona_image_error)) },
                     text = { Text(importError.orEmpty()) },
-                    confirmButton = { TextButton(onClick = vm::dismissImportError) { Text("OK") } }
+                    confirmButton = { TextButton(onClick = vm::dismissImportError) { Text(stringResource(R.string.persona_ok)) } }
                 )
             }
-            SectionHeader("Identity")
+            SectionHeader(stringResource(R.string.persona_identity))
             BoundedTextField(
-                value = name, onValueChange = vm::setName, label = "Name",
+                value = name, onValueChange = vm::setName, label = stringResource(R.string.persona_name),
                 maxLength = ValidationLimits.PERSONA_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             BoundedTextField(
-                value = description, onValueChange = vm::setDescription, label = "Role & expertise",
+                value = description, onValueChange = vm::setDescription, label = stringResource(R.string.persona_role),
                 maxLength = ValidationLimits.PERSONA_ROLE,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
 
-            SectionHeader("Behavior")
+            SectionHeader(stringResource(R.string.persona_behavior))
             BoundedTextField(
-                value = systemInstruction, onValueChange = vm::setSystemInstruction, label = "System instruction",
+                value = systemInstruction, onValueChange = vm::setSystemInstruction, label = stringResource(R.string.persona_system_instruction),
                 maxLength = ValidationLimits.PERSONA_SYSTEM_INSTRUCTION, minLines = 4,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
-            Text("Tone", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.lg))
+            Text(stringResource(R.string.persona_tone), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.lg))
             DialRow(listOf("NEUTRAL", "WARM", "DIRECT", "PLAYFUL"), tone, vm::setTone)
 
-            Text("Formality", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
+            Text(stringResource(R.string.persona_formality), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("NEUTRAL", "CASUAL", "FORMAL"), formality, vm::setFormality)
 
-            Text("Conciseness", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
+            Text(stringResource(R.string.persona_conciseness), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("NORMAL", "TERSE", "ELABORATE"), conciseness, vm::setConciseness)
 
-            Text("Response length", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
+            Text(stringResource(R.string.persona_response_length), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("BALANCED", "SHORT", "LONG"), responseLength, vm::setResponseLength)
 
-            Text("Creativity: ${String.format("%.1f", creativity)}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+            val creativityValue = String.format("%.1f", creativity)
+            val creativityDescription = stringResource(R.string.persona_creativity_accessibility, creativityValue)
+            Text(stringResource(R.string.persona_creativity, creativityValue), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
             Slider(
                 value = creativity, onValueChange = vm::setCreativity, valueRange = 0f..1f,
-                modifier = Modifier.semantics { contentDescription = "Creativity, ${String.format("%.1f", creativity)}" }
+                modifier = Modifier.semantics { contentDescription = creativityDescription }
             )
 
-            SectionHeader("Defaults")
+            SectionHeader(stringResource(R.string.persona_defaults))
             OutlinedTextField(
-                value = language, onValueChange = vm::setLanguage, label = { Text("Preferred reply language (optional)") },
+                value = language, onValueChange = { vm.setLanguage(it.take(80)) }, label = { Text(stringResource(R.string.persona_language)) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
 
             if (personaId != null && onTest != null) {
-                SectionHeader("Test")
-                OutlinedButton(onClick = { onTest(personaId) }, modifier = Modifier.padding(top = Space.sm)) { Text("Open test bench") }
+                SectionHeader(stringResource(R.string.persona_test))
+                OutlinedButton(onClick = { onTest(personaId) }, modifier = Modifier.padding(top = Space.sm)) { Text(stringResource(R.string.persona_test_bench)) }
             }
 
             // Mirrors PersonaEditorViewModel.save()'s own requirement — disabling the button on
@@ -242,20 +269,21 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 description.length <= ValidationLimits.PERSONA_ROLE &&
                 systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text("Duplicate") }
-                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save changes") }
+                OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text(stringResource(R.string.persona_duplicate)) }
+                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text(stringResource(R.string.persona_save_changes)) }
+            }
             }
         }
-        }
+    }
     }
     if (showAvatarChooser) {
         val emojis = listOf("🙂", "🧠", "✍️", "🔎", "🎓", "💡", "🧭", "🤝")
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showAvatarChooser = false },
-            title = { Text("Choose persona icon") },
+            title = { Text(stringResource(R.string.persona_choose_title)) },
             text = {
                 Column {
-                    Text("Select an emoji or use a personal image.", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.persona_choose_hint), style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.foundation.layout.FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
@@ -284,19 +312,19 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                     )
                 }) {
                     Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Choose image", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.persona_choose_image), modifier = Modifier.padding(start = Space.sm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { vm.clearAvatar(); showAvatarChooser = false }) { Text("Use initial") }
+                TextButton(onClick = { vm.clearAvatar(); showAvatarChooser = false }) { Text(stringResource(R.string.persona_use_initial)) }
             },
         )
     }
     if (showDeleteConfirm) {
         ConfirmDialog(
-            title = "Delete persona?",
-            body = "\"$name\" will move to the recycle bin and can be restored.",
-            confirmLabel = "Move to recycle bin",
+            title = stringResource(R.string.persona_delete_title),
+            body = stringResource(R.string.persona_delete_body, name),
+            confirmLabel = stringResource(R.string.persona_delete_action),
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
             onDismiss = { showDeleteConfirm = false }
@@ -320,8 +348,25 @@ private fun DialRow(options: List<String>, selected: String, onSelect: (String) 
             VervanFilterChip(
                 selected = selected == option,
                 onClick = { onSelect(option) },
-                label = { Text(option.lowercase().replaceFirstChar { it.uppercase() }) }
+                label = { Text(personaOptionLabel(option)) }
             )
         }
     }
+}
+
+@Composable
+private fun personaOptionLabel(option: String): String = when (option) {
+    "NEUTRAL" -> stringResource(R.string.persona_neutral)
+    "WARM" -> stringResource(R.string.persona_warm)
+    "DIRECT" -> stringResource(R.string.persona_direct)
+    "PLAYFUL" -> stringResource(R.string.persona_playful)
+    "CASUAL" -> stringResource(R.string.persona_casual)
+    "FORMAL" -> stringResource(R.string.persona_formal)
+    "NORMAL" -> stringResource(R.string.persona_normal)
+    "TERSE" -> stringResource(R.string.persona_terse)
+    "ELABORATE" -> stringResource(R.string.persona_elaborate)
+    "BALANCED" -> stringResource(R.string.persona_balanced)
+    "SHORT" -> stringResource(R.string.persona_short)
+    "LONG" -> stringResource(R.string.persona_long)
+    else -> option
 }

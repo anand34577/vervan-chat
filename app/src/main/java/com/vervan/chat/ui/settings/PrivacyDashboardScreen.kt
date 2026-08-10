@@ -23,11 +23,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 import java.text.DateFormat
@@ -53,14 +60,19 @@ fun PrivacyDashboardScreen(
     val app = context.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
-    val models by app.container.db.modelDao().observeModels().collectAsState(initial = emptyList())
-    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
-    val chats by app.container.db.chatDao().observeAllChats().collectAsState(initial = emptyList())
-    val memories by app.container.db.memoryDao().observeAll().collectAsState(initial = emptyList())
-    val knowledgeBases by app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList())
-    val totalChunks by app.container.db.chunkDao().observeTotalCount().collectAsState(initial = 0)
-    val embeddedChunks by app.container.db.chunkDao().observeEmbeddedCount().collectAsState(initial = 0)
-    val networkEntries by app.container.networkAuditLog.entries.collectAsState()
+    val dashboardVm: PrivacyDashboardViewModel = viewModel(
+        factory = viewModelFactory { initializer { PrivacyDashboardViewModel(app) } }
+    )
+
+    val models by dashboardVm.models.collectAsState()
+    val activeModel by dashboardVm.activeModel.collectAsState()
+    val documents by dashboardVm.documents.collectAsState()
+    val chats by dashboardVm.chats.collectAsState()
+    val memories by dashboardVm.memories.collectAsState()
+    val knowledgeBases by dashboardVm.knowledgeBases.collectAsState()
+    val totalChunks by dashboardVm.totalChunks.collectAsState()
+    val embeddedChunks by dashboardVm.embeddedChunks.collectAsState()
+    val networkEntries by dashboardVm.networkEntries.collectAsState()
 
     val calendarOn by vm.calendarToolEnabled.collectAsState()
     val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
@@ -72,11 +84,13 @@ fun PrivacyDashboardScreen(
     // between "on" and "anyone on this network can use it with no key" is whether an API key is
     // required, so that's what actually drives the warning here now, not a bind-address flag.
     val lanRisk = apiServerOn && !apiServerAuthOn
+    val remoteModelActive = activeModel?.traits?.runsOnDevice == false
+    val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { android.net.Uri.parse(it).host }.getOrNull() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Privacy dashboard") },
+                title = { Text(stringResource(R.string.privacy_dashboard_title)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
@@ -88,14 +102,23 @@ fun PrivacyDashboardScreen(
             ) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(
-                        "Vervan runs entirely on this device.",
+                        when {
+                            remoteModelActive -> stringResource(R.string.privacy_remote_dashboard_title)
+                            activeModel == null -> stringResource(R.string.privacy_no_model_dashboard_title)
+                            else -> stringResource(R.string.privacy_local_dashboard_title)
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Text(
-                        "Conversations, documents, and memory never leave your phone. The only network " +
-                            "requests this app ever makes are the ones below — model downloads, Model Store " +
-                            "catalogue checks, and anything you explicitly enable, like the local API server.",
+                        when {
+                            remoteModelActive -> stringResource(
+                                R.string.privacy_remote_dashboard_body,
+                                remoteHost ?: stringResource(R.string.privacy_configured_remote_endpoint)
+                            )
+                            activeModel == null -> stringResource(R.string.privacy_no_model_dashboard_body)
+                            else -> stringResource(R.string.privacy_local_dashboard_body)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(top = Space.xs)
@@ -103,26 +126,39 @@ fun PrivacyDashboardScreen(
                 }
             }
 
-            PrivacySection("What's stored on this device") {
-                PrivacyRow("Installed models", "${models.size} · ${formatBytes(models.sumOf { it.fileSizeBytes })}")
+            PrivacySection(stringResource(R.string.privacy_stored_on_device)) {
+                PrivacyRow(stringResource(R.string.privacy_active_model), activeModel?.displayName ?: stringResource(R.string.privacy_none))
+                PrivacyRow(stringResource(R.string.privacy_installed_models), "${models.size} · ${formatBytes(models.sumOf { it.fileSizeBytes })}")
                 PrivacyRow(
-                    "Documents",
+                    stringResource(R.string.privacy_documents),
                     "${documents.size} · ${formatBytes(documents.sumOf { java.io.File(it.filePath).takeIf(java.io.File::exists)?.length() ?: 0L })}"
                 )
-                PrivacyRow("Chats", chats.size.toString())
-                PrivacyRow("Remembered facts", memories.size.toString())
+                PrivacyRow(stringResource(R.string.privacy_chats), chats.size.toString())
+                PrivacyRow(stringResource(R.string.privacy_remembered_facts), memories.size.toString())
             }
 
-            PrivacySection("What's indexed for search") {
-                PrivacyRow("Knowledge bases", knowledgeBases.size.toString())
+            PrivacySection(stringResource(R.string.privacy_what_can_leave)) {
+                PrivacyRow(stringResource(R.string.privacy_remote_requests), if (remoteModelActive) stringResource(R.string.privacy_enabled) else stringResource(R.string.privacy_not_active))
+                PrivacyRow(stringResource(R.string.privacy_downloads), stringResource(R.string.privacy_only_when_requested))
+                PrivacyRow(stringResource(R.string.privacy_external_tools), stringResource(R.string.privacy_controlled_in_security))
+                Text(
+                    stringResource(R.string.privacy_local_request_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+            }
+
+            PrivacySection(stringResource(R.string.privacy_indexed_for_search)) {
+                PrivacyRow(stringResource(R.string.privacy_knowledge_bases), knowledgeBases.size.toString())
                 PrivacyRow(
-                    "Passages indexed",
-                    if (totalChunks == 0) "None yet"
-                    else "$embeddedChunks of $totalChunks semantically searchable"
+                    stringResource(R.string.privacy_passages_indexed),
+                    if (totalChunks == 0) stringResource(R.string.privacy_none_yet)
+                    else stringResource(R.string.privacy_semantically_searchable, embeddedChunks, totalChunks)
                 )
                 if (totalChunks > 0 && embeddedChunks < totalChunks) {
                     Text(
-                        "The rest stay keyword-searchable — load an embedding model to finish indexing them.",
+                        stringResource(R.string.privacy_keyword_search_note),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs)
@@ -130,11 +166,11 @@ fun PrivacyDashboardScreen(
                 }
             }
 
-            PrivacySection("What the model can access") {
-                PrivacyRow("Calendar", if (calendarOn) "On" else "Off")
-                PrivacyRow("Device status", if (deviceStatusOn) "On" else "Off")
+            PrivacySection(stringResource(R.string.privacy_model_access)) {
+                PrivacyRow(stringResource(R.string.privacy_calendar), if (calendarOn) stringResource(R.string.privacy_on) else stringResource(R.string.privacy_off))
+                PrivacyRow(stringResource(R.string.privacy_device_status), if (deviceStatusOn) stringResource(R.string.privacy_on) else stringResource(R.string.privacy_off))
                 OutlinedButton(onClick = onOpenSecurity, modifier = Modifier.padding(top = Space.sm)) {
-                    Text("Manage in Privacy & security")
+                    Text(stringResource(R.string.privacy_manage_security))
                 }
             }
 
@@ -152,31 +188,31 @@ fun PrivacyDashboardScreen(
                             modifier = Modifier.padding(end = Space.sm)
                         )
                         Text(
-                            "Local API server",
+                            stringResource(R.string.privacy_local_api_server),
                             style = MaterialTheme.typography.titleSmall,
                             color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Text(
                         when {
-                            !apiServerOn -> "Off. No other app or device can reach this phone's models."
-                            lanRisk -> "On and reachable from other devices on this Wi-Fi network — no API key required."
-                            else -> "On and reachable from other devices on this Wi-Fi network. An API key is required."
+                            !apiServerOn -> stringResource(R.string.privacy_api_server_off)
+                            lanRisk -> stringResource(R.string.privacy_api_server_no_key)
+                            else -> stringResource(R.string.privacy_api_server_key_required)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs)
                     )
                     OutlinedButton(onClick = onOpenApiServer, modifier = Modifier.padding(top = Space.sm)) {
-                        Text("Open API server settings")
+                        Text(stringResource(R.string.privacy_open_api))
                     }
                 }
             }
 
-            PrivacySection("Recent network activity") {
+            PrivacySection(stringResource(R.string.privacy_recent_network_activity)) {
                 if (networkEntries.isEmpty()) {
                     Text(
-                        "No recorded network activity this session.",
+                        stringResource(R.string.privacy_no_network_activity),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -189,7 +225,7 @@ fun PrivacyDashboardScreen(
                     }
                 }
                 OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.padding(top = Space.sm)) {
-                    Text("Full diagnostics")
+                    Text(stringResource(R.string.privacy_full_diagnostics))
                 }
             }
         }
@@ -200,7 +236,7 @@ fun PrivacyDashboardScreen(
 private fun PrivacySection(title: String, content: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(bottom = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
             Column(Modifier.padding(top = Space.sm)) { content() }
         }
     }
@@ -209,7 +245,15 @@ private fun PrivacySection(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun PrivacyRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.58f))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(0.42f)
+        )
     }
 }

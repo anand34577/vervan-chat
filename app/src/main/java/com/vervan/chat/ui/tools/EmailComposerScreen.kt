@@ -142,19 +142,19 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 body = "Draft an email from a few key points. No account access needed."
             )
             OutlinedTextField(
-                value = originalMessage, onValueChange = { originalMessage = it },
+                value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 3,
                 shape = MaterialTheme.shapes.large,
                 label = { Text("Original message (optional)") }
             )
             OutlinedTextField(
-                value = keyPoints, onValueChange = { keyPoints = it },
+                value = keyPoints, onValueChange = { keyPoints = it.take(12_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm), minLines = 2,
                 shape = MaterialTheme.shapes.large,
                 label = { Text("Key points to include") }
             )
             OutlinedTextField(
-                value = relationship, onValueChange = { relationship = it },
+                value = relationship, onValueChange = { relationship = it.take(200) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 shape = MaterialTheme.shapes.large,
                 label = { Text("Relationship to recipient (optional)") }

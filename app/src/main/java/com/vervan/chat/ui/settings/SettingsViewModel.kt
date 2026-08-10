@@ -255,7 +255,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     // ---- Local API server ----
     val apiServerEnabled: StateFlow<Boolean> = settings.apiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerPort: StateFlow<Int> = settings.apiServerPort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 8080)
-    val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val apiServerFullMode: StateFlow<Boolean> = settings.apiServerFullMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerAutoStart: StateFlow<Boolean> = settings.apiServerAutoStart.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiModelTtlSeconds: StateFlow<Int> = settings.apiModelTtlSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 300)

@@ -38,7 +38,7 @@ fun DatePill(
     modifier: Modifier = Modifier,
     now: Long = System.currentTimeMillis()
 ) {
-    Box(modifier = modifier.fillMaxWidth().padding(vertical = Space.md), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.fillMaxWidth().padding(vertical = Space.sm), contentAlignment = Alignment.Center) {
         Text(
             text = formatRelativeDay(timestamp, now),
             style = MaterialTheme.typography.labelSmall,

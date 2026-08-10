@@ -17,7 +17,9 @@ object ThinkingParser {
         val thinkingInProgress: Boolean = false
     )
 
-    private const val TAGS = "(?:think(?:ing)?|analysis|reasoning|thought)"
+    // Model families use all of these spellings for the same hidden reasoning channel. Keep the
+    // variants here instead of making each preview/bubble renderer guess which tag to remove.
+    private const val TAGS = "(?:think(?:s|ing)?|analysis|reasoning|thoughts?)"
 
     private val OPEN = Regex(
         // Last alternative: Gemma's own template on LM Studio/vLLM emits a literal
@@ -31,8 +33,8 @@ object ThinkingParser {
         "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>|<channel\\|>"
     )
     private val PARTIAL_OPEN_CANDIDATES = listOf(
-        "<think>", "<thinking>", "<analysis>", "<reasoning>", "<thought>",
-        "<|think|>", "<|thinking|>", "<|analysis|>", "<|reasoning|>", "<|thought|>",
+        "<think>", "<thinks>", "<thinking>", "<analysis>", "<reasoning>", "<thought>", "<thoughts>",
+        "<|think|>", "<|thinks|>", "<|thinking|>", "<|analysis|>", "<|reasoning|>", "<|thought|>", "<|thoughts|>",
         "<|begin_of_thought|>", "<|channel>thought"
     )
 

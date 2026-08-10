@@ -19,8 +19,14 @@ import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.Workflow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class RecycleBinState(
@@ -43,39 +49,65 @@ data class RecycleBinState(
         memories.isEmpty() && savedOutputs.isEmpty()
 }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
+    private val reload = MutableStateFlow(0)
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
     // combine's fixed-arity overloads top out at 5 flows — 10 categories needs the
     // array-based form instead.
-    val state: StateFlow<RecycleBinState> = combine(
-        listOf(
-            db.chatDao().observeDeleted(),
-            db.noteDao().observeDeleted(),
-            db.documentDao().observeDeleted(),
-            db.folderDao().observeDeleted(),
-            db.personaDao().observeDeleted(),
-            db.workflowDao().observeDeleted(),
-            db.promptTemplateDao().observeDeleted(),
-            db.projectDao().observeDeleted(),
-            db.memoryDao().observeDeleted(),
-            db.savedOutputDao().observeDeleted()
-        )
-    ) { results ->
-        @Suppress("UNCHECKED_CAST")
-        RecycleBinState(
-            chats = results[0] as List<Chat>,
-            notes = results[1] as List<Note>,
-            documents = results[2] as List<Document>,
-            folders = results[3] as List<Folder>,
-            personas = results[4] as List<Persona>,
-            workflows = results[5] as List<Workflow>,
-            templates = results[6] as List<PromptTemplate>,
-            projects = results[7] as List<Project>,
-            memories = results[8] as List<Memory>,
-            savedOutputs = results[9] as List<SavedOutput>
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecycleBinState())
+    val state: StateFlow<RecycleBinState> = reload
+        .flatMapLatest {
+            combine(
+                listOf(
+                    db.chatDao().observeDeleted(),
+                    db.noteDao().observeDeleted(),
+                    db.documentDao().observeDeleted(),
+                    db.folderDao().observeDeleted(),
+                    db.personaDao().observeDeleted(),
+                    db.workflowDao().observeDeleted(),
+                    db.promptTemplateDao().observeDeleted(),
+                    db.projectDao().observeDeleted(),
+                    db.memoryDao().observeDeleted(),
+                    db.savedOutputDao().observeDeleted()
+                )
+            ) { results ->
+                @Suppress("UNCHECKED_CAST")
+                RecycleBinState(
+                    chats = results[0] as List<Chat>,
+                    notes = results[1] as List<Note>,
+                    documents = results[2] as List<Document>,
+                    folders = results[3] as List<Folder>,
+                    personas = results[4] as List<Persona>,
+                    workflows = results[5] as List<Workflow>,
+                    templates = results[6] as List<PromptTemplate>,
+                    projects = results[7] as List<Project>,
+                    memories = results[8] as List<Memory>,
+                    savedOutputs = results[9] as List<SavedOutput>
+                )
+            }
+        }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.message ?: "Recycle bin could not be loaded."
+            emit(RecycleBinState())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecycleBinState())
+
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun restoreChat(chat: Chat) { viewModelScope.launch { db.chatDao().update(chat.copy(deletedAt = null)) } }
     fun deleteChatForever(chat: Chat) {

@@ -3,6 +3,7 @@ package com.vervan.chat.retrieval
 import android.content.Context
 import android.util.Log
 import com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer
+import com.vervan.chat.model.readBytesLimited
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
@@ -24,7 +25,7 @@ class RawTfliteEmbedder(context: Context, modelPath: String, tokenizerModelPath:
 
     val backend: EmbeddingBackend
     private val interpreter: Interpreter
-    private val tokenizer = SentencePieceTokenizer(File(tokenizerModelPath).readBytes())
+    private val tokenizer = SentencePieceTokenizer(File(tokenizerModelPath).inputStream().use { it.readBytesLimited(64L * 1024 * 1024) })
     private val seqLen: Int
     private val inputCount: Int
     private val outputIndex: Int

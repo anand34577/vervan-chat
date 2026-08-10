@@ -6,6 +6,7 @@ import android.media.MediaFormat
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import com.vervan.chat.validation.InputLimits
 import kotlin.math.roundToInt
 
 /** Decodes the audio track of any file Android's built-in codecs understand — MP3/WAV/M4A/AAC/
@@ -21,6 +22,9 @@ object AudioDecoder {
     /** Blocking — call off the main thread. Returns mono 16 kHz PCM16 samples plus the source
      * file's total duration in milliseconds (from the container's own metadata, not resampled). */
     fun decodeToPcm16k(file: File): Pair<ShortArray, Long> {
+        require(file.isFile && file.length() <= 50L * 1024 * 1024) {
+            "Audio file is missing or exceeds the 50 MB limit"
+        }
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.absolutePath)
@@ -32,6 +36,9 @@ object AudioDecoder {
             val sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val sourceChannels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             val durationMs = if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) / 1000 else 0L
+            require(durationMs <= InputLimits.MAX_AUDIO_DURATION_MS) {
+                "Audio must be 30 minutes or shorter"
+            }
             extractor.selectTrack(trackIndex)
 
             val codec = MediaCodec.createDecoderByType(mime)
@@ -77,6 +84,9 @@ object AudioDecoder {
             if (outputIndex >= 0) {
                 if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawOutputEos = true
                 if (info.size > 0) {
+                    require(out.size().toLong() + info.size <= InputLimits.MAX_DECODED_AUDIO_BYTES) {
+                        "Decoded audio is too large"
+                    }
                     val outputBuffer = codec.getOutputBuffer(outputIndex)!!
                     outputBuffer.position(info.offset)
                     outputBuffer.limit(info.offset + info.size)

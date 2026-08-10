@@ -38,6 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
@@ -60,8 +62,8 @@ fun ScreenExplainScreen(state: CaptureState, onDismiss: () -> Unit, onConfirmSel
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAffordance(icon = Icons.Filled.ScreenSearchDesktop, size = IconAffordanceSize.Default)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text("SCREEN ASSIST", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("What's on screen", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.screen_assist_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.screen_assist_title), style = MaterialTheme.typography.titleMedium)
                 }
             }
             when (state) {
@@ -70,7 +72,7 @@ fun ScreenExplainScreen(state: CaptureState, onDismiss: () -> Unit, onConfirmSel
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Text(
-                                if (state is CaptureState.Capturing) "Capturing…" else "Reading the screenshot…",
+                                stringResource(if (state is CaptureState.Capturing) R.string.screen_assist_capturing else R.string.screen_assist_reading),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.md)
@@ -83,16 +85,16 @@ fun ScreenExplainScreen(state: CaptureState, onDismiss: () -> Unit, onConfirmSel
                 }
                 is CaptureState.Done -> {
                     MarkdownLiteText(
-                        state.explanation.ifBlank { "(no response)" },
+                        state.explanation.ifBlank { stringResource(R.string.screen_assist_no_response) },
                         modifier = Modifier.padding(top = Space.md)
                     )
                 }
                 is CaptureState.Failed -> {
-                    ErrorCard(title = "Couldn't explain the screen", body = state.message, modifier = Modifier.padding(top = Space.md))
+                    ErrorCard(title = stringResource(R.string.screen_assist_error), body = state.message, modifier = Modifier.padding(top = Space.md))
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Close") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
             }
         }
     }
@@ -107,7 +109,7 @@ private fun SelectionStep(bitmap: android.graphics.Bitmap, onConfirmSelection: (
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     Text(
-        "Draw a box around just the part you want explained, or explain the whole screen.",
+        stringResource(R.string.screen_assist_selection_hint),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = Space.sm, bottom = Space.sm)
@@ -142,9 +144,9 @@ private fun SelectionStep(bitmap: android.graphics.Bitmap, onConfirmSelection: (
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (selection != null) {
-            TextButton(onClick = { selection = null }) { Text("Clear") }
+            TextButton(onClick = { selection = null }) { Text(stringResource(R.string.action_clear)) }
         }
-        TextButton(onClick = { onConfirmSelection(null) }) { Text("Whole screen") }
+        TextButton(onClick = { onConfirmSelection(null) }) { Text(stringResource(R.string.screen_assist_whole_screen)) }
         FilledTonalButton(
             enabled = selection != null && canvasSize.width > 0,
             onClick = {
@@ -161,6 +163,6 @@ private fun SelectionStep(bitmap: android.graphics.Bitmap, onConfirmSelection: (
                     )
                 )
             }
-        ) { Text("Explain selection") }
+        ) { Text(stringResource(R.string.screen_assist_explain_selection)) }
     }
 }

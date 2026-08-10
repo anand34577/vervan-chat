@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +40,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.theme.Space
@@ -50,6 +54,8 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: PersonaTestBenchViewModel = viewModel(factory = viewModelFactory { initializer { PersonaTestBenchViewModel(app, personaId) } })
     val persona by vm.persona.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
     val prompt by vm.samplePrompt.collectAsState()
     val response by vm.response.collectAsState()
     val running by vm.running.collectAsState()
@@ -64,7 +70,24 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Persona unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your persona is safe. Retry loading it or return to the persona list.",
+                actionLabel = "Retry",
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+            persona == null -> EmptyState(
+                icon = Icons.Outlined.Person,
+                title = "Persona not found",
+                body = "This persona may have been deleted or moved to the recycle bin.",
+                actionLabel = "Back",
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
             persona?.let { p ->
                 Text("System instruction", style = MaterialTheme.typography.labelMedium)
                 Card(Modifier.fillMaxWidth().padding(bottom = Space.md)) {
@@ -117,7 +140,8 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                     Text(resp, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.md))
                 }
             }
-        }
+            }
         }
     }
+}
 }

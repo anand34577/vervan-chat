@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.home
 
 import androidx.compose.foundation.Image
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
@@ -88,6 +90,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.ToolRun
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.system.ThermalLevel
 import com.vervan.chat.ui.common.ActionTile
 import com.vervan.chat.ui.common.IconAffordance
@@ -102,8 +105,10 @@ import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
+import com.vervan.chat.ui.theme.VervanBreakpoints
 import com.vervan.chat.ui.theme.vervanAccentFor
 import kotlinx.coroutines.launch
 
@@ -119,6 +124,7 @@ fun HomeScreen(
     onOpenToolRun: (String) -> Unit = {},
     onOpenKnowledge: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
+    onOpenPrivacy: () -> Unit = {},
     onOpenWorkspaces: () -> Unit = {},
     onOpenProjects: () -> Unit = {},
     onOpenFolders: () -> Unit = {},
@@ -182,7 +188,7 @@ fun HomeScreen(
                             )
                         }
                         // The active workspace name already appears right below in the hero (with
-                        // richer "· fully offline" context) — repeating it here duplicated the
+                        // richer privacy context) — repeating it here duplicated the
                         // same fact twice on one screen for no added information.
                         Text("Vervan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
                     }
@@ -196,7 +202,10 @@ fun HomeScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val expanded = maxWidth >= 760.dp
+                // Use the shared window token so the split layout only appears when both
+                // columns have room to stay calm and readable. A raw screen-width threshold
+                // made the layout flip too early in split-screen and on compact tablets.
+                val expanded = maxWidth >= VervanBreakpoints.expanded
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.sm, bottom = Space.md),
                     verticalArrangement = Arrangement.spacedBy(Space.sm)
@@ -209,6 +218,8 @@ fun HomeScreen(
                         onOpenModels = onOpenModels,
                         onOpenKnowledge = onOpenKnowledge
                     )
+
+                    HomePrivacyStatus(model = activeModel, onOpenPrivacy = onOpenPrivacy)
 
                     HomeAlert(
                         thermalLevel = thermalLevel,
@@ -264,6 +275,88 @@ fun HomeScreen(
 }
 
 /**
+ * Makes the app's trust boundary visible in plain language. The hero lock is a useful identity
+ * cue, but it is not enough on its own: users should be able to tell what is local and where to
+ * review the exceptions without opening a manual or guessing what the icon means.
+ */
+@Composable
+private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
+    val remote = model?.traits?.runsOnDevice == false
+    Card(
+        onClick = onOpenPrivacy,
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        shape = MaterialTheme.shapes.large,
+        colors = SurfaceRole.Card.cardColors(),
+        border = SurfaceRole.Card.border(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Space.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconAffordance(
+                icon = if (remote) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                size = IconAffordanceSize.Compact,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            )
+            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+                Text(
+                    when {
+                        remote -> stringResource(R.string.privacy_remote_title)
+                        model == null -> stringResource(R.string.privacy_no_model_title)
+                        else -> stringResource(R.string.privacy_local_title)
+                    },
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    when {
+                        remote -> stringResource(R.string.privacy_remote_body, model.displayName)
+                        model == null -> stringResource(R.string.privacy_no_model_body)
+                        else -> stringResource(R.string.privacy_local_body)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.padding(top = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    StatusChip(
+                        label = when {
+                            remote -> stringResource(R.string.home_remote_model)
+                            model == null -> stringResource(R.string.home_needs_setup)
+                            else -> stringResource(R.string.home_on_device)
+                        },
+                        tone = when {
+                            remote -> StatusTone.Info
+                            model == null -> StatusTone.Warning
+                            else -> StatusTone.Ready
+                        },
+                    )
+                    Text(
+                        stringResource(R.string.privacy_review),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = stringResource(R.string.privacy_review),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
  * The one hero surface on Home: greeting, privacy badge, and a *working* quick-ask composer on a
  * primary→secondary gradient. Typing here and hitting Send opens a new chat with the text already
  * in its composer, so the thought that started on Home finishes in the chat without retyping.
@@ -280,6 +373,7 @@ private fun HomeHero(
     onOpenKnowledge: () -> Unit
 ) {
     val heroFg = MaterialTheme.colorScheme.onPrimary
+    val remoteModel = model?.traits?.runsOnDevice == false
     // Not remembered — an app left open across a time boundary should not greet
     // "Good morning" all evening. Recomputing on recomposition is trivially cheap.
     val greeting =
@@ -294,6 +388,7 @@ private fun HomeHero(
             .fillMaxWidth()
             .clip(VervanExtraShapes.hero)
             .background(com.vervan.chat.ui.theme.vervanBrandGradient())
+            .animateContentSize()
             .padding(if (compact) Space.md else Space.lg)
     ) {
         Column {
@@ -305,8 +400,17 @@ private fun HomeHero(
                         color = heroFg,
                     )
                     Text(
-                        workspaceName?.let { "$it · private on this device" }
-                            ?: "Private · on this device",
+                        workspaceName?.let {
+                            when {
+                                remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, it)
+                                model == null -> stringResource(R.string.privacy_hero_no_model_suffix, it)
+                                else -> stringResource(R.string.privacy_hero_local_suffix, it)
+                            }
+                        } ?: when {
+                            remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, "Workspace")
+                            model == null -> stringResource(R.string.privacy_hero_no_model_suffix, "Workspace")
+                            else -> stringResource(R.string.privacy_hero_local_suffix, "Workspace")
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = heroFg.copy(alpha = 0.85f),
                         maxLines = 1,
@@ -319,7 +423,18 @@ private fun HomeHero(
                     Modifier.size(40.dp).background(heroFg.copy(alpha = 0.18f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.Lock, contentDescription = "Conversations stay on this device", tint = heroFg, modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (remoteModel) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                        contentDescription = stringResource(
+                            when {
+                                remoteModel -> R.string.privacy_remote_icon_description
+                                model == null -> R.string.privacy_no_model_icon_description
+                                else -> R.string.privacy_local_icon_description
+                            }
+                        ),
+                        tint = heroFg,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
             Spacer(Modifier.height(if (compact) Space.sm else Space.md))
@@ -343,11 +458,11 @@ private fun HomeHero(
                         horizontalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         Icon(Icons.Outlined.Memory, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Text("Choose a local model", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.home_choose_local_model), style = MaterialTheme.typography.titleSmall)
                     }
                 }
                 Text(
-                    "Import or download a model. Inference stays on this device.",
+                    stringResource(R.string.home_local_model_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = heroFg.copy(alpha = 0.85f),
                     modifier = Modifier.padding(top = Space.sm)
@@ -363,6 +478,7 @@ private fun HomeHero(
 @Composable
 private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    val askContentDescription = stringResource(R.string.home_ask_content_description)
     fun submit() {
         val t = text
         text = ""
@@ -375,8 +491,8 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
         ) {
             BasicTextField(
                 value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f).semantics { contentDescription = "Ask Vervan" },
+                onValueChange = { text = it.take(InputLimits.CHAT_TEXT_CHARS) },
+                modifier = Modifier.weight(1f).semantics { contentDescription = askContentDescription },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = fg),
                 cursorBrush = SolidColor(fg),
                 singleLine = true,
@@ -385,7 +501,7 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (text.isEmpty()) {
-                            Text("Ask anything or start a new chat…", style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
+                            Text(stringResource(R.string.home_ask_hint), style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
                         }
                         inner()
                     }
@@ -402,7 +518,7 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Start a chat with this question",
+                    contentDescription = stringResource(R.string.home_start_chat_question),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
@@ -435,19 +551,19 @@ private fun HeroChip(
 private fun HomeAlert(thermalLevel: ThermalLevel, indexingCount: Int, onOpenKnowledge: () -> Unit) {
     when {
         thermalLevel != ThermalLevel.NORMAL -> SystemStatusStrip(
-            title = if (thermalLevel == ThermalLevel.SEVERE) "Thermal slowdown" else "Device warming up",
+            title = stringResource(if (thermalLevel == ThermalLevel.SEVERE) R.string.home_thermal_slowdown else R.string.home_device_warming),
             body = if (thermalLevel == ThermalLevel.SEVERE) {
-                "Generation may pause until the device cools. Your work is already saved."
+                stringResource(R.string.home_thermal_severe_body)
             } else {
-                "Sustained work may slow down to protect battery and performance."
+                stringResource(R.string.home_thermal_warning_body)
             },
             tone = StatusTone.Warning
         )
         indexingCount > 0 -> SystemStatusStrip(
-            title = "Preparing your knowledge",
-            body = "Indexing $indexingCount document${if (indexingCount == 1) "" else "s"} for search.",
+            title = stringResource(R.string.home_preparing_knowledge),
+            body = pluralStringResource(R.plurals.home_indexing_documents, indexingCount, indexingCount),
             tone = StatusTone.Running,
-            actionLabel = "View",
+            actionLabel = stringResource(R.string.action_view),
             onAction = onOpenKnowledge
         )
     }
@@ -610,7 +726,12 @@ private fun ContinueRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open $title", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = stringResource(R.string.home_open_item, title),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
@@ -649,13 +770,13 @@ private fun WorkspaceStatusSection(
     val modelTone = if (model == null) StatusTone.Warning else StatusTone.Ready
     val indexTone = if (indexingCount > 0) StatusTone.Running else StatusTone.Info
     Column {
-        VervanSectionHeader("Local workspace", topPadding = 0.dp)
+        VervanSectionHeader(stringResource(R.string.home_local_workspace), topPadding = 0.dp)
         SectionCard(items = listOf<@Composable () -> Unit>(
             {
                 SectionRow(
                     icon = Icons.Outlined.Memory,
-                    title = model?.displayName ?: "No generation model",
-                    subtitle = model?.lastWorkingBackend?.label() ?: "Choose a model to enable chat",
+                    title = model?.displayName ?: stringResource(R.string.home_no_generation_model),
+                    subtitle = model?.lastWorkingBackend?.label() ?: stringResource(R.string.home_choose_model),
                     onClick = onOpenModels,
                     trailing = { StatusChip(statusLabel(modelTone), modelTone) }
                 )
@@ -663,8 +784,8 @@ private fun WorkspaceStatusSection(
             {
                 SectionRow(
                     icon = Icons.Filled.GridView,
-                    title = workspaceName ?: "Personal workspace",
-                    subtitle = if (indexingCount > 0) "$indexingCount document${if (indexingCount == 1) "" else "s"} indexing" else "Everything is up to date",
+                    title = workspaceName ?: stringResource(R.string.home_personal_workspace),
+                    subtitle = if (indexingCount > 0) pluralStringResource(R.plurals.home_indexing_documents, indexingCount, indexingCount) else stringResource(R.string.home_up_to_date),
                     onClick = onOpenWorkspaces,
                     trailing = { StatusChip(statusLabel(indexTone), indexTone) }
                 )
@@ -676,16 +797,16 @@ private fun WorkspaceStatusSection(
             {
                 SectionRow(
                     icon = Icons.Filled.Workspaces,
-                    title = "Projects",
-                    subtitle = "Browse grouped work",
+                    title = stringResource(R.string.home_projects),
+                    subtitle = stringResource(R.string.home_browse_grouped_work),
                     onClick = onOpenProjects
                 )
             },
             {
                 SectionRow(
                     icon = Icons.Filled.Folder,
-                    title = "Folders",
-                    subtitle = "Browse manual filing",
+                    title = stringResource(R.string.home_folders),
+                    subtitle = stringResource(R.string.home_browse_manual_filing),
                     onClick = onOpenFolders
                 )
             }

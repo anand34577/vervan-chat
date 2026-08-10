@@ -14,6 +14,8 @@ import com.vervan.chat.voice.SupertonicTtsEngine
 import com.vervan.chat.voice.TtsEngine
 import com.vervan.chat.voice.TtsFileGenerator
 import com.vervan.chat.voice.WavPcmDecoder
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -105,6 +107,10 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
      * instead of failing the whole conversion — see [sentenceResults]/[retrySentence]. */
     fun generate(text: String, engineName: String, lang: String, supertonicVoice: String?, pauseMs: Int) {
         if (text.isBlank()) return
+        if (text.length > InputLimits.TTS_TEXT_CHARS) {
+            _phase.value = Phase.Failed("Text is too long for speech (maximum ${InputLimits.TTS_TEXT_CHARS} characters).")
+            return
+        }
         job?.cancel()
         job = viewModelScope.launch {
             _phase.value = Phase.LoadingEngine
@@ -209,7 +215,9 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     // in its own subdirectory and self-pruned by age on every write instead, same pattern as
     // TranscriptionViewModel.pruneOldExports uses for its own one-off export artifacts.
     suspend fun exportM4a(wavFile: File): File = withContext(Dispatchers.IO) {
-        val audio = WavPcmDecoder.decode(wavFile.readBytes())
+        require(wavFile.isFile) { "Audio export file is missing" }
+        require(wavFile.length() <= InputLimits.MAX_DECODED_AUDIO_BYTES) { "Audio export is too large" }
+        val audio = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES)) }
         val dir = File(app.filesDir, "tts_output/exports").apply { mkdirs() }
         val outFile = File(dir, wavFile.nameWithoutExtension + ".m4a")
         Mp4aEncoder.encode(audio.samples, audio.sampleRateHz, outFile)

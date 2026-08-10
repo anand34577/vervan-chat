@@ -46,6 +46,8 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.model.ImageUtils
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
@@ -139,7 +141,12 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         val file = pendingFile
         pendingFile = null
         if (success && file != null) {
-            ImageUtils.fixOrientation(file); managedImagePath.set(file.absolutePath); output = ""
+            val valid = runCatching {
+                require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES)
+                require(ImageUtils.normalizeForModel(file)) { "The captured image could not be decoded" }
+            }.isSuccess
+            if (valid) { managedImagePath.set(file.absolutePath); output = "" }
+            else { errorText = "The captured image is too large or could not be read. Please use a smaller image."; file.delete() }
         } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -149,12 +156,14 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         if (uri != null) {
             scope.launch {
                 val (file, _) = newImageFile()
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-                    ImageUtils.fixOrientation(file)
-                }
-                managedImagePath.set(file.absolutePath)
-                output = ""
+                val copied = runCatching {
+                    (context.contentResolver.openInputStream(uri) ?: error("Couldn't open selected image")).use { input ->
+                        file.outputStream().use { input.copyToLimited(it, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
+                    }
+                    require(ImageUtils.normalizeForModel(file)) { "The selected image could not be decoded" }
+                }.isSuccess
+                if (copied) { managedImagePath.set(file.absolutePath); output = ""; errorText = null }
+                else { file.delete(); errorText = "The selected image is too large or could not be read." }
             }
         }
     }
@@ -205,7 +214,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 isRunning && output.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Creating ${activeMode?.lowercase() ?: "description"}",
-                        body = "Analyzing the image on this device.",
+                        body = "Analyzing the image with the active model; review the privacy status before sending sensitive images.",
                         actionLabel = "Stop",
                         onAction = { genJob?.cancel(); isRunning = false }
                     )
@@ -213,7 +222,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 output.isNotBlank() -> {
                     ToolResultHeader(
                         title = activeMode?.takeIf { it.isNotBlank() } ?: "Description ready",
-                        supportingText = if (isRunning) "Generating on-device…" else "Ready to copy and use"
+                        supportingText = if (isRunning) "Generating with the active model…" else "Ready to copy and use"
                     )
                     Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         Column(Modifier.padding(Space.md)) {

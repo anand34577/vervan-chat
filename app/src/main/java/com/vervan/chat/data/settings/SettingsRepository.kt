@@ -141,6 +141,7 @@ class SettingsRepository(context: Context) {
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
         val API_SERVER_PORT = intPreferencesKey("api_server_port")
         val API_SERVER_REQUIRE_AUTH = booleanPreferencesKey("api_server_require_auth")
+        val API_SERVER_SECURITY_DEFAULTS_APPLIED = booleanPreferencesKey("api_server_security_defaults_applied")
         val API_SERVER_FULL_MODE = booleanPreferencesKey("api_server_full_mode")
         val API_SERVER_AUTO_START = booleanPreferencesKey("api_server_auto_start")
         val API_SERVER_APP_TOOLS = booleanPreferencesKey("api_server_app_tools")
@@ -541,13 +542,40 @@ class SettingsRepository(context: Context) {
     suspend fun setApiServerAutoStart(v: Boolean) { store.edit { it[Keys.API_SERVER_AUTO_START] = v } }
     val apiServerPort: Flow<Int> = store.data.map { it[Keys.API_SERVER_PORT] ?: 8080 }
     suspend fun setApiServerPort(v: Int) { store.edit { it[Keys.API_SERVER_PORT] = v.coerceIn(1024, 65535) } }
-    // Off by default — the API key is opt-in, something the user turns on themselves if they
-    // want it (e.g. before exposing the server beyond this one device), not forced.
-    val apiServerRequireAuth: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_REQUIRE_AUTH] ?: false }
-    suspend fun setApiServerRequireAuth(v: Boolean) { store.edit { it[Keys.API_SERVER_REQUIRE_AUTH] = v } }
+    // Authentication is secure by default because the server binds to the LAN when enabled.
+    // The local API server binds to the LAN when enabled and can expose inference, data, and
+    // optional app tools. Authentication is therefore secure-by-default; users can still
+    // deliberately disable it for a trusted-network workflow.
+    val apiServerRequireAuth: Flow<Boolean> = store.data.map { prefs ->
+        // Older builds persisted false by default. Until the one-time hardening marker is
+        // written, expose the secure value immediately so the UI never briefly claims that a
+        // LAN-facing server is unauthenticated during cold start.
+        if (prefs[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] == true) {
+            prefs[Keys.API_SERVER_REQUIRE_AUTH] ?: true
+        } else {
+            true
+        }
+    }
+    suspend fun setApiServerRequireAuth(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_REQUIRE_AUTH] = v
+            // A deliberate user choice is the explicit opt-out/opt-in boundary for the migration.
+            it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+        }
+    }
+
+    /** Migrates older installs whose absent/default auth preference was false. */
+    suspend fun applyApiServerSecurityDefaults() {
+        store.edit {
+            if (it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] != true) {
+                it[Keys.API_SERVER_REQUIRE_AUTH] = true
+                it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+            }
+        }
+    }
     // Off by default — the web UI starts as a bare OpenAI-compatible surface (matches what the
     // server has always been); the full browser app (chat/RAG/documents/vision/audio) is
-    // something the user opts into, same reasoning as apiServerRequireAuth defaulting off. See
+    // something the user opts into, with the same secure-by-default reasoning as API auth. See
     // LocalApiServer's fullMode branch.
     val apiServerFullMode: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_FULL_MODE] ?: false }
     suspend fun setApiServerFullMode(v: Boolean) { store.edit { it[Keys.API_SERVER_FULL_MODE] = v } }

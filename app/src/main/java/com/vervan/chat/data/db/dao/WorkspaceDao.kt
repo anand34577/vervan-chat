@@ -20,6 +20,9 @@ interface WorkspaceDao : BaseDao<Workspace> {
     @Query("SELECT * FROM workspaces ORDER BY isDefault DESC, lastActiveAt DESC")
     fun observeAll(): Flow<List<Workspace>>
 
+    @Query("SELECT * FROM workspaces WHERE name LIKE '%' || :q || '%' OR description LIKE '%' || :q || '%' ORDER BY lastActiveAt DESC LIMIT 20")
+    suspend fun search(q: String): List<Workspace>
+
     @Query("SELECT * FROM workspaces WHERE id = :id")
     fun observe(id: String): Flow<Workspace?>
 

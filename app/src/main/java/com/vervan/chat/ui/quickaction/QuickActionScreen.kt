@@ -122,7 +122,7 @@ fun QuickActionScreen(
             if (selectedAction == WritingAction.TRANSLATE) {
                 OutlinedTextField(
                     value = targetLanguage,
-                    onValueChange = { targetLanguage = it },
+                    onValueChange = { targetLanguage = it.take(80) },
                     label = { Text("Translate to") },
                     placeholder = { Text("e.g. Spanish") },
                     singleLine = true,

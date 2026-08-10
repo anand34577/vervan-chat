@@ -37,6 +37,10 @@ import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.llm.OneShotLlm
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.model.readTextLimited
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.validation.InputLimits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,14 +77,30 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
 
     val pickA = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() }.getOrNull() }
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().use { reader ->
+                            reader.readTextLimited(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS)
+                        }
+                    }
+                }.getOrNull()
+            }
             if (text != null) textA = text
             else errorText = "Could not read Version A. Choose a text file or paste it."
         }
     }
     val pickB = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() }.getOrNull() }
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().use { reader ->
+                            reader.readTextLimited(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS)
+                        }
+                    }
+                }.getOrNull()
+            }
             if (text != null) textB = text
             else errorText = "Could not read Version B. Choose a text file or paste it."
         }
@@ -117,6 +137,8 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                     }
                 }
                 comparedOnce = true
+            } catch (c: CancellationException) {
+                throw c
             } catch (t: Throwable) {
                 errorText = t.toUserMessage()
             } finally {
@@ -150,11 +172,11 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                 icon = Icons.Filled.UploadFile
             ) {
             Text("Original · Version A", style = MaterialTheme.typography.labelMedium)
-            OutlinedTextField(value = textA, onValueChange = { textA = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the original version") })
+            OutlinedTextField(value = textA, onValueChange = { textA = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the original version") })
             OutlinedButton(onClick = { pickA.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text("Load Version A") }
 
             Text("Revised · Version B", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
-            OutlinedTextField(value = textB, onValueChange = { textB = it }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the revised version") })
+            OutlinedTextField(value = textB, onValueChange = { textB = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the revised version") })
             OutlinedButton(onClick = { pickB.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text("Load Version B") }
 
             Button(

@@ -10,9 +10,13 @@ import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.data.repo.resolveEditId
 import com.vervan.chat.model.ExtractResult
+import com.vervan.chat.model.ImportLimits
 import com.vervan.chat.model.TextExtractor
+import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.ui.common.ValidationLimits
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,6 +51,15 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     private val _workflow = MutableStateFlow<Workflow?>(null)
     val workflow: StateFlow<Workflow?> = _workflow
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError
+
+    private val _workflowFound = MutableStateFlow(false)
+    val workflowFound: StateFlow<Boolean> = _workflowFound
+
     private val _steps = MutableStateFlow<List<StepResult>>(emptyList())
     val steps: StateFlow<List<StepResult>> = _steps
 
@@ -74,7 +87,28 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     fun setSourceKbIds(ids: Set<String>) { _sourceKbIds.value = ids }
 
     init {
-        viewModelScope.launch { _workflow.value = db.workflowDao().get(workflowId) }
+        loadWorkflow()
+    }
+
+    fun retryLoad() {
+        loadWorkflow()
+    }
+
+    private fun loadWorkflow() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadError.value = null
+            try {
+                _workflow.value = db.workflowDao().get(workflowId)
+                _workflowFound.value = _workflow.value != null
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _workflowFound.value = false
+                _loadError.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     /** Reads a picked file straight into text — no persistence, this is a one-shot input, not a knowledge-base import.
@@ -91,14 +125,14 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         }
         try {
             try {
-                app.contentResolver.openInputStream(uri)?.use { input ->
-                    tmp.outputStream().use { output -> input.copyTo(output) }
+                (app.contentResolver.openInputStream(uri) ?: error("Couldn't open the selected file")).use { input ->
+                    tmp.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) }
                 }
                 val name = app.contentResolver.query(uri, null, null, null, null)?.use { c ->
                     val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
                 } ?: uri.lastPathSegment ?: "file.txt"
-                when (val result = TextExtractor.extract(tmp, name)) {
+                val extracted = when (val result = TextExtractor.extract(tmp, name)) {
                     is ExtractResult.Text -> result.content
                     // This is a one-shot text input, not a knowledge-base import, so a table/slide
                     // deck just gets flattened to plain text rather than routed through the
@@ -121,7 +155,12 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                         }
                         text.ifBlank { _error.value = "OCR found no readable text"; null }
                     }
+                }.also { extracted ->
+                    if (extracted != null && extracted.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
+                        error("The extracted file is too long for a workflow run (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)")
+                    }
                 }
+                extracted
             } catch (t: Throwable) {
                 _error.value = "Couldn't read file: ${t.toUserMessage()}"
                 null
@@ -134,18 +173,27 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     fun run(inputText: String) {
         val wf = _workflow.value ?: return
         if (inputText.isBlank() || _running.value) return
+        if (inputText.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
+            _error.value = "Workflow input is too long (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)"
+            return
+        }
         resumeIndex = 0
         pauseRequested = false
         _paused.value = false
         _steps.value = wf.steps.map { StepResult(it, "", false) }
         viewModelScope.launch {
-            carryText = if (_sourceKbIds.value.isNotEmpty()) {
+            val candidate = if (_sourceKbIds.value.isNotEmpty()) {
                 val passages = retrievalEngine.retrieve(_sourceKbIds.value.toList(), inputText, com.vervan.chat.retrieval.RetrievalMode.HYBRID, topK = 5)
                 if (passages.isNotEmpty()) {
                     val refs = passages.joinToString("\n\n") { "(${it.documentName}) ${it.excerpt}" }
                     "Reference material:\n$refs\n\nTask input:\n$inputText"
                 } else inputText
             } else inputText
+            if (candidate.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
+                _error.value = "Workflow input plus references is too long (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)"
+                return@launch
+            }
+            carryText = candidate
             startRun(wf)
         }
     }
@@ -198,6 +246,9 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                         params.temperature, params.topP, params.topK, params.seed,
                         params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
                     ).collect { chunk ->
+                        if (output.length + chunk.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
+                            throw IllegalStateException("Workflow output exceeded the ${ValidationLimits.WORKFLOW_RUN_INPUT}-character safety limit")
+                        }
                         output += chunk
                         _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, false) }
                     }
@@ -218,12 +269,20 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
     }
 
     fun saveAsLibraryOutput(content: String) {
+        if (content.length > ValidationLimits.NOTE_CONTENT) {
+            _error.value = "This workflow output is too large to save (maximum ${ValidationLimits.NOTE_CONTENT} characters)"
+            return
+        }
         viewModelScope.launch {
             db.savedOutputDao().upsert(SavedOutput(content = content, label = _workflow.value?.name ?: "Workflow result"))
         }
     }
 
     fun saveAsNote(content: String) {
+        if (content.length > ValidationLimits.NOTE_CONTENT) {
+            _error.value = "This workflow output is too large to save as a note (maximum ${ValidationLimits.NOTE_CONTENT} characters)"
+            return
+        }
         viewModelScope.launch {
             db.noteDao().upsert(Note(title = _workflow.value?.name ?: "Workflow result", content = content))
         }
@@ -247,15 +306,47 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
     private val _isBuiltIn = MutableStateFlow(false)
     val isBuiltIn: StateFlow<Boolean> = _isBuiltIn
 
+    private val _isLoading = MutableStateFlow(workflowId != null)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError
+
+    private val _recordFound = MutableStateFlow(workflowId == null)
+    val recordFound: StateFlow<Boolean> = _recordFound
+
     init {
-        if (workflowId != null) {
-            viewModelScope.launch {
-                db.workflowDao().get(workflowId)?.let { wf ->
+        load()
+    }
+
+    fun retryLoad() {
+        load()
+    }
+
+    private fun load() {
+        if (workflowId == null) {
+            _isLoading.value = false
+            _recordFound.value = true
+            return
+        }
+        viewModelScope.launch {
+            _isLoading.value = true
+            _loadError.value = null
+            try {
+                val workflow = db.workflowDao().get(workflowId)
+                _recordFound.value = workflow != null
+                workflow?.let { wf ->
                     _name.value = wf.name
                     _description.value = wf.description
                     _steps.value = wf.steps
                     _isBuiltIn.value = wf.isBuiltIn
                 }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _recordFound.value = false
+                _loadError.value = t.toUserMessage()
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -286,6 +377,11 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
     suspend fun save(): Boolean {
         val cleanSteps = _steps.value.map { it.trim() }.filter { it.isNotBlank() }
         if (_name.value.isBlank() || cleanSteps.isEmpty()) return false
+        if (_name.value.length > ValidationLimits.WORKFLOW_NAME ||
+            _description.value.length > ValidationLimits.WORKFLOW_DESCRIPTION ||
+            _steps.value.size > ValidationLimits.WORKFLOW_STEP_COUNT ||
+            cleanSteps.any { it.length > ValidationLimits.WORKFLOW_STEP }
+        ) return false
         val workflow = Workflow(
             id = resolveEditId(workflowId, _isBuiltIn.value),
             name = _name.value.trim(),

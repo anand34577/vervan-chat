@@ -11,11 +11,14 @@ import com.vervan.chat.data.db.entities.canSupportAudio
 import com.vervan.chat.data.db.entities.canSupportVision
 import com.vervan.chat.model.DocumentImportOutcome
 import com.vervan.chat.model.ImageUtils
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.modelload.LoadTrigger
 import com.vervan.chat.retrieval.RetrievalMode
 import com.vervan.chat.llm.ThinkingPolicy
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolRegistry
+import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.chat.ChatFormatting
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
@@ -1133,12 +1136,18 @@ class LocalApiServer(
             // self-consistent: the model sees the call it made last turn in the same syntax it
             // produced, immediately before the result.
             message.optJSONArray("tool_calls")?.let { calls ->
+                if (calls.length() > InputLimits.API_MAX_TOOLS) {
+                    badRequest("Too many tool calls in one message", ErrorCode.INVALID_VALUE, "messages")
+                }
                 for (k in 0 until calls.length()) {
                     val call = calls.optJSONObject(k) ?: continue
                     val fn = call.optJSONObject("function") ?: continue
                     val name = fn.optString("name").takeIf { it.isNotBlank() } ?: continue
                     call.optString("id").takeIf { it.isNotBlank() }?.let { toolCallNames[it] = name }
                     val arguments = fn.optString("arguments").ifBlank { "{}" }
+                    if (arguments.length > InputLimits.API_MAX_TOOL_PARAMETER_CHARS) {
+                        badRequest("Tool arguments are too large", ErrorCode.INVALID_VALUE, "messages")
+                    }
                     val params = runCatching { JSONObject(arguments) }.getOrElse { JSONObject() }
                     if (text.isNotEmpty()) text.append('\n')
                     text.append("<tool_call>${JSONObject().put("tool", name).put("params", params)}</tool_call>")
@@ -1183,6 +1192,7 @@ class LocalApiServer(
         }
 
         val requestedModel = json.optString("model").ifBlank { null }
+            ?.also { if (it.length > 128) badRequest("model is too long", ErrorCode.INVALID_VALUE, "model") }
         val model = runBlocking {
             if (requestedModel != null) {
                 app.container.db.modelDao().observeModels().first()
@@ -1203,41 +1213,65 @@ class LocalApiServer(
             badRequest("No generation model available — set a default in Model Manager", ErrorCode.MODEL_NOT_FOUND, "model")
         }
 
+        val requestedTemperature = json.optDouble("temperature").takeIf { !it.isNaN() }
+            ?.also { if (!it.isFinite() || it !in 0.0..2.0) badRequest("temperature must be between 0 and 2", ErrorCode.INVALID_VALUE, "temperature") }
+            ?.toFloat()
+        val requestedTopP = json.optDouble("top_p").takeIf { !it.isNaN() }
+            ?.also { if (!it.isFinite() || it !in 0.0..1.0) badRequest("top_p must be between 0 and 1", ErrorCode.INVALID_VALUE, "top_p") }
+            ?.toFloat()
         val params = runBlocking {
             com.vervan.chat.llm.resolveGenerationParams(
                 model, app.container.settingsRepository,
-                chatTemperature = json.optDouble("temperature").takeIf { !it.isNaN() }?.toFloat(),
-                chatTopP = json.optDouble("top_p").takeIf { !it.isNaN() }?.toFloat()
+                chatTemperature = requestedTemperature,
+                chatTopP = requestedTopP
             )
         }
         // `max_completion_tokens` is the current spelling; `max_tokens` is the deprecated one every
         // existing integration still sends. Either is honored, the newer one wins.
         val requestedMaxTokens = json.optInt("max_completion_tokens", -1).takeIf { it > 0 }
             ?: json.optInt("max_tokens", -1).takeIf { it > 0 }
+        requestedMaxTokens?.let {
+            if (it !in 16..32_768) badRequest("max output tokens must be between 16 and 32768", ErrorCode.INVALID_VALUE, "max_completion_tokens")
+        }
         val stops = when (val stop = json.opt("stop")) {
             is String -> listOf(stop)
             is JSONArray -> (0 until stop.length()).mapNotNull { stop.optString(it, null) }
             else -> null
-        }?.filter { it.isNotBlank() }
+        }?.filter { it.isNotBlank() }?.also { values ->
+            if (values.size > InputLimits.API_MAX_STOP_SEQUENCES || values.any { it.length > InputLimits.API_MAX_STOP_SEQUENCE_CHARS }) {
+                badRequest("stop must contain at most 8 sequences of 256 characters", ErrorCode.INVALID_VALUE, "stop")
+            }
+        }
         // frequency_penalty is OpenAI's additive logit penalty; llama.cpp's repetition penalty is
         // multiplicative and centered on 1.0. There's no exact conversion, but mapping a non-zero
         // frequency_penalty onto `1 + fp/2` puts the usual 0..2 request range into the usual
         // 1.0..2.0 penalty range, which is far closer to the caller's intent than ignoring it.
         // An explicit repetition_penalty (this app's own field) always wins.
-        val frequencyPenalty = json.optDouble("frequency_penalty").takeIf { !it.isNaN() && it != 0.0 }
+        val frequencyPenalty = json.optDouble("frequency_penalty").takeIf { !it.isNaN() }
+            ?.also { if (!it.isFinite() || it !in 0.0..2.0) badRequest("frequency_penalty must be between 0 and 2", ErrorCode.INVALID_VALUE, "frequency_penalty") }
+            ?.takeIf { it != 0.0 }
+        val requestedMinP = json.optDouble("min_p").takeIf { !it.isNaN() }
+            ?.also { if (!it.isFinite() || it !in 0.0..1.0) badRequest("min_p must be between 0 and 1", ErrorCode.INVALID_VALUE, "min_p") }
+        val requestedRepetitionPenalty = json.optDouble("repetition_penalty").takeIf { !it.isNaN() }
+            ?.also { if (!it.isFinite() || it !in 1.0..2.0) badRequest("repetition_penalty must be between 1 and 2", ErrorCode.INVALID_VALUE, "repetition_penalty") }
         val sampling = ApiChatRunner.Sampling(
             temperature = params.temperature,
             topP = params.topP,
             topK = params.topK,
             seed = json.optInt("seed", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE } ?: params.seed,
-            minP = json.optDouble("min_p").takeIf { !it.isNaN() }?.toFloat() ?: params.minP,
-            repetitionPenalty = json.optDouble("repetition_penalty").takeIf { !it.isNaN() }?.toFloat()
+            minP = requestedMinP?.toFloat() ?: params.minP,
+            repetitionPenalty = requestedRepetitionPenalty?.toFloat()
                 ?: frequencyPenalty?.let { (1.0 + it / 2.0).toFloat() }
                 ?: params.repetitionPenalty,
             maxOutputTokens = requestedMaxTokens ?: params.maxOutputTokens,
             stopSequences = stops?.takeIf { it.isNotEmpty() } ?: params.stopSequences
         )
 
+        json.optJSONArray("tools")?.let {
+            if (it.length() > InputLimits.API_MAX_TOOLS) {
+                badRequest("Too many client tools (maximum ${InputLimits.API_MAX_TOOLS})", ErrorCode.INVALID_VALUE, "tools")
+            }
+        }
         val clientTools = ApiChatRunner.parseClientTools(json.optJSONArray("tools"))
         val toolChoice = ApiChatRunner.parseToolChoice(json.opt("tool_choice"))
         val settings = app.container.settingsRepository
@@ -1256,7 +1290,8 @@ class LocalApiServer(
             // *off*: a client must not be able to re-enable something the user disabled on the
             // phone. Absent (or empty) means "everything the settings allow", unchanged.
             val requested = json.optJSONArray("enabled_tools")
-                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it, null) }.toSet() }
+                ?.also { if (it.length() > InputLimits.API_MAX_TOOL_IDS) badRequest("Too many enabled tools", ErrorCode.INVALID_VALUE, "enabled_tools") }
+                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it, null)?.takeIf { id -> id.length <= 128 } }.toSet() }
             if (requested.isNullOrEmpty()) allowed else allowed intersect requested
         }
 
@@ -1277,7 +1312,8 @@ class LocalApiServer(
             allowWriteTools = runBlocking { settings.apiServerAllowWriteTools.first() },
             enabledAppToolIds = enabledAppToolIds,
             knowledgeBaseIds = json.optJSONArray("knowledge_base_ids")
-                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it, null) } }
+                ?.also { if (it.length() > InputLimits.API_MAX_TOOL_IDS) badRequest("Too many knowledge base ids", ErrorCode.INVALID_VALUE, "knowledge_base_ids") }
+                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it, null)?.takeIf { id -> id.length <= 128 } } }
                 ?.filter { it.isNotBlank() }
                 .orEmpty(),
             chatId = json.optString("chat_id").ifBlank { null }.takeIf { fullMode },
@@ -2248,7 +2284,9 @@ class LocalApiServer(
     private fun persistAttachment(tempFile: File): String? = try {
         val dir = File(app.filesDir, "message-attachments").apply { mkdirs() }
         val dest = File(dir, "${UUID.randomUUID()}-${tempFile.name}")
-        tempFile.copyTo(dest, overwrite = true)
+        tempFile.inputStream().use { input ->
+            dest.outputStream().use { output -> input.copyToLimited(output, InputLimits.MAX_IMAGE_BATCH_BYTES) }
+        }
         dest.absolutePath
     } catch (t: Throwable) {
         Log.w(TAG, "persistAttachment() failed for ${tempFile.name}", t)
@@ -2513,7 +2551,7 @@ class LocalApiServer(
                     val sentences = com.vervan.chat.voice.TtsFileGenerator.splitSentences(input)
                     val results = com.vervan.chat.voice.TtsFileGenerator.synthesizeSentences(sentences, engine, language)
                     com.vervan.chat.voice.TtsFileGenerator.mergeToFile(results, outFile)
-                    outFile.readBytes()
+                    outFile.inputStream().use { it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES) }
                 }
             } ?: return errorResponse(
                 Response.Status.SERVICE_UNAVAILABLE,

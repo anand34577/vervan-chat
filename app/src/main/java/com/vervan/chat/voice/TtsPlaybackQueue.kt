@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import com.vervan.chat.validation.InputLimits
 
 /**
  * Plays synthesized sentences back-to-back via [AudioTrack] in streaming mode, overlapping
@@ -37,7 +38,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     private var audioTrack: AudioTrack? = null
     private var trackSampleRate: Int = -1
-    private var sentenceChannel: Channel<String> = Channel(Channel.UNLIMITED)
+    private var sentenceChannel: Channel<String> = Channel(QUEUE_CAPACITY)
     private var playbackJob: Job? = null
     @Volatile private var paused = false
     // "auto" (not "hi"/"en") so PiperTtsEngine's per-sentence Devanagari-script heuristic runs
@@ -47,6 +48,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     /** Set per-turn via [startTurn] — lets the caller mirror played PCM (for a turn's waveform
      * + replay) without this class needing to know anything about UI or persistence. */
     private var sampleSink: ((ShortArray, Int) -> Unit)? = null
+    @Volatile private var errorSink: ((String) -> Unit)? = null
 
     val isPlaying: Boolean get() = playbackJob?.isActive == true
     val isPaused: Boolean get() = paused
@@ -74,9 +76,13 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     /** Opens a fresh sentence queue and starts the playback loop for one AI reply. Call once
      * per turn, before the first [enqueue]. */
-    fun startTurn(onSample: ((ShortArray, Int) -> Unit)? = null) {
+    fun startTurn(
+        onSample: ((ShortArray, Int) -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
+    ) {
         paused = false
         sampleSink = onSample
+        errorSink = onError
         // A second startTurn() without stop()/endTurn() between turns previously orphaned the
         // prior Channel.UNLIMITED and its playback coroutine — neither was closed/cancelled
         // before reassignment, so the old loop could keep draining the old channel and hold
@@ -84,7 +90,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
         // defaults from construction: playbackJob == null and an already-open channel.)
         playbackJob?.cancel()
         runCatching { sentenceChannel.close() }
-        val channel = Channel<String>(Channel.UNLIMITED)
+        val channel = Channel<String>(QUEUE_CAPACITY)
         sentenceChannel = channel
         // Dispatchers.IO, not .Default: playPcm()'s AudioTrack.write(..., WRITE_BLOCKING) blocks
         // the calling thread for the duration of playback (up to several seconds per sentence).
@@ -97,7 +103,14 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     }
 
     fun enqueue(text: String) {
-        sentenceChannel.trySend(text)
+        if (text.isBlank()) return
+        if (text.length > InputLimits.TTS_TEXT_CHARS) {
+            errorSink?.invoke("A spoken sentence is too long (maximum ${InputLimits.TTS_TEXT_CHARS} characters)")
+            return
+        }
+        if (sentenceChannel.trySend(text).isFailure) {
+            errorSink?.invoke("Voice playback queue is full; some speech was not queued")
+        }
     }
 
     /** Signals this turn has no more sentences coming — the playback loop finishes whatever's
@@ -189,7 +202,10 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     private fun CoroutineScope.asyncSynthesize(text: String): Deferred<TtsAudio?> = async(Dispatchers.Default) {
         synthSemaphore.withPermit {
             runCatching { engineSelector.resolve()?.synthesize(text, currentLang) }
-                .onFailure { Log.w(TAG, "Sentence synthesis failed, dropping this sentence", it) }
+                .onFailure {
+                    Log.w(TAG, "Sentence synthesis failed", it)
+                    errorSink?.invoke("Couldn't synthesize part of the voice reply: ${it.message ?: "unknown error"}")
+                }
                 .getOrNull()
         }
     }
@@ -230,6 +246,7 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
     }
 
     companion object {
+        private const val QUEUE_CAPACITY = 32
         private const val TAG = "TtsPlaybackQueue"
         private const val RELEASE_JOIN_TIMEOUT_MS = 2_000L
     }

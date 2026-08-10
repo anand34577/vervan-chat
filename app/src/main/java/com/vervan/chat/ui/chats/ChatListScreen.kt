@@ -75,6 +75,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.data.db.entities.Chat
@@ -88,6 +89,7 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanFilterChip
@@ -98,6 +100,7 @@ import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.ui.theme.vervanBorder
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -110,6 +113,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     })
     val chats by vm.chats.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val filter by vm.filter.collectAsState()
     val projectNames by vm.projectNames.collectAsState()
     val folders by vm.folders.collectAsState()
@@ -123,7 +127,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     var selectionMode by remember { mutableStateOf(false) }
     var showFolders by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    val visibleChats = remember(chats, query) {
+    var savedFilter by rememberSaveable { mutableStateOf("") }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        savedFilter.takeIf { it.isNotBlank() }
+            ?.let { name -> ChatFilter.entries.firstOrNull { it.name == name }?.let(vm::setFilter) }
+    }
+    val visibleChats = remember(chats, query, lastMessageByChat) {
         if (query.isBlank()) chats else chats.filter {
             it.title.contains(query, ignoreCase = true) ||
                 it.draft.contains(query, ignoreCase = true) ||
@@ -148,9 +157,9 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
             if (!selectionMode) MediumTopAppBar(
                 title = {
                     Column {
-                        Text("Chats")
+                        Text(stringResource(R.string.chat_list_title))
                         Text(
-                            "${chats.size} conversations · ${chats.count { it.pinned }} pinned",
+                            stringResource(R.string.chat_list_summary, chats.size, chats.count { it.pinned }),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -238,11 +247,23 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                 query = query,
                 onQueryChange = { query = it },
                 filter = filter,
-                onFilter = vm::setFilter
+                onFilter = {
+                    savedFilter = it.name
+                    vm.setFilter(it)
+                }
             )
             // Skeleton state during cold start — the previous behavior flashed "No chats here"
             // before the DB had emitted anything, which read as data loss.
-            if (isLoading) {
+            if (error != null) {
+                OperationErrorCard(
+                    title = stringResource(R.string.chat_list_unavailable),
+                    message = error ?: stringResource(R.string.chat_list_unavailable_message),
+                    recovery = stringResource(R.string.chat_list_unavailable_recovery),
+                    modifier = Modifier.padding(top = Space.md),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry
+                )
+            } else if (isLoading) {
                 LoadingSkeletonList(rows = 7, modifier = Modifier.padding(top = Space.md))
             } else {
                 LazyColumn(
@@ -310,8 +331,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                         item {
                             EmptyState(
                                 icon = Icons.AutoMirrored.Filled.Chat,
-                                title = if (query.isBlank()) "No chats here" else "No matching chats",
-                                body = if (query.isBlank()) "Start a new private chat from the Create button." else "Try a different word or clear the search field.",
+                                title = if (query.isBlank()) stringResource(R.string.chat_list_empty) else stringResource(R.string.chat_list_no_matches),
+                                body = if (query.isBlank()) stringResource(R.string.chat_list_empty_body) else stringResource(R.string.chat_list_no_matches_body),
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 360.dp)
                             )
                         }
@@ -395,7 +416,7 @@ private fun ChatListHeader(
         VervanSearchField(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = "Search conversations"
+            placeholder = stringResource(R.string.chat_list_search_placeholder)
         )
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
@@ -406,17 +427,17 @@ private fun ChatListHeader(
                 VervanFilterChip(
                     selected = filter == f,
                     onClick = { onFilter(f) },
-                    label = { Text(f.label()) }
+                    label = { Text(stringResource(f.labelRes())) }
                 )
             }
         }
     }
 }
 
-private fun ChatFilter.label(): String = when (this) {
-    ChatFilter.ALL -> "All"
-    ChatFilter.PINNED -> "Pinned"
-    ChatFilter.ARCHIVED -> "Archived"
+private fun ChatFilter.labelRes(): Int = when (this) {
+    ChatFilter.ALL -> R.string.chat_filter_all
+    ChatFilter.PINNED -> R.string.chat_filter_pinned
+    ChatFilter.ARCHIVED -> R.string.chat_filter_archived
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)

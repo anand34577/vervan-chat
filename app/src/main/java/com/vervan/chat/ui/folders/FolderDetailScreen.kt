@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,6 +47,9 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.ScrollablePage
@@ -55,6 +59,8 @@ import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -66,7 +72,9 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
     val notes by vm.notes.collectAsState()
     val personas by vm.personas.collectAsState()
     val models by vm.models.collectAsState()
-    val knowledgeBases = app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList()).value
+    val knowledgeBases by vm.knowledgeBases.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -75,19 +83,19 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { OverflowTooltipText(folder?.name ?: "Folder") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { OverflowTooltipText(folder?.name ?: stringResource(R.string.folder_list_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { showActions = true }, enabled = folder != null) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Folder actions")
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.workspace_actions))
                     }
                     DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                         DropdownMenuItem(
-                            text = { Text("Rename") },
+                            text = { Text(stringResource(R.string.action_rename)) },
                             onClick = { showActions = false; renaming = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) },
                             onClick = { showActions = false; showDeleteConfirm = true }
                         )
                     }
@@ -96,29 +104,45 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding) {
-            Column(Modifier.fillMaxWidth()) {
-            Text("Folder defaults", style = MaterialTheme.typography.titleSmall)
-            Text("Applied to new chats in this folder.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
+            when {
+                error != null -> OperationErrorCard(
+                    title = stringResource(R.string.folder_unavailable),
+                    message = error ?: stringResource(R.string.folder_unavailable_message),
+                    recovery = stringResource(R.string.folder_unavailable_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry
+                )
+                isLoading -> LoadingSkeletonList(rows = 6)
+                folder == null -> EmptyState(
+                    icon = Icons.Filled.Folder,
+                    title = stringResource(R.string.folder_not_found),
+                    body = stringResource(R.string.folder_not_found_body),
+                    actionLabel = stringResource(R.string.action_back),
+                    onAction = onBack
+                )
+                else -> Column(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.folder_defaults), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.folder_defaults_hint), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
 
-            Text("Default persona", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.folder_default_persona), style = MaterialTheme.typography.labelMedium)
             Text(
-                if (folder?.defaultPersonaId == null) "Inherited from workspace" else "Set by folder",
+                if (folder?.defaultPersonaId == null) stringResource(R.string.folder_inherited_persona) else stringResource(R.string.folder_set_persona),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             FlowChips(
-                options = listOf("None" to null) + personas.map { it.name to it.id },
+                options = listOf(stringResource(R.string.folder_none) to null) + personas.map { it.name to it.id },
                 selected = folder?.defaultPersonaId,
                 onSelect = { vm.setDefaultPersona(it) }
             )
 
-            Text("Default model", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+            Text(stringResource(R.string.folder_default_model), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
             FlowChips(
-                options = listOf("None" to null) + models.filter { it.role == ModelRole.GENERATION }.map { it.displayName to it.id },
+                options = listOf(stringResource(R.string.folder_none) to null) + models.filter { it.role == ModelRole.GENERATION }.map { it.displayName to it.id },
                 selected = folder?.defaultModelId,
                 onSelect = { vm.setDefaultModel(it) }
             )
 
-            Text("Default sources", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+            Text(stringResource(R.string.folder_default_sources), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
             MultiSelectChips(
                 options = knowledgeBases.map { it.name to it.id },
                 selected = folder?.kbIdList() ?: emptyList(),
@@ -126,13 +150,13 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
             )
 
             ResponsiveActions(Modifier.padding(top = Space.md)) {
-                OutlinedButton(onClick = { scope.launch { onOpenChat(vm.createChat()) } }) { Text("New chat here") }
-                OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text("New note here") }
+                OutlinedButton(onClick = { scope.launch { onOpenChat(vm.createChat()) } }) { Text(stringResource(R.string.folder_new_chat)) }
+                OutlinedButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) { Text(stringResource(R.string.folder_new_note)) }
             }
 
             HorizontalDivider(Modifier.padding(vertical = Space.md))
 
-            VervanSectionHeader("Chats", count = chats.size, topPadding = Space.xs)
+            VervanSectionHeader(stringResource(R.string.folder_chats), count = chats.size, topPadding = Space.xs)
             if (chats.isNotEmpty()) {
                 SectionCard(
                     items = chats.map { chat ->
@@ -142,7 +166,7 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                     }
                 )
             }
-            VervanSectionHeader("Notes", count = notes.size)
+            VervanSectionHeader(stringResource(R.string.folder_notes), count = notes.size)
             if (notes.isNotEmpty()) {
                 SectionCard(
                     items = notes.map { note ->
@@ -152,7 +176,8 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
                     }
                 )
             }
-        }
+                }
+            }
         }
     }
 
@@ -161,17 +186,17 @@ fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String
             var name by remember(current.id) { mutableStateOf(current.name) }
             AlertDialog(
                 onDismissRequest = { renaming = false },
-                title = { Text("Rename folder") },
+                title = { Text(stringResource(R.string.folder_rename_title)) },
                 text = { BoundedTextField(value = name, onValueChange = { name = it }, singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
-                confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(name.trim()); renaming = false } }, enabled = name.isNotBlank()) { Text("Save") } },
-                dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } }
+                confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(name.trim()); renaming = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_save)) } },
+                dismissButton = { TextButton(onClick = { renaming = false }) { Text(stringResource(R.string.action_cancel)) } }
             )
         }
         if (showDeleteConfirm) {
             ConfirmDialog(
-                title = "Delete folder?",
-                body = "Delete \"${current.name}\"? Its items will become unfiled.",
-                confirmLabel = "Delete",
+                title = stringResource(R.string.folder_delete_title),
+                body = stringResource(R.string.folder_delete_body, current.name),
+                confirmLabel = stringResource(R.string.action_delete),
                 destructive = true,
                 onConfirm = { showDeleteConfirm = false; vm.delete(current); onBack() },
                 onDismiss = { showDeleteConfirm = false }

@@ -50,8 +50,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
@@ -60,6 +62,8 @@ import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +72,8 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: NotesListViewModel = viewModel(factory = viewModelFactory { initializer { NotesListViewModel(app) } })
     val notes by vm.notes.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val error by vm.error.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectionMode by remember { mutableStateOf(false) }
@@ -116,7 +122,18 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-            if (notes.isEmpty()) {
+            if (error != null) {
+                OperationErrorCard(
+                    title = stringResource(R.string.notes_unavailable),
+                    message = error ?: stringResource(R.string.notes_unavailable_message),
+                    recovery = stringResource(R.string.notes_unavailable_recovery),
+                    modifier = Modifier.padding(top = Space.md),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry
+                )
+            } else if (isLoading) {
+                LoadingSkeletonList(rows = 6, modifier = Modifier.padding(top = Space.md))
+            } else if (notes.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Note,
                     title = "No notes yet",

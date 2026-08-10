@@ -1,6 +1,7 @@
 package com.vervan.chat.ui.nav
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,12 +32,15 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,6 +107,7 @@ import com.vervan.chat.ui.notes.NotesListScreen
 import com.vervan.chat.ui.onboarding.OnboardingScreen
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
+import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.personas.PersonaEditorScreen
@@ -152,10 +157,10 @@ private data class PendingChatAttachment(
 
 private val tabs = listOf(
     Tab(AppRoutes.HOME, R.string.nav_home, Icons.Outlined.Home, Icons.Filled.Home),
-    Tab("chats", R.string.nav_chats, Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
+    Tab(AppRoutes.CHATS, R.string.nav_chats, Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
 )
-private val libraryTab = Tab("library", R.string.nav_library, Icons.Outlined.Folder, Icons.Filled.Folder)
-private val toolsTab = Tab("tools", R.string.nav_tools, Icons.Outlined.GridView, Icons.Filled.GridView)
+private val libraryTab = Tab(AppRoutes.LIBRARY, R.string.nav_library, Icons.Outlined.Folder, Icons.Filled.Folder)
+private val toolsTab = Tab(AppRoutes.TOOLS, R.string.nav_tools, Icons.Outlined.GridView, Icons.Filled.GridView)
 private val trailingTabs = listOf(
     libraryTab,
     toolsTab
@@ -247,8 +252,8 @@ fun VervanNavGraph(
                 app.container.db.noteDao().upsert(note)
                 navController.navigate("note/${note.id}")
             }
-            "search" -> navController.navigate("search")
-            "settings" -> navController.navigatePrimaryRoot("settings")
+            "search" -> navController.navigate(AppRoutes.SEARCH)
+            "settings" -> navController.navigatePrimaryRoot(AppRoutes.SETTINGS)
         }
     }
 
@@ -297,13 +302,29 @@ fun VervanNavGraph(
         )
     }
     val createLabel = stringResource(R.string.action_create)
+    val reducedMotion = rememberReducedMotion()
 
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+            NavigationRail(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ) {
+                Surface(
+                    modifier = Modifier.padding(top = Space.sm, bottom = Space.md).size(40.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Vervan", modifier = Modifier.size(20.dp))
+                    }
+                }
                 FloatingActionButton(
                     onClick = { showCreateSheet = true },
-                    modifier = Modifier.padding(vertical = Space.md)
+                    modifier = Modifier.padding(bottom = Space.md),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = createLabel)
                 }
@@ -343,10 +364,22 @@ fun VervanNavGraph(
             // (most visible navigating into a screen with very different content density, e.g.
             // Home's hero card -> Model Manager's warning/empty-state cards). A slide keeps both
             // screens fully opaque throughout — offset, not blended — so nothing double-exposes.
-            enterTransition = { androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) },
-            exitTransition = { androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 4 }) },
-            popEnterTransition = { androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 4 }) },
-            popExitTransition = { androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) }
+            enterTransition = {
+                if (reducedMotion) androidx.compose.animation.EnterTransition.None
+                else androidx.compose.animation.slideInHorizontally(initialOffsetX = { it })
+            },
+            exitTransition = {
+                if (reducedMotion) androidx.compose.animation.ExitTransition.None
+                else androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 4 })
+            },
+            popEnterTransition = {
+                if (reducedMotion) androidx.compose.animation.EnterTransition.None
+                else androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 4 })
+            },
+            popExitTransition = {
+                if (reducedMotion) androidx.compose.animation.ExitTransition.None
+                else androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it })
+            }
         ) {
             composable(AppRoutes.ONBOARDING) {
                 OnboardingScreen(
@@ -370,13 +403,14 @@ fun VervanNavGraph(
                 HomeScreen(
                     onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
                     onOpenModels = { navController.navigate("models") },
-                    onOpenChats = { navController.navigatePrimaryRoot("chats") },
-                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenChats = { navController.navigatePrimaryRoot(AppRoutes.CHATS) },
+                    onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
                     onOpenNote = { noteId -> navController.navigate("note/$noteId") },
                     onOpenToolRun = { runId -> navController.navigate("tools/runs?highlightId=$runId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
-                    onOpenSearch = { navController.navigate("search") },
+                    onOpenSearch = { navController.navigate(AppRoutes.SEARCH) },
+                    onOpenPrivacy = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) },
                     onOpenWorkspaces = { navController.navigate("workspaces") },
                     onOpenProjects = { navController.navigate("projects") },
                     onOpenFolders = { navController.navigate("folders") },
@@ -384,7 +418,7 @@ fun VervanNavGraph(
                     onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
                     onOpenTranslate = { navController.navigate("tools/translate") },
                     onOpenWritingAssistant = { navController.navigate("tools/writing-assistant") },
-                    onOpenAllTools = { navController.navigatePrimaryRoot("tools") }
+                    onOpenAllTools = { navController.navigatePrimaryRoot(AppRoutes.TOOLS) }
                 )
             }
             composable("tools/document-scanner") {
@@ -529,7 +563,7 @@ fun VervanNavGraph(
                     onOpenFolder = { id -> navController.navigate("folder/$id") },
                     onOpenTemplate = { id -> navController.navigate("template/$id/edit") },
                     onOpenWorkflow = { id -> navController.navigate("workflow/$id") },
-                    onOpenSavedOutput = { _ -> navController.navigate("library") },
+                    onOpenSavedOutput = { _ -> navController.navigate(AppRoutes.LIBRARY) },
                     onOpenTool = { route -> navController.navigate(route) },
                     onOpenToolRun = { id -> navController.navigate("tools/runs?highlightId=$id") },
                 )
@@ -576,7 +610,7 @@ fun VervanNavGraph(
                 val workflowId = entry.arguments?.getString("workflowId") ?: return@composable
                 WorkflowEditorScreen(workflowId = workflowId, onBack = { navController.popBackStack() })
             }
-            composable("library") {
+            composable(AppRoutes.LIBRARY) {
                 LibraryScreen(
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onNewPersona = { navController.navigate("persona-new") },
@@ -646,7 +680,7 @@ fun VervanNavGraph(
                     onOpenNote = { noteId -> navController.navigate("note/$noteId") }
                 )
             }
-            composable("chats") {
+            composable(AppRoutes.CHATS) {
                 if (useTwoPane) {
                     com.vervan.chat.ui.chats.ChatsTwoPaneScreen(
                         onOpenBranchTree = { chatId -> navController.navigate("chat/$chatId/tree") },
@@ -759,7 +793,7 @@ fun VervanNavGraph(
             composable("models/store") {
                 com.vervan.chat.ui.store.ModelStoreScreen(onBack = { navController.popBackStack() })
             }
-            composable("settings") {
+            composable(AppRoutes.SETTINGS) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenModels = { navController.navigate("models") },
@@ -808,10 +842,10 @@ fun VervanNavGraph(
                     onBack = { navController.popBackStack() },
                     onOpenPermissions = { navController.navigate("settings/permissions") },
                     onOpenApiServer = { navController.navigate("settings/api-server") },
-                    onOpenPrivacyDashboard = { navController.navigate("settings/privacy-dashboard") }
+                    onOpenPrivacyDashboard = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) }
                 )
             }
-            composable("settings/privacy-dashboard") {
+            composable(AppRoutes.PRIVACY_DASHBOARD) {
                 com.vervan.chat.ui.settings.PrivacyDashboardScreen(
                     onBack = { navController.popBackStack() },
                     onOpenSecurity = { navController.popBackStack() },
@@ -991,19 +1025,43 @@ private fun VervanNavigationBar(
     onCreate: () -> Unit
 ) {
     val createLabel = stringResource(R.string.action_create)
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 3.dp
-    ) {
-        leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
-        NavigationBarItem(
-            selected = false,
-            onClick = onCreate,
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            label = { Text(createLabel) },
-            alwaysShowLabel = true
-        )
-        trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
+    val itemColors = NavigationBarItemDefaults.colors(
+        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        selectedTextColor = MaterialTheme.colorScheme.primary,
+        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 0.dp,
+            ) {
+                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onCreate,
+                    icon = {
+                        Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    },
+                    label = { Text(createLabel) },
+                    alwaysShowLabel = true,
+                    colors = itemColors,
+                )
+                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
+            }
+        }
     }
 }
 
@@ -1011,7 +1069,8 @@ private fun VervanNavigationBar(
 private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController
+    navController: NavHostController,
+    colors: androidx.compose.material3.NavigationBarItemColors,
 ) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
     NavigationBarItem(
@@ -1024,7 +1083,8 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
             )
         },
         label = { Text(stringResource(tab.labelRes)) },
-        alwaysShowLabel = true
+        alwaysShowLabel = true,
+        colors = colors,
     )
 }
 
@@ -1037,6 +1097,13 @@ private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: 
             navController.navigatePrimaryRoot(tab.route)
         },
         icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
-        label = { Text(stringResource(tab.labelRes)) }
+        label = { Text(stringResource(tab.labelRes)) },
+        colors = NavigationRailItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
     )
 }

@@ -16,6 +16,8 @@ import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.vervan.chat.modelload.GenerationLoadable
+import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.validation.InputLimits
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -279,12 +281,12 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                 ?: throw IllegalStateException("Could not read image at $path")
             // Attachments are normalized once at import. Sending their encoded bytes avoids
             // another full Bitmap allocation and PNG recompression on every generation.
-            contents += Content.ImageBytes(image.readBytes())
+            contents += Content.ImageBytes(image.inputStream().use { it.readBytesLimited(InputLimits.MAX_NORMALIZED_IMAGE_BYTES) })
         }
         audioPath?.let { path ->
             val audio = File(path).takeIf { it.isFile }
                 ?: throw IllegalStateException("Could not read audio at $path")
-            contents += Content.AudioBytes(audio.readBytes())
+            contents += Content.AudioBytes(audio.inputStream().use { it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES) })
         }
         if (prompt.isNotBlank()) contents += Content.Text(prompt)
 
@@ -384,7 +386,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         // Unbounded buffer: the native callback delivers tokens faster than the collector's
         // Room-persist cycle can drain during bursts, and callbackFlow's default 64-slot buffer
         // makes trySend silently DROP overflowing tokens — visibly missing words mid-response.
-    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
 
     override fun loadModel(
         modelPath: String,

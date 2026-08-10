@@ -88,6 +88,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -95,6 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.FileDownloadStatus
 import com.vervan.chat.data.db.entities.ModelInfo
@@ -138,7 +140,7 @@ internal fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text("Recommended setup", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.model_recommended_setup), style = MaterialTheme.typography.titleMedium)
                     Text(model.displayName, style = MaterialTheme.typography.titleSmall)
                 }
             }
@@ -151,7 +153,7 @@ internal fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: 
             )
             Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md)) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("Set up for me", modifier = Modifier.padding(start = Space.sm))
+            Text(stringResource(R.string.model_set_up_for_me), modifier = Modifier.padding(start = Space.sm))
             }
         }
     }
@@ -183,14 +185,14 @@ internal fun ModelManagerSwitcher(
     ) {
         Row(Modifier.padding(4.dp)) {
             ModelManagerSwitchItem(
-                label = "My models",
+        label = stringResource(R.string.model_my_models),
                 supportingLabel = installedCount.toString(),
                 selected = !showingDiscover,
                 onClick = onLibrary,
                 modifier = Modifier.weight(1f)
             )
             ModelManagerSwitchItem(
-                label = "Discover",
+        label = stringResource(R.string.model_discover),
                 supportingLabel = null,
                 selected = showingDiscover,
                 onClick = onDiscover,
@@ -269,11 +271,11 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
         )
         Button(onClick = onDiscover) {
             Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("Discover models", modifier = Modifier.padding(start = Space.sm))
+            Text(stringResource(R.string.model_discover_models), modifier = Modifier.padding(start = Space.sm))
         }
         TextButton(onClick = onImport) {
             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("Import from device", modifier = Modifier.padding(start = Space.sm))
+            Text(stringResource(R.string.model_import_device), modifier = Modifier.padding(start = Space.sm))
         }
     }
 }
@@ -289,7 +291,7 @@ internal fun ImportModelDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import from device") },
+        title = { Text(stringResource(R.string.model_import_dialog)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(
@@ -299,24 +301,24 @@ internal fun ImportModelDialog(
                     modifier = Modifier.padding(bottom = Space.xs)
                 )
                 ImportChoiceCard(
-                    title = "LiteRT-LM",
-                    subtitle = "Android-optimized · .task / .litertlm",
+            title = stringResource(R.string.model_litert_title),
+            subtitle = stringResource(R.string.model_litert_subtitle),
                     icon = Icons.Filled.Bolt,
                     enabled = !importing,
                     horizontal = true,
                     onClick = { onImport(ModelRole.GENERATION) }
                 )
                 ImportChoiceCard(
-                    title = "llama.cpp",
-                    subtitle = "GGUF · Vulkan / CPU",
+            title = stringResource(R.string.model_llama_title),
+            subtitle = stringResource(R.string.model_llama_subtitle),
                     icon = Icons.Filled.Bolt,
                     enabled = !importing,
                     horizontal = true,
                     onClick = onImportGguf
                 )
                 ImportChoiceCard(
-                    title = "Embeddings",
-                    subtitle = "Model + tokenizer",
+            title = stringResource(R.string.model_embeddings_title),
+            subtitle = stringResource(R.string.model_embeddings_subtitle),
                     icon = Icons.Outlined.Storage,
                     enabled = !importing,
                     horizontal = true,
@@ -324,8 +326,8 @@ internal fun ImportModelDialog(
                 )
                 if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                     ImportChoiceCard(
-                        title = "Whisper",
-                        subtitle = "Offline speech-to-text · .bin / .gguf",
+            title = stringResource(R.string.model_whisper_title),
+            subtitle = stringResource(R.string.model_whisper_subtitle),
                         icon = Icons.Filled.Mic,
                         enabled = !importing,
                         horizontal = true,
@@ -334,8 +336,8 @@ internal fun ImportModelDialog(
                 }
                 HorizontalDivider(Modifier.padding(vertical = Space.xs))
                 ImportChoiceCard(
-                    title = "Remote API",
-                    subtitle = "OpenAI-compatible endpoint · cloud or self-hosted",
+            title = stringResource(R.string.model_remote_title),
+            subtitle = stringResource(R.string.model_remote_subtitle),
                     icon = Icons.Filled.CloudDownload,
                     enabled = !importing,
                     horizontal = true,
@@ -344,7 +346,7 @@ internal fun ImportModelDialog(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -470,7 +472,7 @@ internal fun RemoteApiModelDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add remote API models") },
+        title = { Text(stringResource(R.string.model_add_remote)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -485,9 +487,9 @@ internal fun RemoteApiModelDialog(
                 )
                 OutlinedTextField(
                     value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text("Base URL") },
-                    placeholder = { Text("https://api.openai.com/v1") },
+                    onValueChange = { baseUrl = it.take(512) },
+        label = { Text(stringResource(R.string.model_base_url)) },
+        placeholder = { Text(stringResource(R.string.model_api_placeholder)) },
                     isError = shownBaseUrlError != null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -503,8 +505,8 @@ internal fun RemoteApiModelDialog(
                 }
                 OutlinedTextField(
                     value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("API key") },
+                    onValueChange = { apiKey = it.take(128) },
+        label = { Text(stringResource(R.string.model_api_key)) },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                     singleLine = true,
@@ -515,9 +517,9 @@ internal fun RemoteApiModelDialog(
                     Box {
                         OutlinedTextField(
                             value = query,
-                            onValueChange = { query = it; menuOpen = true },
-                            label = { Text("Models") },
-                            placeholder = { Text("Search, or type any model id") },
+                            onValueChange = { query = it.take(200); menuOpen = true },
+        label = { Text(stringResource(R.string.model_models)) },
+        placeholder = { Text(stringResource(R.string.model_search_ids)) },
                             singleLine = true,
                             trailingIcon = {
                                 when {
@@ -553,7 +555,7 @@ internal fun RemoteApiModelDialog(
                         ) {
                             if (typedIsNew) {
                                 DropdownMenuItem(
-                                    text = { Text("Add \"${query.trim()}\"", style = MaterialTheme.typography.bodyMedium) },
+        text = { Text(stringResource(R.string.model_add_named, query.trim()), style = MaterialTheme.typography.bodyMedium) },
                                     leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                     onClick = { toggle(query); query = "" }
                                 )
@@ -625,7 +627,7 @@ internal fun RemoteApiModelDialog(
                                 label = { Text(if (selection.role == ModelRole.EMBEDDING) "Embedding" else "Chat") }
                             )
                             IconButton(onClick = { toggle(selection.remoteApiModelId) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remove ${selection.remoteApiModelId}", modifier = Modifier.size(18.dp))
+    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.model_remove_remote, selection.remoteApiModelId), modifier = Modifier.size(18.dp))
                             }
                         }
                         // Chat-only concepts: an embedding model turns text into a vector and
@@ -639,22 +641,22 @@ internal fun RemoteApiModelDialog(
                                 VervanFilterChip(
                                     selected = selection.capabilities.vision,
                                     onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(vision = !it.capabilities.vision)) } },
-                                    label = { Text("Vision") }
+            label = { Text(stringResource(R.string.model_vision)) }
                                 )
                                 VervanFilterChip(
                                     selected = selection.capabilities.audio,
                                     onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(audio = !it.capabilities.audio)) } },
-                                    label = { Text("Audio") }
+            label = { Text(stringResource(R.string.model_audio)) }
                                 )
                                 VervanFilterChip(
                                     selected = selection.capabilities.tools,
                                     onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(tools = !it.capabilities.tools)) } },
-                                    label = { Text("Tools") }
+            label = { Text(stringResource(R.string.model_tools)) }
                                 )
                                 VervanFilterChip(
                                     selected = selection.capabilities.thinking,
                                     onClick = { update(selection.remoteApiModelId) { it.copy(capabilities = it.capabilities.copy(thinking = !it.capabilities.thinking)) } },
-                                    label = { Text("Thinking") }
+            label = { Text(stringResource(R.string.model_thinking)) }
                                 )
                             }
                         }
@@ -668,7 +670,7 @@ internal fun RemoteApiModelDialog(
                 // per-row reasoning on the state declarations above).
                 if (picked.any { it.role == ModelRole.GENERATION }) {
                     HorizontalDivider()
-                    Text("Generation settings", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.model_generation_settings), style = MaterialTheme.typography.labelLarge)
                     OverrideSlider("Temperature", temperatureOn, { temperatureOn = it }, temperature, { temperature = it }, defaults.temperature, "%.2f", 0f..2f)
                     OverrideSlider("Top-p", topPOn, { topPOn = it }, topP, { topP = it }, defaults.topP, "%.2f", 0.1f..1f)
                     OverrideSlider(
@@ -719,7 +721,7 @@ internal fun RemoteApiModelDialog(
                 )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -742,7 +744,7 @@ internal fun ImportCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
     ) {
         Column(Modifier.padding(Space.lg)) {
-            Text("Add a local model", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.model_add_local), style = MaterialTheme.typography.titleSmall)
             Text(
                 "Choose the runtime that matches your model file.",
                 style = MaterialTheme.typography.bodySmall,
@@ -759,8 +761,8 @@ internal fun ImportCard(
                     maxItemsInEachRow = if (compact) 1 else 3
                 ) {
                     ImportChoiceCard(
-                        title = "LiteRT-LM",
-                        subtitle = "Android-optimized • .task / .litertlm",
+            title = stringResource(R.string.model_litert_title),
+            subtitle = stringResource(R.string.model_litert_subtitle),
                         icon = Icons.Filled.Bolt,
                         enabled = !importing,
                         modifier = Modifier.fillMaxWidth(choiceWidth),
@@ -768,8 +770,8 @@ internal fun ImportCard(
                         onClick = { onImport(ModelRole.GENERATION) }
                     )
                     ImportChoiceCard(
-                        title = "llama.cpp",
-                        subtitle = "Broad GGUF support • Vulkan / CPU",
+            title = stringResource(R.string.model_llama_title),
+            subtitle = stringResource(R.string.model_llama_subtitle),
                         icon = Icons.Filled.Bolt,
                         enabled = !importing,
                         modifier = Modifier.fillMaxWidth(choiceWidth),
@@ -777,8 +779,8 @@ internal fun ImportCard(
                         onClick = onImportGguf
                     )
                     ImportChoiceCard(
-                        title = "Embeddings",
-                        subtitle = "Semantic search • model + tokenizer",
+            title = stringResource(R.string.model_embeddings_title),
+            subtitle = stringResource(R.string.model_embeddings_subtitle),
                         icon = Icons.Outlined.Storage,
                         enabled = !importing,
                         modifier = Modifier.fillMaxWidth(choiceWidth),
@@ -787,8 +789,8 @@ internal fun ImportCard(
                     )
                     if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         ImportChoiceCard(
-                            title = "Whisper (offline STT)",
-                            subtitle = "Speech-to-text • .bin (ggml) / .gguf",
+            title = stringResource(R.string.model_whisper_title),
+            subtitle = stringResource(R.string.model_whisper_subtitle),
                             icon = Icons.Filled.Mic,
                             enabled = !importing,
                             modifier = Modifier.fillMaxWidth(choiceWidth),
@@ -821,7 +823,7 @@ internal fun EmbeddingImportDialog(
     var validationError by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import embedding model") },
+        title = { Text(stringResource(R.string.model_import_embedding)) },
         text = {
             Column {
                 Text(
@@ -832,13 +834,13 @@ internal fun EmbeddingImportDialog(
                 )
                 EmbeddingImportStep(
                     stepNumber = 1,
-                    label = "Model file",
+        label = stringResource(R.string.model_file),
                     fileName = modelUri?.let { queryDisplayName(context, it) },
                     onPick = { validationError = null; onPickModel() }
                 )
                 EmbeddingImportStep(
                     stepNumber = 2,
-                    label = "Tokenizer file (sentencepiece.model)",
+        label = stringResource(R.string.model_tokenizer_file),
                     fileName = tokenizerUri?.let { queryDisplayName(context, it) },
                     onPick = { validationError = null; onPickTokenizer() }
                 )
@@ -855,9 +857,9 @@ internal fun EmbeddingImportDialog(
                     else -> null
                 }
                 if (modelUri != null && tokenizerUri != null) onImport(modelUri, tokenizerUri)
-            }) { Text("Import") }
+        }) { Text(stringResource(R.string.action_import)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -876,7 +878,7 @@ internal fun LlamaCppImportDialog(
     var validationError by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import GGUF model") },
+        title = { Text(stringResource(R.string.model_import_gguf)) },
         text = {
             Column {
                 Text(
@@ -887,13 +889,13 @@ internal fun LlamaCppImportDialog(
                 )
                 EmbeddingImportStep(
                     stepNumber = 1,
-                    label = "Model file (.gguf)",
+        label = stringResource(R.string.model_gguf_file),
                     fileName = modelUri?.let { queryDisplayName(context, it) },
                     onPick = { validationError = null; onPickModel() }
                 )
                 EmbeddingImportStep(
                     stepNumber = 2,
-                    label = "Vision projector (optional)",
+        label = stringResource(R.string.model_vision_projector),
                     fileName = mmprojUri?.let { queryDisplayName(context, it) },
                     onPick = { validationError = null; onPickMmproj() }
                 )
@@ -909,9 +911,9 @@ internal fun LlamaCppImportDialog(
                 } else {
                     onImport(modelUri, mmprojUri)
                 }
-            }) { Text("Import") }
+        }) { Text(stringResource(R.string.action_import)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -929,7 +931,7 @@ internal fun WhisperCppImportDialog(
     var validationError by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import whisper.cpp model") },
+        title = { Text(stringResource(R.string.model_import_whisper)) },
         text = {
             Column {
                 Text(
@@ -940,7 +942,7 @@ internal fun WhisperCppImportDialog(
                 )
                 EmbeddingImportStep(
                     stepNumber = 1,
-                    label = "Model file (.bin / .gguf)",
+        label = stringResource(R.string.model_bin_file),
                     fileName = modelUri?.let { queryDisplayName(context, it) },
                     onPick = { validationError = null; onPickModel() }
                 )
@@ -956,9 +958,9 @@ internal fun WhisperCppImportDialog(
                 } else {
                     onImport(modelUri)
                 }
-            }) { Text("Import") }
+        }) { Text(stringResource(R.string.action_import)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -966,7 +968,7 @@ internal fun WhisperCppImportDialog(
 internal fun EmbeddingImportStep(stepNumber: Int, label: String, fileName: String?, onPick: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 8.dp)) {
-            Text("$stepNumber. $label", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.model_step, stepNumber, label), style = MaterialTheme.typography.labelMedium)
             Text(
                 fileName ?: "Not selected",
                 style = MaterialTheme.typography.bodySmall,
@@ -1116,29 +1118,29 @@ internal fun ModelCard(
                         if (model.isActive) SemanticChip("Default", ChipTone.Neutral)
                         Box {
                             IconButton(onClick = { menuOpen = true }, enabled = !busy) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.model_more_options))
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 if (showSetActive && !model.isActive) {
                                     DropdownMenuItem(
-                                        text = { Text("Set as default") },
+        text = { Text(stringResource(R.string.model_set_default)) },
                                         leadingIcon = { Icon(Icons.Filled.Star, contentDescription = null) },
                                         onClick = { menuOpen = false; onSetActive() }
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("Configure") },
+        text = { Text(stringResource(R.string.model_configure)) },
                                     leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
                                     onClick = { menuOpen = false; onEdit() }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Benchmark") },
+        text = { Text(stringResource(R.string.model_benchmark)) },
                                     leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null) },
                                     onClick = { menuOpen = false; onBenchmark() }
                                 )
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = { Text("Delete model", color = MaterialTheme.colorScheme.error) },
+        text = { Text(stringResource(R.string.model_delete), color = MaterialTheme.colorScheme.error) },
                                     leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                                     onClick = { menuOpen = false; confirmDelete = true }
                                 )
@@ -1206,9 +1208,9 @@ internal fun ModelCard(
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete model?",
+        title = stringResource(R.string.model_delete_title),
             body = "Remove \"${model.displayName}\" permanently?",
-            confirmLabel = "Delete forever",
+        confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },
             onDismiss = { confirmDelete = false }

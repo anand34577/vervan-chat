@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +42,9 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ChipInputField
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.ValidationLimits
+import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -57,6 +60,13 @@ fun UserProfileScreen(onBack: () -> Unit) {
     val units by vm.units.collectAsState()
     val avoid by vm.avoid.collectAsState()
     val goals by vm.goals.collectAsState()
+    val filledFields = listOf(name, occupation, expertise, interests, languages, units, avoid, goals).count { value ->
+        when (value) {
+            is String -> value.isNotBlank()
+            is Collection<*> -> value.isNotEmpty()
+            else -> false
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -71,11 +81,21 @@ fun UserProfileScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Space.lg)
         ) {
-            Text(
-                "Added to prompts only when a field is filled. Never inferred from your chats.",
-                style = MaterialTheme.typography.bodySmall
+            FeatureHero(
+                icon = Icons.Filled.Person,
+                eyebrow = "Personal context",
+                title = "Make replies feel like yours",
+                body = "Optional details help Vervan tailor responses. They are added to prompts only when you fill them in and are never inferred from chats.",
+                trailing = {
+                    Text(
+                        "$filledFields filled",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             )
 
+            VervanSectionHeader("About you", topPadding = Space.xs)
             ProfileField("Preferred name", name, maxLength = ValidationLimits.USER_PREFERRED_NAME, onChange = vm::setName)
             ProfileField("Occupation", occupation, "e.g. mobile engineer", maxLength = ValidationLimits.USER_OCCUPATION, onChange = vm::setOccupation)
             ProfileField("Expertise level", expertise, "e.g. advanced", maxLength = ValidationLimits.USER_EXPERTISE, onChange = vm::setExpertise)
@@ -87,6 +107,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 maxItemCount = ValidationLimits.USER_INTEREST_COUNT
             )
 
+            VervanSectionHeader("Preferences", topPadding = Space.xs)
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text("Languages", style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -113,6 +134,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 }
             }
 
+            VervanSectionHeader("Conversation context", topPadding = Space.xs)
             ChipInputField(
                 items = avoid.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { vm.setAvoid(it.joinToString(",")) },

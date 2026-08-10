@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
@@ -66,7 +67,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.MessageRole
-import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.data.db.entities.traits
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SectionCard
 import com.vervan.chat.ui.common.SectionRow
@@ -81,14 +88,20 @@ import com.vervan.chat.ui.theme.vervanAccentFor
 fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
-    val chat by app.container.db.chatDao().observeChat(chatId).collectAsStateWithLifecycle(initialValue = null)
-    val messages by app.container.db.messageDao().observeMessages(chatId).collectAsStateWithLifecycle(initialValue = emptyList())
-    val documents by app.container.db.documentDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val personas by app.container.db.personaDao().observePersonas().collectAsStateWithLifecycle(initialValue = emptyList())
-    val models by app.container.db.modelDao().observeModels().collectAsStateWithLifecycle(initialValue = emptyList())
-    val workspaces by app.container.db.workspaceDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val knowledgeBases by app.container.db.knowledgeBaseDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val activeModel by app.container.db.modelDao().observeActiveModel(ModelRole.GENERATION).collectAsStateWithLifecycle(initialValue = null)
+    val vm: ChatInfoViewModel = viewModel(factory = viewModelFactory {
+        initializer { ChatInfoViewModel(app, chatId) }
+    })
+    val state by vm.state.collectAsStateWithLifecycle()
+    val chat = state.chat
+    val messages = state.messages
+    val documents = state.documents
+    val personas = state.personas
+    val models = state.models
+    val workspaces = state.workspaces
+    val knowledgeBases = state.knowledgeBases
+    val activeModel = state.activeModel
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
     val imagePaths = remember(messages) { messages.mapNotNull { it.imagePath }.distinct() }
     val sharedDocumentIds = remember(messages) { messages.mapNotNull { it.documentId }.toSet() }
     val sharedDocuments = remember(documents, sharedDocumentIds) { documents.filter { it.id in sharedDocumentIds } }
@@ -127,6 +140,8 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val workspacePersona = personas.find { it.id == workspace?.personaId }
     val persona = (explicitPersona ?: workspacePersona)?.name ?: "Persona unavailable"
     val model = (models.find { it.id == chat?.modelId } ?: activeModel)?.displayName ?: "No generation model"
+    val selectedModel = models.find { it.id == chat?.modelId } ?: activeModel
+    val modelRunsOnDevice = selectedModel?.traits?.runsOnDevice != false
     val latestResponseModel = visible.lastOrNull { it.role == MessageRole.ASSISTANT && it.modelName != null }?.modelName
     val sourceNames = chat?.kbIdList().orEmpty().mapNotNull { id -> knowledgeBases.find { it.id == id }?.name }
 
@@ -141,11 +156,28 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.xxl),
-                verticalArrangement = Arrangement.spacedBy(Space.lg)
-            ) {
+            when {
+                loadError != null -> OperationErrorCard(
+                    title = "Chat information unavailable",
+                    message = loadError.orEmpty(),
+                    recovery = "Your conversation is safe. Retry loading its details or return to the chat.",
+                    actionLabel = "Retry",
+                    onAction = vm::retry,
+                    modifier = Modifier.padding(Space.md)
+                )
+                isLoading -> LoadingSkeletonList(rows = 8, modifier = Modifier.padding(Space.md))
+                chat == null -> EmptyState(
+                    icon = Icons.AutoMirrored.Filled.Chat,
+                    title = "Chat not found",
+                    body = "This conversation may have been deleted or moved to the recycle bin.",
+                    actionLabel = "Back",
+                    onAction = onBack
+                )
+                else -> LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.xxl),
+                    verticalArrangement = Arrangement.spacedBy(Space.lg)
+                ) {
                 // ── Hero header ───────────────────────────────────────────────
                 item {
                     Column(
@@ -196,7 +228,14 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.CenterHorizontally),
                             verticalArrangement = Arrangement.spacedBy(Space.xs)
                         ) {
-                            StatusPill("Private · on device", Icons.Filled.Lock)
+                            StatusPill(
+                                when {
+                                    selectedModel == null -> "No generation model"
+                                    modelRunsOnDevice -> "Private · on device"
+                                    else -> "Remote model · data may leave device"
+                                },
+                                if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.LockOpen
+                            )
                             if (chat?.isTemporary == true) StatusPill("Incognito", Icons.Filled.VisibilityOff)
                             if (chat?.pinned == true) StatusPill("Pinned", Icons.Filled.PushPin)
                             if (chat?.archived == true) StatusPill("Archived", Icons.Outlined.Inventory2)
@@ -407,6 +446,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                 }
                         }
                     )
+                }
                 }
             }
         }

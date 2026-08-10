@@ -20,11 +20,14 @@ import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.ui.tools.SearchableTool
 import com.vervan.chat.ui.tools.searchableTools
+import com.vervan.chat.system.toUserMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class SearchResults(
@@ -51,9 +54,10 @@ data class SearchResults(
         workflows.isEmpty() && savedOutputs.isEmpty() && tools.isEmpty() && toolRuns.isEmpty()
 }
 
-/** Cross-content search — fans a single query out to every content DAO's own
- * LIKE-based search query. debounce + sequential DAO hits, no FTS/ranking index —
- * fine at personal-library scale, revisit if any one table grows past a few thousand rows. */
+/** Cross-content search — fans a single query out to bounded DAO queries, then combines the
+ * results into the existing groups. The fan-out is concurrent so a slow category does not make
+ * every other category wait, while each DAO caps its own result set instead of loading whole
+ * tables into memory. */
 class SearchViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
@@ -66,43 +70,77 @@ class SearchViewModel(private val app: VervanApp) : ViewModel() {
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
     private var searchJob: Job? = null
+    private var requestId = 0L
 
     fun setQuery(text: String) {
         _query.value = text
         searchJob?.cancel()
+        val currentRequest = ++requestId
         if (text.isBlank()) {
             _results.value = SearchResults()
             _searching.value = false
+            _error.value = null
             return
         }
         searchJob = viewModelScope.launch {
             _searching.value = true
+            _error.value = null
             delay(250)
-            // Incognito mode — a temporary chat, and its messages, never surface in
-            // search. Filtered in-memory after the DAO call rather than a new SQL join, same
-            // "fine at personal-library scale" tradeoff this ViewModel already makes elsewhere.
-            val chats = db.chatDao().search(text).filterNot { it.isTemporary }
-            val temporaryChatIds = db.chatDao().observeAllChats().first().filter { it.isTemporary }.map { it.id }.toSet()
-            _results.value = SearchResults(
-                chats = chats,
-                notes = db.noteDao().search(text),
-                documents = db.documentDao().search(text),
-                passages = searchPassages(text),
-                personas = db.personaDao().search(text),
-                messages = db.messageDao().search(text).filterNot { it.chatId in temporaryChatIds },
-                memories = db.memoryDao().search(text),
-                projects = ranked(db.projectDao().observeAll().first(), text) { listOf(it.name, it.instructions) },
-                workspaces = ranked(db.workspaceDao().observeAll().first(), text) { listOf(it.name, it.description) },
-                folders = ranked(db.folderDao().observeAll().first(), text) { listOf(it.name) },
-                knowledgeBases = ranked(db.knowledgeBaseDao().observeAll().first(), text) { listOf(it.name, it.description) },
-                templates = ranked(db.promptTemplateDao().observeAll().first(), text) { listOf(it.name, it.description, it.body) },
-                workflows = ranked(db.workflowDao().observeAll().first(), text) { listOf(it.name, it.description) },
-                savedOutputs = ranked(db.savedOutputDao().observeAll().first(), text) { listOf(it.label, it.content) },
-                tools = ranked(searchableTools, text) { listOf(it.label, it.description) },
-                toolRuns = ranked(db.toolRunDao().observeAll().first(), text) { listOf(it.toolName, it.input, it.output) },
-            )
-            _searching.value = false
+            val searchText = text.trim()
+            try {
+                val temporaryChatIds = db.chatDao().getTemporaryChatIds().toSet()
+                coroutineScope {
+                    val chats = async { db.chatDao().search(searchText).filterNot { it.isTemporary } }
+                    val notes = async { db.noteDao().search(searchText) }
+                    val documents = async { db.documentDao().search(searchText) }
+                    val passages = async { searchPassages(searchText) }
+                    val personas = async { db.personaDao().search(searchText) }
+                    val messages = async { db.messageDao().search(searchText).filterNot { it.chatId in temporaryChatIds } }
+                    val memories = async { db.memoryDao().search(searchText) }
+                    val projects = async { db.projectDao().search(searchText) }
+                    val workspaces = async { db.workspaceDao().search(searchText) }
+                    val folders = async { db.folderDao().search(searchText) }
+                    val knowledgeBases = async { db.knowledgeBaseDao().search(searchText) }
+                    val templates = async { db.promptTemplateDao().search(searchText) }
+                    val workflows = async { db.workflowDao().search(searchText) }
+                    val savedOutputs = async { db.savedOutputDao().search(searchText) }
+                    val tools = async { ranked(searchableTools, searchText) { listOf(it.label, it.description) } }
+                    val toolRuns = async { db.toolRunDao().search(searchText) }
+
+                    val newResults = SearchResults(
+                        chats = chats.await(),
+                        notes = notes.await(),
+                        documents = documents.await(),
+                        passages = passages.await(),
+                        personas = personas.await(),
+                        messages = messages.await(),
+                        memories = memories.await(),
+                        projects = projects.await(),
+                        workspaces = workspaces.await(),
+                        folders = folders.await(),
+                        knowledgeBases = knowledgeBases.await(),
+                        templates = templates.await(),
+                        workflows = workflows.await(),
+                        savedOutputs = savedOutputs.await(),
+                        tools = tools.await(),
+                        toolRuns = toolRuns.await(),
+                    )
+                    if (currentRequest == requestId) _results.value = newResults
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (t: Throwable) {
+                if (currentRequest == requestId) {
+                    _results.value = SearchResults()
+                    _error.value = t.toUserMessage()
+                }
+            } finally {
+                if (currentRequest == requestId) _searching.value = false
+            }
         }
     }
 

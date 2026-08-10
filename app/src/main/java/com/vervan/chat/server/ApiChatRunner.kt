@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.json.JSONArray
 import org.json.JSONObject
+import com.vervan.chat.validation.InputLimits
 
 /**
  * Runs one `/v1/chat/completions` turn end to end: thinking mode, the multi-hop tool loop, and
@@ -340,15 +341,18 @@ class ApiChatRunner(private val app: VervanApp) {
         fun parseClientTools(tools: JSONArray?): List<ClientTool> {
             if (tools == null) return emptyList()
             val out = mutableListOf<ClientTool>()
-            for (i in 0 until tools.length()) {
+            for (i in 0 until minOf(tools.length(), InputLimits.API_MAX_TOOLS)) {
                 val entry = tools.optJSONObject(i) ?: continue
                 if (entry.has("type") && entry.optString("type") != "function") continue
                 val fn = entry.optJSONObject("function") ?: continue
-                val name = fn.optString("name").takeIf { it.isNotBlank() } ?: continue
+                val name = fn.optString("name").takeIf { it.isNotBlank() && it.length <= 128 } ?: continue
+                val description = fn.optString("description").ifBlank { "(no description provided)" }
+                val parameters = (fn.optJSONObject("parameters") ?: JSONObject()).toString()
+                if (description.length > 2_000 || parameters.length > InputLimits.API_MAX_TOOL_PARAMETER_CHARS) continue
                 out += ClientTool(
                     name = name,
-                    description = fn.optString("description").ifBlank { "(no description provided)" },
-                    parametersJson = (fn.optJSONObject("parameters") ?: JSONObject()).toString()
+                    description = description,
+                    parametersJson = parameters
                 )
             }
             return out

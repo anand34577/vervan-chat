@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.ModelStatus
 import com.vervan.chat.system.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
@@ -117,31 +118,33 @@ class ModelDownloadService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
 
         if (active == null) {
-            return builder.setContentTitle("Preparing model download…").build()
+            return builder.setContentTitle(getString(R.string.notification_download_prepare)).build()
         }
 
         val progress = if (active.totalBytes != null && active.totalBytes > 0) {
             ((active.downloadedBytes.toFloat() / active.totalBytes) * 100).toInt().coerceIn(0, 100)
         } else null
         val statusLine = when (active.status) {
-            ModelStatus.WAITING_FOR_NETWORK -> "Waiting for network…"
-            ModelStatus.WAITING_FOR_WIFI -> "Waiting for Wi-Fi…"
-            ModelStatus.VERIFYING -> "Verifying…"
-            ModelStatus.IMPORTING -> "Importing…"
+            ModelStatus.WAITING_FOR_NETWORK -> getString(R.string.notification_waiting_network)
+            ModelStatus.WAITING_FOR_WIFI -> getString(R.string.notification_waiting_wifi)
+            ModelStatus.VERIFYING -> getString(R.string.notification_verifying)
+            ModelStatus.IMPORTING -> getString(R.string.notification_importing)
             else -> {
-                val fileNote = if (active.totalFileCount > 1) "File ${active.completedFileCount + 1} of ${active.totalFileCount} — " else ""
+                val fileNote = if (active.totalFileCount > 1) {
+                    getString(R.string.notification_download_file, active.completedFileCount + 1, active.totalFileCount)
+                } else ""
                 val bytesNote = if (active.totalBytes != null) "${StorageManager.formatBytes(active.downloadedBytes)} of ${StorageManager.formatBytes(active.totalBytes)}" else StorageManager.formatBytes(active.downloadedBytes)
                 val speedNote = active.speedBytesPerSecond?.takeIf { it > 0 }
-                    ?.let { " · ${StorageManager.formatBytes(it)}/s" }.orEmpty()
+                    ?.let { getString(R.string.notification_download_speed, StorageManager.formatBytes(it)) }.orEmpty()
                 fileNote + bytesNote + speedNote
             }
         }
-        builder.setContentTitle("Downloading ${active.displayName}").setContentText(statusLine)
+        builder.setContentTitle(getString(R.string.notification_download_title, active.displayName)).setContentText(statusLine)
         if (progress != null) builder.setProgress(100, progress, false) else builder.setProgress(0, 0, true)
 
         if (active.status in PAUSABLE_NOTIFY_STATUSES) {
-            builder.addAction(0, "Pause", actionIntent(ACTION_PAUSE, active))
-            builder.addAction(0, "Stop", actionIntent(ACTION_STOP, active))
+            builder.addAction(0, getString(R.string.action_pause), actionIntent(ACTION_PAUSE, active))
+            builder.addAction(0, getString(R.string.action_stop), actionIntent(ACTION_STOP, active))
         }
         return builder.build()
     }

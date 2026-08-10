@@ -259,7 +259,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         awaitClose { LlamaCppJni.nativeCancelGeneration(activeHandle) }
         // Same reasoning as LlmEngine.generate(): callbackFlow's default 64-slot buffer lets
         // trySend silently drop tokens when the native producer outruns the collector.
-    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
 
     // handle is a plain Long read/written on whichever thread calls load()/close(); the native
     // flag it signals is a std::atomic<bool> safe to set from any thread (see

@@ -51,12 +51,13 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.ContextGuideCard
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
@@ -73,8 +74,18 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.foundation.BorderStroke
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 
-private val libTabs = listOf("Personas", "Templates", "Workflows", "Saved")
+private val libTabs = listOf(
+    R.string.library_tab_personas,
+    R.string.library_tab_templates,
+    R.string.library_tab_workflows,
+    R.string.library_tab_saved
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,18 +99,24 @@ fun LibraryScreen(
     onNewTemplate: () -> Unit = {},
     onOpenNotes: () -> Unit = {}
 ) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val appContext = LocalContext.current.applicationContext as com.vervan.chat.VervanApp
+    val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(appContext) } })
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
-    val allPersonas by app.container.db.personaDao().observePersonas().collectAsStateWithLifecycle(initialValue = emptyList())
-    val allTemplates by app.container.db.promptTemplateDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val allWorkflows by app.container.db.workflowDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val allOutputs by app.container.db.savedOutputDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val allPersonas by vm.personas.collectAsStateWithLifecycle()
+    val allTemplates by vm.templates.collectAsStateWithLifecycle()
+    val allWorkflows by vm.workflows.collectAsStateWithLifecycle()
+    val allOutputs by vm.savedOutputs.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = tab, pageCount = { libTabs.size })
     val snackbarHostState = remember { SnackbarHostState() }
+    val currentTabLabel = stringResource(libTabs[tab])
+    val deleteSavedSuccess = stringResource(R.string.library_delete_saved_success)
+    val deleteSavedError = stringResource(R.string.library_delete_saved_error)
     val selectableIds = remember(tab, query, allPersonas, allTemplates, allWorkflows, allOutputs) {
         when (tab) {
             0 -> allPersonas.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
@@ -132,39 +149,33 @@ fun LibraryScreen(
                         val count = ids.size
                         val targetTab = tab
                         scope.launch {
-                            val now = System.currentTimeMillis()
-                            when (targetTab) {
-                                0 -> allPersonas.filter { it.id in ids && !it.isBuiltIn }.forEach { persona ->
-                                    app.container.db.chatDao().clearPersona(persona.id)
-                                    app.container.db.folderDao().clearDefaultPersona(persona.id)
-                                    app.container.db.projectDao().clearPersona(persona.id)
-                                    app.container.db.knowledgeBaseDao().clearDefaultPersona(persona.id)
-                                    app.container.db.personaDao().upsert(persona.copy(deletedAt = now))
+                            val result = vm.deleteSelected(targetTab, ids).await()
+                            snackbarHostState.showSnackbar(
+                                if (result.isSuccess) {
+                                    "Moved $count item${if (count == 1) "" else "s"} to the recycle bin"
+                                } else {
+                                    "Could not move the selected item${if (count == 1) "" else "s"}. Try again."
                                 }
-                                1 -> allTemplates.filter { it.id in ids && !it.isBuiltIn }.forEach { app.container.db.promptTemplateDao().upsert(it.copy(deletedAt = now)) }
-                                2 -> allWorkflows.filter { it.id in ids && !it.isBuiltIn }.forEach { app.container.db.workflowDao().upsert(it.copy(deletedAt = now)) }
-                                else -> allOutputs.filter { it.id in ids }.forEach { app.container.db.savedOutputDao().upsert(it.copy(deletedAt = now)) }
-                            }
-                            snackbarHostState.showSnackbar("Moved $count item${if (count == 1) "" else "s"} to the recycle bin")
+                            )
                         }
                         selected = emptySet()
                         selectionMode = false
                     },
-                    deleteContentDescription = "Delete selected"
+                    deleteContentDescription = stringResource(R.string.library_delete_selected)
                 )
             } else {
                 MediumTopAppBar(
                     title = {
                         Column {
-                            Text("Library")
-                            Text("Reusable building blocks", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.library_title))
+                            Text(stringResource(R.string.library_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     actions = {
-                        IconButton(onClick = onOpenNotes) { Icon(Icons.Outlined.NoteAlt, contentDescription = "Open notes") }
-                        if (tab == 0) IconButton(onClick = onNewPersona) { Icon(Icons.Filled.Add, contentDescription = "New persona") }
-                        if (tab == 1) IconButton(onClick = onNewTemplate) { Icon(Icons.Filled.Add, contentDescription = "New template") }
-                        if (tab == 2) IconButton(onClick = onNewWorkflow) { Icon(Icons.Filled.Add, contentDescription = "New workflow") }
+                        IconButton(onClick = onOpenNotes) { Icon(Icons.Outlined.NoteAlt, contentDescription = stringResource(R.string.library_open_notes)) }
+                        if (tab == 0) IconButton(onClick = onNewPersona) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.library_new_persona)) }
+                        if (tab == 1) IconButton(onClick = onNewTemplate) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.library_new_template)) }
+                        if (tab == 2) IconButton(onClick = onNewWorkflow) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.library_new_workflow)) }
                     }
                     // Long-press a row (Saved tab) to enter selection mode — no separate
                     // top-bar entry point, matching every other list screen in the app.
@@ -177,42 +188,60 @@ fun LibraryScreen(
           Column(Modifier.fillMaxSize()) {
             ContextGuideCard(
                 icon = Icons.Outlined.BookmarkBorder,
-                title = "Your reusable toolkit",
-        body = "Browse personas, prompts, workflows, and saved responses.",
+                title = stringResource(R.string.library_guide_title),
+                body = stringResource(R.string.library_guide_body),
                 modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
                 accentIndex = 4,
             )
             androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md) {
-                libTabs.forEachIndexed { index, label ->
+                libTabs.forEachIndexed { index, labelRes ->
                     Tab(
                         selected = tab == index,
                         onClick = {
                             scope.launch { pagerState.animateScrollToPage(index) }
                         },
-                        text = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+                        text = { Text(stringResource(labelRes), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                     )
                 }
             }
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search ${libTabs[tab].lowercase()}",
+                placeholder = stringResource(R.string.library_search_placeholder, currentTabLabel.lowercase()),
                 modifier = Modifier.padding(vertical = Space.sm)
             )
-            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
-                when (page) {
-                    0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                    1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                    2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                    else -> SavedTab(
-                        app = app,
-                        query = query,
-                        outputs = allOutputs,
-                        selectionMode = selectionMode,
-                        selected = selected,
-                        onToggleSelected = { id -> selected = if (id in selected) selected - id else selected + id },
-                        onEnterSelection = { id -> selectionMode = true; selected = selected + id }
-                    )
+            when {
+                error != null -> OperationErrorCard(
+                    title = stringResource(R.string.library_unavailable),
+                    message = error ?: stringResource(R.string.library_unavailable_message),
+                    recovery = stringResource(R.string.library_unavailable_recovery),
+                    modifier = Modifier.padding(top = Space.md),
+                    actionLabel = stringResource(R.string.action_retry),
+                    onAction = vm::retry
+                )
+                isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(top = Space.md))
+                else -> HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                    when (page) {
+                        0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                        1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                        2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                        else -> SavedTab(
+                            query = query,
+                            outputs = allOutputs,
+                            selectionMode = selectionMode,
+                            selected = selected,
+                            onToggleSelected = { id -> selected = if (id in selected) selected - id else selected + id },
+                            onEnterSelection = { id -> selectionMode = true; selected = selected + id },
+                            onDelete = { output ->
+                                scope.launch {
+                                    val result = vm.deleteSaved(output).await()
+                                    snackbarHostState.showSnackbar(
+                                        if (result.isSuccess) deleteSavedSuccess else deleteSavedError
+                                    )
+                                }
+                            }
+                        )
+                    }
                 }
             }
           }
@@ -235,9 +264,9 @@ private fun PersonasTab(
     if (personas.isEmpty()) {
         EmptyState(
             Icons.Outlined.Person,
-            if (query.isBlank()) "No personas yet" else "No matching personas",
-                    if (query.isBlank()) "Create a persona to reuse a voice and working style." else "Try another name or clear the search.",
-            actionLabel = if (query.isBlank()) "New persona" else null,
+            if (query.isBlank()) stringResource(R.string.library_personas_empty) else stringResource(R.string.library_personas_no_match),
+                    if (query.isBlank()) stringResource(R.string.library_personas_empty_body) else stringResource(R.string.library_try_another_name),
+            actionLabel = if (query.isBlank()) stringResource(R.string.library_new_persona) else null,
             onAction = if (query.isBlank()) onNewPersona else null
         )
         return
@@ -265,7 +294,7 @@ private fun PersonasTab(
             ) {
                 Column(Modifier.padding(Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("New persona", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
+                    Text(stringResource(R.string.library_new_persona_card), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
                 }
             }
         }
@@ -350,8 +379,8 @@ private fun TemplatesTab(
     if (templates.isEmpty()) {
         EmptyState(
             Icons.Outlined.Description,
-            if (query.isBlank()) "No templates yet" else "No matching templates",
-            if (query.isBlank()) "Create a reusable prompt from the add button above." else "Try another search."
+            if (query.isBlank()) stringResource(R.string.library_templates_empty) else stringResource(R.string.library_templates_no_match),
+            if (query.isBlank()) stringResource(R.string.library_templates_empty_body) else stringResource(R.string.library_try_another_search)
         )
         return
     }
@@ -399,8 +428,8 @@ private fun WorkflowsTab(
     if (workflows.isEmpty()) {
         EmptyState(
             Icons.Outlined.AccountTree,
-            if (query.isBlank()) "No workflows yet" else "No matching workflows",
-            if (query.isBlank()) "Build a repeatable sequence from the add button above." else "Try another search."
+            if (query.isBlank()) stringResource(R.string.library_workflows_empty) else stringResource(R.string.library_workflows_no_match),
+            if (query.isBlank()) stringResource(R.string.library_workflows_empty_body) else stringResource(R.string.library_try_another_search)
         )
         return
     }
@@ -423,36 +452,38 @@ private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> 
             Column(Modifier.weight(1f)) {
                 Text(workflow.name, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "${workflow.steps.size} step(s)" + if (workflow.description.isNotBlank()) " · ${workflow.description}" else "",
+                    stringResource(R.string.library_workflow_steps, workflow.steps.size) + if (workflow.description.isNotBlank()) " · ${workflow.description}" else "",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
-            if (!selectionMode) TextButton(onClick = onEdit) { Text("Edit") }
+            if (!selectionMode) TextButton(onClick = onEdit) { Text(stringResource(R.string.library_edit)) }
         }
     }
 }
 
 @Composable
 private fun SavedTab(
-    app: VervanApp,
     query: String,
     outputs: List<SavedOutput>,
     selectionMode: Boolean,
     selected: Set<String>,
     onToggleSelected: (String) -> Unit,
-    onEnterSelection: (String) -> Unit
+    onEnterSelection: (String) -> Unit,
+    onDelete: (SavedOutput) -> Unit
 ) {
     val filtered = remember(outputs, query) { outputs.filter { it.content.contains(query, ignoreCase = true) || it.label.contains(query, ignoreCase = true) } }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val shareSavedOutputLabel = stringResource(R.string.library_share)
+    val fromChatLabel = stringResource(R.string.library_from_chat)
 
     if (filtered.isEmpty()) {
         EmptyState(
             Icons.Outlined.BookmarkBorder,
-            if (query.isBlank()) "No saved outputs yet" else "No matching saved outputs",
-            if (query.isBlank()) "Save a response from chat and it will appear here for reuse." else "Try another search."
+            if (query.isBlank()) stringResource(R.string.library_saved_empty) else stringResource(R.string.library_saved_no_match),
+            if (query.isBlank()) stringResource(R.string.library_saved_empty_body) else stringResource(R.string.library_try_another_search)
         )
         return
     }
@@ -481,13 +512,13 @@ private fun SavedTab(
                     }
                     Column(Modifier.weight(1f)) {
                         Text(
-                            output.label.takeIf { it.isNotBlank() && !it.contains('-') } ?: "Saved output",
+                            output.label.takeIf { it.isNotBlank() && !it.contains('-') } ?: stringResource(R.string.library_saved_output),
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(
                             buildString {
                                 append(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(output.createdAt)))
-                                if (output.sourceChatId != null) append(" · From chat")
+                                if (output.sourceChatId != null) append(" · ").append(fromChatLabel)
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -502,14 +533,14 @@ private fun SavedTab(
                         )
                         if (!selectionMode) {
                             Row {
-                                TextButton(onClick = { clipboard.setText(output.content, scope) }) { Text("Copy") }
+                                TextButton(onClick = { clipboard.setText(output.content, scope) }) { Text(stringResource(R.string.library_copy)) }
                                 TextButton(onClick = {
                                     context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                         type = "text/plain"
                                         putExtra(android.content.Intent.EXTRA_TEXT, output.content)
-                                    }, "Share saved output"))
-                                }) { Text("Share") }
-                                TextButton(onClick = { scope.launch { app.container.db.savedOutputDao().upsert(output.copy(deletedAt = System.currentTimeMillis())) } }) { Text("Delete") }
+                                    }, shareSavedOutputLabel))
+                                }) { Text(stringResource(R.string.library_share)) }
+                                TextButton(onClick = { onDelete(output) }) { Text(stringResource(R.string.library_delete)) }
                             }
                         }
                     }

@@ -7,6 +7,12 @@ package com.vervan.chat.ui.nav
 internal object AppRoutes {
     const val HOME = "home"
     const val ONBOARDING = "onboarding"
+    const val CHATS = "chats"
+    const val LIBRARY = "library"
+    const val TOOLS = "tools"
+    const val SETTINGS = "settings"
+    const val SEARCH = "search"
+    const val PRIVACY_DASHBOARD = "settings/privacy-dashboard"
 
     const val CHAT = "chat/{chatId}"
     const val CHAT_START = "chat/{chatId}/start/{startAction}"

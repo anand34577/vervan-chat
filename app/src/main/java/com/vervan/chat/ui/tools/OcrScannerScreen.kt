@@ -50,6 +50,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.OcrExtractor
+import com.vervan.chat.model.ImportLimits
+import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,7 +84,10 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         isProcessing = true
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) } }
-            result.onSuccess { extractedText = it }
+            result.onSuccess {
+                if (it.length > InputLimits.OCR_TEXT_CHARS) errorText = "OCR returned too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)."
+                else extractedText = it
+            }
                 .onFailure { errorText = it.toUserMessage(); extractedText = "" }
             isProcessing = false
         }
@@ -99,8 +105,10 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         val file = pendingCameraFile
         pendingCameraFile = null
         if (success && file != null) {
-            ImageUtils.fixOrientation(file)
-            runOcr(file)
+            if (file.length() > ImportLimits.MAX_IMAGE_SOURCE_BYTES || !ImageUtils.normalizeForModel(file)) {
+                errorText = "The captured image is too large or unreadable. Choose a smaller JPG or PNG."
+                file.delete()
+            } else runOcr(file)
         } else file?.delete()
     }
     val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -116,8 +124,8 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 val dest = withContext(Dispatchers.IO) {
                     val (file, _) = newImageFile()
                     runCatching {
-                        context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
-                        ImageUtils.fixOrientation(file)
+                        context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyToLimited(it, ImportLimits.MAX_IMAGE_SOURCE_BYTES) } }
+                        check(ImageUtils.normalizeForModel(file)) { "The selected image is not readable" }
                         file
                     }.getOrElse { file.delete(); null }
                 }
@@ -190,7 +198,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                 )
                 OutlinedTextField(
                     value = extractedText,
-                    onValueChange = { extractedText = it },
+                    onValueChange = { extractedText = it.take(InputLimits.OCR_TEXT_CHARS) },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                     minLines = 6,
                     label = { Text("Recognized text") },
@@ -216,8 +224,12 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                                     }
                                 val name = "Scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
                                 val document = app.container.documentImportManager.importRawText(kb.id, name, extractedText)
-                                savedMessage = "Saved to Knowledge"
-                                onOpenDocument(document.id)
+                                if (document.status == com.vervan.chat.data.db.entities.DocumentStatus.READY) {
+                                    savedMessage = "Saved to Knowledge"
+                                    onOpenDocument(document.id)
+                                } else {
+                                    errorText = document.failureReason ?: "The scan could not be indexed (${document.status.name.lowercase()})."
+                                }
                             }
                         },
                         enabled = extractedText.isNotBlank()

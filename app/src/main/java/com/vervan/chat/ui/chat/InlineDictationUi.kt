@@ -29,6 +29,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 import java.util.Locale
 
@@ -52,9 +54,9 @@ internal fun InlineDictationRecording(
                 }
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text("Dictating into your message", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.dictation_recording_title), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Nothing is sent until you review it",
+                    stringResource(R.string.dictation_recording_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -80,10 +82,10 @@ internal fun InlineDictationRecording(
         ) {
             TextButton(onClick = onCancel) {
                 Icon(Icons.Filled.Close, contentDescription = null)
-                Text("Cancel", modifier = Modifier.padding(start = Space.xs))
+                Text(stringResource(R.string.action_cancel), modifier = Modifier.padding(start = Space.xs))
             }
             FilledIconButton(onClick = onStop, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Filled.Stop, contentDescription = "Stop dictation")
+                Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.dictation_stop))
             }
         }
     }
@@ -97,14 +99,14 @@ internal fun InlineDictationTranscribing(onCancel: () -> Unit) {
     ) {
         CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
         Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-            Text("Transcribing on this device", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.dictation_transcribing_title), style = MaterialTheme.typography.labelLarge)
             Text(
-                "Your recording is still available until this finishes.",
+                stringResource(R.string.dictation_transcribing_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        TextButton(onClick = onCancel) { Text("Cancel") }
+        TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
     }
 }
 
@@ -119,35 +121,35 @@ internal fun InlineDictationReview(
     onSend: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(Space.sm)) {
-        Text("Review transcript", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.dictation_review_title), style = MaterialTheme.typography.titleSmall)
         Text(
-            "Edit anything that was misunderstood, record more, or send when ready.",
+            stringResource(R.string.dictation_review_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs)
         )
         OutlinedTextField(
             value = transcript,
-            onValueChange = onTranscriptChange,
+            onValueChange = { onTranscriptChange(it.take(12_000)) },
             modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
             minLines = 2,
             maxLines = 5,
-            label = { Text("Transcript") },
-            supportingText = { Text("Transcribed offline · Not sent") }
+            label = { Text(stringResource(R.string.dictation_transcript_label)) },
+            supportingText = { Text(stringResource(R.string.dictation_transcript_hint)) }
         )
         Row(
             Modifier.fillMaxWidth().padding(top = Space.sm),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_cancel)) }
             TextButton(onClick = onRetry, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Replay, contentDescription = null)
-                Text("Retry", modifier = Modifier.padding(start = Space.xs))
+                Text(stringResource(R.string.action_retry), modifier = Modifier.padding(start = Space.xs))
             }
             TextButton(onClick = onRecordMore, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Filled.Mic, contentDescription = null)
-                Text("Add more", modifier = Modifier.padding(start = Space.xs))
+                Text(stringResource(R.string.dictation_add_more), modifier = Modifier.padding(start = Space.xs))
             }
         }
         Row(
@@ -159,12 +161,12 @@ internal fun InlineDictationReview(
                 onClick = onUseInComposer,
                 enabled = transcript.isNotBlank(),
                 modifier = Modifier.weight(1f)
-            ) { Text("Edit draft") }
+            ) { Text(stringResource(R.string.dictation_edit_draft)) }
             Button(
                 onClick = onSend,
                 enabled = transcript.isNotBlank(),
                 modifier = Modifier.weight(1f)
-            ) { Text("Send message") }
+            ) { Text(stringResource(R.string.dictation_send)) }
         }
     }
 }
@@ -178,11 +180,11 @@ internal fun InlineDictationError(message: String, onRetry: () -> Unit, onKeyboa
         contentColor = MaterialTheme.colorScheme.onErrorContainer
     ) {
         Column(Modifier.padding(Space.md)) {
-            Text("Dictation could not finish", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.dictation_error_title), style = MaterialTheme.typography.titleSmall)
             Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
             Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                TextButton(onClick = onKeyboard) { Text("Use keyboard") }
-                Button(onClick = onRetry) { Text("Record again") }
+                TextButton(onClick = onKeyboard) { Text(stringResource(R.string.dictation_use_keyboard)) }
+                Button(onClick = onRetry) { Text(stringResource(R.string.dictation_record_again)) }
             }
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ContentCard
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -94,6 +96,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
         }
     ) { padding ->
         ScrollablePage(padding) {
+            FeatureHero(
+                icon = Icons.Filled.GraphicEq,
+                eyebrow = "Natural conversation",
+                title = "Tune listening and speaking",
+                body = "Choose how Vervan hears, responds, plays speech, and protects your voice data."
+            )
             VoiceSettingsHeading("Voice quality")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {

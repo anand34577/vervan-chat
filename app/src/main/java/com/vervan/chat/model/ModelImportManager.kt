@@ -91,6 +91,12 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
 
         val sourceSize = queryFileSize(uri)
+        if (sourceSize != null && sourceSize < 0L) {
+            return@withContext ImportResult.Rejected("The selected provider reported an invalid file size")
+        }
+        if (sourceSize != null && sourceSize > ImportLimits.MAX_PRIMARY_MODEL_BYTES) {
+            return@withContext ImportResult.Rejected("This model is too large to import safely (maximum 16 GB)")
+        }
         val freeBytes = modelsDir.usableSpace
         if (sourceSize != null && freeBytes < sourceSize + STORAGE_SAFETY_MARGIN_BYTES) {
             return@withContext ImportResult.Rejected(
@@ -119,6 +125,9 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
                     while (true) {
                         val read = src.read(buffer)
                         if (read == -1) break
+                        if (bytesCopied + read > ImportLimits.MAX_PRIMARY_MODEL_BYTES) {
+                            throw InputLimitExceededException("Model exceeds the 16 GB safety limit")
+                        }
                         output.write(buffer, 0, read)
                         digest.update(buffer, 0, read)
                         bytesCopied += read
@@ -129,6 +138,9 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
                     }
                 }
             }
+        } catch (e: InputLimitExceededException) {
+            dest.delete()
+            return@withContext ImportResult.Rejected(e.message ?: "Model is too large to import safely")
         } catch (e: java.io.IOException) {
             dest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the model (${e.message})")
@@ -198,6 +210,16 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         if (!ModelFileSniffer.looksLikeGguf(context, mmprojUri)) {
             return@withContext ImportResult.Rejected("This doesn't look like a valid GGUF vision projector (missing GGUF header).")
         }
+        val mmprojSize = queryFileSize(mmprojUri)
+        if (mmprojSize != null && mmprojSize < 0L) {
+            return@withContext ImportResult.Rejected("The selected projector provider reported an invalid file size")
+        }
+        if (mmprojSize != null && mmprojSize > com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) {
+            return@withContext ImportResult.Rejected("The vision projector is too large (maximum 4 GB)")
+        }
+        if (mmprojSize != null && modelsDir.usableSpace < mmprojSize + STORAGE_SAFETY_MARGIN_BYTES) {
+            return@withContext ImportResult.Rejected("Not enough storage for the vision projector")
+        }
         val mmprojDest = File(modelsDir, "${System.currentTimeMillis()}_$mmprojName")
         val mmprojInput = context.contentResolver.openInputStream(mmprojUri)
         if (mmprojInput == null) {
@@ -206,8 +228,11 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
         try {
             mmprojInput.use { src ->
-                mmprojDest.outputStream().use { output -> src.copyTo(output) }
+                mmprojDest.outputStream().use { output -> src.copyToLimited(output, com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) }
             }
+        } catch (e: InputLimitExceededException) {
+            mmprojDest.delete()
+            return@withContext ImportResult.Rejected(e.message ?: "Vision projector is too large")
         } catch (e: java.io.IOException) {
             mmprojDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the projector (${e.message})")
@@ -237,6 +262,16 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         if (!ModelFileSniffer.looksLikeGguf(context, loraUri)) {
             return@withContext ImportResult.Rejected("This doesn't look like a valid GGUF LoRA adapter (missing GGUF header).")
         }
+        val loraSize = queryFileSize(loraUri)
+        if (loraSize != null && loraSize < 0L) {
+            return@withContext ImportResult.Rejected("The selected LoRA provider reported an invalid file size")
+        }
+        if (loraSize != null && loraSize > com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) {
+            return@withContext ImportResult.Rejected("The LoRA adapter is too large (maximum 4 GB)")
+        }
+        if (loraSize != null && modelsDir.usableSpace < loraSize + STORAGE_SAFETY_MARGIN_BYTES) {
+            return@withContext ImportResult.Rejected("Not enough storage for the LoRA adapter")
+        }
         val loraDest = File(modelsDir, "${System.currentTimeMillis()}_$loraName")
         val loraInput = context.contentResolver.openInputStream(loraUri)
         if (loraInput == null) {
@@ -245,8 +280,11 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
         try {
             loraInput.use { src ->
-                loraDest.outputStream().use { output -> src.copyTo(output) }
+                loraDest.outputStream().use { output -> src.copyToLimited(output, com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) }
             }
+        } catch (e: InputLimitExceededException) {
+            loraDest.delete()
+            return@withContext ImportResult.Rejected(e.message ?: "LoRA adapter is too large")
         } catch (e: java.io.IOException) {
             loraDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the LoRA adapter (${e.message})")
@@ -354,8 +392,11 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
         try {
             tokenizerInput.use { src ->
-                tokenizerDest.outputStream().use { output -> src.copyTo(output) }
+                tokenizerDest.outputStream().use { output -> src.copyToLimited(output, ImportLimits.MAX_TOKENIZER_BYTES) }
             }
+        } catch (e: InputLimitExceededException) {
+            tokenizerDest.delete()
+            return@withContext ImportResult.Rejected(e.message ?: "Tokenizer is too large")
         } catch (e: java.io.IOException) {
             tokenizerDest.delete()
             return@withContext ImportResult.Rejected("Ran out of storage while copying the tokenizer (${e.message})")

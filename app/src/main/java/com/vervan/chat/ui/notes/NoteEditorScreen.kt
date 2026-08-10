@@ -46,6 +46,9 @@ import com.vervan.chat.ui.common.ChipInputField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.DiffViewer
 import com.vervan.chat.ui.common.ErrorCard
+import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ValidationLimits
@@ -57,6 +60,9 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: NoteEditorViewModel = viewModel(factory = viewModelFactory { initializer { NoteEditorViewModel(app, noteId) } })
     val note by vm.note.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val loadError by vm.loadError.collectAsState()
+    val recordFound by vm.recordFound.collectAsState()
     val running by vm.running.collectAsState()
     val error by vm.error.collectAsState()
     val saving by vm.saving.collectAsState()
@@ -130,7 +136,24 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding).imePadding(), maxContentWidth = 840.dp) {
-        Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
+        when {
+            loadError != null -> OperationErrorCard(
+                title = "Note unavailable",
+                message = loadError.orEmpty(),
+                recovery = "Your other notes are safe. Retry the lookup or return to the notes list.",
+                actionLabel = "Retry",
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(Space.md)
+            )
+            isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
+            !recordFound -> EmptyState(
+                icon = Icons.Filled.Preview,
+                title = "Note not found",
+                body = "This note may have been deleted or moved to the recycle bin.",
+                actionLabel = "Back",
+                onAction = onBack
+            )
+            else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = title,
                 onValueChange = { title = it; vm.scheduleSave(it, content, tags) },
@@ -189,8 +212,9 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     onCancel = { pendingResult = null }
                 )
             }
+            }
         }
-        }
+    }
     }
 
     if (showKbPicker) {

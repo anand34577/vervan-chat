@@ -22,7 +22,9 @@ import com.vervan.chat.data.db.entities.TtsVoiceModel
 import com.vervan.chat.data.settings.SettingsRepository
 import com.vervan.chat.model.ImportResult
 import com.vervan.chat.model.ModelImportManager
+import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.system.NetworkAuditLog
+import com.vervan.chat.validation.InputLimits
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -481,10 +483,13 @@ class ModelDownloadRepository(
         var totalBytes = 0L
         files.forEach { f ->
             val src = File(f.tempPath)
+            require(src.isFile) { "Downloaded model file is missing: ${f.fileName}" }
+            require(src.length() <= InputLimits.MAX_ADAPTER_BYTES) { "Downloaded voice file exceeds the 4 GB limit" }
             val dst = File(voiceDir, f.fileName)
+            require(dst.canonicalPath.startsWith(voiceDir.canonicalPath + File.separator)) { "Invalid downloaded file name" }
             totalBytes += src.length()
             if (!src.renameTo(dst)) {
-                src.copyTo(dst, overwrite = true)
+                src.inputStream().use { input -> dst.outputStream().use { output -> input.copyToLimited(output, InputLimits.MAX_ADAPTER_BYTES) } }
                 src.delete()
             }
         }

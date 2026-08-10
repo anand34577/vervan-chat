@@ -12,22 +12,42 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.vervan.chat.system.toUserMessage
 
 enum class ChatFilter { ALL, PINNED, ARCHIVED }
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+    private val reload = MutableStateFlow(0)
 
-    private val allChats: StateFlow<List<Chat>> = db.chatDao().observeListableChats()
-        .onEach { _isLoading.value = false }
+    private val allChats: StateFlow<List<Chat>> = reload
+        .flatMapLatest { db.chatDao().observeListableChats() }
+        .onStart { _isLoading.value = true }
+        .onEach {
+            _isLoading.value = false
+            _error.value = null
+        }
+        .catch { throwable ->
+            if (throwable is CancellationException) throw throwable
+            _isLoading.value = false
+            _error.value = throwable.toUserMessage()
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val projectNames: StateFlow<Map<String, String>> = db.projectDao().observeAll()
@@ -70,6 +90,10 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setFilter(filter: ChatFilter) { _filter.value = filter }
+    fun retry() {
+        _error.value = null
+        reload.value += 1
+    }
 
     fun togglePin(chat: Chat) {
         viewModelScope.launch { db.chatDao().setPinned(chat.id, !chat.pinned) }

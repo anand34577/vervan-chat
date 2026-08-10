@@ -118,7 +118,7 @@ class BubbleService : Service() {
 
         val bubble = AccessibleBubbleImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
-            contentDescription = "Open Vervan Quick actions"
+            contentDescription = getString(R.string.screen_assist_open_quick)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0xFF161B29.toInt())
@@ -244,7 +244,7 @@ class BubbleService : Service() {
         }
         menuView = menu
         menuOwner = owner
-        bubbleView?.contentDescription = "Close Vervan Quick actions"
+        bubbleView?.contentDescription = getString(R.string.screen_assist_close_quick)
         menu.post {
             menuParams.x = bubbleParams.x.coerceIn(0, (resources.displayMetrics.widthPixels - menu.width).coerceAtLeast(0))
             val below = bubbleParams.y + (64 * density).toInt()
@@ -262,7 +262,7 @@ class BubbleService : Service() {
         menuView = null
         menuOwner?.onDestroy()
         menuOwner = null
-        bubbleView?.contentDescription = "Open Vervan Quick actions"
+        bubbleView?.contentDescription = getString(R.string.screen_assist_open_quick)
     }
 
     private fun launchCapture(
@@ -286,7 +286,7 @@ class BubbleService : Service() {
             captureUiActive = false
             continueConversationAfterCapture = false
             bubbleView?.visibility = View.VISIBLE
-            showResult("Screen capture could not be opened.")
+            showResult(getString(R.string.screen_assist_capture_unavailable))
         }
     }
 
@@ -304,7 +304,10 @@ class BubbleService : Service() {
                     ?.takeIf { continueExistingConversation }
                     ?.let { db.chatDao().getChat(it) }
                 val chat = existingChat ?: Chat(
-                    title = "Screen explanation · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date()),
+                    title = getString(
+                        R.string.screen_assist_chat_title,
+                        java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+                    ),
                     workspaceId = app.container.settingsRepository.activeWorkspaceId.first(),
                 ).also { db.chatDao().upsert(it) }
                 val prompt = screenCapturePrompt(existingChat != null)
@@ -322,7 +325,7 @@ class BubbleService : Service() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (t: Throwable) {
-                val message = "Couldn't explain the screen: ${t.toUserMessage()}"
+                val message = getString(R.string.screen_assist_error_with_reason, t.toUserMessage())
                 showResult(message)
             }
         }
@@ -339,7 +342,7 @@ class BubbleService : Service() {
                 val app = applicationContext as VervanApp
                 val db = app.container.db
                 val chat = db.chatDao().getChat(chatId) ?: run {
-                    showResult("This screen conversation is no longer available.")
+                    showResult(getString(R.string.screen_assist_chat_unavailable))
                     return@launch
                 }
                 val user = Message(chatId = chatId, parentId = chat.activeLeafId, role = MessageRole.USER, content = prompt)
@@ -348,7 +351,7 @@ class BubbleService : Service() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (t: Throwable) {
-                showResult("Couldn't send that question: ${t.toUserMessage()}")
+                showResult(getString(R.string.screen_assist_follow_up_error, t.toUserMessage()))
             }
         }
     }
@@ -374,10 +377,10 @@ class BubbleService : Service() {
             val loadedId = app.container.modelLoadCoordinator.state.value[ModelRole.GENERATION]?.currentModelId
             val model = loadedId?.let { db.modelDao().get(it) }
                 ?: db.modelDao().getActiveModel(ModelRole.GENERATION)
-                ?: error("No model is ready. Open Settings → AI models, then import or activate one.")
+                ?: error(getString(R.string.screen_assist_no_model))
             val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, com.vervan.chat.modelload.LoadTrigger.CHAT_SEND)
-            check(loaded.success) { loaded.errorMessage ?: "Could not load ${model.displayName}" }
-            check(app.container.visionEnabled(model)) { "The active model (${model.displayName}) doesn't support image understanding." }
+            check(loaded.success) { loaded.errorMessage ?: getString(R.string.screen_assist_load_error, model.displayName) }
+            check(app.container.visionEnabled(model)) { getString(R.string.screen_assist_vision_error, model.displayName) }
 
             val answer = StringBuilder()
             var lastPersistAt = 0L
@@ -402,7 +405,7 @@ class BubbleService : Service() {
             db.messageDao().update(reply.copy(state = MessageState.CANCELLED))
             throw cancelled
         } catch (t: Throwable) {
-            val message = "Couldn't answer that: ${t.toUserMessage()}"
+            val message = getString(R.string.screen_assist_answer_error, t.toUserMessage())
             db.messageDao().update(reply.copy(content = message, state = MessageState.FAILED))
             showResult(message)
         }
@@ -474,7 +477,7 @@ class BubbleService : Service() {
         val text = resultTextState.value.takeIf { it.isNotBlank() } ?: return
         runCatching {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                .setSensitiveText(text, serviceScope, "Screen explanation")
+                .setSensitiveText(text, serviceScope, getString(R.string.screen_assist_explain))
         }
     }
 
@@ -538,15 +541,15 @@ class BubbleService : Service() {
 
     private fun buildNotification(): android.app.Notification {
         val mgr = getSystemService(NotificationManager::class.java)
-        mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Quick-action bubble", NotificationManager.IMPORTANCE_LOW))
+        mgr.createNotificationChannel(NotificationChannel(CHANNEL_ID, getString(R.string.notification_quick_channel), NotificationManager.IMPORTANCE_LOW))
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_view)
-            .setContentTitle("Quick-action bubble is on")
-            .setContentText("Tap to explain the screen. Turn off in Settings → Privacy & security.")
+            .setContentTitle(getString(R.string.notification_quick_title))
+            .setContentText(getString(R.string.notification_quick_body))
             .setContentIntent(openApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -12,6 +12,9 @@ interface PromptTemplateDao : BaseDao<PromptTemplate> {
     @Query("SELECT * FROM prompt_templates WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<PromptTemplate>>
 
+    @Query("SELECT * FROM prompt_templates WHERE deletedAt IS NULL AND (name LIKE '%' || :q || '%' OR description LIKE '%' || :q || '%' OR body LIKE '%' || :q || '%') ORDER BY name ASC LIMIT 20")
+    suspend fun search(q: String): List<PromptTemplate>
+
     @Query("SELECT * FROM prompt_templates WHERE name = :name AND deletedAt IS NULL LIMIT 1")
     suspend fun findByName(name: String): PromptTemplate?
 
