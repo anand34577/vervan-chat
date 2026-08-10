@@ -105,15 +105,17 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 message = loadError ?: stringResource(R.string.document_unavailable_message),
                 recovery = stringResource(R.string.document_unavailable_recovery),
                 actionLabel = stringResource(R.string.action_retry),
-                onAction = vm::retryLoad
+                onAction = vm::retryLoad,
+                modifier = Modifier.padding(top = Space.sm)
             )
-            isLoading -> LoadingSkeletonList(rows = 7)
+            isLoading -> LoadingSkeletonList(rows = 7, modifier = Modifier.padding(top = Space.sm))
             document == null -> EmptyState(
                 icon = Icons.Filled.Description,
                 title = stringResource(R.string.document_not_found),
                 body = stringResource(R.string.document_not_found_body),
                 actionLabel = stringResource(R.string.action_back),
-                onAction = onBack
+                onAction = onBack,
+                modifier = Modifier.padding(top = Space.sm)
             )
             else -> Column(Modifier.fillMaxSize()) {
             document?.let { doc ->

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "generatedAt": 1786379223384,
+  "models": [
+    {
+      "modelId": "gemma-4-e2b-it-litert",
+      "displayName": "Gemma 4 E2B IT",
+      "publisher": "Google (litert-community mirror)",
+      "description": "Google's 2B-parameter instruction-tuned chat model, packaged for on-device LiteRT-LM. Works on every 64-bit Vervan build with no optional native runtime required.",
+      "tasks": ["chat"],
+      "languages": ["en"],
+      "license": {
+        "name": "Gemma Terms of Use",
+        "url": "https://ai.google.dev/gemma/terms",
+        "redistributionPermitted": true,
+        "gated": false,
+        "commercialUseAllowed": true,
+        "acceptableUseRestrictions": [
+          "Must comply with Google's Gemma Prohibited Use Policy"
+        ],
+        "attributionRequired": false,
+        "usageThresholdClause": null,
+        "acceptanceHash": ""
+      },
+      "modelCardUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+      "variants": [
+        {
+          "variantId": "gemma-4-e2b-it-litert-lm-v1",
+          "version": "1",
+          "runtime": "litert-lm",
+          "format": "litertlm",
+          "quantization": "mixed",
+          "capabilities": ["chat"],
+          "totalSizeBytes": 2588147712,
+          "defaultContextTokens": 4096,
+          "requirements": {
+            "minAppVersion": 1,
+            "minRuntimeVersion": null,
+            "supportedAbis": ["arm64-v8a"],
+            "estimatedMinRamBytes": 3500000000,
+            "acceleratorRequirement": "none"
+          },
+          "artifacts": [
+            {
+              "artifactId": "container",
+              "role": "runtime_container",
+              "installPath": "model.litertlm",
+              "sizeBytes": 2588147712,
+              "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+              "sources": [
+                {
+                  "provider": "huggingface",
+                  "repository": "litert-community/gemma-4-E2B-it-litert-lm",
+                  "revision": "9262660a1676eed6d0c477ab1a86344430854664",
+                  "path": "gemma-4-E2B-it.litertlm"
+                }
+              ]
+            }
+          ],
+          "runtimeConfig": {
+            "runtime_container": "container"
+          }
+        }
+      ]
+    }
+  ]
+}

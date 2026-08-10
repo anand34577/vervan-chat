@@ -4,6 +4,7 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -99,7 +100,8 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
         PageContainer(Modifier.padding(padding)) {
           LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(Space.xs)
+            contentPadding = PaddingValues(top = Space.sm, bottom = Space.xl),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
            ) {
              item {
                  FeatureHero(
