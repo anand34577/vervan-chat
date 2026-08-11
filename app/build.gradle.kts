@@ -128,8 +128,8 @@ android {
         applicationId = "com.vervan.chat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.1"
+        versionCode = 2
+        versionName = "1.1.2"
 
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
