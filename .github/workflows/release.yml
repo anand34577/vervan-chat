@@ -43,10 +43,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # ubuntu-latest ships an Android SDK with ANDROID_HOME/sdkmanager already on PATH — just
-      # add the NDK and the SDK's own CMake+Ninja package the native build needs.
+      # ubuntu-latest ships an Android SDK at ANDROID_HOME, but sdkmanager itself isn't on PATH —
+      # it lives under cmdline-tools/<version>/bin. Add the *newest* installed cmdline-tools dir
+      # rather than hardcoding a version, since the runner image's bundled version drifts.
       - name: Install NDK + CMake
         run: |
+          SDKMANAGER_BIN="$(dirname "$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 2 -name sdkmanager | sort -V | tail -1)")"
+          echo "$SDKMANAGER_BIN" >> "$GITHUB_PATH"
+          export PATH="$SDKMANAGER_BIN:$PATH"
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "ndk;28.1.13356709" "cmake;3.22.1" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
