@@ -202,6 +202,23 @@ Once the catalogue is configured, build the Play upload artifact with:
 ./gradlew :app:bundleRelease
 ```
 
+Release builds also fail closed without an app signing key. Supply it the same way:
+
+```properties
+release.storeFile=/path/to/your.keystore
+release.storePassword=...
+release.keyAlias=...
+release.keyPassword=...
+```
+
+CI equivalents: `VERVAN_RELEASE_STORE_FILE`, `VERVAN_RELEASE_STORE_PASSWORD`, `VERVAN_RELEASE_KEY_ALIAS`, `VERVAN_RELEASE_KEY_PASSWORD`.
+
+### Continuous integration
+
+[`.github/workflows/android.yml`](.github/workflows/android.yml) runs a debug build/lint/test verification on every push (no native backends — `llamacpp.dir`/`whispercpp.dir` are unset in CI, so that target is skipped, same as an offline checkout).
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on a `vX.Y.Z` tag push: it builds llama.cpp and whisper.cpp **CPU-only** for Android (`scripts/ci/build-native-android-linux.sh` — a Linux/CI-only counterpart to the Vulkan-capable `scripts/build-llama-android-vulkan.ps1`/`scripts/build-whisper-android.ps1`, which stay Windows-only since the Vulkan backend needs MSVC + the Vulkan SDK on the host), signs the resulting APKs, and attaches them to a GitHub Release. See the comments at the top of `release.yml` for the repo secrets it needs. Build the Vulkan-accelerated variant locally if you need GPU acceleration in a release.
+
 ## Project map
 
 ```text

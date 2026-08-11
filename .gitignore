@@ -27,3 +27,4 @@ local.properties
 brag-output
 docs/mockup
 app/release
+/release.keystore

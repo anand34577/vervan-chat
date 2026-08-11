@@ -1,0 +1,100 @@
+name: Android Release
+
+# Builds signed release APKs with the llama.cpp and whisper.cpp native backends compiled in
+# (CPU-only — see scripts/ci/build-native-android-linux.sh for why: the Vulkan GPU backend needs
+# MSVC + the Vulkan SDK on the host, which only scripts/build-llama-android-vulkan.ps1's Windows
+# dev-machine path has) and attaches them to a GitHub Release. .github/workflows/android.yml
+# stays the lightweight per-push verify job with no native backends.
+#
+# Required repo secrets (Settings > Secrets and variables > Actions):
+#   RELEASE_KEYSTORE_BASE64  - `base64 -w0 your.keystore` output
+#   RELEASE_STORE_PASSWORD   - keystore password
+#   RELEASE_KEY_ALIAS        - signing key alias
+#   RELEASE_KEY_PASSWORD     - signing key password
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
+      LLAMA_CPP_REV: 3da5396a9d57a81e07a8b2c6f41c83e5cae2bf46
+      WHISPER_CPP_REPO: https://github.com/ggml-org/whisper.cpp
+      WHISPER_CPP_REV: 080bbbe85230f624f0b52127f1ae1218247989f9
+      # Model Store catalogue verification key/endpoints — public values, not secrets (see
+      # docs/model-store-publishing.md).
+      VERVAN_CATALOG_PUBLIC_KEYS: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECmNLZpwKtmgeGuu6Z4O+qXc8oi4/0mpAX4oxqlFDGGiaXy/KDzbP+1mmWbGbR8gu0EnFuNRO2onbY0ESOrXncA==
+      VERVAN_CATALOG_ENDPOINTS: https://anand34577.github.io/vervan-model-store/api/v1/latest.json,https://raw.githubusercontent.com/anand34577/vervan-model-store/main/docs/api/v1/latest.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # ubuntu-latest ships an Android SDK with ANDROID_HOME/sdkmanager already on PATH — just
+      # add the NDK and the SDK's own CMake+Ninja package the native build needs.
+      - name: Install NDK + CMake
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "ndk;28.1.13356709" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmake/3.22.1/bin" >> "$GITHUB_PATH"
+
+      - name: Install ninja
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --quiet "$LLAMA_CPP_REPO" /tmp/llama.cpp
+          git -C /tmp/llama.cpp checkout --quiet "$LLAMA_CPP_REV"
+
+      - name: Clone whisper.cpp
+        run: |
+          git clone --quiet "$WHISPER_CPP_REPO" /tmp/whisper.cpp
+          git -C /tmp/whisper.cpp checkout --quiet "$WHISPER_CPP_REV"
+
+      - name: Build native libs (CPU-only)
+        run: LLAMA_CPP_DIR=/tmp/llama.cpp WHISPER_CPP_DIR=/tmp/whisper.cpp bash scripts/ci/build-native-android-linux.sh
+
+      - name: Decode signing keystore
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Write local.properties
+        run: |
+          cat > local.properties <<EOF
+          sdk.dir=$ANDROID_HOME
+          llamacpp.dir=/tmp/llama.cpp
+          llamacpp.autobuild=false
+          whispercpp.dir=/tmp/whisper.cpp
+          whispercpp.autobuild=false
+          EOF
+
+      - name: Build signed release APKs
+        env:
+          VERVAN_RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
+          VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
