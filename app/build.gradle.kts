@@ -26,6 +26,22 @@ val catalogEndpoints = localProperties.getProperty("catalog.endpoints")
     ?: System.getenv("VERVAN_CATALOG_ENDPOINTS")
     ?: ""
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+// Release signing — same local.properties-or-env convention as the catalogue config above. Not
+// set -> release builds stay unsigned (verifyReleaseSigning below fails the build instead of
+// silently shipping an unsigned APK). CI supplies these as protected/masked GitLab CI/CD
+// variables; the keystore itself is never committed (see .gitignore).
+val releaseStoreFile = localProperties.getProperty("release.storeFile")
+    ?: System.getenv("VERVAN_RELEASE_STORE_FILE")
+val releaseStorePassword = localProperties.getProperty("release.storePassword")
+    ?: System.getenv("VERVAN_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = localProperties.getProperty("release.keyAlias")
+    ?: System.getenv("VERVAN_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = localProperties.getProperty("release.keyPassword")
+    ?: System.getenv("VERVAN_RELEASE_KEY_PASSWORD")
+val releaseSigningAvailable = !releaseStoreFile.isNullOrBlank() && File(releaseStoreFile).isFile &&
+    !releaseStorePassword.isNullOrBlank() && !releaseKeyAlias.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank()
+
 val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
 
 // Availability is decided by the *source* checkout, not by build outputs: the libraries may not
@@ -152,6 +168,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningAvailable) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Shrinking only — obfuscation is disabled in proguard-rules.pro because crash
@@ -159,6 +186,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseSigningAvailable) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -266,9 +296,19 @@ val verifyCatalogRelease by tasks.registering {
         }
     }
 }
+val verifyReleaseSigning by tasks.registering {
+    doLast {
+        check(releaseSigningAvailable) {
+            "Release builds require a signing key. Set release.storeFile/storePassword/keyAlias/keyPassword " +
+                "in local.properties, or VERVAN_RELEASE_STORE_FILE/VERVAN_RELEASE_STORE_PASSWORD/" +
+                "VERVAN_RELEASE_KEY_ALIAS/VERVAN_RELEASE_KEY_PASSWORD in CI."
+        }
+    }
+}
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     dependsOn(verifyLlamaCppRelease)
     dependsOn(verifyCatalogRelease)
+    dependsOn(verifyReleaseSigning)
 }
 
 kotlin {
