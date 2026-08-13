@@ -1,18 +1,26 @@
 package com.vervan.chat.ui.graph
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,7 +39,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -52,8 +60,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
@@ -82,13 +92,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    VervanSearchField(
-                        value = query,
-                        onValueChange = vm::setQuery,
-                        placeholder = "Jump to anything"
-                    )
-                },
+                title = { Text("Knowledge graph") },
                 navigationIcon = {
                     IconButton(onClick = { if (canGoBack) vm.back() else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -97,13 +101,29 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        PageContainer(Modifier.fillMaxSize().padding(padding), maxContentWidth = 1040.dp) {
+          Column(Modifier.fillMaxSize().padding(top = Space.sm)) {
+            FeatureHero(
+                icon = Icons.Filled.AutoAwesome,
+                eyebrow = "CONNECTED CONTEXT",
+                title = "Knowledge graph",
+                body = "Explore how your workspace, conversations, sources, and memories connect.",
+                modifier = Modifier.padding(bottom = Space.md)
+            )
+            VervanSearchField(
+                value = query,
+                onValueChange = vm::setQuery,
+                placeholder = "Search your connected context",
+                modifier = Modifier.padding(bottom = Space.md)
+            )
             if (query.isNotBlank()) {
                 if (searchResults.isEmpty()) {
                     EmptyState(
                         icon = Icons.Filled.AutoAwesome,
                         title = "No matches yet",
-                        body = "Try a shorter name or search for a workspace, chat, note, document, or memory."
+                        body = "Try a shorter name or search for a workspace, chat, note, document, or memory.",
+                        modifier = Modifier.fillMaxSize(),
+                        centered = true
                     )
                 } else {
                     PageContainer(Modifier.fillMaxSize(), maxContentWidth = 840.dp) {
@@ -111,7 +131,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                             Modifier.fillMaxSize().padding(vertical = Space.sm),
                             colors = SurfaceRole.Card.cardColors(),
                             border = SurfaceRole.Card.border(),
-                            shape = MaterialTheme.shapes.extraLarge
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             LazyColumn {
                                 items(searchResults, key = { it.type.name + it.id }) { node ->
@@ -122,7 +142,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Surface(
-                                            shape = CircleShape,
+                                            shape = MaterialTheme.shapes.small,
                                             color = nodeColor(node.type).copy(alpha = 0.16f)
                                         ) {
                                             Icon(
@@ -149,16 +169,24 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                     }
                 }
             } else if (center == null) {
-                EmptyState(icon = Icons.Filled.AutoAwesome, title = "Nothing to graph yet", body = "Create a workspace, chat, or note to see connections here.")
+                EmptyState(
+                    icon = Icons.Filled.AutoAwesome,
+                    title = "Nothing to graph yet",
+                    body = "Create a workspace, chat, or note to see connections here.",
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true
+                )
             } else {
                 GraphCanvas(
                     center = center!!,
                     neighbors = neighbors,
                     loading = loading,
                     onOpenEntity = onOpenEntity,
-                    onSelectNeighbor = vm::open
+                    onSelectNeighbor = vm::open,
+                    modifier = Modifier.weight(1f)
                 )
             }
+          }
         }
     }
 }
@@ -169,23 +197,44 @@ private fun GraphCanvas(
     neighbors: List<GraphEdge>,
     loading: Boolean,
     onOpenEntity: (GraphNode) -> Unit,
-    onSelectNeighbor: (GraphNode) -> Unit
+    onSelectNeighbor: (GraphNode) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val visibleNeighbors = neighbors.take(8)
+    Column(modifier.fillMaxSize()) {
+      Surface(
+        modifier = Modifier.fillMaxWidth().weight(1f).heightIn(min = 300.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
+      ) {
+       BoxWithConstraints(Modifier.fillMaxSize()) {
         val widthPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
         val heightPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
-        val centerOffset = Offset(widthPx / 2f, heightPx / 2f)
-        val radiusPx = min(widthPx, heightPx) / 2f * 0.68f
-        val positions = neighbors.mapIndexed { index, edge ->
-            val angle = (2 * Math.PI * index / neighbors.size.coerceAtLeast(1)) - Math.PI / 2
+        val centerOffset = Offset(widthPx / 2f, heightPx * 0.55f)
+        val radiusPx = min(widthPx, heightPx) * 0.30f
+        val positions = visibleNeighbors.mapIndexed { index, edge ->
+            val angle = (2 * Math.PI * index / visibleNeighbors.size.coerceAtLeast(1)) - Math.PI / 2
             edge to Offset(
                 centerOffset.x + (radiusPx * cos(angle)).toFloat(),
                 centerOffset.y + (radiusPx * sin(angle)).toFloat()
             )
         }
         val graphLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.10f)
+        val gridStep = with(androidx.compose.ui.platform.LocalDensity.current) { 36.dp.toPx() }
 
         Canvas(Modifier.fillMaxSize()) {
+            var x = 0f
+            while (x < size.width) {
+                drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
+                x += gridStep
+            }
+            var y = 0f
+            while (y < size.height) {
+                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+                y += gridStep
+            }
             positions.forEach { (_, pos) ->
                 drawLine(
                     color = graphLineColor,
@@ -200,17 +249,17 @@ private fun GraphCanvas(
             modifier = Modifier.align(Alignment.TopStart).padding(Space.lg),
             colors = SurfaceRole.Card.cardColors(),
             border = SurfaceRole.Card.border(),
-            shape = MaterialTheme.shapes.extraLarge
+            shape = MaterialTheme.shapes.medium
         ) {
             Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
-                Text("Connected context", style = MaterialTheme.typography.titleSmall)
+                Text("CONNECTED CONTEXT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(
-                    "${neighbors.size} connection${if (neighbors.size == 1) "" else "s"} around ${center.label}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "${neighbors.size} connection${if (neighbors.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Text("Focused on ${center.label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
@@ -221,16 +270,16 @@ private fun GraphCanvas(
                 node = center,
                 emphasized = true,
                 modifier = Modifier.offset(
-                    x = (centerOffset.x - 70.dp.toPx() / 2).toDp(),
-                    y = (centerOffset.y - 24.dp.toPx()).toDp()
+                    x = (centerOffset.x - 90.dp.toPx()).toDp(),
+                    y = (centerOffset.y - 28.dp.toPx()).toDp()
                 ),
                 trailingAction = { IconButton(onClick = { onOpenEntity(center) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open") } }
             )
             positions.forEach { (edge, pos) ->
                 Column(
                     modifier = Modifier.offset(
-                        x = (pos.x - 60.dp.toPx() / 2).toDp(),
-                        y = (pos.y - 32.dp.toPx()).toDp()
+                        x = (pos.x - 66.dp.toPx()).toDp(),
+                        y = (pos.y - 34.dp.toPx()).toDp()
                     ).widthIn(max = 120.dp)
                 ) {
                     Text(
@@ -247,7 +296,7 @@ private fun GraphCanvas(
         }
 
         if (loading) {
-            CircularProgressIndicator(modifier = Modifier.padding(Space.lg))
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.TopEnd).padding(Space.lg))
         }
         if (!loading && neighbors.isEmpty()) {
             Text(
@@ -257,6 +306,32 @@ private fun GraphCanvas(
                 modifier = Modifier.offset(y = 8.dp).padding(Space.lg)
             )
         }
+       }
+      }
+      if (neighbors.isNotEmpty()) {
+          VervanSectionHeader("Connections", count = neighbors.size, topPadding = Space.md, bottomPadding = Space.sm)
+          LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(Space.sm),
+              contentPadding = PaddingValues(bottom = Space.sm)
+          ) {
+              itemsIndexed(neighbors, key = { _, edge -> edge.node.type.name + edge.node.id }) { _, edge ->
+                  Surface(
+                      onClick = { onSelectNeighbor(edge.node) },
+                      shape = MaterialTheme.shapes.small,
+                      color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                  ) {
+                      Row(Modifier.padding(horizontal = Space.sm, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                          Icon(nodeIcon(edge.node.type), contentDescription = null, tint = nodeColor(edge.node.type), modifier = Modifier.size(18.dp))
+                          Column(Modifier.padding(start = Space.sm).widthIn(max = 160.dp)) {
+                              Text(edge.node.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                              Text(edge.relation, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          }
+                      }
+                  }
+              }
+          }
+      }
     }
 }
 
@@ -275,10 +350,10 @@ private fun NodeChip(
             containerColor = if (emphasized) nodeColor(node.type).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         border = if (emphasized) BorderStroke(1.dp, nodeColor(node.type).copy(alpha = 0.58f)) else SurfaceRole.Raised.border(),
-        shape = if (emphasized) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(Modifier.padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = nodeColor(node.type).copy(alpha = 0.25f)) {
+            Surface(shape = MaterialTheme.shapes.small, color = nodeColor(node.type).copy(alpha = 0.25f)) {
                 Icon(nodeIcon(node.type), contentDescription = null, tint = nodeColor(node.type), modifier = Modifier.padding(4.dp))
             }
             Text(

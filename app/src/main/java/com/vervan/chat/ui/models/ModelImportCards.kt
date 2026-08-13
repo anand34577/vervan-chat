@@ -25,7 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,12 +44,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -151,7 +150,7 @@ internal fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: 
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(top = Space.xs),
             )
-            Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md)) {
+            Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md), shape = MaterialTheme.shapes.small) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.model_set_up_for_me), modifier = Modifier.padding(start = Space.sm))
             }
@@ -180,7 +179,7 @@ internal fun ModelManagerSwitcher(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(Modifier.padding(4.dp)) {
@@ -213,7 +212,7 @@ private fun ModelManagerSwitchItem(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
         contentColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         shadowElevation = if (selected) 1.dp else 0.dp
@@ -227,7 +226,7 @@ private fun ModelManagerSwitchItem(
             if (supportingLabel != null) {
                 Surface(
                     modifier = Modifier.padding(start = Space.sm),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
@@ -248,7 +247,7 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Icon(
@@ -269,7 +268,7 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.lg)
         )
-        Button(onClick = onDiscover) {
+        Button(onClick = onDiscover, shape = MaterialTheme.shapes.small) {
             Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.model_discover_models), modifier = Modifier.padding(start = Space.sm))
         }
@@ -1192,6 +1191,7 @@ internal fun ModelCard(
                     Button(
                         onClick = onToggleLoad,
                         enabled = !busy,
+                        shape = MaterialTheme.shapes.small,
                         colors = if (isLoaded) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant) else ButtonDefaults.buttonColors()
                     ) {
                         Icon(if (isLoaded) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))

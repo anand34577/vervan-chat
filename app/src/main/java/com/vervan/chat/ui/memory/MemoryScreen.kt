@@ -19,15 +19,15 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import com.vervan.chat.ui.common.collectAsState
@@ -143,7 +143,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                     } else {
                         SurfaceRole.Card.border()
                     },
-                    shape = MaterialTheme.shapes.extraLarge
+                    shape = MaterialTheme.shapes.medium
                 ) {
                     Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
@@ -232,7 +232,7 @@ private fun MemorySnapshotCard(total: Int, enabled: Int, modifier: Modifier = Mo
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.lg),

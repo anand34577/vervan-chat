@@ -27,4 +27,8 @@ data class Folder(
     val deletedAt: Long? = null
 ) {
     fun kbIdList(): List<String> = defaultKnowledgeBaseIds.split(',').filter { it.isNotBlank() }
+
+    companion object {
+        const val DEFAULT_FOLDER_ID = "default-folder"
+    }
 }

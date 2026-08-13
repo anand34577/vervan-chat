@@ -14,10 +14,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
@@ -110,6 +110,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                                 AccentSwatch(
                                     accent = accent,
                                     selected = accentTheme == accent,
+                                    enabled = !dynamicColor,
                                     onClick = { vm.setAccentTheme(accent) }
                                 )
                             }
@@ -126,8 +127,18 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
-                        Switch(checked = oledTrueBlack, onCheckedChange = { vm.setOledTrueBlack(it) })
+                        Text(
+                            "OLED true black (dark theme)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (themeMode == ThemeMode.LIGHT) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f).padding(end = Space.sm),
+                        )
+                        Switch(
+                            checked = oledTrueBlack,
+                            onCheckedChange = { vm.setOledTrueBlack(it) },
+                            enabled = themeMode != ThemeMode.LIGHT,
+                        )
                     }
                 }
             }

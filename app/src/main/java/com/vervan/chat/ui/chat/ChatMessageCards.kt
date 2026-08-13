@@ -29,7 +29,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
@@ -84,7 +84,7 @@ internal fun ClarificationCard(
                     verticalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     request.options.forEach { option ->
-                        AssistChip(onClick = { onReply(option) }, enabled = enabled, label = { Text(option) })
+                        AssistChip(onClick = { onReply(option) }, enabled = enabled, shape = MaterialTheme.shapes.small, label = { Text(option) })
                     }
                 }
             }
@@ -255,6 +255,7 @@ internal fun SourceCards(
                 val obj = array.getJSONObject(i)
                 AssistChip(
                     onClick = { selected = obj },
+                    shape = MaterialTheme.shapes.small,
                     label = {
                         val page = obj.optInt("pageNumber", -1)
                         Text(
@@ -532,7 +533,7 @@ internal fun FeedbackReasonDialog(onDismiss: () -> Unit, onSelect: (String) -> U
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 listOf("Repetitive", "Factually wrong", "Off-topic", "Too short", "Too long", "Other").forEach { reason ->
-                    AssistChip(onClick = { onSelect(reason) }, label = { Text(reason) })
+                    AssistChip(onClick = { onSelect(reason) }, shape = MaterialTheme.shapes.small, label = { Text(reason) })
                 }
             }
         },

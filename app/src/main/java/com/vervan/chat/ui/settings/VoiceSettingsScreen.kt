@@ -16,11 +16,11 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -238,23 +238,26 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         FilterChip(
                             selected = ttsEnginePreference == "AUTO",
                             onClick = { vm.setTtsEnginePreference("AUTO") },
+                            shape = MaterialTheme.shapes.extraSmall,
                             label = { Text("Auto (Piper)") }
                         )
                         FilterChip(
                             selected = ttsEnginePreference == "KOKORO",
                             onClick = { vm.setTtsEnginePreference("KOKORO") },
                             enabled = kokoroDownloaded,
+                            shape = MaterialTheme.shapes.extraSmall,
                             label = { Text(if (kokoroDownloaded) "Kokoro" else "Kokoro (download below)") }
                         )
                         FilterChip(
                             selected = ttsEnginePreference == "SUPERTONIC",
                             onClick = { vm.setTtsEnginePreference("SUPERTONIC") },
                             enabled = supertonicDownloaded,
+                            shape = MaterialTheme.shapes.extraSmall,
                             label = { Text(if (supertonicDownloaded) "Supertonic" else "Supertonic (download in Model Manager)") }
                         )
                     }
                     if (!supertonicDownloaded) {
-                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
+                        com.vervan.chat.ui.common.VervanTextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
                             Text("Open Model Manager to download Supertonic", style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
@@ -280,11 +283,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                 FilterChip(
                                     selected = supertonicVoiceVariant == voice.language,
                                     onClick = { vm.setSupertonicVoiceVariant(voice.language) },
+                                    shape = MaterialTheme.shapes.extraSmall,
                                     label = { Text(label) }
                                 )
                             }
                         }
-                        androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
+                        com.vervan.chat.ui.common.VervanTextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
                             Text("Download more Supertonic voices in Model Manager", style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -430,13 +434,14 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                     FilterChip(
                                         selected = whisperModelVariant == model.language,
                                         onClick = { vm.setWhisperModelVariant(model.language) },
+                                        shape = MaterialTheme.shapes.extraSmall,
                                         label = { Text(label) }
                                     )
                                 }
                             }
                         }
                     }
-                    androidx.compose.material3.TextButton(
+                    com.vervan.chat.ui.common.VervanTextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.xs)
                     ) { Text("Download or import in Model Manager") }
@@ -472,7 +477,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         "Manage downloaded Hindi and English voices in Model Manager.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    androidx.compose.material3.TextButton(
+                    com.vervan.chat.ui.common.VervanTextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.sm)
                     ) { Text("Open Model Manager") }
@@ -510,7 +515,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                     Icon(Icons.Filled.Delete, contentDescription = "Delete downloaded voice")
                                 }
                                 activeJob != null -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                else -> androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
+                                else -> com.vervan.chat.ui.common.VervanTextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
                             }
                         }
                     }
@@ -566,6 +571,7 @@ private fun VoiceChoiceChips(
                 FilterChip(
                     selected = value == key,
                     onClick = { onSelect(key) },
+                    shape = MaterialTheme.shapes.extraSmall,
                     label = { Text(label) }
                 )
             }

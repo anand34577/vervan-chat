@@ -13,15 +13,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -184,7 +184,8 @@ fun KnowledgeBaseDetailScreen(
                         )
                     )
                 },
-                enabled = !importing
+                enabled = !importing,
+                shape = MaterialTheme.shapes.small,
             ) {
                 if (importing) CircularProgressIndicator(Modifier.size(18.dp).padding(end = Space.xs), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                 Text(if (importing) "Importing…" else "Import document")
@@ -224,7 +225,11 @@ fun KnowledgeBaseDetailScreen(
                 )
             } else {
                 val embedProgress by app.container.documentImportManager.embedProgress.collectAsState()
-                LazyColumn(Modifier.fillMaxSize().padding(top = Space.sm)) {
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(top = Space.sm),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)
+                ) {
                     items(visibleDocuments, key = { it.id }) { doc ->
                         DocumentRow(
                             document = doc,

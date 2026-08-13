@@ -21,10 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Fixed "Aurora" palette — deep indigo-ink neutrals with vivid electric accents in dark mode,
- * cool porcelain neutrals in light mode. Not Material You dynamic color. No bundled display
- * font (offline-first app, nothing is fetched from Google Fonts) — system sans-serif for body,
- * system monospace for metadata/labels carries the technical texture instead.
+ * Aurora palette â€” the product owns color. Modernist contributes type, spacing, rules, and
+ * geometry without replacing the user's chosen theme. No bundled display font (offline-first app, nothing
+ * is fetched from Google Fonts) — system sans-serif is tuned with weight/tracking instead.
  */
 private val DangerRed = Color(0xFFFF6B7A)
 
@@ -127,13 +126,13 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     onSurface = Color(0xFF171A21),
     surfaceVariant = Color(0xFFE4E6EF),
     onSurfaceVariant = Color(0xFF474C5B),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLowest = Color.White,
     surfaceContainerLow = Color(0xFFF0F2F8),
     surfaceContainer = Color(0xFFE9ECF4),
     surfaceContainerHigh = Color(0xFFE2E6F0),
     surfaceContainerHighest = Color(0xFFDBE0EC),
     surfaceDim = Color(0xFFD3D8E4),
-    surfaceBright = Color(0xFFFCFCFE),
+    surfaceBright = Color.White,
     outline = Color(0xFF8A90A5),
     outlineVariant = Color(0xFFC4C9D9),
     inverseSurface = Color(0xFF30313A),
@@ -146,37 +145,43 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     scrim = Color.Black
 )
 
-// Deliberately tighter than the M3 Expressive scale this app used to carry (10/12/16/24/32):
-// at that size every surface — cards, sheets, dialogs, menus — read as visibly bubbly, and the
-// roundness stopped distinguishing anything because it was on everything. This sits close to
-// Material 3's own defaults: still soft, but corners now read as a finish rather than a feature.
-// Chips/badges stay full pills (see VervanExtraShapes.pill) so they remain distinct from cards.
+// Shapes are intentionally quieter than the prototype's black-and-white canvas. Containers
+// support grouping and touch affordance; they are not the content of the design.
 private val VervanShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp)
+    extraSmall = RoundedCornerShape(ModernistTokens.Component.radiusXs),
+    small = RoundedCornerShape(ModernistTokens.Component.radiusSm),
+    medium = RoundedCornerShape(ModernistTokens.Component.radiusMd),
+    // Large shape slots feed Material buttons/dialogs. Keep them rectangular enough to match
+    // the product's compact control language instead of silently restoring stadium controls.
+    large = RoundedCornerShape(ModernistTokens.Component.radiusSm),
+    // Material3 uses the larger shape slot for default buttons and several controls. Keep that
+    // slot compact too, otherwise an omitted per-button shape silently reintroduces a pill-like
+    // control into an otherwise rectangular surface system.
+    extraLarge = RoundedCornerShape(ModernistTokens.Component.radiusSm)
 )
 
-/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions).
- *  - hero/composer surfaces read as one deliberate size, distinct from both cards and dialogs
- *  - message bubbles get an asymmetric "tail" shape instead of every screen hand-rolling one
- *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
- *  - extra-extra-large (48dp) is the M3 Expressive max — used for hero gradients and big FABs. */
+
+/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions). */
 object VervanExtraShapes {
-    val hero = RoundedCornerShape(20.dp)
-    val composer = RoundedCornerShape(20.dp)
-    // The 4dp "tail" corner stays proportionally smaller than the other three so the bubble keeps
-    // its direction cue — it scaled down with the rest (was 20/6) rather than being left behind.
-    val userBubble = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 4.dp)
-    val assistantBubble = RoundedCornerShape(14.dp)
-    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape.
-     *  Intentionally NOT scaled down with the rest: chips/badges staying pill-shaped is what
-     *  keeps them readable as chips now that cards are square-ish. */
-    val pill = RoundedCornerShape(100.dp)
-    val datePill = RoundedCornerShape(100.dp)
-    val extraExtraLarge = RoundedCornerShape(28.dp)
+    val hero = RoundedCornerShape(ModernistTokens.Component.radiusXl)
+    val composer = RoundedCornerShape(ModernistTokens.Component.radiusLg)
+    val userBubble = RoundedCornerShape(
+        topStart = ModernistTokens.Component.radiusLg,
+        topEnd = ModernistTokens.Component.radiusLg,
+        bottomStart = ModernistTokens.Component.radiusLg,
+        bottomEnd = ModernistTokens.Component.radiusSm
+    )
+    val assistantBubble = RoundedCornerShape(
+        topStart = ModernistTokens.Component.radiusLg,
+        topEnd = ModernistTokens.Component.radiusLg,
+        bottomStart = ModernistTokens.Component.radiusSm,
+        bottomEnd = ModernistTokens.Component.radiusLg
+    )
+    // Tags remain compact, but a stadium shape is reserved for genuinely continuous controls.
+    // This keeps chips from making every action look like the previous UI's floating button.
+    val pill = RoundedCornerShape(ModernistTokens.Component.radiusSm)
+    val datePill = RoundedCornerShape(ModernistTokens.Component.radiusSm)
+    val extraExtraLarge = RoundedCornerShape(ModernistTokens.Component.radiusXl)
 }
 
 /** Reserved for technical/metadata text (timestamps, token counts, model backend
@@ -206,15 +211,15 @@ private val VervanTypography = Typography().let { base ->
     // roles keep comfortable spacing for readability. This is what makes screens feel designed
     // rather than default-Material, and it propagates to every `MaterialTheme.typography` call.
     base.copy(
-        displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
-        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
-        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Bold),
-        titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        labelSmall = base.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp)
+        displaySmall = base.displaySmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.0).sp),
+        headlineLarge = base.headlineLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.8).sp),
+        headlineMedium = base.headlineMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.7).sp),
+        headlineSmall = base.headlineSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+        titleLarge = base.titleLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = (-0.25).sp),
+        titleMedium = base.titleMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold),
+        titleSmall = base.titleSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+        labelLarge = base.labelLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp),
+        labelSmall = base.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, letterSpacing = 0.55.sp)
     )
 }
 

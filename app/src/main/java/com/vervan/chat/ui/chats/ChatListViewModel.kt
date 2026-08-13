@@ -50,6 +50,11 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Total non-temporary conversations, independent of the current filter and listable query. */
+    val totalChatCount: StateFlow<Int> = db.chatDao().observeAllChats()
+        .map { chats -> chats.count { !it.isTemporary } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val projectNames: StateFlow<Map<String, String>> = db.projectDao().observeAll()
         .map { projects -> projects.associate { it.id to it.name } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())

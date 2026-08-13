@@ -30,7 +30,7 @@ import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +46,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.voice.VoiceTurn
 
 /**
@@ -118,12 +119,11 @@ internal fun ImmersiveVoiceDialog(
         }
     }
 }
-
 @Composable
 private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExitImmersive: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         BoxWithConstraints {
@@ -134,7 +134,7 @@ private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExi
             ) {
                 Surface(
                     modifier = Modifier.size(40.dp),
-                    shape = CircleShape,
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
@@ -165,7 +165,6 @@ private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExi
         }
     }
 }
-
 @Composable
 private fun LiveStatusDot() {
     Surface(
@@ -179,7 +178,6 @@ private fun LiveStatusDot() {
         }
     }
 }
-
 @Composable
 private fun LiveVoicePill() {
     val reducedMotion = rememberReducedMotion()
@@ -191,7 +189,7 @@ private fun LiveVoicePill() {
         label = "live-pill-alpha"
     ).value
     Surface(
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer
     ) {
@@ -213,7 +211,6 @@ private fun LiveVoicePill() {
         }
     }
 }
-
 @Composable
 private fun VoiceChatEmptyState(liveTranscript: String) {
     Column(
@@ -222,7 +219,7 @@ private fun VoiceChatEmptyState(liveTranscript: String) {
     ) {
         Surface(
             modifier = Modifier.size(64.dp),
-            shape = CircleShape,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
@@ -239,7 +236,6 @@ private fun VoiceChatEmptyState(liveTranscript: String) {
         )
     }
 }
-
 @Composable
 private fun VoiceTurnBubble(turn: VoiceTurn) {
     val isUser = turn.fromUser
@@ -253,7 +249,7 @@ private fun VoiceTurnBubble(turn: VoiceTurn) {
         }
         Surface(
             modifier = Modifier.weight(1f, fill = false).widthIn(max = 520.dp),
-            shape = bubbleShape(isUser),
+            shape = if (isUser) VervanExtraShapes.userBubble else VervanExtraShapes.assistantBubble,
             color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
         ) {
@@ -293,13 +289,12 @@ private fun VoiceTurnBubble(turn: VoiceTurn) {
         }
     }
 }
-
 @Composable
 private fun LiveCaptionBubble(liveTranscript: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.Bottom) {
         Surface(
             modifier = Modifier.weight(1f, fill = false).widthIn(max = 520.dp).alpha(0.78f),
-            shape = bubbleShape(isUser = true),
+            shape = VervanExtraShapes.userBubble,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
@@ -311,7 +306,6 @@ private fun LiveCaptionBubble(liveTranscript: String) {
         SpeakerAvatar(isUser = true, modifier = Modifier.padding(start = Space.sm))
     }
 }
-
 @Composable
 private fun SpeakerAvatar(isUser: Boolean, modifier: Modifier = Modifier) {
     Surface(
@@ -353,12 +347,4 @@ private fun ThinkingDots(modifier: Modifier = Modifier) {
             )
         }
     }
-}
-
-// Kept local rather than folded into VervanExtraShapes: these mirror the tail to the opposite
-// corner per speaker, which the chat bubbles don't do. Radii track VervanExtraShapes.userBubble.
-private fun bubbleShape(isUser: Boolean) = if (isUser) {
-    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
-} else {
-    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp)
 }

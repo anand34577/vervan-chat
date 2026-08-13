@@ -7,7 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
-import com.vervan.chat.ui.theme.VervanTheme
+import androidx.compose.runtime.getValue
+import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.theme.VervanThemeFromPreferences
 
 /**
  * handles `ACTION_PROCESS_TEXT` (the "select text in any app → Vervan Chat" entry
@@ -28,9 +30,10 @@ class QuickActionActivity : ComponentActivity() {
 
         val selectedText = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty()
         val readonly = intent?.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true) ?: true
+        val app = application as VervanApp
 
         setContent {
-            VervanTheme(darkTheme = isSystemInDarkTheme()) {
+            VervanThemeFromPreferences(app) {
                 QuickActionScreen(
                     originalText = selectedText,
                     canInsertBack = !readonly,

@@ -54,7 +54,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -63,7 +63,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -74,9 +74,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -166,6 +166,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -305,7 +306,7 @@ internal fun ModelReadinessPanel(
                     else -> MaterialTheme.colorScheme.surfaceContainerHigh
                 }
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -367,16 +368,18 @@ internal fun ModelReadinessPanel(
  * device temperature. Uses tertiary (not error) container so it reads distinctly from
  * [ModelReadinessPanel]'s failed/unavailable states even at a glance. */
 @Composable
-internal fun ThermalNotice(severe: Boolean) {
+internal fun ThermalNotice() {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
             Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+            shape = MaterialTheme.shapes.small,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
                 Text(
-                    if (severe) "Running much slower — device is very warm" else "Running slower due to device temperature",
+                    "Running much slower — device is very warm",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.padding(start = Space.sm)
@@ -394,9 +397,9 @@ internal fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
             Modifier.widthIn(max = VervanContentWidth.standard).padding(horizontal = Space.lg, vertical = Space.xs),
-            shape = VervanExtraShapes.pill,
+            shape = MaterialTheme.shapes.small,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Row(Modifier.padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
@@ -528,7 +531,7 @@ internal fun MoreOptionRow(
     Row(
         Modifier.fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .alpha(if (enabled) 1f else 0.45f)
             .padding(vertical = Space.md, horizontal = Space.xs),
         verticalAlignment = Alignment.CenterVertically
@@ -563,7 +566,7 @@ internal fun ChatEmptyState(
     ) {
         Surface(
             modifier = Modifier.size(60.dp),
-            shape = VervanExtraShapes.extraExtraLarge,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
@@ -614,6 +617,7 @@ internal fun ChatEmptyState(
             starters.forEach { starter ->
                 AssistChip(
                     onClick = { onSuggestion(starter.prompt) },
+                    shape = MaterialTheme.shapes.small,
                     label = { Text(starter.title, maxLines = 1) },
                     leadingIcon = { Icon(starter.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
@@ -655,8 +659,8 @@ internal fun ChatContextProgressBar(
         modifier = modifier
             .fillMaxWidth()
             .height(4.dp)
-            .clip(VervanExtraShapes.pill)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.small)
             .semantics {
                 contentDescription = contextUsageDescription
             }
@@ -666,7 +670,7 @@ internal fun ChatContextProgressBar(
                 Modifier
                     .fillMaxWidth(animatedProgress)
                     .fillMaxHeight()
-                    .background(progressColor)
+                    .background(progressColor, MaterialTheme.shapes.small)
             )
         }
     }
@@ -789,6 +793,7 @@ private fun ChatContextChip(
     val resolvedIconTint = iconTint ?: MaterialTheme.colorScheme.primary
     AssistChip(
         onClick = onClick,
+        shape = MaterialTheme.shapes.small,
         modifier = modifier.semantics { this.contentDescription = contentDescription },
         label = {
             Text(
@@ -950,7 +955,7 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
             val stacked = maxWidth < VervanBreakpoints.medium
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
+                shape = MaterialTheme.shapes.medium,
                 colors = SurfaceRole.Overlay.cardColors(),
                 border = SurfaceRole.Overlay.border()
             ) {
@@ -1333,11 +1338,11 @@ internal fun WorkspaceOptionsDialog(
         title = { Text(workspace.name) },
         text = {
             Column {
-                Text(stringResource(R.string.chat_open_workspace), modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = Space.md))
+                Text(stringResource(R.string.chat_open_workspace), modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpen).padding(vertical = Space.md))
                 if (!isChatWorkspaceActive) {
                     Text(
                         "Set as active workspace",
-                        modifier = Modifier.fillMaxWidth().clickable(onClick = onSetActive).padding(vertical = Space.md)
+                        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onSetActive).padding(vertical = Space.md)
                     )
                 }
                 HorizontalDivider()

@@ -21,19 +21,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +55,9 @@ import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.SelectionTopBar
@@ -121,7 +124,8 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 body = stringResource(R.string.study_empty_body),
                 actionLabel = stringResource(R.string.study_create),
                 onAction = { vm.clearError(); showGenerate = true },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                centered = true
             )
         } else {
             LazyColumn(
@@ -129,18 +133,19 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 item {
-                    FeatureHero(
-                        icon = Icons.Filled.School,
-                        eyebrow = stringResource(R.string.study_workspace),
+                    ModernistScreenHeader(
+                        eyebrow = "ACTIVE RECALL",
                         title = stringResource(R.string.study_recall_title),
                         body = stringResource(R.string.study_recall_body),
-                        trailing = {
-                            Text(
-                                stringResource(R.string.study_decks_count, sets.size),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        trailing = { ModernistTag("${sets.size} DECKS", active = sets.isNotEmpty()) }
+                    )
+                    ModernistMetricStrip(
+                        metrics = listOf(
+                            "DECKS" to sets.size.toString(),
+                            "CARDS" to sets.sumOf { it.cardCount }.toString(),
+                            "MODE" to "RECALL"
+                        ),
+                        modifier = Modifier.padding(top = Space.md)
                     )
                     StudySnapshotCard(sets, modifier = Modifier.padding(top = Space.md, bottom = Space.xs))
                 }
@@ -201,7 +206,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 if (generating) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.medium,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
                         modifier = Modifier.fillMaxWidth().padding(vertical = Space.sm)
                     ) {
@@ -278,7 +283,7 @@ private fun StudySnapshotCard(sets: List<StudySetSummary>, modifier: Modifier = 
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.md),
@@ -334,7 +339,7 @@ private fun StudySetCard(
     val accuracyLabel = set.accuracyPercent?.let { stringResource(R.string.study_accuracy, it) }
     Card(
         modifier = Modifier.fillMaxWidth().selectableItem(selectionMode, onOpen, onToggleSelected, onEnterSelection),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else accentContainer.copy(alpha = 0.34f)),
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else accent.copy(alpha = 0.26f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp, pressedElevation = 3.dp)

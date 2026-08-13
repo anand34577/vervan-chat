@@ -11,6 +11,8 @@ import com.vervan.chat.system.ThermalMonitor
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.MIGRATIONS
 import com.vervan.chat.data.db.entities.MessageState
+import com.vervan.chat.data.db.entities.Folder
+import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.data.repo.BuiltInPersonas
 import com.vervan.chat.data.repo.BuiltInPromptTemplates
@@ -525,6 +527,24 @@ class VervanApp : Application() {
                         description = "General-purpose workspace for conversations and documents",
                         personaId = "builtin-general",
                         isDefault = true
+                    )
+                )
+                // Keep the first-run workspace useful immediately. These stable rows are
+                // protected from duplicate creation with IGNORE and give new chats a clear,
+                // navigable home for filing and focused work.
+                container.db.folderDao().insertDefault(
+                    Folder(
+                        id = Folder.DEFAULT_FOLDER_ID,
+                        name = "Default Folder",
+                        workspaceId = Workspace.DEFAULT_WORKSPACE_ID
+                    )
+                )
+                container.db.projectDao().insertDefault(
+                    Project(
+                        id = Project.DEFAULT_PROJECT_ID,
+                        name = "Default Project",
+                        workspaceId = Workspace.DEFAULT_WORKSPACE_ID,
+                        instructions = "A general-purpose project for focused work."
                     )
                 )
                 container.db.promptTemplateDao().insertAll(BuiltInPromptTemplates.defaults)

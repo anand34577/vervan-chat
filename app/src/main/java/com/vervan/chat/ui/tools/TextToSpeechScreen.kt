@@ -19,16 +19,16 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -113,9 +113,9 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(selected = engine == "PIPER", onClick = { engine = "PIPER" }, enabled = piperReady, label = { Text(if (piperReady) "Piper" else "Piper (not downloaded)") })
-                    FilterChip(selected = engine == "KOKORO", onClick = { engine = "KOKORO" }, enabled = kokoroReady, label = { Text(if (kokoroReady) "Kokoro" else "Kokoro (not downloaded)") })
-                    FilterChip(selected = engine == "SUPERTONIC", onClick = { engine = "SUPERTONIC" }, enabled = supertonicVoices.isNotEmpty(), label = { Text(if (supertonicVoices.isNotEmpty()) "Supertonic" else "Supertonic (not downloaded)") })
+                    FilterChip(selected = engine == "PIPER", onClick = { engine = "PIPER" }, enabled = piperReady, shape = MaterialTheme.shapes.extraSmall, label = { Text(if (piperReady) "Piper" else "Piper (not downloaded)") })
+                    FilterChip(selected = engine == "KOKORO", onClick = { engine = "KOKORO" }, enabled = kokoroReady, shape = MaterialTheme.shapes.extraSmall, label = { Text(if (kokoroReady) "Kokoro" else "Kokoro (not downloaded)") })
+                    FilterChip(selected = engine == "SUPERTONIC", onClick = { engine = "SUPERTONIC" }, enabled = supertonicVoices.isNotEmpty(), shape = MaterialTheme.shapes.extraSmall, label = { Text(if (supertonicVoices.isNotEmpty()) "Supertonic" else "Supertonic (not downloaded)") })
                 }
                 if (engine == "SUPERTONIC" && supertonicVoices.size > 1) {
                     androidx.compose.foundation.layout.FlowRow(
@@ -124,7 +124,7 @@ fun TextToSpeechScreen(onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         supertonicVoices.forEach { voice ->
-                            FilterChip(selected = supertonicVoice == voice.language, onClick = { supertonicVoice = voice.language }, label = { Text(voice.language) })
+                            FilterChip(selected = supertonicVoice == voice.language, onClick = { supertonicVoice = voice.language }, shape = MaterialTheme.shapes.extraSmall, label = { Text(voice.language) })
                         }
                     }
                 }

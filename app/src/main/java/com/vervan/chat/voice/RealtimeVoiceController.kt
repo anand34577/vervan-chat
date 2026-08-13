@@ -741,6 +741,10 @@ class RealtimeVoiceController(
         var sawSpeech = false
         var silenceMs = 0
         var elapsedMs = 0
+        // For push-to-talk, elapsedMs (below) also counts time spent waiting for the button to be
+        // pressed, since it doubles as the overall session timeout. The UI's timer should only
+        // start once the user actually presses, so track that separately.
+        var displayElapsedMs = 0
         _liveWaveform.value = emptyList()
         _liveElapsedMs.value = 0
         if (pushToTalk) _pushToTalkHeld.value = false
@@ -759,7 +763,7 @@ class RealtimeVoiceController(
                 if (preRoll.size > preRollMaxFrames) preRoll.removeFirst()
                 elapsedMs += CAPTURE_FRAME_MS
                 _liveWaveform.value = emptyList()
-                _liveElapsedMs.value = elapsedMs
+                _liveElapsedMs.value = 0
                 return@takeWhile elapsedMs < maxDurationMs
             }
             val speaking = vad.isSpeech(frame) && (!pushToTalk || held)
@@ -779,8 +783,9 @@ class RealtimeVoiceController(
                 if (preRoll.size > preRollMaxFrames) preRoll.removeFirst()
             }
             elapsedMs += CAPTURE_FRAME_MS
+            displayElapsedMs += CAPTURE_FRAME_MS
             _liveWaveform.value = (_liveWaveform.value + frameLevel(frame)).takeLast(LIVE_WAVEFORM_BARS)
-            _liveElapsedMs.value = elapsedMs
+            _liveElapsedMs.value = if (pushToTalk) displayElapsedMs else elapsedMs
             val done = finishListeningRequested ||
                 (!pushToTalk && sawSpeech && silenceMs >= TRAILING_SILENCE_MS) ||
                 (pushToTalk && sawSpeech && !held) ||

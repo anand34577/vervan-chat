@@ -52,7 +52,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -61,7 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +71,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -339,7 +338,7 @@ internal fun MessageBubble(
             // the 82% column and appears floating near the middle of the screen.
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-        Card(
+        Surface(
             modifier = Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(dragOffset.value.roundToInt(), 0) }
                 // Subtle entrance settle on first render — M3 Expressive "fast" spring keeps
@@ -451,13 +450,9 @@ internal fun MessageBubble(
             // its own surfaces, so it still reads grouped without an enclosing card.
             // The gradient is painted behind a transparent Card via Modifier.background so the
             // Card still owns shape clipping and content color.
-            colors = CardDefaults.cardColors(
-                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp, hoveredElevation = 0.dp),
-            border = null
+            color = androidx.compose.ui.graphics.Color.Transparent,
+            contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface
         ) {
             Column(
                 Modifier.padding(

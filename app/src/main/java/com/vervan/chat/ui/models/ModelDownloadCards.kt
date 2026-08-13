@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,12 +42,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -136,13 +135,13 @@ internal fun AvailableForDownloadSection(
     Card(
         onClick = { sectionExpanded = !sectionExpanded },
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
     ) {
         Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
@@ -249,14 +248,14 @@ internal fun CatalogEntryCard(
     val accentContainer = categoryAccentContainer(state.category)
     Card(
         Modifier.fillMaxWidth().padding(top = Space.sm),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = accentContainer.copy(alpha = 0.18f)),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = MaterialTheme.shapes.large, color = accentContainer, contentColor = accent) {
+                Surface(shape = MaterialTheme.shapes.small, color = accentContainer, contentColor = accent) {
                     Icon(
                         categoryIcon(state.category),
                         contentDescription = null,
@@ -306,7 +305,7 @@ internal fun CatalogEntryCard(
                 )
             }
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                Button(onClick = onDownload) {
+                Button(onClick = onDownload, shape = MaterialTheme.shapes.small) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text("Download", modifier = Modifier.padding(start = 6.dp))
                 }
@@ -342,7 +341,7 @@ internal fun DownloadPackageCard(
 
     Card(
         Modifier.fillMaxWidth().padding(bottom = Space.md),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(1.dp, statusColor.copy(alpha = 0.32f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -350,7 +349,7 @@ internal fun DownloadPackageCard(
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.small,
                     color = statusColor.copy(alpha = 0.14f),
                     contentColor = statusColor
                 ) {
@@ -508,7 +507,7 @@ internal fun DownloadPackageCard(
                     }
                 }
                 if (ModelAction.RESUME in state.allowedActions) {
-                    Button(onClick = onResume) {
+                    Button(onClick = onResume, shape = MaterialTheme.shapes.small) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text("Resume", modifier = Modifier.padding(start = Space.xs))
                     }
@@ -563,7 +562,7 @@ private fun InstalledPackageCard(
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(1.dp, vervanSubtleDividerColor())
     ) {
@@ -572,7 +571,7 @@ private fun InstalledPackageCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.vervanSuccess.copy(alpha = 0.12f),
                 contentColor = MaterialTheme.colorScheme.vervanSuccess
             ) {
@@ -729,7 +728,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
     Card(
         onClick = onOpenStore,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Row(
@@ -737,7 +736,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ) {

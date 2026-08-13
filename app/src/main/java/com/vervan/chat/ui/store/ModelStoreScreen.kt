@@ -20,17 +20,17 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -243,6 +243,7 @@ private fun VariantRow(
                 !variantUi.eligibility.canInstall -> AssistChip(
                     onClick = {},
                     enabled = false,
+                    shape = MaterialTheme.shapes.small,
                     label = { Text("Incompatible") },
                     colors = AssistChipDefaults.assistChipColors(),
                     modifier = Modifier.padding(start = Space.sm),
@@ -251,6 +252,7 @@ private fun VariantRow(
                     onClick = onInstall,
                     enabled = !installBusy,
                     modifier = Modifier.padding(start = Space.sm),
+                    shape = MaterialTheme.shapes.small,
                 ) { Text("Install") }
             }
         }
@@ -361,16 +363,21 @@ private fun LicenseDialog(
     onAccept: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val safeLicenseName = licenseName.trim().takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+        ?: "Licence information unavailable"
+    val safeLicenseUrl = licenseUrl.trim().takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+    val safeUsageThresholdClause = usageThresholdClause?.trim()
+        ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Accept licence") },
         text = {
             Column {
-                Text("$modelName is provided under $licenseName.", style = MaterialTheme.typography.bodyMedium)
-                if (licenseUrl.isNotBlank()) {
+                Text("$modelName is provided under $safeLicenseName.", style = MaterialTheme.typography.bodyMedium)
+                if (safeLicenseUrl != null) {
                     Spacer(Modifier.height(Space.xs))
                     Text(
-                        licenseUrl,
+                        safeLicenseUrl,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 2,
@@ -382,7 +389,7 @@ private fun LicenseDialog(
                     Text("Use restrictions:", style = MaterialTheme.typography.labelLarge)
                     restrictions.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
-                usageThresholdClause?.let {
+                safeUsageThresholdClause?.let {
                     Spacer(Modifier.height(Space.sm))
                     Text(it, style = MaterialTheme.typography.bodySmall)
                 }
@@ -395,7 +402,7 @@ private fun LicenseDialog(
                 )
             }
         },
-        confirmButton = { Button(onClick = onAccept) { Text("Accept and download") } },
+        confirmButton = { Button(onClick = onAccept, shape = MaterialTheme.shapes.small) { Text("Accept and download") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

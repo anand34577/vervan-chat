@@ -15,6 +15,9 @@ interface PersonaDao : BaseDao<Persona> {
     @Query("SELECT * FROM personas WHERE id = :id AND deletedAt IS NULL")
     suspend fun getPersona(id: String): Persona?
 
+    @Query("SELECT * FROM personas WHERE deletedAt IS NULL AND lower(name) = lower(:name) LIMIT 1")
+    suspend fun findByName(name: String): Persona?
+
     @Query("SELECT * FROM personas WHERE deletedAt IS NULL AND name LIKE '%' || :q || '%' LIMIT 20")
     suspend fun search(q: String): List<Persona>
 

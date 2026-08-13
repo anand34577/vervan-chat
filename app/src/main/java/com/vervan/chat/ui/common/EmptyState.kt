@@ -2,14 +2,14 @@ package com.vervan.chat.ui.common
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,39 +34,42 @@ fun EmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     secondaryActionLabel: String? = null,
-    onSecondaryAction: (() -> Unit)? = null
+    onSecondaryAction: (() -> Unit)? = null,
+    centered: Boolean = false,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(Space.xxl),
+        modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xxl),
         verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start
     ) {
-        IconAffordance(icon = icon, size = IconAffordanceSize.Feature)
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .widthIn(max = VervanContentWidth.reading)
-                .padding(top = Space.lg)
-                .semantics { heading() }
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            IconAffordance(icon = icon, size = IconAffordanceSize.Feature)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = Space.md).semantics { heading() }
+            )
+        }
         Text(
             body,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
             modifier = Modifier
                 .widthIn(max = VervanContentWidth.reading)
-                .padding(top = Space.xs)
+                .padding(top = Space.sm),
+            textAlign = if (centered) TextAlign.Center else TextAlign.Start,
         )
         if (actionLabel != null && onAction != null) {
             Button(
                 onClick = onAction,
                 modifier = Modifier
                     .widthIn(max = VervanContentWidth.action)
-                    .fillMaxWidth()
-                    .padding(top = Space.lg)
+                    .padding(top = Space.lg),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(actionLabel)
             }

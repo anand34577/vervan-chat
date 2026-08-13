@@ -18,10 +18,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -77,6 +76,7 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
@@ -171,7 +171,9 @@ fun SearchScreen(
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = stringResource(R.string.search_empty_title),
-                        body = stringResource(R.string.search_empty_body)
+                        body = stringResource(R.string.search_empty_body),
+                        modifier = Modifier.fillMaxSize(),
+                        centered = true
                     )
                     searching -> LoadingSkeletonList(
                         rows = 6,
@@ -188,7 +190,9 @@ fun SearchScreen(
                     results.isEmpty -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = stringResource(R.string.search_no_results, query),
-                        body = stringResource(R.string.search_no_results_body)
+                        body = stringResource(R.string.search_no_results_body),
+                        modifier = Modifier.fillMaxSize(),
+                        centered = true
                     )
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         if (results.chats.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Chats)) {
@@ -300,47 +304,43 @@ private fun GroupLabel(title: String) {
 
 @Composable
 private fun ResultRow(icon: ImageVector, title: String, subtitle: String = "", query: String = "", onClick: () -> Unit) {
-    Card(
+    ModernistListRow(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
-        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
-        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
-            IconAffordance(icon = icon, size = IconAffordanceSize.Compact)
-            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                val highlightedTitle = if (query.isBlank()) {
-                    androidx.compose.ui.text.AnnotatedString(title)
-                } else {
-                    val index = title.indexOf(query, ignoreCase = true)
-                    buildAnnotatedString {
-                        if (index < 0) append(title) else {
-                            append(title.substring(0, index))
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)) {
-                                append(title.substring(index, index + query.length))
-                            }
-                            append(title.substring(index + query.length))
+        IconAffordance(icon = icon, size = IconAffordanceSize.Compact)
+        Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+            val highlightedTitle = if (query.isBlank()) {
+                androidx.compose.ui.text.AnnotatedString(title)
+            } else {
+                val index = title.indexOf(query, ignoreCase = true)
+                buildAnnotatedString {
+                    if (index < 0) append(title) else {
+                        append(title.substring(0, index))
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)) {
+                            append(title.substring(index, index + query.length))
                         }
+                        append(title.substring(index + query.length))
                     }
                 }
-                Text(highlightedTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = Space.xs)
-                    )
-                }
             }
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
+            Text(highlightedTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
+            }
         }
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }

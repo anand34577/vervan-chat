@@ -19,4 +19,8 @@ data class Project(
     val createdAt: Long = System.currentTimeMillis(),
     // Recycle bin coverage.
     val deletedAt: Long? = null
-)
+) {
+    companion object {
+        const val DEFAULT_PROJECT_ID = "default-project"
+    }
+}

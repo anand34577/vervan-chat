@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -32,14 +31,14 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -215,12 +214,12 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 out
             }
             isWorking = false
-            com.vervan.chat.ui.common.openWithExternalApp(context, pdfFile, "application/pdf")
+            com.vervan.chat.ui.common.shareWithExternalApps(context, listOf(pdfFile), "application/pdf")
         }
     }
 
     fun exportImages() {
-        pages.forEach { path -> com.vervan.chat.ui.common.openWithExternalApp(context, File(path), "image/jpeg") }
+        com.vervan.chat.ui.common.shareWithExternalApps(context, pages.map(::File), "image/jpeg")
     }
 
     // Extracts OCR text for every captured page, joined for downstream use. Returns null (with
@@ -307,7 +306,10 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                     Text("Importing…", modifier = Modifier.padding(start = Space.sm))
                 } else {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
+                    Text(
+                        if (pages.isEmpty()) "Capture first page" else "Capture page ${pages.size + 1}",
+                        modifier = Modifier.padding(start = Space.sm)
+                    )
                 }
             }
             if (!gmsAvailable) {
@@ -336,7 +338,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                                     runCatching { File(path).delete() }
                                 },
                                 modifier = Modifier.align(Alignment.TopEnd)
-                                    .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), CircleShape)
+                                    .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), MaterialTheme.shapes.small)
                             ) { Icon(Icons.Filled.Close, "Remove page", tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.size(16.dp)) }
                         }
                     }
@@ -457,7 +459,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                         color = Color.White,
                         modifier = Modifier.weight(1f)
                     )
-                    androidx.compose.material3.TextButton(onClick = {
+                    com.vervan.chat.ui.common.VervanTextButton(onClick = {
                         corners[0] = Offset(0f, 0f); corners[1] = Offset(1f, 0f)
                         corners[2] = Offset(1f, 1f); corners[3] = Offset(0f, 1f)
                     }) { Text("Full page") }

@@ -12,9 +12,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -35,6 +35,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.traits
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 import java.text.DateFormat
@@ -96,6 +99,21 @@ fun PrivacyDashboardScreen(
         }
     ) { padding ->
         ScrollablePage(padding) {
+            ModernistScreenHeader(
+                eyebrow = "TRUST & PRIVACY",
+                title = "Privacy",
+                body = "See exactly what can leave this device.",
+                trailing = { ModernistTag("NO OUTBOUND TRAFFIC", active = !remoteModelActive && !apiServerOn) }
+            )
+            ModernistMetricStrip(
+                metrics = listOf(
+                    "MODEL" to (activeModel?.displayName ?: "NONE"),
+                    "CHATS" to chats.size.toString(),
+                    "DOCS" to documents.size.toString(),
+                    "NETWORK" to networkEntries.size.toString()
+                ),
+                modifier = Modifier.padding(bottom = Space.md)
+            )
             Card(
                 Modifier.fillMaxWidth().padding(bottom = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)

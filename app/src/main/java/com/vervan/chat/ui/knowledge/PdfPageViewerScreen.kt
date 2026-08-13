@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -143,6 +143,8 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
                         icon = Icons.Filled.PictureAsPdf,
                         title = "Document not found",
                         body = "This source document may have been deleted or moved to the recycle bin.",
+                        modifier = Modifier.fillMaxSize(),
+                        centered = true,
                         actionLabel = "Back",
                         onAction = onBack
                     )

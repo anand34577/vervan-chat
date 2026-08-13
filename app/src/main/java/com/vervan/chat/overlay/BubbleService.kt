@@ -200,8 +200,6 @@ class BubbleService : Service() {
         val wm = windowManager ?: return
         val density = resources.displayMetrics.density
         val owner = OverlayLifecycleOwner().apply { onCreate() }
-        val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
         fun act(action: () -> Unit) {
             hideMenu()
             action()
@@ -211,7 +209,7 @@ class BubbleService : Service() {
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
-                com.vervan.chat.ui.theme.VervanTheme(darkTheme = night) {
+                com.vervan.chat.ui.theme.VervanThemeFromPreferences(application as com.vervan.chat.VervanApp) {
                     QuickBubbleMenu(
                         captureAppAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                         onResume = if (resultChatIdState.value != null && resultView == null) ({
@@ -417,14 +415,12 @@ class BubbleService : Service() {
         val wm = windowManager ?: return
         if (resultView == null) {
             val owner = OverlayLifecycleOwner().apply { onCreate() }
-            val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
             val panel = ComposeView(this).apply {
                 setViewTreeLifecycleOwner(owner)
                 setViewTreeViewModelStoreOwner(owner)
                 setViewTreeSavedStateRegistryOwner(owner)
                 setContent {
-                    com.vervan.chat.ui.theme.VervanTheme(darkTheme = night) {
+                    com.vervan.chat.ui.theme.VervanThemeFromPreferences(application as com.vervan.chat.VervanApp) {
                         val chatId = resultChatIdState.value
                         OverlayResultPanel(
                             text = resultTextState.value,

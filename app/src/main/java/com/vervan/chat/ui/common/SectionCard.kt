@@ -1,12 +1,13 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -14,12 +15,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.ModernistTokens
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.vervanSubtleDividerColor
 
@@ -42,16 +45,19 @@ fun SectionCard(
     role: SurfaceRole = SurfaceRole.Card
 ) {
     if (items.isEmpty()) return
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = role.cardColors(),
-        border = role.border()
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(role.containerColor(), MaterialTheme.shapes.small)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), MaterialTheme.shapes.small)
     ) {
         items.forEachIndexed { index, row ->
             row()
             if (index != items.lastIndex) {
                 HorizontalDivider(
                     Modifier.padding(horizontal = Space.lg),
+                    thickness = ModernistTokens.Component.innerRule,
                     color = vervanSubtleDividerColor()
                 )
             }
@@ -80,7 +86,7 @@ fun SectionRow(
 ) {
     val base = modifier
         .fillMaxWidth()
-        .heightIn(min = 64.dp)
+        .heightIn(min = ModernistTokens.Layout.rowMinHeight)
         .then(
             if (onClick != null) {
                 // Rows are navigation controls, not generic containers. Giving TalkBack the

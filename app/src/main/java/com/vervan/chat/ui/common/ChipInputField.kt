@@ -69,6 +69,7 @@ fun ChipInputField(
                     InputChip(
                         selected = false,
                         onClick = { onItemsChange(items - item) },
+                        shape = MaterialTheme.shapes.small,
                         label = { Text(item) },
                         trailingIcon = {
                             Icon(Icons.Filled.Close, contentDescription = "Remove $item", modifier = Modifier.size(16.dp))

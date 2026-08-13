@@ -15,16 +15,16 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -57,7 +57,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
     val vm: WorkflowEditorViewModel = viewModel(factory = viewModelFactory {
         initializer { WorkflowEditorViewModel(app, workflowId) }
     })
@@ -94,12 +95,15 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
                 icon = Icons.Filled.Description,
                 title = "Workflow not found",
                 body = "This workflow may have been deleted or moved to the recycle bin.",
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = "Back",
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Name",
+                required = true,
                 maxLength = ValidationLimits.WORKFLOW_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -126,6 +130,7 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
                         value = step,
                         onValueChange = { vm.setStep(index, it) },
                         label = "Step ${index + 1} instruction",
+                        required = true,
                         maxLength = ValidationLimits.WORKFLOW_STEP,
                         modifier = Modifier.weight(1f)
                     )
@@ -146,7 +151,12 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
                 description.length <= ValidationLimits.WORKFLOW_DESCRIPTION &&
                 steps.all { it.length <= ValidationLimits.WORKFLOW_STEP }
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save") }
+                Button(enabled = withinLimits, onClick = {
+                    scope.launch {
+                        if (vm.save()) onBack()
+                        else android.widget.Toast.makeText(context, vm.saveError.value ?: "Complete the required fields before saving.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }, shape = MaterialTheme.shapes.small) { Text("Save") }
                 if (workflowId != null && !isBuiltIn) {
                     TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }
                 }

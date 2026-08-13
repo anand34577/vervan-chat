@@ -61,7 +61,7 @@ internal fun ToolSection(
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -92,7 +92,7 @@ internal fun ToolResultHeader(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
         border = SurfaceRole.Raised.border(),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer

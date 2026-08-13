@@ -27,15 +27,15 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
@@ -48,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,7 +75,6 @@ import com.vervan.chat.ui.chat.chatPreviewText
 import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
-import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.system.toUserMessage
 import kotlinx.coroutines.launch
 
@@ -186,7 +186,7 @@ fun WorkspaceDetailScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.Button(
+                com.vervan.chat.ui.common.VervanButton(
                     onClick = { showExportPassword = false; exportLauncher.launch(exportFileName) },
                     enabled = exportPassword.length >= 8 && exportPassword == exportPasswordConfirmation
             ) { Text(stringResource(R.string.backup_choose_file)) }
@@ -321,7 +321,7 @@ fun WorkspaceDetailScreen(
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                androidx.compose.material3.Switch(checked = ws.autoTitleGeneration, onCheckedChange = { vm.setAutoTitleGeneration(it) })
+                com.vervan.chat.ui.common.VervanToggle(checked = ws.autoTitleGeneration, onCheckedChange = { vm.setAutoTitleGeneration(it) })
             }
 
             // per-workspace lock (e.g. a "Personal" workspace kept separate from
@@ -343,7 +343,7 @@ fun WorkspaceDetailScreen(
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                androidx.compose.material3.Switch(
+                com.vervan.chat.ui.common.VervanToggle(
                     checked = ws.lockEnabled,
                     enabled = lockCredentialsExist || ws.lockEnabled,
                     onCheckedChange = { vm.setLockEnabled(it) }
@@ -357,6 +357,7 @@ fun WorkspaceDetailScreen(
                     androidx.compose.material3.FilterChip(
                         selected = ws.defaultProfile == p.id,
                         onClick = { vm.setDefaultProfile(if (ws.defaultProfile == p.id) null else p.id) },
+                        shape = MaterialTheme.shapes.small,
                         label = { Text(p.label) }
                     )
                 }
@@ -411,7 +412,7 @@ fun WorkspaceDetailScreen(
             }
             if (chats.isEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = Space.md).clickable(enabled = !ws.archived, onClick = newChat),
+                    Modifier.fillMaxWidth().padding(vertical = Space.md).clickable(enabled = !ws.archived, role = Role.Button, onClick = newChat),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconAffordance(icon = Icons.AutoMirrored.Filled.Chat, size = IconAffordanceSize.Default)
@@ -567,7 +568,6 @@ private fun WorkspaceChatCard(
         }
         messageCount = app.container.db.messageDao().countForChat(chat.id)
     }
-    val accent = vervanAccentFor((chat.title.hashCode() and Int.MAX_VALUE) % 6)
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -582,20 +582,11 @@ private fun WorkspaceChatCard(
             if (selectionMode) {
                 androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onClick() }, modifier = Modifier.padding(end = Space.xs))
             }
-            androidx.compose.foundation.layout.Box(
-                Modifier
-                    .padding(end = Space.md)
-                    .size(44.dp)
-                    .background(accent.container, MaterialTheme.shapes.medium),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Chat,
-                    contentDescription = null,
-                    tint = accent.onContainer,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            IconAffordance(
+                icon = Icons.AutoMirrored.Filled.Chat,
+                size = IconAffordanceSize.Default,
+                modifier = Modifier.padding(end = Space.md),
+            )
             Column(Modifier.weight(1f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -13,7 +13,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,9 +21,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -144,19 +144,19 @@ fun EmailComposerScreen(onBack: () -> Unit) {
             OutlinedTextField(
                 value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 3,
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.medium,
                 label = { Text("Original message (optional)") }
             )
             OutlinedTextField(
                 value = keyPoints, onValueChange = { keyPoints = it.take(12_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm), minLines = 2,
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.medium,
                 label = { Text("Key points to include") }
             )
             OutlinedTextField(
                 value = relationship, onValueChange = { relationship = it.take(200) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.medium,
                 label = { Text("Relationship to recipient (optional)") }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

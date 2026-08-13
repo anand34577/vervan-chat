@@ -13,13 +13,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,6 +44,7 @@ import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.common.StatusChip
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.theme.Space
@@ -94,10 +96,16 @@ fun SmartCollectionsScreen(
                 EmptyState(
                     icon = Icons.Filled.Collections,
                     title = "Nothing here yet",
-                    body = "Matching chats, notes, and documents appear here automatically."
+                    body = "Matching chats, notes, and documents appear here automatically.",
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    centered = true
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
                     items(contents.chats, key = { "c-${it.id}" }) { chat ->
                         CollectionRow(
                             icon = Icons.AutoMirrored.Filled.Chat,
@@ -143,22 +151,19 @@ private fun CollectionRow(
     onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null
 ) {
-    Card(
+    ModernistListRow(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        colors = SurfaceRole.Card.cardColors(),
-        border = SurfaceRole.Card.border()
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
-            IconAffordance(icon, size = IconAffordanceSize.Compact)
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = Space.md)
-            )
-            trailing?.invoke()
-        }
+        IconAffordance(icon, size = IconAffordanceSize.Compact)
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = Space.md)
+        )
+        trailing?.invoke()
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     }
 }

@@ -14,15 +14,15 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -252,7 +252,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                 onValueChange = { sourceText = it.take(InputLimits.TRANSLATION_TEXT_CHARS) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                 minLines = 4,
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.medium,
                 label = { Text("Text to translate") }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -290,7 +290,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                         onValueChange = { translated = it.take(InputLimits.TRANSLATION_TEXT_CHARS) },
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                         minLines = 4,
-                        shape = MaterialTheme.shapes.large,
+                        shape = MaterialTheme.shapes.medium,
                         label = { Text("Translation") }
                     )
                     if (!isTranslating) {

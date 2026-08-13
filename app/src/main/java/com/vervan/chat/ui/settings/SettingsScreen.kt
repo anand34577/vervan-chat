@@ -2,6 +2,7 @@ package com.vervan.chat.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -10,11 +11,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Accessibility
@@ -36,9 +36,10 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Card
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
@@ -55,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +73,9 @@ import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.FeatureHero
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.SectionCard
@@ -238,18 +243,33 @@ fun SettingsScreen(
             // Profile header — the modern settings anchor: who this workspace belongs to, with a
             // one-tap path to the full profile. Replaces the generic hero card, which repeated
             // the privacy message the About footer already carries.
-            Card(
+            ModernistScreenHeader(
+                eyebrow = "PREFERENCES",
+                title = "Tune your workspace",
+                body = "Change how Vervan works, what it remembers, and what it can access.",
+                trailing = { ModernistTag("LOCAL", active = true) }
+            )
+            ModernistMetricStrip(
+                metrics = listOf(
+                    "MODEL" to (activeModel?.displayName ?: "NONE"),
+                    "INSTALLED" to modelCount.size.toString(),
+                    "MEMORIES" to memoryCount.size.toString(),
+                    "REVIEW" to pendingSuggestions.toString()
+                )
+            )
+            Surface(
                 onClick = onOpenProfile,
                 modifier = Modifier.fillMaxWidth(),
                 shape = com.vervan.chat.ui.theme.VervanExtraShapes.hero,
-                colors = com.vervan.chat.ui.theme.SurfaceRole.Raised.cardColors(),
-                border = com.vervan.chat.ui.theme.SurfaceRole.Raised.border()
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 1.dp
             ) {
                 Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier
                             .size(56.dp)
-                            .background(com.vervan.chat.ui.theme.vervanBrandGradient(), CircleShape),
+                            .clip(MaterialTheme.shapes.small)
+                            .background(com.vervan.chat.ui.theme.vervanBrandGradient(), MaterialTheme.shapes.small),
                         contentAlignment = Alignment.Center
                     ) {
                         val initial = userName.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
@@ -284,19 +304,13 @@ fun SettingsScreen(
                 onValueChange = { query = it },
                 placeholder = "Search settings",
             )
-            if (query.isBlank()) {
-                SettingsSetupCard(
-                    activeModelName = activeModel?.displayName,
-                    modelCount = modelCount.size,
-                    memoryCount = memoryCount.size,
-                    pendingSuggestions = pendingSuggestions
-                )
-            }
             if (visibleSections.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.Tune,
                     title = "No settings found",
-                    body = "Try a simpler term, such as “voice,” “backup,” or “model.”"
+                    body = "Try a simpler term, such as “voice,” “backup,” or “model.”",
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp),
+                    centered = true
                 )
             } else {
                 visibleSections.forEach { section ->
@@ -361,74 +375,17 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSetupCard(
-    activeModelName: String?,
-    modelCount: Int,
-    memoryCount: Int,
-    pendingSuggestions: Int
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
-        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(Space.lg),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.Bolt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Column(
-                Modifier.weight(1f).padding(start = Space.md),
-                verticalArrangement = Arrangement.spacedBy(Space.xs)
-            ) {
-                Text("Your setup", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    activeModelName?.takeIf { it.isNotBlank() } ?: "No generation model selected",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    "$modelCount model${if (modelCount == 1) "" else "s"} · " +
-                        "$memoryCount memor${if (memoryCount == 1) "y" else "ies"} saved" +
-                        if (pendingSuggestions > 0) " · $pendingSuggestions to review" else "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (pendingSuggestions > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SettingsGroup(destinations: List<SettingsDestination>) {
     SectionCard(
         items = destinations.map { destination ->
             {
-                // Stable categorical accent per destination (hashed from the title, so it
-                // survives search filtering; distinct hues make the hub scannable at a glance.
-                val accent = com.vervan.chat.ui.theme.vervanAccentFor(destination.title.hashCode())
                 SectionRow(
                     title = destination.title,
                     subtitle = destination.subtitle,
                     icon = destination.icon,
                     iconSize = IconAffordanceSize.Default,
-                    iconTint = accent.onContainer,
-                    iconContainerColor = accent.container,
+                    iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     onClick = destination.onClick,
                     trailing = {
                         Icon(
@@ -476,21 +433,33 @@ fun formatBytes(bytes: Long): String = when {
 }
 
 @Composable
-fun AccentSwatch(accent: AccentTheme, selected: Boolean, onClick: () -> Unit) {
+fun AccentSwatch(
+    accent: AccentTheme,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val label = accent.name.lowercase().replaceFirstChar { it.uppercase() }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .minimumInteractiveComponentSize()
-            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                onClick = onClick,
+                role = Role.RadioButton,
+            )
+            .alpha(if (enabled) 1f else 0.38f)
             .padding(horizontal = Space.xs)
     ) {
         val swatchColor = accent.swatchColor()
         Box(
             Modifier.size(36.dp)
-                .background(swatchColor, CircleShape)
+                .clip(MaterialTheme.shapes.small)
+                .background(swatchColor, MaterialTheme.shapes.small)
                 .then(
-                    if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                    if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, MaterialTheme.shapes.small)
                     else Modifier
                 ),
             contentAlignment = Alignment.Center

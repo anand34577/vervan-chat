@@ -18,12 +18,12 @@ import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -175,7 +175,8 @@ fun JobQueueScreen(onBack: () -> Unit) {
                                 icon = if (view == JobView.HISTORY) Icons.Filled.History else Icons.AutoMirrored.Filled.ListAlt,
                                 title = if (view == JobView.HISTORY) "No job history" else "Nothing is running",
                                 body = if (view == JobView.HISTORY) "Completed and stopped jobs appear here." else "Background work will appear here automatically.",
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                centered = true
                             )
                         } else {
                             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {

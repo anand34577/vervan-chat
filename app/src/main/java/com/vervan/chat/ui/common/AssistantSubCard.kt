@@ -1,7 +1,6 @@
 package com.vervan.chat.ui.common
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,8 +15,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,7 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Surface
+import com.vervan.chat.ui.theme.ModernistTokens
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
@@ -78,15 +80,26 @@ fun AssistantSubCard(
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
     val color = kind.color()
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.25f))
+    Surface(
+        modifier = modifier
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = color.copy(alpha = 0.08f),
+        border = BorderStroke(ModernistTokens.Component.innerRule, color.copy(alpha = 0.30f)),
+        tonalElevation = 1.dp,
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .clickable(enabled = collapsible) { expanded = !expanded }
+                .then(
+                    if (collapsible) {
+                        Modifier
+                            .clickable(role = Role.Button) { expanded = !expanded }
+                            .semantics {
+                                stateDescription = if (expanded) "Expanded" else "Collapsed"
+                            }
+                    } else Modifier
+                )
                 .padding(Space.md)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

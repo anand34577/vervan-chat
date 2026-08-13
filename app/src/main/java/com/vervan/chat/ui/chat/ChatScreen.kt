@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -61,12 +62,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -85,6 +86,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +109,8 @@ import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.collectAsState
 import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.ModernistTokens
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -1019,11 +1023,16 @@ fun ChatScreen(
                 Column(
                     Modifier
                         .heightIn(min = 48.dp)
-                        .clickable(onClick = onOpenChatInfo)
+                        .clickable(role = Role.Button, onClick = onOpenChatInfo)
                         .semantics {
                             contentDescription = chatDetailsContentDescription
                         }, verticalArrangement = Arrangement.Center
                 ) {
+                    Text(
+                        "CONVERSATION",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     OverflowTooltipText(
                         text = chat?.title ?: "New conversation",
                         style = MaterialTheme.typography.titleMedium,
@@ -1361,14 +1370,14 @@ fun ChatScreen(
                 onOpenModels = onOpenModels
             )
             // Model Loading Strategy — a distinct, non-alarming indicator during
-            // active generation when the device is thermally throttling. ThermalMonitor already
-            // tracked this correctly; it just had no UI consumer anywhere until now, so a
-            // throttled response looked like an unexplained slowdown instead of an informational
-            // state clearly separate from ModelReadinessPanel's loading/error states above.
+            // active generation when the device is thermally throttling. Only SEVERE is shown:
+            // ELEVATED (THERMAL_STATUS_MODERATE) is common during normal sustained generation and
+            // doesn't mean the device is hot to the touch — see HomeAlert, which applies the same
+            // SEVERE-only threshold.
             if (isGenerating) {
                 val thermalLevel by app.container.thermalMonitor.level.collectAsState()
-                if (thermalLevel != com.vervan.chat.system.ThermalLevel.NORMAL) {
-                    ThermalNotice(severe = thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE)
+                if (thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE) {
+                    ThermalNotice()
                 }
                 val liveStats by vm.liveGenStats.collectAsState()
                 liveStats?.let { LiveGenStatsChip(it) }
@@ -1409,7 +1418,9 @@ fun ChatScreen(
                                 personaName = persona?.name,
                                 modelName = activeModelName?.substringBefore(" · "),
                                 modelRunsOnDevice = modelRunsOnDevice,
-                                modifier = Modifier.fillParentMaxHeight(0.92f),
+                                // A bounded empty-state rhythm keeps the composer visible and
+                                // avoids the unavailable LazyItemScope fillParentMaxHeight API.
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
                                 onSuggestion = { suggestion ->
                                     draft = suggestion
                                     if (draftLoaded) vm.saveDraft(suggestion)
@@ -1578,7 +1589,7 @@ fun ChatScreen(
                         .align(Alignment.BottomEnd)
                         .padding(Space.md)
                 ) {
-                    androidx.compose.material3.SmallFloatingActionButton(
+                    com.vervan.chat.ui.common.VervanSmallFloatingActionButton(
                         onClick = {
                             scope.launch {
                                 listState.animateScrollToItem(messages.size)
@@ -1637,6 +1648,7 @@ fun ChatScreen(
                     matchingCommands.forEach { template ->
                         AssistChip(
                             onClick = { draft = "/${template.name} "; vm.saveDraft(draft) },
+                            shape = MaterialTheme.shapes.small,
                             label = { Text("/${template.name}") })
                     }
                 }
@@ -1651,8 +1663,8 @@ fun ChatScreen(
                         .widthIn(max = 840.dp)
                         .align(Alignment.CenterHorizontally)
                         .padding(horizontal = Space.lg, vertical = Space.xs)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium)
                 ) {
                     pendingDocument?.let { docState ->
                         Row(
@@ -1660,6 +1672,7 @@ fun ChatScreen(
                                 .fillMaxWidth()
                                 .clickable(
                                     enabled = docState is ChatViewModel.DocumentAttachState.Ready,
+                                    role = Role.Button,
                                     onClick = {
                                         (docState as? ChatViewModel.DocumentAttachState.Ready)?.let {
                                             onOpenDocument(
@@ -1838,7 +1851,7 @@ fun ChatScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 140.dp, max = 220.dp)
-                                        .clip(MaterialTheme.shapes.large),
+                                        .clip(MaterialTheme.shapes.medium),
                                     contentScale = ContentScale.Crop
                                 )
                             }
@@ -1865,7 +1878,7 @@ fun ChatScreen(
                                     .padding(Space.xs)
                                     .background(
                                         MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
-                                        androidx.compose.foundation.shape.CircleShape
+                                        MaterialTheme.shapes.small
                                     )
                             ) {
                                 Icon(
@@ -1920,7 +1933,7 @@ fun ChatScreen(
                                     .padding(Space.xs)
                                     .background(
                                         MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
-                                        androidx.compose.foundation.shape.CircleShape
+                                        MaterialTheme.shapes.small
                                     )
                             ) {
                                 Icon(
@@ -2019,7 +2032,7 @@ fun ChatScreen(
                     onPushToTalkRelease = voiceController::pushToTalkRelease
                 )
             } else {
-                Card(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = 840.dp)
@@ -2033,16 +2046,19 @@ fun ChatScreen(
                             bottom = if (imeVisible) Space.xs else Space.lg
                         )
                         .alpha(if (composerEnabled || isGenerating) 1f else 0.62f)
-                        .animateContentSize(),
-                    // VervanExtraShapes.composer = 28dp, a deliberate "this is the composer" size
-                    // distinct from cards (16dp) and the previous extraLarge (now 32dp, dialogs).
-                    shape = com.vervan.chat.ui.theme.VervanExtraShapes.composer,
-                    colors = SurfaceRole.Floating.cardColors(),
+                        .animateContentSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, VervanExtraShapes.composer)
+                        .border(
+                            androidx.compose.foundation.BorderStroke(
+                                ModernistTokens.Component.rule,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                            ),
+                            VervanExtraShapes.composer
+                        ),
+                    // The dedicated composer shape keeps this input distinct from content cards.
                     // One border system instead of (border + lifted container + 22dp shape) — the
                     // previous composer had three competing emphases. Now: the floating surface role
                     // owns its tint, lift, and emphasized edge.
-                    border = SurfaceRole.Floating.border(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = SurfaceRole.Floating.shadowElevation)
                 ) {
                     Column(
                         Modifier
@@ -2398,7 +2414,7 @@ fun ChatScreen(
                                         Modifier
                                             .padding(start = Space.xs)
                                             .size(48.dp)
-                                            .clip(androidx.compose.foundation.shape.CircleShape)
+                                            .clip(MaterialTheme.shapes.small)
                                             .background(
                                                 if (sendActive) com.vervan.chat.ui.theme.vervanBrandGradient()
                                                 else androidx.compose.ui.graphics.SolidColor(

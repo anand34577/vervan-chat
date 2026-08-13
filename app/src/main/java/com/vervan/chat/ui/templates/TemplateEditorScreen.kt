@@ -10,15 +10,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -47,7 +47,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
     val vm: TemplateEditorViewModel = viewModel(factory = viewModelFactory {
         initializer { TemplateEditorViewModel(app, templateId) }
     })
@@ -89,6 +90,8 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 icon = Icons.Filled.Description,
                 title = "Template not found",
                 body = "This template may have been deleted or moved to the recycle bin.",
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = "Back",
                 onAction = onBack
             )
@@ -102,6 +105,7 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
             }
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = "Slash-command name",
+                required = true,
                 prefix = "/", maxLength = ValidationLimits.TEMPLATE_COMMAND_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
@@ -112,6 +116,7 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
             )
             BoundedTextField(
                 value = body, onValueChange = vm::setBody, label = "Template body",
+                required = true,
                 maxLength = ValidationLimits.TEMPLATE_BODY, minLines = 5,
                 supportingText = "Use {{input}} where the text after the command should go",
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
@@ -129,8 +134,14 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 body.length <= ValidationLimits.TEMPLATE_BODY
             Button(
                 enabled = withinLimits,
-                onClick = { scope.launch { if (vm.save()) onBack() } },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
+                onClick = {
+                    scope.launch {
+                        if (vm.save()) onBack()
+                        else android.widget.Toast.makeText(context, vm.saveError.value ?: "Complete the required fields before saving.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                shape = MaterialTheme.shapes.small,
             ) { Text("Save") }
             }
         }

@@ -15,7 +15,7 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -123,12 +123,17 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                 EmptyState(
                     icon = Icons.Filled.Memory,
                     title = "No models to compare",
-                    body = "Import a model to see its features and device compatibility."
+                    body = "Import a model to see its features and device compatibility.",
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    centered = true
                 )
             }
             }
             else -> {
-        LazyColumn(Modifier.fillMaxSize().padding(Space.md)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(Space.md),
+            verticalArrangement = Arrangement.spacedBy(Space.md)
+        ) {
             item {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
@@ -138,7 +143,7 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                 )
             }
             items(models, key = { it.id }) { model ->
-                Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
+                Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(Space.md)) {
                         Text(model.displayName, style = MaterialTheme.typography.titleSmall)
                         Text(

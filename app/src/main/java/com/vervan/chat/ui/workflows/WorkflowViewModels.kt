@@ -314,6 +314,8 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
 
     private val _recordFound = MutableStateFlow(workflowId == null)
     val recordFound: StateFlow<Boolean> = _recordFound
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
 
     init {
         load()
@@ -351,10 +353,11 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
         }
     }
 
-    fun setName(value: String) { _name.value = value }
-    fun setDescription(value: String) { _description.value = value }
+    fun setName(value: String) { _name.value = value; _saveError.value = null }
+    fun setDescription(value: String) { _description.value = value; _saveError.value = null }
     fun setStep(index: Int, value: String) {
         _steps.value = _steps.value.toMutableList().also { it[index] = value }
+        _saveError.value = null
     }
     fun addStep() {
         if (_steps.value.size >= com.vervan.chat.ui.common.ValidationLimits.WORKFLOW_STEP_COUNT) return
@@ -376,15 +379,28 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
      * fixed reference points, not edited in place. */
     suspend fun save(): Boolean {
         val cleanSteps = _steps.value.map { it.trim() }.filter { it.isNotBlank() }
-        if (_name.value.isBlank() || cleanSteps.isEmpty()) return false
+        if (_name.value.isBlank() || cleanSteps.isEmpty()) {
+            _saveError.value = "Workflow name and at least one step are required."
+            return false
+        }
         if (_name.value.length > ValidationLimits.WORKFLOW_NAME ||
             _description.value.length > ValidationLimits.WORKFLOW_DESCRIPTION ||
             _steps.value.size > ValidationLimits.WORKFLOW_STEP_COUNT ||
             cleanSteps.any { it.length > ValidationLimits.WORKFLOW_STEP }
-        ) return false
+        ) {
+            _saveError.value = "Shorten the highlighted fields before saving."
+            return false
+        }
+        val cleanName = _name.value.trim()
+        val editId = resolveEditId(workflowId, _isBuiltIn.value)
+        val existing = db.workflowDao().findByName(cleanName)
+        if (existing != null && existing.id != editId) {
+            _saveError.value = "A workflow named \"$cleanName\" already exists."
+            return false
+        }
         val workflow = Workflow(
-            id = resolveEditId(workflowId, _isBuiltIn.value),
-            name = _name.value.trim(),
+            id = editId,
+            name = cleanName,
             description = _description.value.trim(),
             stepsJson = Workflow.encodeSteps(cleanSteps),
             isBuiltIn = false

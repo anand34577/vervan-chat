@@ -21,7 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -93,7 +93,9 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.MyLocation,
                 title = "No branches yet",
-            body = "Edit or retry a message to create a branch. Every branch appears here."
+                body = "Edit or retry a message to create a branch. Every branch appears here.",
+                modifier = Modifier.fillMaxSize(),
+                centered = true
             )
         } else {
             LazyColumn(

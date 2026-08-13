@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AccountTree
@@ -35,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -123,8 +123,11 @@ private fun ReactionStrip(
                 Box(
                     modifier = Modifier
                         .size(if (isSelected) 44.dp else 40.dp)
-                        .clip(CircleShape)
-                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            MaterialTheme.shapes.small
+                        )
                         .clickable { onReact(emoji) },
                     contentAlignment = Alignment.Center
                 ) {
@@ -159,10 +162,10 @@ private fun ActionGrid(actions: List<MessageAction>, onClick: (MessageAction) ->
 @Composable
 private fun ActionChip(action: MessageAction, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
-        modifier = modifier
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onClick)
+            modifier = modifier
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(Space.md),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -188,7 +191,7 @@ private fun ActionRow(action: MessageAction, isDestructive: Boolean, onClick: ()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.lg, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically
     ) {

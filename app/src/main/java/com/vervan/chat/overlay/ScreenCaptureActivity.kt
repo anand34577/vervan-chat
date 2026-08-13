@@ -22,7 +22,8 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.ui.theme.VervanTheme
+import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.theme.VervanThemeFromPreferences
 import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
@@ -67,8 +68,9 @@ class ScreenCaptureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val app = application as VervanApp
         setContent {
-            VervanTheme(darkTheme = isSystemInDarkTheme()) {
+            VervanThemeFromPreferences(app) {
                 val current by state.collectAsState()
                 ScreenExplainScreen(
                     state = current,

@@ -15,7 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -128,7 +128,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
                         SegmentedButton(
                             selected = units == id,
                             onClick = { vm.setUnits(id) },
-                            shape = SegmentedButtonDefaults.itemShape(i, 2)
+                            shape = MaterialTheme.shapes.small
                         ) { Text(label) }
                     }
                 }

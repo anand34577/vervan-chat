@@ -19,15 +19,16 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -59,6 +60,9 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.system.toUserMessage
@@ -93,17 +97,20 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                eyebrow = "Grounded answers",
-                title = "Your private knowledge",
-                body = "Organize documents for private search and cited answers.",
-                trailing = {
-                    SemanticChip(
-                        text = if (indexing.isEmpty()) "On-device" else "Processing",
-                        tone = if (indexing.isEmpty()) ChipTone.Success else ChipTone.Warning
-                    )
-                }
+            ModernistScreenHeader(
+                eyebrow = "RETRIEVAL",
+                title = "Your sources",
+                body = "Bring documents together so answers can point back to evidence.",
+                trailing = { ModernistTag(if (indexing.isEmpty()) "ON DEVICE" else "INDEXING", active = indexing.isNotEmpty()) },
+            )
+            ModernistMetricStrip(
+                listOf(
+                    "Bases" to kbs.size.toString(),
+                    "Documents" to totalDocuments.toString(),
+                    "Ready" to readyBases.toString(),
+                    "Queue" to indexing.size.toString(),
+                ),
+                modifier = Modifier.padding(top = Space.lg),
             )
             KnowledgeSnapshotCard(
                 knowledgeBaseCount = kbs.size,
@@ -132,7 +139,8 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     body = "Group documents so chats can find and cite exact passages.",
                     actionLabel = "Create knowledge base",
                     onAction = { showCreate = true },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
+                    centered = true
                 )
             }
             if (error == null && !kbsLoading) {
@@ -164,11 +172,11 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 
             if (indexing.isNotEmpty()) {
                 VervanSectionHeader("Indexing queue", count = indexing.size)
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = SurfaceRole.Card.cardColors(),
-                    border = SurfaceRole.Card.border()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp
                 ) {
                     Column(Modifier.padding(Space.lg)) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = Space.sm))
@@ -179,11 +187,11 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 
             if (recentDocuments.isNotEmpty()) {
                 VervanSectionHeader("Recent documents", count = recentDocuments.size)
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = SurfaceRole.Card.cardColors(),
-                    border = SurfaceRole.Card.border()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp
                 ) {
                     Column(Modifier.padding(Space.lg)) {
                         recentDocuments.take(8).forEach { doc -> DocRow(doc) }
@@ -220,17 +228,17 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
 
 @Composable
 private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick: () -> Unit) {
-    Card(
+    Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = SurfaceRole.Card.cardColors(),
-        border = SurfaceRole.Card.border()
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(48.dp).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.secondaryContainer),
+                    Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.secondaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -264,11 +272,11 @@ private fun KnowledgeSnapshotCard(
     readyBaseCount: Int,
     indexingCount: Int,
 ) {
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.md),

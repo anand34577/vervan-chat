@@ -20,7 +20,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,6 +28,8 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
@@ -115,10 +117,18 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 body = stringResource(R.string.document_not_found_body),
                 actionLabel = stringResource(R.string.action_back),
                 onAction = onBack,
-                modifier = Modifier.padding(top = Space.sm)
+                modifier = Modifier.fillMaxSize().padding(top = Space.sm),
+                centered = true
             )
             else -> Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
+                ModernistScreenHeader(
+                    eyebrow = "SOURCE FILE",
+                    title = doc.displayName,
+                    body = "Citation target · searchable text and source passages.",
+                    modifier = Modifier.padding(start = Space.md, end = Space.md, top = Space.sm),
+                    trailing = { ModernistTag("STORED ON DEVICE", active = true) },
+                )
                 val fileExists = java.io.File(doc.filePath).exists()
                 Card(
                     onClick = { if (fileExists) com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) },
@@ -128,7 +138,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         androidx.compose.material3.Surface(
-                            shape = MaterialTheme.shapes.large,
+                            shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ) {
@@ -198,7 +208,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                     modifier = Modifier.weight(1f)
                                 )
                                 chunk.pageNumber?.let { page ->
-                                    androidx.compose.material3.TextButton(onClick = { onOpenPdfPage(documentId, page) }) {
+                                    com.vervan.chat.ui.common.VervanTextButton(onClick = { onOpenPdfPage(documentId, page) }) {
                                         Text("Page $page")
                                     }
                                 }

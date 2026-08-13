@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -19,15 +18,16 @@ import androidx.compose.material.icons.filled.FrontHand
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,7 +65,7 @@ internal fun VoiceSessionOptionsSheet(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
@@ -108,7 +108,7 @@ internal fun VoiceSessionOptionsSheet(
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
@@ -119,7 +119,8 @@ internal fun VoiceSessionOptionsSheet(
 
         Button(
             onClick = onDismiss,
-            modifier = Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm)
+            modifier = Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.sm),
+            shape = MaterialTheme.shapes.small,
         ) {
             Text(stringResource(R.string.action_done))
         }
@@ -140,7 +141,7 @@ private fun SessionOptionToggle(
     ) {
         Surface(
             modifier = Modifier.size(40.dp),
-            shape = CircleShape,
+            shape = MaterialTheme.shapes.small,
             color = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
         ) {
@@ -165,7 +166,7 @@ private fun SessionOptionToggle(
 @Composable
 private fun SessionNavigationRow(icon: ImageVector, title: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Space.md, vertical = Space.md),
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = Space.md, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md)
     ) {

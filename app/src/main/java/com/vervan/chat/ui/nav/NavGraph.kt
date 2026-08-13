@@ -1,10 +1,15 @@
 package com.vervan.chat.ui.nav
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,16 +36,10 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,6 +56,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -109,7 +109,7 @@ import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanExtraShapes
+import com.vervan.chat.ui.theme.ModernistTokens
 import com.vervan.chat.ui.personas.PersonaEditorScreen
 import com.vervan.chat.ui.personas.PersonaTestBenchScreen
 import com.vervan.chat.ui.profile.UserProfileScreen
@@ -307,12 +307,12 @@ fun VervanNavGraph(
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ) {
                 Surface(
                     modifier = Modifier.padding(top = Space.sm, bottom = Space.md).size(40.dp),
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
@@ -340,18 +340,11 @@ fun VervanNavGraph(
             // this override, Scaffold's default `contentWindowInsets` (WindowInsets.systemBars)
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                if (!useRail && showBottomBar) {
-                    VervanNavigationBar(
-                        leading = tabs,
-                        trailing = trailingTabs,
-                        currentRoute = currentRoute,
-                        navController = navController,
-                        onCreate = { showCreateSheet = true }
-                    )
-                }
-            }
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            // No bottomBar here on purpose: the nav bar is rendered as an overlay at the bottom
+            // of the content Box below instead (see VervanNavigationBar call), so screen content
+            // extends the full height of the screen and genuinely sits behind it, rather than
+            // Scaffold reserving a dedicated strip that's never painted by any screen.
         ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
         NavHost(
@@ -947,7 +940,7 @@ fun VervanNavGraph(
             Surface(
                 onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md),
-                shape = VervanExtraShapes.pill,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shadowElevation = 6.dp,
@@ -960,6 +953,16 @@ fun VervanNavGraph(
                     Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
                 }
             }
+        }
+        if (!useRail && showBottomBar) {
+            VervanNavigationBar(
+                leading = tabs,
+                trailing = trailingTabs,
+                currentRoute = currentRoute,
+                navController = navController,
+                onCreate = { showCreateSheet = true },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
         }
         }
@@ -1022,44 +1025,45 @@ private fun VervanNavigationBar(
     trailing: List<Tab>,
     currentRoute: NavDestination?,
     navController: NavHostController,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val createLabel = stringResource(R.string.action_create)
-    val itemColors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        selectedTextColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 0.dp,
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            // Wider side margins and a taller bottom gap than a flush-docked bar, so it reads as
+            // an inset floating group instead of a bar glued to the screen edges.
+            .padding(horizontal = Space.xxl, vertical = Space.md)
+    ) {
+        // A real painted surface, not the transparent M3 NavigationBar — floating over arbitrary
+        // scrolled content needs its own background to stay legible, or the tabs read as loose
+        // icons with nothing grouping them. Plain Surface (not NavigationBar) also gives us the
+        // shape/border/elevation the app's other floating surfaces use.
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ModernistTokens.Layout.bottomNavigationHeight),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shadowElevation = 8.dp,
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(ModernistTokens.Layout.bottomNavigationHeight)
+                    // Without this, the first/last tab's own surface touches the card's edge
+                    // directly, right where the rounded corner starts — reads as stuck/clipped.
+                    .padding(horizontal = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
-                NavigationBarItem(
-                    selected = false,
-                    onClick = onCreate,
-                    icon = {
-                        Surface(
-                            modifier = Modifier.size(32.dp),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    },
-                    label = { Text(createLabel) },
-                    alwaysShowLabel = true,
-                    colors = itemColors,
-                )
-                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
+                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
+                NavigationBarCreateAction(createLabel, onCreate)
+                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
             }
         }
     }
@@ -1069,41 +1073,98 @@ private fun VervanNavigationBar(
 private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController,
-    colors: androidx.compose.material3.NavigationBarItemColors,
+    navController: NavHostController
 ) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    NavigationBarItem(
-        selected = selected,
+    Surface(
         onClick = { navController.navigatePrimaryRoot(tab.route) },
-        icon = {
+        modifier = Modifier
+            .weight(1f)
+            .height(ModernistTokens.Layout.bottomNavigationItemHeight),
+        shape = MaterialTheme.shapes.small,
+        // Navigation is an active brand state, so keep it on the accent family. The secondary
+        // palette is intentionally blue/amber in several themes and made the selected tab look
+        // unrelated to the current app accent.
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        // Only the selected pill gets lift — an unselected, fully transparent item has nothing
+        // for a shadow to read against, so it would just look like a stray smudge over content.
+        shadowElevation = if (selected) 3.dp else 0.dp,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
             Icon(
                 if (selected) tab.selectedIcon else tab.icon,
-                contentDescription = null
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
             )
-        },
-        label = { Text(stringResource(tab.labelRes)) },
-        alwaysShowLabel = true,
-        colors = colors,
-    )
+            Text(
+                stringResource(tab.labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 @Composable
-private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: NavHostController) {
+private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateAction(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .height(ModernistTokens.Layout.bottomNavigationItemHeight),
+        shape = MaterialTheme.shapes.small,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.primary,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(24.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.RailTabItem(
+    tab: Tab,
+    currentRoute: NavDestination?,
+    navController: NavHostController
+) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    NavigationRailItem(
-        selected = selected,
+    Surface(
         onClick = {
             navController.navigatePrimaryRoot(tab.route)
         },
-        icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
-        label = { Text(stringResource(tab.labelRes)) },
-        colors = NavigationRailItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.primary,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-    )
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ModernistTokens.Layout.navigationRailItemHeight)
+            .padding(horizontal = Space.xs),
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
+            Icon(
+                if (selected) tab.selectedIcon else tab.icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(stringResource(tab.labelRes), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
 }

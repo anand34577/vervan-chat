@@ -2,16 +2,15 @@ package com.vervan.chat.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
+import com.vervan.chat.ui.theme.Space
 
 /**
  * Semantic tone for a status word — separate from the app's accent color, so a
@@ -40,7 +39,7 @@ fun SemanticChip(text: String, tone: ChipTone, modifier: Modifier = Modifier) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
-            .background(color.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .background(color.copy(alpha = 0.15f), MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = Space.sm, vertical = Space.xs)
     )
 }

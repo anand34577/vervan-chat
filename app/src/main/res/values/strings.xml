@@ -46,7 +46,7 @@
     <string name="search_scope_tools">Tools</string>
     <string name="chat_list_search_placeholder">Search conversations</string>
     <string name="chat_list_title">Chats</string>
-    <string name="chat_list_summary">%1$d conversations · %2$d pinned</string>
+    <string name="chat_list_summary">Total %1$d · %2$d pinned</string>
     <string name="chat_filter_all">All</string>
     <string name="chat_filter_pinned">Pinned</string>
     <string name="chat_filter_archived">Archived</string>
@@ -470,6 +470,12 @@
     <string name="voice_chat">Voice chat</string>
     <string name="voice_status">Voice status: %1$s</string>
     <string name="voice_end_session">End voice session</string>
+    <string name="voice_close_chat">Close voice chat</string>
+    <string name="voice_model_label">Model</string>
+    <string name="voice_transcribe_engine_label">Transcribe engine</string>
+    <string name="voice_not_selected">Not selected</string>
+    <string name="voice_not_available">Not available</string>
+    <string name="voice_not_listening">Not listening</string>
     <string name="voice_hands_free">Hands-free</string>
     <string name="voice_push_to_talk">Push to talk</string>
     <string name="voice_added_next_message">Added to your next message</string>
@@ -477,8 +483,8 @@
     <string name="voice_preparing_model">Preparing your local model</string>
     <string name="voice_thinking">Thinking through your request</string>
     <string name="voice_start_session">Start voice session</string>
-    <string name="voice_discard_recording">Discard recording</string>
-    <string name="voice_use_speech">Use speech</string>
+    <string name="voice_discard_recording">Discard</string>
+    <string name="voice_use_speech">Use</string>
     <string name="voice_hold_cancel">Hold to talk, slide up to cancel</string>
     <string name="voice_live_transcript">Live transcript · not sent</string>
     <string name="voice_retry_session">Retry voice session</string>
@@ -665,6 +671,7 @@
     <string name="voice_push_to_talk_caps">PUSH TO TALK</string>
     <string name="voice_microphone_muted_short">Microphone muted</string>
     <string name="voice_release_discard">Release to discard</string>
+    <string name="voice_release_send">Release to send</string>
     <string name="voice_listening_discard">Listening — slide up to discard</string>
     <string name="voice_hold_to_talk">Hold to talk</string>
     <string name="voice_slide_discard">Slide up to discard</string>
@@ -685,6 +692,7 @@
     <string name="voice_unmute">Unmute</string>
     <string name="voice_attach">Attach</string>
     <string name="voice_keyboard">Keyboard</string>
+    <string name="voice_type">Type</string>
     <string name="voice_on">Voice on</string>
     <string name="voice_off">Voice off</string>
     <string name="voice_options">Options</string>
@@ -805,6 +813,8 @@
     <string name="folder_list_title">Folders</string>
     <string name="folder_new">New folder</string>
     <string name="folder_no_items">No folders yet</string>
+    <string name="folder_hero_eyebrow">Organized work</string>
+    <string name="folder_hero_body">Keep conversations and notes close at hand.</string>
     <string name="folder_no_items_body">Group chats and notes with shared AI defaults.</string>
     <string name="folder_create">Create a folder</string>
     <string name="folder_delete_selected_accessibility">Delete selected folders</string>

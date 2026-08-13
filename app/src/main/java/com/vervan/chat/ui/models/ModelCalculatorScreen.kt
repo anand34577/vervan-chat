@@ -19,16 +19,16 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -189,7 +189,8 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
                     com.vervan.chat.modeldownload.PendingModelBrowseFilter.stash((safeBudgetGb * 1_073_741_824f).toLong())
                     onBrowseModels()
                 },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Icon(Icons.Filled.Memory, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text("Browse models that fit", modifier = Modifier.padding(start = Space.sm))

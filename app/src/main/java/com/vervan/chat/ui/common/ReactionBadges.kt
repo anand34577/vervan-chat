@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,12 +40,12 @@ fun ReactionBadges(
             val isSelected = reaction.mine
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(100))
+                    .clip(MaterialTheme.shapes.small)
                     .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
                     .border(
                         width = 1.dp,
                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(100)
+                        shape = MaterialTheme.shapes.small
                     )
                     .clickable { onReact(reaction.emoji) }
                     .padding(horizontal = Space.sm, vertical = 2.dp),

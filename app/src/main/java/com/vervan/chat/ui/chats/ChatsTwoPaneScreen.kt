@@ -86,7 +86,8 @@ fun ChatsTwoPaneScreen(
                     icon = Icons.AutoMirrored.Filled.Chat,
                     title = "Pick a conversation",
                     body = "Choose a chat on the left. New chats also open here.",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true
                 )
             }
         }

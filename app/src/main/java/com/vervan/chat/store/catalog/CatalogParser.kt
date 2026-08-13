@@ -131,7 +131,8 @@ class CatalogParser(
         commercialUseAllowed = obj.optBoolean("commercialUseAllowed", false),
         acceptableUseRestrictions = obj.optJSONArray("acceptableUseRestrictions").toStringList(),
         attributionRequired = obj.optBoolean("attributionRequired", true),
-        usageThresholdClause = obj.optString("usageThresholdClause").ifBlank { null },
+        usageThresholdClause = obj.optString("usageThresholdClause")
+            .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
         acceptanceHash = obj.optString("acceptanceHash", "")
     )
 

@@ -47,13 +47,14 @@ class MainActivity : FragmentActivity() {
         incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
         val app = application as VervanApp
         setContent {
-            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.DARK)
+            val themePreferences by app.container.settingsRepository.themePreferences.collectAsStateWithLifecycle(initialValue = null)
+            val themeMode = themePreferences?.themeMode ?: ThemeMode.DARK
             val fontScale by app.container.settingsRepository.fontScale.collectAsStateWithLifecycle(initialValue = 1.0f)
-            val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsStateWithLifecycle(initialValue = false)
-            val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsStateWithLifecycle(initialValue = false)
-            val highContrast by app.container.settingsRepository.highContrast.collectAsStateWithLifecycle(initialValue = false)
+            val oledTrueBlack = themePreferences?.oledTrueBlack ?: false
+            val dynamicColor = themePreferences?.dynamicColor ?: false
+            val highContrast = themePreferences?.highContrast ?: false
             val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
-            val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.GREEN)
+            val accentTheme = themePreferences?.accentTheme ?: com.vervan.chat.data.settings.AccentTheme.GREEN
             val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
             val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
             val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
@@ -87,16 +88,23 @@ class MainActivity : FragmentActivity() {
                     isAppearanceLightNavigationBars = !darkTheme
                 }
             }
-            val baseDensity = LocalDensity.current
-            val windowSizeClass = calculateWindowSizeClass(this)
-            VervanTheme(
-                darkTheme = darkTheme,
-                oledTrueBlack = oledTrueBlack,
-                dynamicColor = dynamicColor,
-                highContrast = highContrast,
-                accent = accentTheme
-            ) {
-                CompositionLocalProvider(
+            if (themePreferences == null) {
+                // Keep the launch frame quiet until the complete theme snapshot is available.
+                // Rendering Home here would show fallback colors for a frame and then repaint.
+                VervanTheme(darkTheme = true) {
+                    Box(Modifier.fillMaxSize())
+                }
+            } else {
+                val baseDensity = LocalDensity.current
+                val windowSizeClass = calculateWindowSizeClass(this)
+                VervanTheme(
+                    darkTheme = darkTheme,
+                    oledTrueBlack = oledTrueBlack,
+                    dynamicColor = dynamicColor,
+                    highContrast = highContrast,
+                    accent = accentTheme
+                ) {
+                    CompositionLocalProvider(
                     // App text sizing augments Android's accessibility font scale instead of
                     // replacing it. The previous value silently reset a user's system Large
                     // text setting whenever the in-app slider was left at its 1.0 default.
@@ -105,8 +113,8 @@ class MainActivity : FragmentActivity() {
                         baseDensity.fontScale * fontScale
                     ),
                     LocalMinimumInteractiveComponentSize provides if (largeTouchTargets) 56.dp else 48.dp
-                ) {
-                    Box(Modifier.fillMaxSize()) {
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
                         Box(
                             if (appLockEnabled && isLocked) {
                                 Modifier.fillMaxSize().clearAndSetSemantics { }
@@ -130,6 +138,7 @@ class MainActivity : FragmentActivity() {
                                 appLockManager = app.container.appLockManager,
                                 method = runCatching { AppLockMethod.valueOf(appLockMethodName) }.getOrDefault(AppLockMethod.BIOMETRIC)
                             )
+                        }
                         }
                     }
                 }

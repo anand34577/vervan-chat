@@ -45,17 +45,15 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.common.VervanFilterChip
-import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,11 +64,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.VervanApp
 import com.vervan.chat.R
@@ -79,7 +80,6 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanGridMinWidth
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -254,11 +254,6 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
         )
         return if (needsVision && model.supportsVision == false) "Needs vision model" else "Ready"
     }
-    // Stable per-category color so a tool's icon is the same hue wherever it appears (grid or
-    // pinned), turning a wall of identical amber chips into a scannable, colorful directory.
-    val entryAccent = remember {
-        categories.flatMapIndexed { i, cat -> cat.entries.map { it.route to com.vervan.chat.ui.theme.vervanAccentFor(i) } }.toMap()
-    }
     val visibleCategories = remember(query, selectedCategory) {
         categories.mapNotNull { category ->
             val entries = category.entries.filter { entry ->
@@ -276,16 +271,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Tools")
-                        Text(
-                            "Common tasks, one tap away",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
+                title = { Text("Tools") },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
@@ -298,12 +284,22 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = VervanGridMinWidth.standardCard),
+                // Tools are a directory, not a dashboard of floating tiles. A single scan-width
+                // list keeps the task title primary and makes descriptions readable.
+                columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = Space.lg, bottom = Space.md),
-                horizontalArrangement = Arrangement.spacedBy(Space.md),
-                verticalArrangement = Arrangement.spacedBy(Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
+                item(key = "modernist-header", span = { GridItemSpan(maxLineSpan) }) {
+                    ModernistScreenHeader(
+                        eyebrow = "TASK DIRECTORY",
+                        title = "Find a task",
+                        body = "Start with the outcome you want. Vervan keeps the workflow focused and local.",
+                        trailing = { ModernistTag("$visibleCount TOOLS", active = visibleCount > 0) }
+                    )
+                }
                 item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
                     VervanSearchField(
                         value = query,
@@ -393,7 +389,6 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     items(pinnedEntries, key = { "pinned-${it.route}" }) { entry ->
                         ToolCard(
                             entry = entry,
-                            accent = entryAccent[entry.route],
                             isFavorite = true,
                             onToggleFavorite = { toggleFavorite(entry.route) },
                             onClick = { onNavigate(entry.route) },
@@ -410,7 +405,6 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     items(recentEntries, key = { "recent-${it.route}" }) { entry ->
                         ToolCard(
                             entry = entry,
-                            accent = entryAccent[entry.route],
                             isFavorite = entry.route in favorites,
                             onToggleFavorite = { toggleFavorite(entry.route) },
                             onClick = { onNavigate(entry.route) },
@@ -426,7 +420,8 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                             icon = Icons.Filled.GridView,
                             title = "No tools found",
                             body = "Try another term or choose All.",
-                            modifier = Modifier.padding(vertical = Space.xxl),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = Space.xxl),
+                            centered = true,
                         )
                     }
                 } else {
@@ -437,35 +432,26 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                             category.entries.filterNot { it.route in favorites }
                         } else category.entries
                         item(key = "header-${category.title}", span = { GridItemSpan(maxLineSpan) }) {
-                            Column {
-                                VervanSectionHeader(
-                                    title = category.title,
-                                    count = categoryEntries.size,
-                                    actionLabel = if (browsingCatalog) if (expanded) "Hide" else "Show" else null,
-                                    onAction = if (browsingCatalog) {
-                                        {
+                            ToolCategoryHeading(
+                                category = category,
+                                count = categoryEntries.size,
+                                actionLabel = if (browsingCatalog) if (expanded) "Hide" else "Show" else null,
+                                onAction = if (browsingCatalog) {
+                                    {
                                         expandedCategories = if (expanded) {
                                             expandedCategories - category.title
                                         } else {
                                             expandedCategories + category.title
                                         }
-                                        }
-                                    } else null,
-                                    topPadding = if (!showPinned && index == 0) 0.dp else Space.lg,
-                                )
-                                Text(
-                                    category.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(bottom = Space.xs),
-                                )
-                            }
+                                    }
+                                } else null,
+                                topPadding = if (!showPinned && index == 0) 0.dp else Space.lg,
+                            )
                         }
                         if (expanded) {
                             items(categoryEntries, key = { it.route }) { entry ->
                                 ToolCard(
                                     entry = entry,
-                                    accent = entryAccent[entry.route],
                                     isFavorite = entry.route in favorites,
                                     onToggleFavorite = { toggleFavorite(entry.route) },
                                     onClick = { onNavigate(entry.route) },
@@ -490,44 +476,92 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
 }
 
 @Composable
+private fun ToolCategoryHeading(
+    category: ToolCategory,
+    count: Int,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
+    topPadding: androidx.compose.ui.unit.Dp,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = topPadding, bottom = Space.sm),
+        verticalAlignment = Alignment.Top,
+    ) {
+        IconAffordance(
+            icon = category.icon,
+            size = IconAffordanceSize.Compact,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        )
+        Column(Modifier.weight(1f).padding(start = Space.md)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(category.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(count.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (actionLabel != null && onAction != null) {
+                    TextButton(onClick = onAction, modifier = Modifier.padding(start = Space.xs)) { Text(actionLabel) }
+                }
+            }
+            Text(
+                category.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+        }
+    }
+}
+
+@Composable
 private fun ToolCard(
     entry: ToolEntry,
-    accent: com.vervan.chat.ui.theme.VervanAccent?,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
     readiness: String,
     modifier: Modifier = Modifier,
 ) {
-    val container = accent?.container ?: MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-    val onContainer = accent?.onContainer ?: MaterialTheme.colorScheme.onPrimaryContainer
-    // A faint wash of the category accent over the surface — cards stay calm but each category
-    // reads as its own colour family, matching the icon chip.
-    val cardContainer = accent?.container?.copy(alpha = 0.16f)
-        ?.compositeOver(MaterialTheme.colorScheme.surfaceContainerLow)
-        ?: MaterialTheme.colorScheme.surfaceContainerLow
-    Card(
+    // Every navigable tool uses the same semantic icon badge. Category colour is reserved for
+    // status/selection, so the catalog remains coherent across themes and accessibility modes.
+    Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().heightIn(min = 96.dp),
-        colors = CardDefaults.cardColors(containerColor = cardContainer),
-        border = vervanBorder(),
+        modifier = modifier.fillMaxWidth().heightIn(min = 72.dp),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = container,
-                    contentColor = onContainer,
-                ) {
-                    Icon(entry.icon, null, Modifier.padding(Space.sm).size(20.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconAffordance(
+                icon = entry.icon,
+                size = IconAffordanceSize.Default,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            )
+                Column(Modifier.weight(1f).padding(start = Space.md)) {
+                    Text(
+                        entry.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        entry.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    if (readiness != "Ready") {
+                        Text(
+                            readiness,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = Space.xs),
+                        )
+                    }
                 }
-                Text(
-                    entry.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = Space.md),
-                )
                 IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
                     Icon(
                         if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -536,25 +570,6 @@ private fun ToolCard(
                         modifier = Modifier.size(18.dp),
                     )
                 }
-            }
-            Text(
-                entry.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = Space.sm),
-            )
-            // Positive readiness is the normal state and does not need repeating on every card.
-            // Keep only the exceptions, where the label tells the user what must change.
-            if (readiness != "Ready") {
-                Text(
-                    readiness,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = Space.xs),
-                )
-            }
         }
     }
 }

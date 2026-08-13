@@ -28,14 +28,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -58,6 +58,7 @@ import com.vervan.chat.modeldownload.CatalogModel
 import com.vervan.chat.modeldownload.ModelCatalog
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanFilterChip
+import com.vervan.chat.ui.common.ModernistMeter
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanExtraShapes
@@ -154,7 +155,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = VervanExtraShapes.pill,
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
@@ -176,26 +177,14 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                     onDone(selectedIntent)
                 }) { Text("Skip") }
             }
-            Row(
-                Modifier.fillMaxWidth().padding(top = Space.md).semantics {
-                    contentDescription = "Step ${page + 1} of ${pages.size}"
-                },
-                horizontalArrangement = Arrangement.Center
-            ) {
-                pages.indices.forEach { index ->
-                    val isActive = index == page
-                    Box(
-                        Modifier
-                            .padding(horizontal = Space.xs)
-                            .size(if (isActive) 10.dp else 8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isActive) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-                            )
-                    )
-                }
-            }
+            ModernistMeter(
+                value = (page + 1).toFloat() / pages.size,
+                label = "Step ${page + 1} / ${pages.size}",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Space.md)
+                    .semantics { contentDescription = "Step ${page + 1} of ${pages.size}" },
+            )
             androidx.compose.animation.AnimatedContent(
                 targetState = page,
                 transitionSpec = {
@@ -224,9 +213,14 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                 ) {
                     // Hero icon — tinted per-page so each step has its own visual identity instead
                     // of every page looking identical.
+                    Text(
+                        "GETTING STARTED",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     val (heroBg, heroFg) = accentColors(p.accentTone)
                     Surface(
-                        shape = VervanExtraShapes.pill,
+                        shape = MaterialTheme.shapes.small,
                         color = heroBg,
                         contentColor = heroFg
                     ) {
@@ -254,7 +248,8 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                         recommendation?.let { OnboardRecommendationCard(it) }
                         Button(
                             onClick = onImportModel,
-                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
                             Text(
@@ -308,7 +303,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                     } else {
                         page++
                     }
-                }) {
+                }, shape = MaterialTheme.shapes.small) {
                     Text(if (page == pages.lastIndex) "Get started" else "Continue")
                 }
             }

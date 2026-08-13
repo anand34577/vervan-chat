@@ -20,13 +20,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -216,7 +216,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             onValueChange = { setup = it.take(InputLimits.CHAT_TEXT_CHARS) },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 3,
-                            shape = MaterialTheme.shapes.large,
+                            shape = MaterialTheme.shapes.medium,
                             label = { Text("Session context") },
                             placeholder = { Text(setupHint) }
                         )
@@ -298,7 +298,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                         OutlinedTextField(
                             value = draft, onValueChange = { draft = it.take(InputLimits.CHAT_TEXT_CHARS) },
                             modifier = Modifier.weight(1f), placeholder = { Text("Your response") }, enabled = !isThinking,
-                            shape = MaterialTheme.shapes.large, maxLines = 5,
+                            shape = MaterialTheme.shapes.medium, maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
@@ -308,7 +308,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                         // While a reply streams, this same slot becomes a Stop control.
                         Surface(
                             modifier = Modifier.padding(start = Space.sm).size(48.dp),
-                            shape = androidx.compose.foundation.shape.CircleShape,
+                            shape = MaterialTheme.shapes.small,
                             color = if (isThinking || draft.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             if (isThinking) {

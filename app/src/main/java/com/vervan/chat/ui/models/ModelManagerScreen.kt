@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,12 +42,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -114,6 +113,9 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.ValidationMessage
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.Space
@@ -246,18 +248,25 @@ fun ModelManagerScreen(
     ) { padding ->
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.Filled.Bolt,
-                eyebrow = "Private runtime",
-                title = "Make the right model choice",
-                body = "Install, import, and tune the models that power chat, search, and voice on this device.",
+            ModernistScreenHeader(
+                eyebrow = "RUNTIME",
+                title = "Make the workspace ready",
+                body = "Choose a runtime, load what you need, and see what is usable now.",
                 trailing = {
-                    SemanticChip(
-                        text = if (generationLoadInfo.currentModelId != null) "Ready" else "Setup",
-                        tone = if (generationLoadInfo.currentModelId != null) ChipTone.Success else ChipTone.Warning
+                    ModernistTag(
+                        if (generationLoadInfo.currentModelId != null) "LOADED" else "SETUP",
+                        active = generationLoadInfo.currentModelId != null,
                     )
                 },
-                modifier = Modifier.padding(bottom = Space.lg)
+            )
+            ModernistMetricStrip(
+                listOf(
+                    "Generation" to generationModels.size.toString(),
+                    "Embedding" to embeddingModels.size.toString(),
+                    "Loaded" to listOfNotNull(generationLoadInfo.currentModelId, embeddingLoadInfo.currentModelId).size.toString(),
+                    "Downloads" to downloadStates.count { it.status !in setOf(ModelStatus.NOT_DOWNLOADED, ModelStatus.READY) }.toString(),
+                ),
+                modifier = Modifier.padding(top = Space.lg, bottom = Space.lg),
             )
             // readiness summary — the model manager used to open straight into the
             // import card with no at-a-glance answer to "is anything actually usable right now."

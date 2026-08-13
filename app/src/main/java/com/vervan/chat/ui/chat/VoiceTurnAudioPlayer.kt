@@ -17,7 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -150,7 +150,7 @@ internal fun VoiceTurnAudioPlayer(
                     isPlaying = true
                 }
             },
-            modifier = Modifier.size(40.dp).background(accent.copy(alpha = 0.15f), CircleShape)
+            modifier = Modifier.size(40.dp).background(accent.copy(alpha = 0.15f), MaterialTheme.shapes.small)
         ) {
             Icon(
                 if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,

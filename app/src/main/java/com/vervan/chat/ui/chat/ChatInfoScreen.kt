@@ -44,7 +44,7 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -72,6 +72,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
@@ -81,7 +83,6 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
-import com.vervan.chat.ui.theme.vervanAccentFor
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -170,6 +171,8 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                     icon = Icons.AutoMirrored.Filled.Chat,
                     title = "Chat not found",
                     body = "This conversation may have been deleted or moved to the recycle bin.",
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true,
                     actionLabel = "Back",
                     onAction = onBack
                 )
@@ -250,12 +253,12 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         verticalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            StatCell(Icons.AutoMirrored.Filled.Chat, visible.size.toString(), "Messages", vervanAccentFor(1))
-                            StatCell(Icons.Filled.Description, wordCount.toString(), "Words", vervanAccentFor(2))
+                            StatCell(Icons.AutoMirrored.Filled.Chat, visible.size.toString(), "Messages")
+                            StatCell(Icons.Filled.Description, wordCount.toString(), "Words")
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            StatCell(Icons.Filled.AttachFile, attachmentCount.toString(), "Attachments", vervanAccentFor(3))
-                            StatCell(Icons.Filled.Bolt, compactNumber(generatedTokens), "AI tokens", vervanAccentFor(0))
+                            StatCell(Icons.Filled.AttachFile, attachmentCount.toString(), "Attachments")
+                            StatCell(Icons.Filled.Bolt, compactNumber(generatedTokens), "AI tokens")
                         }
                     }
                 }
@@ -458,7 +461,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
 
 /** A single accent-iconed big-number / small-label counter cell in the stat grid. */
 @Composable
-private fun RowScope.StatCell(icon: ImageVector, value: String, label: String, accent: com.vervan.chat.ui.theme.VervanAccent) {
+private fun RowScope.StatCell(icon: ImageVector, value: String, label: String) {
     Card(
         Modifier.weight(1f),
         colors = SurfaceRole.Raised.cardColors(),
@@ -469,12 +472,12 @@ private fun RowScope.StatCell(icon: ImageVector, value: String, label: String, a
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.md)
         ) {
-            Box(
-                Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(accent.container),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, null, tint = accent.onContainer, modifier = Modifier.size(20.dp))
-            }
+            IconAffordance(
+                icon = icon,
+                size = IconAffordanceSize.Default,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            )
             Column {
                 Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(
@@ -661,7 +664,7 @@ private fun formatDuration(milliseconds: Long): String = when {
 @Composable
 private fun StatusPill(text: String, icon: ImageVector) {
     Surface(
-        shape = com.vervan.chat.ui.theme.VervanExtraShapes.pill,
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {

@@ -3,7 +3,6 @@ package com.vervan.chat.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -20,13 +19,13 @@ import androidx.compose.ui.unit.dp
  * its own box size (26/30/32/34/38/52dp) and corner shape independently — these three
  * named sizes are the only ones that should be reached for now.
  */
-enum class IconAffordanceSize(val box: Dp, val corner: Dp, val icon: Dp) {
+enum class IconAffordanceSize(val box: Dp, val icon: Dp) {
     /** Dense list rows — chat list, recycle bin, job queue. */
-    Compact(28.dp, 6.dp, 16.dp),
+    Compact(28.dp, 16.dp),
     /** Card-style rows — Home recents, folders, knowledge documents. */
-    Default(36.dp, 9.dp, 20.dp),
+    Default(36.dp, 20.dp),
     /** Hero cards — Home's "Ask anything," project tiles, empty states. */
-    Feature(48.dp, 12.dp, 26.dp)
+    Feature(48.dp, 26.dp)
 }
 
 @Composable
@@ -38,10 +37,14 @@ fun IconAffordance(
     containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     contentDescription: String? = null
 ) {
+    // Leading icon badges share one corner token at every size. This is deliberately different
+    // from avatars/status dots (which may be circular) and from continuous controls (which may
+    // be stadium-shaped), so the navigation language stays predictable across routes.
+    val shape = MaterialTheme.shapes.small
     Box(
         modifier = modifier
             .size(size.box)
-            .background(containerColor, RoundedCornerShape(size.corner)),
+            .background(containerColor, shape),
         contentAlignment = Alignment.Center
     ) {
         Icon(

@@ -3,6 +3,7 @@ package com.vervan.chat.ui.workflows
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
@@ -24,13 +25,13 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.runtime.Composable
@@ -117,6 +118,8 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                 icon = Icons.Filled.Description,
                 title = "Workflow not found",
                 body = "This workflow may have been deleted or moved to the recycle bin.",
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = "Back",
                 onAction = onBack
             )
@@ -136,10 +139,10 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                     OutlinedButton(onClick = { vm.pauseRun() }) { Text("Pause") }
                     OutlinedButton(onClick = { vm.cancelRun() }) { Text("Cancel") }
                 } else if (paused) {
-                    Button(onClick = { vm.resumeRun() }) { Text("Resume") }
+                    Button(onClick = { vm.resumeRun() }, shape = MaterialTheme.shapes.small) { Text("Resume") }
                     OutlinedButton(onClick = { vm.cancelRun() }) { Text("Cancel") }
                 } else {
-                    Button(onClick = { vm.run(input) }, enabled = input.isNotBlank()) {
+                    Button(onClick = { vm.run(input) }, enabled = input.isNotBlank(), shape = MaterialTheme.shapes.small) {
                         Text("Run")
                     }
                 }
@@ -150,10 +153,13 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
             // live output; finished steps collapse to a one-line summary, and steps that
             // haven't started yet show as a dimmed pending row.
             val currentIndex = steps.indexOfFirst { !it.done }.let { if (it < 0) steps.lastIndex else it }
-            LazyColumn(Modifier.padding(top = Space.md)) {
+            LazyColumn(
+                Modifier.padding(top = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
                 items(steps.size) { index ->
                     val step = steps[index]
-                    Card(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
+                    Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(Space.md)) {
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 if (step.done) {

@@ -52,7 +52,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -61,7 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +71,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -164,6 +163,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -297,7 +297,7 @@ internal fun DocumentComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
@@ -306,7 +306,7 @@ internal fun DocumentComposerPreviewDialog(
                                 Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 220.dp, max = 480.dp)
-                                    .clip(MaterialTheme.shapes.large)
+                                    .clip(MaterialTheme.shapes.medium)
                                     .background(androidx.compose.ui.graphics.Color.White),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -318,7 +318,7 @@ internal fun DocumentComposerPreviewDialog(
                                         contentScale = ContentScale.Fit
                                     )
                                 } ?: Surface(
-                                    shape = MaterialTheme.shapes.extraLarge,
+                                    shape = MaterialTheme.shapes.medium,
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 ) {
@@ -419,13 +419,20 @@ internal fun ModernChatAttachmentSheet(
                 CompactAttachmentAction(Icons.Filled.Mic, stringResource(R.string.media_record), if (audioAvailable == true) stringResource(R.string.media_transcribe) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
                 CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_audio), if (audioAvailable == true) stringResource(R.string.media_transcribe_file) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
             }
-            TextButton(
-                onClick = onOcrCamera,
-                enabled = !isRunningOcr,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.sm)
+            Row(
+                Modifier.fillMaxWidth().padding(top = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = Space.xs))
-                Text(stringResource(R.string.media_scan_camera))
+                CompactAttachmentAction(
+                    Icons.Filled.CameraAlt,
+                    stringResource(R.string.media_scan_camera),
+                    stringResource(R.string.media_from_photo),
+                    !isRunningOcr,
+                    onOcrCamera,
+                    vervanAccentFor(5),
+                    Modifier.weight(1f)
+                )
+                Spacer(Modifier.weight(2f))
             }
         }
     }
@@ -441,15 +448,45 @@ internal fun CompactAttachmentAction(
     accent: VervanAccent,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier.alpha(if (enabled) 1f else 0.45f).clickable(enabled = enabled, onClick = onClick).padding(vertical = Space.sm),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.alpha(if (enabled) 1f else 0.45f),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = accent.container, contentColor = accent.onContainer) {
-            Icon(icon, contentDescription = null, modifier = Modifier.padding(14.dp).size(24.dp))
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.md),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = MaterialTheme.shapes.small,
+                color = accent.container,
+                contentColor = accent.onContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+                }
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = Space.sm),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                helper,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
-        Text(title, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = Space.sm), maxLines = 1)
-        Text(helper, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -554,7 +591,7 @@ internal fun VoiceMessageRow(path: String) {
             },
             modifier = Modifier
                 .size(48.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clip(MaterialTheme.shapes.small)
                 .background(
                     if (loadFailed) MaterialTheme.colorScheme.errorContainer
                     else MaterialTheme.colorScheme.primaryContainer
@@ -653,7 +690,7 @@ internal fun AttachmentCaptionBar(
                     )
                 }
                 Box(
-                    Modifier.padding(start = Space.sm).size(52.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    Modifier.padding(start = Space.sm).size(52.dp).clip(MaterialTheme.shapes.small)
                         .background(
                             if (confirmEnabled) com.vervan.chat.ui.theme.vervanBrandGradient()
                             else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceContainerHighest)
@@ -695,7 +732,7 @@ internal fun AudioComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
@@ -852,7 +889,7 @@ internal fun OcrPreviewDialog(
                     Surface(
                         onClick = { showExtractedText = !showExtractedText },
                         modifier = Modifier.align(Alignment.BottomCenter).padding(Space.md),
-                        shape = com.vervan.chat.ui.theme.VervanExtraShapes.pill,
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.92f),
                         contentColor = MaterialTheme.colorScheme.inverseOnSurface
                     ) {

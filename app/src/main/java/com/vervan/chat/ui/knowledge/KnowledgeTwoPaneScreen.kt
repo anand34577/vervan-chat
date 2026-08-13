@@ -58,7 +58,8 @@ fun KnowledgeTwoPaneScreen(onOpenDocument: (String) -> Unit) {
                     icon = Icons.AutoMirrored.Filled.MenuBook,
                     title = "Pick a knowledge base",
                     body = "Choose a source collection on the left to view its documents.",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true
                 )
             }
         }

@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
@@ -25,16 +27,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +68,7 @@ import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.PageContainer
@@ -131,7 +134,11 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
-          LazyColumn(Modifier.fillMaxWidth()) {
+          LazyColumn(
+              Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(Space.sm),
+              contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)
+          ) {
             item {
                 FeatureHero(
                     icon = Icons.Filled.Dashboard,
@@ -164,6 +171,8 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                         icon = Icons.Filled.Dashboard,
                         title = stringResource(com.vervan.chat.R.string.workspace_no_items),
                         body = stringResource(com.vervan.chat.R.string.workspace_no_items_body),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
+                        centered = true,
                         actionLabel = stringResource(com.vervan.chat.R.string.workspace_new),
                         onAction = { showCreate = true }
                     )
@@ -287,18 +296,17 @@ private fun WorkspaceCard(
     // never enters selection behavior at all — even while the list is in selection mode, tapping
     // or long-pressing this row always just opens it, since it can neither be selected nor deleted.
     val participatesInSelection = selectionMode && onEnterSelection != null
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
+    ModernistListRow(
+        modifier = Modifier.fillMaxWidth()
             .selectableItem(
                 selectionMode = participatesInSelection,
                 onClick = onClick,
                 onToggleSelected = onToggleSelected,
                 onEnterSelection = onEnterSelection ?: {}
             ),
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
+        selected = selected
     ) {
-        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             if (participatesInSelection) {
                 androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             }

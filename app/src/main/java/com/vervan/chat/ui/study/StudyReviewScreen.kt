@@ -17,15 +17,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,6 +53,9 @@ import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.data.db.entities.StudyCard
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.ModernistMeter
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
@@ -122,6 +125,12 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
+            ModernistScreenHeader(
+                eyebrow = "REVIEW SESSION",
+                title = setName,
+                body = "Active recall. Reveal, rate, and strengthen the next card.",
+                trailing = { ModernistTag(if (missedOnly) "MISSED ONLY" else "FULL DECK", active = missedOnly) }
+            )
             ResponsiveActions {
                 VervanFilterChip(
                     selected = missedOnly,
@@ -142,7 +151,8 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                     icon = Icons.Filled.CheckCircle,
                     title = if (missedOnly) "Nothing needs practice" else "This deck has no cards",
                     body = if (missedOnly) "Nice work — your missed cards are cleared for now." else "Create a new deck with study material to begin.",
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    centered = true
                 )
                 return@Column
             }
@@ -165,7 +175,11 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 Text("Card ${index + 1} of ${sessionCards.size}", style = MaterialTheme.typography.labelMedium)
                 Text("$sessionCorrect correct", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            ModernistMeter(
+                value = progress,
+                label = "CARD ${index + 1} / ${sessionCards.size}",
+                modifier = Modifier.padding(top = Space.sm)
+            )
 
             val card = sessionCards[index]
             // Real 3D flashcard flip: front (question) and back (answer) share one Card whose

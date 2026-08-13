@@ -20,6 +20,14 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * existing light/dark/OLED axis, not a replacement for it. */
 enum class AccentTheme { AMBER, BLUE, GREEN, VIOLET, ROSE }
 
+data class ThemePreferences(
+    val themeMode: ThemeMode,
+    val accentTheme: AccentTheme,
+    val oledTrueBlack: Boolean,
+    val dynamicColor: Boolean,
+    val highContrast: Boolean,
+)
+
 /**
  * Real user-facing settings, DataStore-backed. one flat preferences
  * file covering the settings screens actually built today, not placeholder keys for the
@@ -168,10 +176,24 @@ class SettingsRepository(context: Context) {
         store.edit { it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] = (it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] ?: emptySet()) + key }
     }
 
-    // Default is dark + green, not system/amber — the app's own "green dark theme" is the
-    // intended out-of-the-box look; a user who never opens Settings should already see it.
+    // New installs keep Vervan's dark/green identity; existing users keep their persisted choice.
     val themeMode: Flow<ThemeMode> = store.data.map { prefs ->
         prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK
+    }
+    /** One atomic theme snapshot prevents a first frame rendered with fallback colors from
+     * repainting when the individual DataStore preference flows emit a moment later. */
+    val themePreferences: Flow<ThemePreferences?> = store.data.map { prefs ->
+        ThemePreferences(
+            themeMode = prefs[Keys.THEME_MODE]
+                ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+                ?: ThemeMode.DARK,
+            accentTheme = prefs[Keys.ACCENT_THEME]
+                ?.let { runCatching { AccentTheme.valueOf(it) }.getOrNull() }
+                ?: AccentTheme.GREEN,
+            oledTrueBlack = prefs[Keys.OLED_TRUE_BLACK] ?: false,
+            dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: false,
+            highContrast = prefs[Keys.HIGH_CONTRAST] ?: false,
+        )
     }
     suspend fun setThemeMode(mode: ThemeMode) { store.edit { it[Keys.THEME_MODE] = mode.name } }
 
