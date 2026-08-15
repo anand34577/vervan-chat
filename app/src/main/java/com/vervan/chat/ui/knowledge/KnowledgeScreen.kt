@@ -87,28 +87,28 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             MediumTopAppBar(
                 title = {
                     Column {
-                        Text("Knowledge")
-                        Text("Searchable, cited, on-device", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(com.vervan.chat.R.string.knowledge_title))
+                        Text(stringResource(com.vervan.chat.R.string.knowledge_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New knowledge base") } }
+                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(com.vervan.chat.R.string.knowledge_new_base)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
             ModernistScreenHeader(
-                eyebrow = "RETRIEVAL",
-                title = "Your sources",
-                body = "Bring documents together so answers can point back to evidence.",
-                trailing = { ModernistTag(if (indexing.isEmpty()) "ON DEVICE" else "INDEXING", active = indexing.isNotEmpty()) },
+                eyebrow = stringResource(com.vervan.chat.R.string.knowledge_retrieval_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.knowledge_sources_title),
+                body = stringResource(com.vervan.chat.R.string.knowledge_sources_body),
+                trailing = { ModernistTag(if (indexing.isEmpty()) stringResource(com.vervan.chat.R.string.home_on_device) else stringResource(com.vervan.chat.R.string.knowledge_indexing_tag), active = indexing.isNotEmpty()) },
             )
             ModernistMetricStrip(
                 listOf(
-                    "Bases" to kbs.size.toString(),
-                    "Documents" to totalDocuments.toString(),
-                    "Ready" to readyBases.toString(),
-                    "Queue" to indexing.size.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_bases_metric) to kbs.size.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_documents_title) to totalDocuments.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_filter_ready) to readyBases.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_queue_metric) to indexing.size.toString(),
                 ),
                 modifier = Modifier.padding(top = Space.lg),
             )
@@ -118,7 +118,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 readyBaseCount = readyBases,
                 indexingCount = indexing.size
             )
-            VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
+            VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_bases_section), count = kbs.size, actionLabel = stringResource(com.vervan.chat.R.string.knowledge_new_action), onAction = { showCreate = true })
             if (error != null) {
                 OperationErrorCard(
                     title = stringResource(com.vervan.chat.R.string.knowledge_unavailable),
@@ -135,9 +135,9 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             } else if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Build your first knowledge base",
-                    body = "Group documents so chats can find and cite exact passages.",
-                    actionLabel = "Create knowledge base",
+                    title = stringResource(com.vervan.chat.R.string.knowledge_first_base_title),
+                    body = stringResource(com.vervan.chat.R.string.knowledge_first_base_body),
+                    actionLabel = stringResource(com.vervan.chat.R.string.knowledge_create_base),
                     onAction = { showCreate = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
                     centered = true
@@ -160,8 +160,8 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
                         ActionTile(
                             icon = Icons.Filled.Add,
-                            title = "New knowledge base",
-                            body = "Create a document collection",
+                            title = stringResource(com.vervan.chat.R.string.knowledge_new_base),
+                            body = stringResource(com.vervan.chat.R.string.knowledge_collection_action),
                             onClick = { showCreate = true },
                             modifier = Modifier.fillMaxSize(),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -171,7 +171,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (indexing.isNotEmpty()) {
-                VervanSectionHeader("Indexing queue", count = indexing.size)
+                VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_indexing_queue), count = indexing.size)
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.medium,
@@ -186,7 +186,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (recentDocuments.isNotEmpty()) {
-                VervanSectionHeader("Recent documents", count = recentDocuments.size)
+                VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_recent_documents), count = recentDocuments.size)
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.medium,
@@ -208,10 +208,10 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("New knowledge base") },
+            title = { Text(stringResource(com.vervan.chat.R.string.knowledge_new_base)) },
             text = {
                 com.vervan.chat.ui.common.BoundedTextField(
-                    value = name, onValueChange = { name = it }, placeholder = "Name",
+                    value = name, onValueChange = { name = it }, placeholder = stringResource(com.vervan.chat.R.string.knowledge_name_placeholder),
                     singleLine = true, maxLength = com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
                 )
             },
@@ -219,9 +219,9 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 TextButton(
                     onClick = { if (name.isNotBlank()) { vm.createKnowledgeBase(name.trim()); showCreate = false } },
                     enabled = name.isNotBlank() && name.length <= com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
-                ) { Text("Create") }
+                ) { Text(stringResource(com.vervan.chat.R.string.knowledge_create)) }
             },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(com.vervan.chat.R.string.action_cancel)) } }
         )
     }
 }

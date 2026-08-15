@@ -1,10 +1,13 @@
 package com.vervan.chat.ui.models
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.app.ActivityManager
 import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -72,11 +75,11 @@ internal fun estimateModelMemory(parametersB: Float, quantBits: Int, contextToke
     return ModelMemoryEstimate(weights, kvCache, runtime)
 }
 
-private enum class FitLevel(val title: String, val body: String) {
-    EXCELLENT("Comfortable fit", "Plenty of memory remains for Android and longer chats."),
-    GOOD("Good fit", "This configuration should run reliably on this device."),
-    TIGHT("Tight fit", "It may run, but other apps should be closed first."),
-    TOO_LARGE("Too large", "Reduce model size, context, or quantization bits.")
+private enum class FitLevel(val titleRes: Int, val bodyRes: Int) {
+    EXCELLENT(R.string.ui_modelcalculatorscreen_fit_comfortable, R.string.ui_modelcalculatorscreen_fit_comfortable_body),
+    GOOD(R.string.ui_modelcalculatorscreen_fit_good, R.string.ui_modelcalculatorscreen_fit_good_body),
+    TIGHT(R.string.ui_modelcalculatorscreen_fit_tight, R.string.ui_modelcalculatorscreen_fit_tight_body),
+    TOO_LARGE(R.string.ui_modelcalculatorscreen_fit_too_large, R.string.ui_modelcalculatorscreen_fit_too_large_body)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -123,14 +126,14 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Model calculator") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.model_calculator_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(padding) {
-            Text("What can this device run?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.ui_modelcalculatorscreen_134_what_can_this_device_run), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
                 "Adjust model size, precision, and context to estimate memory before downloading.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -157,26 +160,26 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
                     valueRange = 0.5f..32f,
                     steps = 62
                 )
-            Text("Larger models may answer better but use more memory and run slower.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.ui_modelcalculatorscreen_161_larger_models_may_answer_better_but_use_more), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            CalculatorCard("Quantization", "$quantBits-bit") {
+            CalculatorCard(stringResource(R.string.ui_modelcalculatorscreen_quantization), stringResource(R.string.ui_modelcalculatorscreen_bits, quantBits)) {
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     listOf(2, 3, 4, 5, 8).forEach { bits ->
-                        VervanFilterChip(selected = quantBits == bits, onClick = { quantBits = bits }, label = { Text("$bits-bit") })
+                        VervanFilterChip(selected = quantBits == bits, onClick = { quantBits = bits }, label = { Text(stringResource(R.string.ui_modelcalculatorscreen_bits, bits)) })
                     }
                 }
-                Text("4-bit is the best starting point for most phones.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.ui_modelcalculatorscreen_170_4_bit_is_the_best_starting_point_for_most_ph), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            CalculatorCard("Context window", formatContext(contexts[contextIndex])) {
+            CalculatorCard(stringResource(R.string.ui_modelcalculatorscreen_context_window), formatContext(contexts[contextIndex])) {
                 Slider(
                     value = contextIndex.toFloat(),
                     onValueChange = { contextIndex = it.toInt().coerceIn(contexts.indices) },
                     valueRange = 0f..contexts.lastIndex.toFloat(),
                     steps = contexts.size - 2
                 )
-                Text("Longer context remembers more conversation but increases memory use.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.ui_modelcalculatorscreen_180_longer_context_remembers_more_conversation_b), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             MemoryBreakdown(estimate)
@@ -193,7 +196,7 @@ fun ModelCalculatorScreen(onBack: () -> Unit, onBrowseModels: () -> Unit = {}) {
                 shape = MaterialTheme.shapes.small,
             ) {
                 Icon(Icons.Filled.Memory, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("Browse models that fit", modifier = Modifier.padding(start = Space.sm))
+                Text(stringResource(R.string.ui_modelcalculatorscreen_197_browse_models_that_fit), modifier = Modifier.padding(start = Space.sm))
             }
             Text(
                 "Estimate only. Model architecture, accelerator support, and thermal limits can change real performance.",
@@ -212,14 +215,14 @@ private fun DeviceCard(totalBytes: Long, availableBytes: Long, budgetGb: Float) 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Memory, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                 Column(Modifier.padding(start = Space.md)) {
-                    Text("Your hardware", style = MaterialTheme.typography.titleMedium)
-                    Text("Android ${Build.VERSION.RELEASE} · ${Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown CPU"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.ui_modelcalculatorscreen_216_your_hardware), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.ui_modelcalculatorscreen_android_details, Build.VERSION.RELEASE, Build.SUPPORTED_ABIS.firstOrNull() ?: stringResource(R.string.ui_modelcalculatorscreen_unknown_cpu)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                MiniStat(formatBytes(totalBytes), "Total RAM", Modifier.weight(1f))
-                MiniStat(formatBytes(availableBytes), "Available now", Modifier.weight(1f))
-                MiniStat(String.format("%.1f GB", budgetGb), "Safe model budget", Modifier.weight(1f))
+                MiniStat(formatBytes(totalBytes), stringResource(R.string.ui_modelcalculatorscreen_total_ram), Modifier.weight(1f))
+                MiniStat(formatBytes(availableBytes), stringResource(R.string.ui_modelcalculatorscreen_available_now), Modifier.weight(1f))
+                MiniStat(String.format("%.1f GB", budgetGb), stringResource(R.string.ui_modelcalculatorscreen_safe_model_budget), Modifier.weight(1f))
             }
         }
     }
@@ -234,7 +237,7 @@ private fun BestMeasuredModelCard(model: ModelInfo, stat: ModelSpeedStat, onSetD
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.Top) {
             Icon(Icons.Filled.Speed, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
             Column(Modifier.weight(1f).padding(start = Space.md)) {
-                Text("Best measured on this device", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(stringResource(R.string.ui_modelcalculatorscreen_238_best_measured_on_this_device), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     model.displayName,
                     style = MaterialTheme.typography.bodyLarge,
@@ -242,15 +245,14 @@ private fun BestMeasuredModelCard(model: ModelInfo, stat: ModelSpeedStat, onSetD
                     modifier = Modifier.padding(top = Space.xs)
                 )
                 Text(
-                    "${String.format("%.1f", stat.tokensPerSecond)} tok/s average over ${stat.samples} " +
-                        (if (stat.samples == 1) "reply" else "replies"),
+                    stringResource(R.string.ui_modelcalculatorscreen_speed_summary, String.format("%.1f", stat.tokensPerSecond), stat.samples, if (stat.samples == 1) stringResource(R.string.ui_modelcalculatorscreen_reply) else stringResource(R.string.ui_modelcalculatorscreen_replies)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = Space.xs)
                 )
                 if (!model.isActive) {
                     OutlinedButton(onClick = onSetDefault, modifier = Modifier.padding(top = Space.sm)) {
-                        Text("Set as default")
+                        Text(stringResource(R.string.model_set_default))
                     }
                 }
             }
@@ -267,20 +269,45 @@ private fun FitCard(fit: FitLevel, ratio: Float, requiredGb: Float, budgetGb: Fl
     }
     Card(Modifier.fillMaxWidth().padding(top = Space.md), colors = SurfaceRole.Raised.cardColors(), border = SurfaceRole.Raised.border()) {
         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (fit == FitLevel.TOO_LARGE) Icons.Filled.Warning else Icons.Filled.CheckCircle, null, tint = color)
-                Column(Modifier.weight(1f).padding(start = Space.sm)) {
-                    Text(fit.title, style = MaterialTheme.typography.titleMedium, color = color)
-                    Text(fit.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val stackValue = maxWidth < 430.dp
+                if (stackValue) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                if (fit == FitLevel.TOO_LARGE) Icons.Filled.Warning else Icons.Filled.CheckCircle,
+                                null,
+                                tint = color,
+                            )
+                            Column(Modifier.weight(1f).padding(start = Space.sm)) {
+                                Text(stringResource(fit.titleRes), style = MaterialTheme.typography.titleMedium, color = color)
+                                Text(stringResource(fit.bodyRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text(
+                            String.format("%.1f GB", requiredGb),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.End),
+                        )
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (fit == FitLevel.TOO_LARGE) Icons.Filled.Warning else Icons.Filled.CheckCircle, null, tint = color)
+                        Column(Modifier.weight(1f).padding(start = Space.sm)) {
+                            Text(stringResource(fit.titleRes), style = MaterialTheme.typography.titleMedium, color = color)
+                            Text(stringResource(fit.bodyRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(String.format("%.1f GB", requiredGb), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
                 }
-                Text(String.format("%.1f GB", requiredGb), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             val track = MaterialTheme.colorScheme.surfaceContainerHighest
             Canvas(Modifier.fillMaxWidth().height(14.dp)) {
                 drawRoundRect(track, size = size, cornerRadius = CornerRadius(size.height / 2))
                 drawRoundRect(color, size = Size(size.width * ratio.coerceIn(0f, 1f), size.height), cornerRadius = CornerRadius(size.height / 2))
             }
-            Text("Estimated memory · safe budget ${String.format("%.1f GB", budgetGb)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.ui_modelcalculatorscreen_estimated_memory, String.format("%.1f GB", budgetGb)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -304,7 +331,7 @@ private fun MemoryBreakdown(estimate: ModelMemoryEstimate) {
     val colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.secondary)
     Card(Modifier.fillMaxWidth().padding(top = Space.md), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-            Text("Estimated memory", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.ui_modelcalculatorscreen_333_estimated_memory), style = MaterialTheme.typography.titleMedium)
             Canvas(Modifier.fillMaxWidth().height(18.dp)) {
                 val values = listOf(estimate.weightsGb, estimate.kvCacheGb, estimate.runtimeGb)
                 var x = 0f
@@ -340,8 +367,8 @@ private fun RecommendationCard(suggested: Float, bits: Int, context: Int, fit: F
     ) {
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.Top) {
             Icon(Icons.Filled.Speed, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-            Column(Modifier.padding(start = Space.md)) {
-                Text("Recommended starting point", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text(stringResource(R.string.ui_modelcalculatorscreen_370_recommended_starting_point), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     "Up to ${formatParameterCount(suggested)} at $bits-bit with ${formatContext(context)} context.",
                     style = MaterialTheme.typography.bodyLarge,

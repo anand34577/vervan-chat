@@ -144,6 +144,12 @@
     <string name="startup_loading">Loading your local workspace</string>
     <string name="startup_settings_error">Settings could not be read</string>
     <string name="action_retry">Retry</string>
+    <string name="activity_loading_model">Loading model</string>
+    <string name="activity_downloading_model">Downloading model</string>
+    <plurals name="activity_count_running">
+        <item quantity="one">%d activity running</item>
+        <item quantity="other">%d activities running</item>
+    </plurals>
     <string name="action_back">Back</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_archive">Archive</string>
@@ -449,6 +455,8 @@
     <string name="chat_cancel_reply">Cancel reply</string>
     <string name="chat_ocr_preview">OCR photo preview</string>
     <string name="chat_remove_ocr">Remove OCR attachment</string>
+    <string name="chat_qr_preview">QR photo preview</string>
+    <string name="chat_remove_qr">Remove QR attachment</string>
     <string name="chat_attached_image_preview">Attached image preview</string>
     <string name="chat_photo">Photo</string>
     <string name="chat_remove_image">Remove image</string>
@@ -759,6 +767,11 @@
     <string name="media_ocr_preview">OCR preview</string>
     <string name="media_ocr_on_device">OCR runs on this device</string>
     <string name="media_remove_ocr">Remove OCR image</string>
+    <string name="media_scan_qr">Scan QR</string>
+    <string name="media_scan_qr_camera">Scan QR with camera</string>
+    <string name="media_qr_preview">QR / barcode preview</string>
+    <string name="media_qr_on_device">Decoded on this device</string>
+    <string name="media_remove_qr">Remove QR image</string>
     <string name="media_scanned_photo">Scanned photo</string>
     <string name="media_hide_extracted">Hide extracted text</string>
     <string name="media_no_text">No text found · add manually</string>

@@ -134,7 +134,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
             ) {
                 item {
                     ModernistScreenHeader(
-                        eyebrow = "ACTIVE RECALL",
+                        eyebrow = stringResource(R.string.ui_studyworkspacescreen_137_active_recall),
                         title = stringResource(R.string.study_recall_title),
                         body = stringResource(R.string.study_recall_body),
                         trailing = { ModernistTag("${sets.size} DECKS", active = sets.isNotEmpty()) }

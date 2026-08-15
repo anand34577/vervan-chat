@@ -12,6 +12,7 @@ import com.vervan.chat.tools.ToolCallParser
 import com.vervan.chat.tools.ToolRegistry
 import com.vervan.chat.tools.ToolResult
 import com.vervan.chat.tools.ToolRisk
+import com.vervan.chat.tools.withImagePathContext
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -245,7 +246,7 @@ class ApiChatRunner(private val app: VervanApp) {
             }
 
             val result = try {
-                tool.execute(app, call.params)
+                tool.execute(app, call.params.withImagePathContext(request.imagePath))
             } catch (t: kotlinx.coroutines.CancellationException) {
                 throw t
             } catch (t: Throwable) {

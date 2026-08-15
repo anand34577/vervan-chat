@@ -94,8 +94,8 @@ fun ToolRunHistoryScreen(
     Scaffold(
         topBar = {
             VervanTopAppBar(
-                title = { Text("Run history") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.ui_toolrunhistoryscreen_97_run_history)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -161,8 +161,8 @@ fun ToolRunHistoryScreen(
 
     pendingDelete?.let { run ->
         ConfirmDialog(
-            title = "Remove this run?",
-            body = "It will move to the recycle bin.",
+            title = stringResource(R.string.ui_toolrunhistoryscreen_164_remove_this_run),
+            body = stringResource(R.string.ui_toolrunhistoryscreen_165_it_will_move_to_the_recycle_bin),
             confirmLabel = "Remove",
             destructive = true,
             onConfirm = {
@@ -230,8 +230,8 @@ private fun ToolRunCard(
                     RunAction(Icons.Filled.Share, "Share", onShare)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    AssistChip(onClick = onRerun, shape = MaterialTheme.shapes.extraSmall, label = { Text("Re-run") })
-                    AssistChip(onClick = onDelete, shape = MaterialTheme.shapes.extraSmall, label = { Text("Remove") }, leadingIcon = { Icon(Icons.Filled.Delete, null, Modifier.size(16.dp)) })
+                    AssistChip(onClick = onRerun, shape = MaterialTheme.shapes.extraSmall, label = { Text(stringResource(R.string.ui_toolrunhistoryscreen_233_re_run)) })
+                    AssistChip(onClick = onDelete, shape = MaterialTheme.shapes.extraSmall, label = { Text(stringResource(R.string.action_remove)) }, leadingIcon = { Icon(Icons.Filled.Delete, null, Modifier.size(16.dp)) })
                 }
             }
         }

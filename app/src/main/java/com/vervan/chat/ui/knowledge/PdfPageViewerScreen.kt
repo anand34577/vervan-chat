@@ -45,8 +45,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -123,7 +125,7 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
         topBar = {
             TopAppBar(
                 title = { Text(loadedDocument?.displayName ?: "PDF", maxLines = 1) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -131,28 +133,28 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 when {
                     documentError != null -> com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "PDF unavailable",
+                        title = stringResource(R.string.ui_pdfpageviewerscreen_136_pdf_unavailable),
                         message = documentError.orEmpty(),
-                        recovery = "Return to the source passage and try opening the page again.",
-                        actionLabel = "Retry",
+                        recovery = stringResource(R.string.ui_pdfpageviewer_source_recovery),
+                        actionLabel = stringResource(R.string.action_retry),
                         onAction = vm::retry,
                         modifier = Modifier.padding(24.dp)
                     )
                     documentLoading -> CircularProgressIndicator()
                     loadedDocument == null -> com.vervan.chat.ui.common.EmptyState(
                         icon = Icons.Filled.PictureAsPdf,
-                        title = "Document not found",
-                        body = "This source document may have been deleted or moved to the recycle bin.",
+                        title = stringResource(R.string.document_not_found),
+                        body = stringResource(R.string.ui_pdfpageviewerscreen_147_this_source_document_may_have_been_deleted_o),
                         modifier = Modifier.fillMaxSize(),
                         centered = true,
-                        actionLabel = "Back",
+                        actionLabel = stringResource(R.string.action_back),
                         onAction = onBack
                     )
                     error != null -> com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Page unavailable",
+                        title = stringResource(R.string.ui_pdfpageviewerscreen_154_page_unavailable),
                         message = error.orEmpty(),
-                        recovery = "Check that the original PDF is still available, then try again.",
-                        actionLabel = "Retry",
+                        recovery = stringResource(R.string.ui_pdfpageviewer_pdf_recovery),
+                        actionLabel = stringResource(R.string.action_retry),
                         onAction = { error = null; bitmap = null; pdfReloadKey++ },
                         modifier = Modifier.padding(24.dp)
                     )
@@ -166,11 +168,11 @@ fun PdfPageViewerScreen(documentId: String, initialPage: Int, onBack: () -> Unit
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) {
-                    Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous page")
+                    Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.ui_pdfpageviewerscreen_171_previous_page))
                 }
                 Text(if (pageCount > 0) "Page ${pageIndex + 1} of $pageCount" else "…", style = MaterialTheme.typography.bodyMedium)
                 IconButton(onClick = { if (pageIndex < pageCount - 1) pageIndex++ }, enabled = pageIndex < pageCount - 1) {
-                    Icon(Icons.Filled.ChevronRight, contentDescription = "Next page")
+                    Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.ui_pdfpageviewerscreen_175_next_page))
                 }
             }
         }
@@ -186,7 +188,7 @@ private fun ZoomableBitmap(bitmap: Bitmap) {
     var offsetY by remember { mutableFloatStateOf(0f) }
     Image(
         bitmap = bitmap.asImageBitmap(),
-        contentDescription = "PDF page",
+        contentDescription = stringResource(R.string.ui_pdfpageviewerscreen_191_pdf_page),
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer(

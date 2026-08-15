@@ -108,7 +108,7 @@ fun BackupScreen(onBack: () -> Unit) {
     fun runImport(uri: Uri, password: String) {
         scope.launch {
             busy = true
-            val job = JobRecord(type = JobType.BACKUP, label = "Restore backup", state = JobState.RUNNING)
+            val job = JobRecord(type = JobType.BACKUP, label = app.getString(R.string.backup_restore_title), state = JobState.RUNNING)
             app.container.db.jobDao().upsert(job)
             resultIsError = false
             resultMessage = try {
@@ -136,7 +136,7 @@ fun BackupScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.backup_screen_title)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->

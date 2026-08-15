@@ -4,9 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,34 +36,53 @@ fun ModernistScreenHeader(
     modifier: Modifier = Modifier,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    Column(modifier.fillMaxWidth().padding(bottom = Space.md)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stackTrailing = trailing != null && maxWidth < 520.dp
+        Column(Modifier.fillMaxWidth().padding(bottom = Space.md)) {
+            if (stackTrailing) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    trailing?.invoke(this)
+                }
+                Text(
+                    eyebrow.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    Text(
+                        eyebrow.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    trailing?.invoke(this)
+                }
+            }
             Text(
-                eyebrow.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f),
-            )
-            trailing?.invoke(this)
-        }
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(top = Space.xs),
-        )
-        body?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                title,
+                style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(top = Space.xs),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
             )
+            body?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -116,22 +137,51 @@ fun ModernistMetricStrip(
     metrics: List<Pair<String, String>>,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
-            .padding(vertical = Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        metrics.forEachIndexed { index, (label, value) ->
-            if (index > 0) {
-                androidx.compose.material3.VerticalDivider(
-                    modifier = Modifier.height(30.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-            }
-            Column(Modifier.weight(1f).padding(horizontal = Space.md, vertical = Space.sm)) {
-                Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Four fixed columns look fine on a tablet but make labels such as GENERATION and
+        // DOWNLOADS break in the middle on a phone. Two columns preserve the metric rhythm and
+        // give each label a real minimum reading width.
+        val columns = when {
+            metrics.size <= 1 -> 1
+            maxWidth < 520.dp -> 2
+            else -> metrics.size
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                .padding(vertical = Space.xs),
+        ) {
+            metrics.chunked(columns).forEachIndexed { rowIndex, row ->
+                if (rowIndex > 0) {
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    row.forEachIndexed { index, (label, value) ->
+                        if (index > 0) {
+                            androidx.compose.material3.VerticalDivider(
+                                modifier = Modifier.height(30.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = Space.md, vertical = Space.sm)) {
+                            Text(
+                                label.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    if (row.size < columns) {
+                        Spacer(Modifier.weight((columns - row.size).toFloat()))
+                    }
+                }
             }
         }
     }

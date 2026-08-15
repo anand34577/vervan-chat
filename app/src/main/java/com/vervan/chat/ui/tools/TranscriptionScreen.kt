@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -143,7 +144,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                     if (installedWhisperVariants.isEmpty()) {
                         ErrorCard(
                         title = stringResource(R.string.transcription_no_model),
-                            body = "Download one in Model Manager before transcribing.",
+                            body = stringResource(R.string.ui_transcriptionscreen_147_download_one_in_model_manager_before_transcr),
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     }
@@ -160,7 +161,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                         EmptyState(
                             icon = Icons.Filled.Mic,
                     title = stringResource(R.string.transcription_empty),
-                            body = "Import an audio file or record directly to get started."
+                            body = stringResource(R.string.ui_transcriptionscreen_164_import_an_audio_file_or_record_directly_to_g)
                         )
                     } else {
                         LazyColumn(Modifier.weight(1f, fill = false)) {
@@ -289,10 +290,13 @@ private fun TranscriptionDetail(
             when (phase) {
                 is TranscriptionViewModel.Phase.Transcribing -> {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                Text(stringResource(R.string.transcription_running), style = MaterialTheme.typography.bodyMedium)
-                        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(
+                            stringResource(R.string.transcription_running),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f).padding(start = Space.sm, end = Space.sm),
+                        )
+                        OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
                 else -> {
@@ -393,7 +397,7 @@ private fun TranscriptionDetail(
             when (val save = saveState) {
                 TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
             title = stringResource(R.string.transcription_saved),
-                    body = "The transcript was saved to your knowledge base.",
+                    body = stringResource(R.string.ui_transcriptionscreen_400_the_transcript_was_saved_to_your_knowledge_b),
                     tone = com.vervan.chat.ui.common.StatusTone.Ready,
                     modifier = Modifier.padding(top = Space.sm)
                 )

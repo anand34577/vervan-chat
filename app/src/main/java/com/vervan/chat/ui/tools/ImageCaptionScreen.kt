@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -171,8 +173,8 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Image caption & alt text") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_imagecaptionscreen_174_image_caption_alt_text)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -184,8 +186,8 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         ) {
             ToolIntro(
                 icon = Icons.Filled.ImageSearch,
-                title = "Describe an image for any audience",
-                body = "Create alt text, captions, or image descriptions on-device."
+                title = stringResource(R.string.ui_imagecaptionscreen_187_describe_an_image_for_any_audience),
+                body = stringResource(R.string.ui_imagecaptionscreen_188_create_alt_text_captions_or_image_descriptio)
             )
             if (visionAvailable == false) {
                 Text(
@@ -195,10 +197,10 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
             }
             ResponsiveActions {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text("From files", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text(stringResource(R.string.ui_imagecaptionscreen_201_from_files), modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
@@ -213,16 +215,16 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
             when {
                 isRunning && output.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(
-                        title = "Creating ${activeMode?.lowercase() ?: "description"}",
-                        body = "Analyzing the image with the active model; review the privacy status before sending sensitive images.",
-                        actionLabel = "Stop",
+                        title = stringResource(R.string.ui_imagecaptionscreen_creating, activeMode?.lowercase() ?: stringResource(R.string.ui_imagecaptionscreen_description)),
+                        body = stringResource(R.string.ui_imagecaptionscreen_217_analyzing_the_image_with_the_active_model_re),
+                        actionLabel = stringResource(R.string.action_stop),
                         onAction = { genJob?.cancel(); isRunning = false }
                     )
                 }
                 output.isNotBlank() -> {
                     ToolResultHeader(
-                        title = activeMode?.takeIf { it.isNotBlank() } ?: "Description ready",
-                        supportingText = if (isRunning) "Generating with the active model…" else "Ready to copy and use"
+                        title = activeMode?.takeIf { it.isNotBlank() } ?: stringResource(R.string.ui_imagecaptionscreen_description_ready),
+                        supportingText = if (isRunning) stringResource(R.string.ui_imagecaptionscreen_generating) else stringResource(R.string.ui_imagecaptionscreen_ready_to_copy)
                     )
                     Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         Column(Modifier.padding(Space.md)) {
@@ -235,16 +237,16 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                                         scope.launch { snackbarHostState.showSnackbar("Copied") }
                                     },
                                     modifier = Modifier.padding(top = Space.sm)
-                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
+                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
                             }
                         }
                     }
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't generate a caption",
+                        title = stringResource(R.string.ui_imagecaptionscreen_245_couldn_t_generate_a_caption),
                         message = errorText!!,
-                        recovery = "Load a vision model or choose a clearer image, then try again.",
+                        recovery = stringResource(R.string.ui_imagecaption_vision_recovery),
                         actionLabel = lastMode?.let { "Try again" },
                         onAction = lastMode?.let { mode -> { runMode(mode) } },
                         modifier = Modifier.padding(top = Space.lg)

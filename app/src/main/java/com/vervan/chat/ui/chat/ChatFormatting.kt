@@ -97,7 +97,9 @@ object ChatFormatting {
     }
 
     fun toolResultToJson(toolName: String, result: ToolResult): String =
-        JSONObject().put("tool", toolName).put("success", result.success).put("summary", result.summary).toString()
+        JSONObject().put("tool", toolName).put("success", result.success).put("summary", result.summary)
+            .apply { result.imagePath?.let { put("imagePath", it) } }
+            .toString()
 
     /** Walks parent links up from [from] to the nearest USER message's text (for regenerate/fork,
      * which need the prompt that produced an assistant turn). Empty string if there is none. */
@@ -109,5 +111,19 @@ object ChatFormatting {
             current = current.parentId?.let(byId::get)
         }
         return ""
+    }
+
+    /** Same walk as [nearestUserText], but for the image attached to this turn — backs the
+     * `scan_qr_code` tool's implicit "the image attached to this turn" context when a tool call
+     * is resumed from [ChatViewModel.confirmToolCall] rather than mid-[ChatViewModel.runGenerationLoop]
+     * (which already has the turn's imagePath as a plain parameter). */
+    fun nearestImagePath(all: List<Message>, from: Message?): String? {
+        val byId = all.associateBy { it.id }
+        var current = from
+        while (current != null) {
+            if (current.imagePath != null) return current.imagePath
+            current = current.parentId?.let(byId::get)
+        }
+        return null
     }
 }

@@ -29,6 +29,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.ColorFilter
@@ -52,6 +58,7 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -96,6 +103,7 @@ import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.system.ThermalLevel
 import com.vervan.chat.ui.common.ActionTile
+import com.vervan.chat.ui.common.EnterMotion
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -182,7 +190,7 @@ fun HomeScreen(
                         ) {
                             Image(
                                 painter = painterResource(R.drawable.ic_launcher_foreground),
-                                contentDescription = "Vervan",
+                                contentDescription = stringResource(R.string.role_vervan),
                                 colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimaryContainer),
                                 modifier = Modifier.size(38.dp)
                             )
@@ -190,7 +198,7 @@ fun HomeScreen(
                         // The active workspace name already appears right below in the hero (with
                         // richer privacy context) — repeating it here duplicated the
                         // same fact twice on one screen for no added information.
-                        Text("Vervan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
+                        Text(stringResource(R.string.role_vervan), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
                     }
                 },
                 actions = {
@@ -382,6 +390,7 @@ private fun HomeHero(
             in 12..16 -> "Good afternoon"
             else -> "Good evening"
         }
+    EnterMotion {
     Column(
         Modifier.fillMaxWidth().animateContentSize().padding(bottom = Space.sm)
     ) {
@@ -410,22 +419,36 @@ private fun HomeHero(
                         modifier = Modifier.padding(top = Space.xs)
                     )
                 }
+                // A glyph in a flat circle ("✓"/"—"/"↗") doesn't scale with display font, doesn't
+                // mirror for RTL, and reads as placeholder text rather than a designed status
+                // badge — replaced with real icons on the same soft two-tone gradient the rest of
+                // the app's Feature-size icon badges use (see IconAffordance), so this is the
+                // first thing on screen matching that language rather than a one-off circle.
+                val readyTint = MaterialTheme.colorScheme.primary
                 Box(
-                    Modifier.size(36.dp).background(
-                        if (model == null) MaterialTheme.colorScheme.surfaceContainerHighest
-                        else MaterialTheme.colorScheme.primary,
-                        CircleShape,
-                    ),
+                    Modifier
+                        .size(36.dp)
+                        .shadow(if (model != null) 3.dp else 0.dp, CircleShape, clip = false)
+                        .background(
+                            if (model == null) Brush.linearGradient(
+                                listOf(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.surfaceContainerHighest)
+                            )
+                            else Brush.linearGradient(
+                                listOf(readyTint, lerp(readyTint, MaterialTheme.colorScheme.tertiary, 0.35f))
+                            ),
+                            CircleShape,
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
+                    Icon(
                         when {
-                            remoteModel -> "↗"
-                            model == null -> "—"
-                            else -> "✓"
+                            remoteModel -> Icons.Filled.Cloud
+                            model == null -> Icons.Outlined.RadioButtonUnchecked
+                            else -> Icons.Filled.CheckCircle
                         },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (model == null) MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (model == null) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onPrimary,
                     )
                 }
@@ -471,6 +494,7 @@ private fun HomeHero(
                 )
             }
         }
+    }
 }
 
 /** Ruled single-line composer on the hero. Send (button or IME action) opens a new chat and
@@ -479,8 +503,13 @@ private fun HomeHero(
 @Composable
 private fun QuickAskField(onAsk: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    var submitting by rememberSaveable { mutableStateOf(false) }
     val askContentDescription = stringResource(R.string.home_ask_content_description)
     fun submit() {
+        // The navigation happens asynchronously, so a fast double tap could otherwise create
+        // two chats from one question before the destination replaces Home.
+        if (submitting) return
+        submitting = true
         val t = text
         text = ""
         onAsk(t)
@@ -512,20 +541,36 @@ private fun QuickAskField(onAsk: (String) -> Unit) {
                     }
                 }
             )
+            val sendTint = MaterialTheme.colorScheme.primary
             Box(
                 Modifier
                     .padding(vertical = Space.xs)
                     .size(48.dp)
-                    .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
-                    .clickable(onClick = ::submit, role = Role.Button),
+                    // A soft shadow + gradient instead of the flat fill every other control on
+                    // this screen already uses — this is the one button that actually starts a
+                    // conversation, so it earns being the thing your eye lands on first.
+                    .shadow(4.dp, MaterialTheme.shapes.small, clip = false)
+                    .background(
+                        Brush.linearGradient(listOf(sendTint, lerp(sendTint, MaterialTheme.colorScheme.tertiary, 0.3f))),
+                        MaterialTheme.shapes.small
+                    )
+                    .clickable(enabled = !submitting, onClick = ::submit, role = Role.Button),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = stringResource(R.string.home_start_chat_question),
-                     tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
+                if (submitting) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = stringResource(R.string.home_start_chat_question),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
@@ -851,7 +896,7 @@ private fun ToolsSection(
     Column {
         VervanSectionHeader(
             "Quick tools",
-            actionLabel = "See all",
+            actionLabel = stringResource(R.string.ui_homescreen_899_see_all),
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )

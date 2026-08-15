@@ -76,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -776,6 +777,7 @@ private fun PushToTalkOrb(
             .size(72.dp)
             .scale(scale)
             .offset { androidx.compose.ui.unit.IntOffset(0, -visualOffset.toInt()) }
+            .clip(CircleShape)
             .background(
                 Brush.radialGradient(
                     when {
@@ -793,7 +795,7 @@ private fun PushToTalkOrb(
                         )
                     }
                 ),
-                MaterialTheme.shapes.small
+                CircleShape
             )
             .pointerInput(muted) {
                 if (muted) return@pointerInput

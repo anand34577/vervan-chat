@@ -35,11 +35,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -88,9 +90,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Voice & speech") },
+                title = { Text(stringResource(R.string.settings_voice_speech)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         }
@@ -98,15 +100,15 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
         ScrollablePage(padding) {
             FeatureHero(
                 icon = Icons.Filled.GraphicEq,
-                eyebrow = "Natural conversation",
-                title = "Tune listening and speaking",
-                body = "Choose how Vervan hears, responds, plays speech, and protects your voice data."
+                eyebrow = stringResource(R.string.ui_voicesettingsscreen_103_natural_conversation),
+                title = stringResource(R.string.ui_voicesettingsscreen_104_tune_listening_and_speaking),
+                body = stringResource(R.string.ui_voicesettingsscreen_105_choose_how_vervan_hears_responds_plays_speec)
             )
             VoiceSettingsHeading("Voice quality")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     VoiceChoiceChips(
-                        title = "How should Vervan sound and listen?",
+                        title = stringResource(R.string.ui_voicesettingsscreen_111_how_should_vervan_sound_and_listen),
                         value = voiceQualityPreset,
                         choices = listOf("FAST" to "Fast", "BALANCED" to "Balanced", "BEST" to "Best"),
                         onSelect = vm::setVoiceQualityPreset
@@ -129,13 +131,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(Space.lg)) {
             VoiceToggleRow("Speech input", "Use dictation, push-to-talk, and hands-free listening.", speechInputEnabled, vm::setSpeechInputEnabled)
                     VoiceChoiceChips(
-                        title = "Input method",
+                        title = stringResource(R.string.ui_voicesettingsscreen_134_input_method),
                         value = voiceInputMethod,
                         choices = listOf("DICTATION" to "Dictation", "PUSH_TO_TALK" to "Push-to-talk", "HANDS_FREE" to "Hands-free"),
                         onSelect = vm::setVoiceInputMethod
                     )
                     VoiceChoiceChips(
-                        title = "Voice replies",
+                        title = stringResource(R.string.voice_replies),
                         value = voiceReplyMode,
                         choices = listOf("NEVER" to "Off", "MANUAL" to "Manual", "AUTOMATIC" to "Automatic", "HANDS_FREE" to "Hands-free"),
                         onSelect = vm::setVoiceReplyMode
@@ -149,7 +151,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     VoiceChoiceChips(
-                        title = "Language",
+                        title = stringResource(R.string.ui_voicesettingsscreen_154_language),
                         value = voiceInputLanguage,
                         choices = listOf("AUTO" to "Auto", "EN" to "English", "HI" to "Hindi", "MULTI" to "Multilingual"),
                         onSelect = vm::setVoiceInputLanguage
@@ -223,7 +225,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             VoiceSettingsHeading("Advanced: engines")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.ui_voicesettingsscreen_228_realtime_voice_chat_engine), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Auto uses Piper. Choose Kokoro for higher quality with slower playback, or Supertonic for a 31-language voice (largest download, slowest).",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -239,7 +241,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             selected = ttsEnginePreference == "AUTO",
                             onClick = { vm.setTtsEnginePreference("AUTO") },
                             shape = MaterialTheme.shapes.extraSmall,
-                            label = { Text("Auto (Piper)") }
+                            label = { Text(stringResource(R.string.ui_voicesettingsscreen_244_auto_piper)) }
                         )
                         FilterChip(
                             selected = ttsEnginePreference == "KOKORO",
@@ -258,7 +260,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     }
                     if (!supertonicDownloaded) {
                         com.vervan.chat.ui.common.VervanTextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
-                            Text("Open Model Manager to download Supertonic", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.ui_voicesettingsscreen_263_open_model_manager_to_download_supertonic), style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
                         // Every voice besides "multi" (M1) is a separate ~290 KB download layered
@@ -289,7 +291,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             }
                         }
                         com.vervan.chat.ui.common.VervanTextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
-                            Text("Download more Supertonic voices in Model Manager", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.ui_voicesettingsscreen_294_download_more_supertonic_voices_in_model_man), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -297,13 +299,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.ui_voicesettingsscreen_302_speech_to_text), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Choose an engine, or let Vervan use the first one ready.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     VoiceChoiceChips(
-                        title = "Preferred engine",
+                        title = stringResource(R.string.ui_voicesettingsscreen_308_preferred_engine),
                         value = sttEnginePreference,
                         choices = listOf(
                             "AUTO" to "Automatic",
@@ -444,13 +446,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     com.vervan.chat.ui.common.VervanTextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.xs)
-                    ) { Text("Download or import in Model Manager") }
+                    ) { Text(stringResource(R.string.ui_voicesettingsscreen_449_download_or_import_in_model_manager)) }
 
                     if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         val gpuDisabledAfterCrash = remember { vm.whisperGpuDisabledAfterCrash() }
                         Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("Try GPU for whisper.cpp (experimental)", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.ui_voicesettingsscreen_455_try_gpu_for_whisper_cpp_experimental), style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     if (gpuDisabledAfterCrash) {
                                         "GPU failed on this device and is disabled. Voice recognition now uses the CPU."
@@ -472,7 +474,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Voice models", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.ui_voicesettingsscreen_477_voice_models), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Manage downloaded Hindi and English voices in Model Manager.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -480,13 +482,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     com.vervan.chat.ui.common.VervanTextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.sm)
-                    ) { Text("Open Model Manager") }
+                    ) { Text(stringResource(R.string.ui_voicesettingsscreen_485_open_model_manager)) }
                 }
             }
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.ui_voicesettingsscreen_491_higher_quality_voice_optional), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Download the optional Kokoro voice here.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -512,10 +514,10 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             }
                             when {
                                 downloaded -> IconButton(onClick = { vm.deleteVoiceModel(entry) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete downloaded voice")
+                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.ui_voicesettingsscreen_517_delete_downloaded_voice))
                                 }
                                 activeJob != null -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                else -> com.vervan.chat.ui.common.VervanTextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
+                                else -> com.vervan.chat.ui.common.VervanTextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text(stringResource(R.string.ui_voicesettingsscreen_520_download)) }
                             }
                         }
                     }

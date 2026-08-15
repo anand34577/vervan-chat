@@ -33,11 +33,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.PageContainer
@@ -71,8 +73,8 @@ fun UserProfileScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("User profile") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.ui_userprofilescreen_76_user_profile)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -83,9 +85,9 @@ fun UserProfileScreen(onBack: () -> Unit) {
         ) {
             FeatureHero(
                 icon = Icons.Filled.Person,
-                eyebrow = "Personal context",
-                title = "Make replies feel like yours",
-                body = "Optional details help Vervan tailor responses. They are added to prompts only when you fill them in and are never inferred from chats.",
+                eyebrow = stringResource(R.string.ui_userprofilescreen_88_personal_context),
+                title = stringResource(R.string.ui_userprofilescreen_89_make_replies_feel_like_yours),
+                body = stringResource(R.string.ui_userprofilescreen_90_optional_details_help_vervan_tailor_response),
                 trailing = {
                     Text(
                         "$filledFields filled",
@@ -102,14 +104,14 @@ fun UserProfileScreen(onBack: () -> Unit) {
             ChipInputField(
                 items = interests.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { vm.setInterests(it.joinToString(",")) },
-                label = "Interests",
+                label = stringResource(R.string.ui_userprofilescreen_107_interests),
                 maxItemLength = ValidationLimits.USER_INTEREST_ITEM,
                 maxItemCount = ValidationLimits.USER_INTEREST_COUNT
             )
 
             VervanSectionHeader("Preferences", topPadding = Space.xs)
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text("Languages", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.ui_userprofilescreen_114_languages), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     LanguageOptions.common.forEach { lang ->
                         VervanFilterChip(
@@ -122,7 +124,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text("Units", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.ui_userprofilescreen_127_units), style = MaterialTheme.typography.labelMedium)
                 SingleChoiceSegmentedButtonRow {
                     listOf("metric" to "Metric", "imperial" to "Imperial").forEachIndexed { i, (id, label) ->
                         SegmentedButton(
@@ -138,7 +140,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
             ChipInputField(
                 items = avoid.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { vm.setAvoid(it.joinToString(",")) },
-                label = "Topics to avoid",
+                label = stringResource(R.string.ui_userprofilescreen_143_topics_to_avoid),
                 maxItemLength = ValidationLimits.USER_AVOID_TOPIC_ITEM,
                 maxItemCount = ValidationLimits.USER_AVOID_TOPIC_COUNT
             )

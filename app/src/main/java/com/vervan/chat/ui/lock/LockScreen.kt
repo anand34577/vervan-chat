@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.lock
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.activity.compose.BackHandler
@@ -62,6 +64,10 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
             BiometricManager.from(context).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
     }
     val showPinField = method != AppLockMethod.BIOMETRIC || !biometricAvailable
+    val lockoutMessage = if (lockoutRemainingMs > 0) {
+        val seconds = ((lockoutRemainingMs + 999) / 1_000).toInt()
+        context.resources.getQuantityString(R.plurals.lock_too_many_attempts, seconds, seconds)
+    } else null
     BackHandler(enabled = true) { }
 
     val biometricPrompt = remember {
@@ -136,7 +142,7 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
                         modifier = Modifier.size(28.dp)
                     )
                 }
-                Text("Vervan Chat is locked", style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.ui_lockscreen_139_vervan_chat_is_locked), style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Your data stays on this device — unlock to continue.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -145,20 +151,18 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
                 if (biometricAvailable) {
                     OutlinedButton(onClick = { biometricPrompt.authenticate(promptInfo) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Fingerprint, contentDescription = null)
-                        Text(" Unlock with biometrics", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.ui_lockscreen_148_unlock_with_biometrics), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 if (showPinField) {
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { if (it.length <= 12) { pin = it.filter(Char::isDigit); error = false } },
-                        label = { Text("PIN") },
+                        label = { Text(stringResource(R.string.ui_lockscreen_155_pin)) },
                         isError = error,
                         supportingText = when {
-                            lockoutRemainingMs > 0 -> {
-                                { Text("Too many attempts. Try again in ${(lockoutRemainingMs + 999) / 1_000} seconds.") }
-                            }
-                            error -> ({ Text("Incorrect PIN") })
+                            lockoutMessage != null -> { { Text(lockoutMessage) } }
+                            error -> ({ Text(stringResource(R.string.ui_lockscreen_161_incorrect_pin)) })
                             else -> null
                         },
                         visualTransformation = PasswordVisualTransformation(),
@@ -179,7 +183,7 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
                         enabled = pin.isNotEmpty() && lockoutRemainingMs == 0L,
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
-                    ) { Text("Unlock") }
+                    ) { Text(stringResource(R.string.ui_lockscreen_182_unlock)) }
                 }
               }
             }

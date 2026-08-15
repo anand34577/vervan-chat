@@ -424,6 +424,12 @@ dependencies {
     // artifact bundles its model in the APK, so it works with no network at all, unlike
     // com.google.android.gms:play-services-mlkit-text-recognition which fetches the model on first use.
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // On-device QR/barcode decode + generate. Deliberately ZXing's plain "core" artifact, not an
+    // ML Kit module: it's pure Java with zero Android/Play-Services dependencies (no dynamic
+    // model download, no Google Play Services requirement at all), and it covers both directions
+    // (BarcodeExtractor decodes with it, and the same BitMatrix machinery encodes for generation)
+    // so one small library replaces what would otherwise be two.
+    implementation("com.google.zxing:core:3.5.3")
     // HTML extraction with heading/list structure preserved — pure Java, no AWT/StAX, safe on
     // Android (unlike Apache POI's OOXML modules, see below).
     implementation("org.jsoup:jsoup:1.17.2")

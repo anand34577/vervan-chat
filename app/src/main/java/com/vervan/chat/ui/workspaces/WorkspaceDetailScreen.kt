@@ -280,7 +280,7 @@ fun WorkspaceDetailScreen(
             ContextGuideCard(
                 icon = Icons.AutoMirrored.Filled.Chat,
             title = stringResource(R.string.workspace_one_space),
-                body = "New chats inherit this space's persona, response profile, and knowledge sources.",
+                body = stringResource(R.string.ui_workspacedetailscreen_283_new_chats_inherit_this_space_s_persona_respo),
                 modifier = Modifier.padding(top = Space.md),
                 accentIndex = 2,
             )
@@ -468,7 +468,7 @@ fun WorkspaceDetailScreen(
     if (pendingDelete && ws != null) {
         ConfirmDialog(
             title = stringResource(R.string.workspace_delete_title),
-            body = "Permanently delete \"${ws.name}\" and all its content?",
+            body = stringResource(R.string.ui_workspacedetailscreen_delete_workspace_body, ws.name),
             confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { scope.launch { vm.delete(); pendingDelete = false; onBack() } },

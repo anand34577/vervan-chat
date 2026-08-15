@@ -42,6 +42,7 @@ import com.vervan.chat.tools.ToolCallParser
 import com.vervan.chat.tools.ToolRegistry
 import com.vervan.chat.tools.ToolResult
 import com.vervan.chat.tools.ToolRisk
+import com.vervan.chat.tools.withImagePathContext
 import androidx.room.withTransaction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -219,6 +220,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val imagePath: String? = null,
         val ocrImagePath: String? = null,
         val ocrText: String? = null,
+        val qrImagePath: String? = null,
+        val qrText: String? = null,
         val audioPath: String? = null
     )
     private val _attachments = MutableStateFlow(ComposerAttachments())
@@ -258,6 +261,23 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         _attachments.update { it.copy(ocrText = text) }
     }
 
+    /** Same shape as [setPendingOcr]/[updateOcrText] — a QR/barcode scan attach, decoded
+     * on-device via [com.vervan.chat.model.BarcodeExtractor]. Only the decoded text is folded
+     * into the outgoing message; the LLM never sees the photo. */
+    fun setPendingQr(imagePath: String?, text: String?) {
+        var displacedImage: String? = null
+        while (true) {
+            val current = _attachments.value
+            val next = current.copy(qrImagePath = imagePath, qrText = text)
+            if (_attachments.compareAndSet(current, next)) { displacedImage = current.qrImagePath; break }
+        }
+        if (displacedImage != null && displacedImage != imagePath) deleteFileQuietly(displacedImage)
+    }
+
+    fun updateQrText(text: String) {
+        _attachments.update { it.copy(qrText = text) }
+    }
+
     fun setPendingAudio(path: String?) {
         var displaced: String? = null
         while (true) {
@@ -277,6 +297,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val current = _attachments.value
             if (_attachments.compareAndSet(current, ComposerAttachments())) {
                 deleteFileQuietly(current.ocrImagePath)
+                deleteFileQuietly(current.qrImagePath)
                 return current
             }
         }
@@ -296,10 +317,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (leaveCleanupStarted.compareAndSet(false, true)) {
             app.applicationScope.launch(Dispatchers.IO) {
                 cleanupChatOnLeave()
-                listOf(pending.imagePath, pending.ocrImagePath, pending.audioPath).forEach(::deleteFileQuietly)
+                listOf(pending.imagePath, pending.ocrImagePath, pending.qrImagePath, pending.audioPath).forEach(::deleteFileQuietly)
             }
         } else {
-            listOf(pending.imagePath, pending.ocrImagePath, pending.audioPath).forEach(::deleteFileQuietly)
+            listOf(pending.imagePath, pending.ocrImagePath, pending.qrImagePath, pending.audioPath).forEach(::deleteFileQuietly)
         }
     }
 
@@ -603,6 +624,39 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         }.onFailure { Log.e(TAG, "OCR extraction failed", it) }
     }
 
+    /** QR/barcode counterpart of [OcrResult] — see its doc comment, same shape and reasoning. */
+    data class QrResult(val imagePath: String, val text: String)
+
+    /** Runs on-device ML Kit barcode scanning (see [com.vervan.chat.model.BarcodeExtractor])
+     * over a picked gallery image. */
+    suspend fun extractQr(uri: Uri): Result<QrResult> = withContext(Dispatchers.IO) {
+        var copied: java.io.File? = null
+        runCatching {
+            val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
+            val dest = java.io.File(dir, "${System.currentTimeMillis()}_qr.jpg")
+            copied = dest
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
+            } ?: throw java.io.IOException("Could not read image")
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
+            val text = com.vervan.chat.model.BarcodeExtractor.extractFromImage(dest)
+            QrResult(dest.absolutePath, text)
+        }.onFailure {
+            copied?.delete()
+            Log.e(TAG, "QR extraction failed", it)
+        }
+    }
+
+    /** Same as [extractQr] but for a camera capture already materialized as a file. */
+    suspend fun extractQrFromFile(file: java.io.File): Result<QrResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { "Image exceeds the 64 MB limit" }
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { "The captured file is not a readable image" }
+            val text = com.vervan.chat.model.BarcodeExtractor.extractFromImage(file)
+            QrResult(file.absolutePath, text)
+        }.onFailure { Log.e(TAG, "QR extraction failed", it) }
+    }
+
     /**
      * Attaches a document to this chat: extract -> chunk -> embed (if an embedding model is
      * available; falls back to keyword-only chunks otherwise, same pipeline Knowledge Base
@@ -644,11 +698,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                         } else {
                             // Same content already imported (this chat previously, or another
                             // chat) — reuse it instead of re-extracting/re-chunking/re-embedding
-                            // identical bytes into a second copy.
-                            android.widget.Toast.makeText(
-                                app, "\"${outcome.existing.displayName}\" already exists — using the existing copy",
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
+                            // identical bytes into a second copy. Routed through the same
+                            // _confirmationMessage Snackbar every other one-shot banner in this
+                            // class uses (see togglePin/moveToWorkspace/etc.) instead of a raw
+                            // Toast — one user-feedback idiom, not two.
+                            _confirmationMessage.value = "\"${outcome.existing.displayName}\" already exists — using the existing copy"
                             applyImportOutcome(outcome.existing, existingKbId)
                         }
                     }
@@ -1696,17 +1750,35 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Content.ImageBytes and sent to an engine loaded at Capability.TEXT_ONLY (no
         // visionBackend), which the native runtime just drops with no error surfaced
         // anywhere: the attachment looked sent but the model never actually saw it.
+        //
+        // scan_qr_code is the one exception: it decodes the attached image itself (ZXing, not
+        // the model's own vision), so a text-only model can still use it. Blocking the turn
+        // outright here — as this used to do unconditionally — meant that tool could never be
+        // reached at all: generation stopped before the model ever got a hop to call it. When
+        // the tool is available, let the turn through with a system note instead of the image
+        // itself (still gated by sendImageToModel below, same "never silently drop it" guarantee
+        // as the block this replaces).
         if (imagePath != null && !canSeeImages) {
-            val assistantMessage = Message(
-                chatId = chatId,
-                parentId = chatRow.activeLeafId,
-                role = MessageRole.ASSISTANT,
-                content = "This model cannot view images. Load a vision model and resend.",
-                state = MessageState.COMPLETE
+            val qrToolAvailable = chatRow.toolsEnabled && model.supportsTools != false && "scan_qr_code" in effectiveToolIds(chatRow)
+            if (!qrToolAvailable) {
+                val assistantMessage = Message(
+                    chatId = chatId,
+                    parentId = chatRow.activeLeafId,
+                    role = MessageRole.ASSISTANT,
+                    content = "This model cannot view images. Load a vision model, or turn on the scan_qr_code tool to decode a QR code/barcode from it, and resend.",
+                    state = MessageState.COMPLETE
+                )
+                db.messageDao().upsert(assistantMessage)
+                setActiveLeaf(assistantMessage.id)
+                return
+            }
+            val hintMessage = Message(
+                chatId = chatId, parentId = chatRow.activeLeafId, role = MessageRole.SYSTEM,
+                content = "An image is attached to this message. This model has no vision and cannot see it directly — " +
+                    "call scan_qr_code to decode any QR code or barcode it might contain."
             )
-            db.messageDao().upsert(assistantMessage)
-            setActiveLeaf(assistantMessage.id)
-            return
+            db.messageDao().upsert(hintMessage)
+            setActiveLeaf(hintMessage.id)
         }
 
         val effectiveProfileType = profileOverride ?: com.vervan.chat.system.DeviceAwareProfile.resolve(
@@ -1739,7 +1811,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             profile,
             effectiveProfileType.id,
             noEvidenceFound,
-            memoryRecall
+            memoryRecall,
+            sendImageToModel = canSeeImages
         )
     }
 
@@ -1761,7 +1834,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         profile: com.vervan.chat.llm.ResolvedProfile,
         profileId: String,
         noEvidenceFound: Boolean = false,
-        memoryRecall: com.vervan.chat.data.repo.MemoryRecall
+        memoryRecall: com.vervan.chat.data.repo.MemoryRecall,
+        // false when the model itself can't see images but [imagePath] was let through anyway
+        // because a tool (scan_qr_code) can still use it — see beginGeneration's vision gate.
+        // [imagePath] otherwise stays available below for that tool's `_imagePath` context
+        // regardless of this flag; it only controls what reaches the engine's own vision input.
+        sendImageToModel: Boolean = true
     ) {
         var hop = 0
         while (hop < MAX_TOOL_HOPS) {
@@ -1876,14 +1954,14 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // this function's other `model?.` reads tolerate a missing model.
             (if (model != null) {
                 app.container.generate(
-                    model, prompt, imagePath.takeIf { hop == 1 }, audioPath.takeIf { hop == 1 },
+                    model, prompt, imagePath.takeIf { hop == 1 && sendImageToModel }, audioPath.takeIf { hop == 1 },
                     genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
                     genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences,
                     assistantPrefill = assistantPrefill, systemPrompt = systemPrompt, reasoningBudget = reasoningBudget
                 )
             } else {
                 engine.generate(
-                    prompt, imagePath.takeIf { hop == 1 }, audioPath.takeIf { hop == 1 },
+                    prompt, imagePath.takeIf { hop == 1 && sendImageToModel }, audioPath.takeIf { hop == 1 },
                     genParams.temperature, genParams.topP, genParams.topK, genParams.seed
                 )
             })
@@ -2015,7 +2093,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // Read-only, or auto-approved by the model's tool approval mode: execute now,
             // record the result, then loop so the model can use it.
             val result = try {
-                tool.execute(app, toolCall.params)
+                tool.execute(app, toolCall.params.withImagePathContext(imagePath))
             } catch (t: Throwable) {
                 Log.e(TAG, "[$chatId] runGenerationLoop() hop=$hop tool '${tool.name}' threw", t)
                 ToolResult(false, "Tool failed: ${t.toUserMessage()}")
@@ -2099,7 +2177,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             }
             val params = callJson.optJSONObject("params") ?: JSONObject()
             val result = try {
-                tool.execute(app, params)
+                tool.execute(app, params.withImagePathContext(ChatFormatting.nearestImagePath(all, message)))
             } catch (t: Throwable) {
                 ToolResult(false, "Tool failed: ${t.toUserMessage()}")
             }

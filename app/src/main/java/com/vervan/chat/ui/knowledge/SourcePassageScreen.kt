@@ -126,14 +126,14 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Source passage") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.ui_sourcepassagescreen_129_source_passage)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     val page = chunk?.pageNumber
                     val docId = document?.id
                     if (page != null && docId != null) {
                         IconButton(onClick = { onOpenPdfPage(docId, page) }) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "View page $page in PDF")
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = stringResource(R.string.ui_sourcepassagescreen_view_page_pdf, page))
                         }
                     }
                 }

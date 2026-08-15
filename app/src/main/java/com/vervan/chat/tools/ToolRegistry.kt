@@ -458,6 +458,54 @@ object ToolRegistry {
             }
         ),
         ToolDefinition(
+            name = "generate_barcode",
+            description = "Generate a barcode image encoding the given text, in any of these 'format's: " +
+                "qr (default — use it only if the user said QR or didn't name a kind), " +
+                "code128, code39, code93, codabar, itf, pdf417, aztec, data_matrix (any of these take arbitrary text), " +
+                "ean13, ean8, upc_a, upc_e (fixed-length numeric product barcodes only — 'text' must be that many digits). " +
+                "Always pass the 'format' the user actually asked for by name (e.g. \"a Code 128 barcode\" -> format=code128) " +
+                "instead of defaulting to qr.",
+            paramNames = listOf("text", "format"),
+            risk = ToolRisk.REVERSIBLE_WRITE,
+            category = ToolCategory.DEVICE,
+            execute = { app, params ->
+                val text = params.optString("text")
+                if (text.isBlank()) return@ToolDefinition ToolResult(false, "generate_barcode needs non-empty 'text'")
+                if (text.length > 2000) return@ToolDefinition ToolResult(false, "generate_barcode needs 'text' under 2000 characters")
+                val format = BarcodeFormats.parse(params.optString("format").ifBlank { "qr" })
+                    ?: return@ToolDefinition ToolResult(false, "Unknown 'format'. Use one of: ${BarcodeFormats.NAMES.keys.joinToString()}")
+                withContext(Dispatchers.IO) {
+                    try {
+                        val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
+                        val file = java.io.File(dir, "barcode-generated-${System.currentTimeMillis()}.png")
+                        com.vervan.chat.model.BarcodeExtractor.generate(text, format, file)
+                        with(com.vervan.chat.model.BarcodeExtractor) {
+                            ToolResult(true, "Generated a ${format.label()} code encoding \"$text\". Shown to the user above; saved on-device.", imagePath = file.absolutePath)
+                        }
+                    } catch (e: Exception) {
+                        ToolResult(false, "Couldn't generate that code: ${e.toUserMessage()}. If it's a numeric product barcode (EAN/UPC), check the digit count is right for that format.")
+                    }
+                }
+            }
+        ),
+        ToolDefinition(
+            name = "scan_qr_code",
+            description = "Decode any QR code or barcode present in the image attached to this turn of the conversation. No parameters — it automatically uses that attachment.",
+            paramNames = emptyList(),
+            risk = ToolRisk.READ_ONLY,
+            category = ToolCategory.DEVICE,
+            execute = { _, params ->
+                val imagePath = params.optString("_imagePath").takeIf { it.isNotBlank() }
+                    ?: return@ToolDefinition ToolResult(false, "No image is attached to this conversation turn to scan. Ask the user to attach a photo of the QR code or barcode first.")
+                withContext(Dispatchers.IO) {
+                    val decoded = runCatching { com.vervan.chat.model.BarcodeExtractor.extractFromImage(java.io.File(imagePath)) }
+                        .getOrElse { return@withContext ToolResult(false, "Couldn't read that image: ${it.toUserMessage()}") }
+                    if (decoded.isBlank()) ToolResult(true, "No QR code or barcode was found in the attached image.")
+                    else ToolResult(true, "Decoded:\n$decoded")
+                }
+            }
+        ),
+        ToolDefinition(
             name = "random_number",
             description = "Generate a random integer between min and max (inclusive), e.g. for a dice roll or a coin flip.",
             paramNames = listOf("min", "max"),
@@ -739,6 +787,28 @@ object ToolRegistry {
     } catch (e: Exception) {
         ToolResult(false, "No app can handle $label: ${e.toUserMessage()}")
     }
+}
+
+/** Backs the `generate_barcode` tool's 'format' param — the human-typed name a model would
+ * plausibly use, mapped to ZXing's enum. */
+private object BarcodeFormats {
+    val NAMES: Map<String, com.google.zxing.BarcodeFormat> = mapOf(
+        "qr" to com.google.zxing.BarcodeFormat.QR_CODE,
+        "code128" to com.google.zxing.BarcodeFormat.CODE_128,
+        "code39" to com.google.zxing.BarcodeFormat.CODE_39,
+        "code93" to com.google.zxing.BarcodeFormat.CODE_93,
+        "codabar" to com.google.zxing.BarcodeFormat.CODABAR,
+        "ean13" to com.google.zxing.BarcodeFormat.EAN_13,
+        "ean8" to com.google.zxing.BarcodeFormat.EAN_8,
+        "itf" to com.google.zxing.BarcodeFormat.ITF,
+        "upc_a" to com.google.zxing.BarcodeFormat.UPC_A,
+        "upc_e" to com.google.zxing.BarcodeFormat.UPC_E,
+        "pdf417" to com.google.zxing.BarcodeFormat.PDF_417,
+        "aztec" to com.google.zxing.BarcodeFormat.AZTEC,
+        "data_matrix" to com.google.zxing.BarcodeFormat.DATA_MATRIX,
+    )
+
+    fun parse(name: String): com.google.zxing.BarcodeFormat? = NAMES[name.trim().lowercase().replace("-", "_").replace(" ", "_")]
 }
 
 /** Backs the `unit_convert` tool — a fixed, small conversion table rather than a units library,

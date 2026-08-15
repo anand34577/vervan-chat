@@ -182,9 +182,9 @@ fun LibraryScreen(
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize()) {
             ModernistScreenHeader(
-                eyebrow = "REUSABLE CONTEXT",
-                title = "Your building blocks",
-                body = "Save the context, prompts, workflows, and answers you want close at hand.",
+                eyebrow = stringResource(R.string.ui_libraryscreen_185_reusable_context),
+                title = stringResource(R.string.ui_libraryscreen_186_your_building_blocks),
+                body = stringResource(R.string.ui_libraryscreen_187_save_the_context_prompts_workflows_and_answe),
                 trailing = { ModernistTag(currentTabLabel.uppercase(), active = true) }
             )
             androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md) {

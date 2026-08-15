@@ -32,11 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
@@ -66,29 +68,29 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { OverflowTooltipText("Test: ${persona?.name ?: "Persona"}") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { OverflowTooltipText(stringResource(R.string.ui_personatestbench_test_title, persona?.name ?: stringResource(R.string.ui_personatestbench_persona))) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Persona unavailable",
+                    title = stringResource(R.string.persona_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your persona is safe. Retry loading it or return to the persona list.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.ui_personatestbench_persona_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retryLoad,
                     modifier = Modifier.padding(Space.md)
                 )
                 isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
                 persona == null -> EmptyState(
                     icon = Icons.Outlined.Person,
-                    title = "Persona not found",
-                    body = "This persona may have been deleted or moved to the recycle bin.",
+                    title = stringResource(R.string.persona_not_found),
+                    body = stringResource(R.string.persona_not_found_body),
                     modifier = Modifier.fillMaxSize(),
                     centered = true,
-                    actionLabel = "Back",
+                    actionLabel = stringResource(R.string.action_back),
                     onAction = onBack
                 )
                 else -> persona?.let { p ->
@@ -97,9 +99,9 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(Space.md)
                     ) {
                         ModernistScreenHeader(
-                            eyebrow = "PERSONA TEST BENCH",
+                            eyebrow = stringResource(R.string.ui_personatestbenchscreen_102_persona_test_bench),
                             title = p.name,
-                            body = "Try a prompt against this persona and inspect the response before using it in a chat.",
+                            body = stringResource(R.string.ui_personatestbenchscreen_104_try_a_prompt_against_this_persona_and_inspec),
                             trailing = { ModernistTag(if (running) "RUNNING" else "READY", active = running) }
                         )
 
@@ -110,7 +112,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-                                Text("System instruction", style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(R.string.persona_system_instruction), style = MaterialTheme.typography.labelLarge)
                                 Text(
                                     p.systemInstruction,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -135,7 +137,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-                                Text("Prompt", style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(R.string.ui_personatestbenchscreen_140_prompt), style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     "Use a concrete request to see how this persona responds.",
                                     style = MaterialTheme.typography.bodySmall,
@@ -161,7 +163,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                                     ) {
                                         if (running) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                                         else Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Text("Run test", modifier = Modifier.padding(start = Space.xs))
+                                        Text(stringResource(R.string.ui_personatestbenchscreen_166_run_test), modifier = Modifier.padding(start = Space.xs))
                                     }
                                     OutlinedButton(
                                         onClick = vm::reset,
@@ -170,7 +172,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                                         shape = MaterialTheme.shapes.small
                                     ) {
                                         Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Text("Reset", modifier = Modifier.padding(start = Space.xs))
+                                        Text(stringResource(R.string.action_reset), modifier = Modifier.padding(start = Space.xs))
                                     }
                                 }
                             }
@@ -178,15 +180,15 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
 
                         if (running) {
                             com.vervan.chat.ui.common.OperationProgressCard(
-                                title = "Testing this persona",
-                                body = "The response will appear here when generation finishes."
+                                title = stringResource(R.string.ui_personatestbenchscreen_183_testing_this_persona),
+                                body = stringResource(R.string.ui_personatestbenchscreen_184_the_response_will_appear_here_when_generatio)
                             )
                         }
                         error?.let {
                             OperationErrorCard(
-                                title = "Persona test could not run",
+                                title = stringResource(R.string.ui_personatestbenchscreen_189_persona_test_could_not_run),
                                 message = it,
-                                recovery = "Load a local generation model, then try again."
+                                recovery = stringResource(R.string.ui_personatestbench_model_recovery)
                             )
                         }
                         response?.let { resp ->
@@ -198,7 +200,7 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f))
                             ) {
                                 Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-                                    Text("Response preview", style = MaterialTheme.typography.titleSmall)
+                                    Text(stringResource(R.string.ui_personatestbenchscreen_203_response_preview), style = MaterialTheme.typography.titleSmall)
                                     Text(resp, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.sm))
                                 }
                             }

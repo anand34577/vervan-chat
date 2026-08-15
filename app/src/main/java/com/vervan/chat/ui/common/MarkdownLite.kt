@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color as AndroidColor
@@ -328,7 +330,7 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
     ) {
         Column {
             RendererHeader(
-                label = "Mermaid · offline",
+                label = stringResource(R.string.ui_markdownlite_331_mermaid_offline),
                 onCopy = onCopy,
                 showDiagramIcon = true,
                 onExpand = { showFullscreen = true }
@@ -371,7 +373,7 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
                         if (fixing) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("Fix with AI")
+                            Text(stringResource(R.string.ui_markdownlite_374_fix_with_ai))
                         }
                     }
                 }
@@ -399,7 +401,7 @@ private fun MermaidFullscreenDialog(source: String, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Diagram", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.ui_markdownlite_402_diagram), style = MaterialTheme.typography.titleMedium)
                     IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close") }
                 }
                 HorizontalDivider(color = scheme.outlineVariant)

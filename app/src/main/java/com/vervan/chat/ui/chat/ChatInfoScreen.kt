@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -139,8 +140,8 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val workspace = workspaces.find { it.id == chat?.workspaceId }
     val explicitPersona = personas.find { it.id == chat?.personaId }
     val workspacePersona = personas.find { it.id == workspace?.personaId }
-    val persona = (explicitPersona ?: workspacePersona)?.name ?: "Persona unavailable"
-    val model = (models.find { it.id == chat?.modelId } ?: activeModel)?.displayName ?: "No generation model"
+    val persona = (explicitPersona ?: workspacePersona)?.name ?: stringResource(com.vervan.chat.R.string.persona_unavailable)
+    val model = (models.find { it.id == chat?.modelId } ?: activeModel)?.displayName ?: stringResource(com.vervan.chat.R.string.home_no_generation_model)
     val selectedModel = models.find { it.id == chat?.modelId } ?: activeModel
     val modelRunsOnDevice = selectedModel?.traits?.runsOnDevice != false
     val latestResponseModel = visible.lastOrNull { it.role == MessageRole.ASSISTANT && it.modelName != null }?.modelName
@@ -151,29 +152,29 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat info") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(com.vervan.chat.R.string.chat_info_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Chat information unavailable",
+                    title = stringResource(com.vervan.chat.R.string.chat_info_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your conversation is safe. Retry loading its details or return to the chat.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(com.vervan.chat.R.string.chat_info_recovery),
+                    actionLabel = stringResource(com.vervan.chat.R.string.action_retry),
                     onAction = vm::retry,
                     modifier = Modifier.padding(Space.md)
                 )
                 isLoading -> LoadingSkeletonList(rows = 8, modifier = Modifier.padding(Space.md))
                 chat == null -> EmptyState(
                     icon = Icons.AutoMirrored.Filled.Chat,
-                    title = "Chat not found",
-                    body = "This conversation may have been deleted or moved to the recycle bin.",
+                    title = stringResource(com.vervan.chat.R.string.chat_info_not_found),
+                    body = stringResource(com.vervan.chat.R.string.chat_info_not_found_body),
                     modifier = Modifier.fillMaxSize(),
                     centered = true,
-                    actionLabel = "Back",
+                    actionLabel = stringResource(com.vervan.chat.R.string.action_back),
                     onAction = onBack
                 )
                 else -> LazyColumn(
@@ -206,14 +207,14 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             )
                         }
                         Text(
-                            chat?.title ?: "Chat",
+                            chat?.title ?: stringResource(com.vervan.chat.R.string.chat_info_default_chat),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
-                        val subtitle = "$persona · ${latestResponseModel ?: model}"
+                        val subtitle = stringResource(com.vervan.chat.R.string.ui_chatinfo_persona_model, persona, latestResponseModel ?: model)
                         Text(
                             subtitle,
                             style = MaterialTheme.typography.bodyMedium,
@@ -233,15 +234,15 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         ) {
                             StatusPill(
                                 when {
-                                    selectedModel == null -> "No generation model"
-                                    modelRunsOnDevice -> "Private · on device"
-                                    else -> "Remote model · data may leave device"
+                                    selectedModel == null -> stringResource(com.vervan.chat.R.string.home_no_generation_model)
+                                    modelRunsOnDevice -> stringResource(com.vervan.chat.R.string.chat_info_private_on_device)
+                                    else -> stringResource(com.vervan.chat.R.string.chat_info_remote_data_warning)
                                 },
                                 if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.LockOpen
                             )
-                            if (chat?.isTemporary == true) StatusPill("Incognito", Icons.Filled.VisibilityOff)
-                            if (chat?.pinned == true) StatusPill("Pinned", Icons.Filled.PushPin)
-                            if (chat?.archived == true) StatusPill("Archived", Icons.Outlined.Inventory2)
+                            if (chat?.isTemporary == true) StatusPill(stringResource(com.vervan.chat.R.string.chat_info_incognito), Icons.Filled.VisibilityOff)
+                            if (chat?.pinned == true) StatusPill(stringResource(com.vervan.chat.R.string.chat_filter_pinned), Icons.Filled.PushPin)
+                            if (chat?.archived == true) StatusPill(stringResource(com.vervan.chat.R.string.chat_filter_archived), Icons.Outlined.Inventory2)
                         }
                     }
                 }
@@ -253,19 +254,19 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         verticalArrangement = Arrangement.spacedBy(Space.sm)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            StatCell(Icons.AutoMirrored.Filled.Chat, visible.size.toString(), "Messages")
-                            StatCell(Icons.Filled.Description, wordCount.toString(), "Words")
+                            StatCell(Icons.AutoMirrored.Filled.Chat, visible.size.toString(), stringResource(com.vervan.chat.R.string.chat_info_messages))
+                            StatCell(Icons.Filled.Description, wordCount.toString(), stringResource(com.vervan.chat.R.string.chat_info_words))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            StatCell(Icons.Filled.AttachFile, attachmentCount.toString(), "Attachments")
-                            StatCell(Icons.Filled.Bolt, compactNumber(generatedTokens), "AI tokens")
+                            StatCell(Icons.Filled.AttachFile, attachmentCount.toString(), stringResource(com.vervan.chat.R.string.chat_info_attachments))
+                            StatCell(Icons.Filled.Bolt, compactNumber(generatedTokens), stringResource(com.vervan.chat.R.string.chat_info_ai_tokens))
                         }
                     }
                 }
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Conversation insights")
+                        SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_conversation_insights))
                         ConversationInsightsCard(
                             userMessages = userCount,
                             assistantMessages = aiCount,
@@ -281,14 +282,14 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Last 7 days")
+                        SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_last_seven_days))
                         ActivityChart(activity)
                     }
                 }
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Shared items")
+                        SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_shared_items))
                         AttachmentOverview(imagePaths.size, sharedDocuments.size, audioCount, links.size)
                     }
                 }
@@ -296,42 +297,42 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 // ── Configuration ─────────────────────────────────────────────
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Configuration")
+                        SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_configuration))
                         SectionCard(
                             items = listOf<@Composable () -> Unit>(
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Dashboard,
-                                        title = "Workspace",
-                                        subtitle = workspace?.name ?: "Workspace unavailable"
+                                        title = stringResource(com.vervan.chat.R.string.workspace_name),
+                                        subtitle = workspace?.name ?: stringResource(com.vervan.chat.R.string.chat_info_workspace_unavailable)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Latest response model",
-                                        subtitle = latestResponseModel ?: "No generated response yet"
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_latest_response_model),
+                                        subtitle = latestResponseModel ?: stringResource(com.vervan.chat.R.string.chat_info_no_response)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.AutoAwesome,
-                                        title = "Model setting",
-                                        subtitle = if (chat?.modelId != null) "$model · selected for this chat" else "$model · app default"
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_model_setting),
+                                        subtitle = if (chat?.modelId != null) stringResource(com.vervan.chat.R.string.chat_info_selected_for_chat, model) else stringResource(com.vervan.chat.R.string.chat_info_app_default, model)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
-                                        title = "Persona",
-                                        subtitle = if (chat?.personaId != null) "$persona · selected for this chat"
-                                        else "$persona · inherited from ${workspace?.name ?: "space"}"
+                                        title = stringResource(com.vervan.chat.R.string.chat_persona),
+                                        subtitle = if (chat?.personaId != null) stringResource(com.vervan.chat.R.string.chat_info_persona_selected, persona)
+                                        else stringResource(com.vervan.chat.R.string.chat_info_persona_inherited, persona, workspace?.name ?: stringResource(com.vervan.chat.R.string.workspace_one_space))
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Response profile",
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_response_profile),
                                         subtitle = (chat?.profile ?: "BALANCED").lowercase().replaceFirstChar { it.uppercase() }
                                     )
                                 },
@@ -343,19 +344,19 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                     val modeLabel = mode.lowercase().replaceFirstChar { it.uppercase() }
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
-                                        title = "Thinking",
-                                        subtitle = if (chat?.thinkingMode == null) "$modeLabel · model default" else modeLabel
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_thinking),
+                                        subtitle = if (chat?.thinkingMode == null) stringResource(com.vervan.chat.R.string.chat_info_model_default, modeLabel) else modeLabel
                                     )
                                 },
                                 {
                                     val count = chat?.kbIdList()?.size ?: 0
                                     SectionRow(
                                         icon = Icons.AutoMirrored.Filled.MenuBook,
-                                        title = "Sources",
+                                        title = stringResource(com.vervan.chat.R.string.chat_sources),
                                         subtitle = if (chat?.sourceGrounded == true && count > 0)
                                             sourceNames.takeIf { it.isNotEmpty() }?.joinToString(", ")
-                                                ?: "$count source${if (count == 1) "" else "s"} · grounded"
-                                        else "Not grounded"
+                                                ?: stringResource(com.vervan.chat.R.string.chat_info_source_count, count, if (count == 1) "" else "s")
+                                        else stringResource(com.vervan.chat.R.string.chat_info_not_grounded)
                                     )
                                 }
                             )
@@ -366,29 +367,29 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 // ── Timeline ──────────────────────────────────────────────────
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Timeline")
+                        SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_timeline))
                         SectionCard(
                             items = listOf<@Composable () -> Unit>(
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.CalendarToday,
-                                        title = "Created",
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_created),
                                         subtitle = chat?.createdAt?.let { dateFmt.format(java.util.Date(it)) } ?: "—"
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Schedule,
-                                        title = "Last activity",
-                                        subtitle = lastActivity?.let { dateFmt.format(java.util.Date(it)) } ?: "No messages yet"
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_last_activity),
+                                        subtitle = lastActivity?.let { dateFmt.format(java.util.Date(it)) } ?: stringResource(com.vervan.chat.R.string.chat_info_no_messages)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Local generation",
-                                        subtitle = if (generatedReplies.isEmpty()) "No measured replies yet" else
-                                            "${generatedReplies.size} replies · ${formatDuration(generationMs)} total"
+                                        title = stringResource(com.vervan.chat.R.string.chat_info_local_generation),
+                                        subtitle = if (generatedReplies.isEmpty()) stringResource(com.vervan.chat.R.string.chat_info_no_measured_replies) else
+                                            stringResource(com.vervan.chat.R.string.chat_info_replies_total, generatedReplies.size, formatDuration(generationMs))
                                     )
                                 }
                             )
@@ -397,8 +398,8 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 }
 
                 // ── Shared media ──────────────────────────────────────────────
-                item { SectionLabel("Shared media · ${imagePaths.size}", Modifier.padding(horizontal = Space.lg)) }
-                if (imagePaths.isEmpty()) item { EmptyLine("No shared images") }
+                item { SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_shared_media, imagePaths.size), Modifier.padding(horizontal = Space.lg)) }
+                if (imagePaths.isEmpty()) item { EmptyLine(stringResource(com.vervan.chat.R.string.chat_info_no_shared_images)) }
                 // WhatsApp-style grid of small thumbnails; tap opens the in-app preview.
                 items(imagePaths.chunked(3), key = { it.first() }) { rowPaths ->
                     Row(
@@ -413,9 +414,9 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                 border = SurfaceRole.Raised.border()
                             ) {
                                 if (bitmap != null) {
-                                    Image(bitmap, "Shared image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                    Image(bitmap, stringResource(com.vervan.chat.R.string.chat_shared_image), Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                 } else {
-                                    Icon(Icons.Filled.Image, "Shared image", Modifier.fillMaxSize().padding(Space.xxl))
+                                    Icon(Icons.Filled.Image, stringResource(com.vervan.chat.R.string.chat_shared_image), Modifier.fillMaxSize().padding(Space.xxl))
                                 }
                             }
                         }
@@ -423,20 +424,20 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 }
 
                 // ── Documents ─────────────────────────────────────────────────
-                item { SectionLabel("Documents · ${sharedDocuments.size}", Modifier.padding(horizontal = Space.lg)) }
-                if (sharedDocuments.isEmpty()) item { EmptyLine("No shared documents") }
+                item { SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_documents, sharedDocuments.size), Modifier.padding(horizontal = Space.lg)) }
+                if (sharedDocuments.isEmpty()) item { EmptyLine(stringResource(com.vervan.chat.R.string.chat_info_no_shared_documents)) }
                 items(sharedDocuments, key = { it.id }) { doc ->
                     MediaListRow(
                         icon = Icons.Filled.Description,
                         title = doc.displayName,
-                        subtitle = "${doc.mimeType} · ${doc.status.name.lowercase()}",
+                        subtitle = stringResource(com.vervan.chat.R.string.ui_chatinfo_document_status, doc.mimeType, doc.status.name.lowercase()),
                         onClick = { onOpenDocument(doc.id) }
                     )
                 }
 
                 // ── Shared links ──────────────────────────────────────────────
-                item { SectionLabel("Shared links · ${links.size}", Modifier.padding(horizontal = Space.lg)) }
-                if (links.isEmpty()) item { EmptyLine("No shared links") }
+                item { SectionLabel(stringResource(com.vervan.chat.R.string.chat_info_shared_links, links.size), Modifier.padding(horizontal = Space.lg)) }
+                if (links.isEmpty()) item { EmptyLine(stringResource(com.vervan.chat.R.string.chat_info_no_shared_links)) }
                 items(links, key = { it }) { link ->
                     MediaListRow(
                         icon = Icons.Filled.Link,
@@ -445,7 +446,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         onClick = {
                             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
                                 .onFailure {
-                                    android.widget.Toast.makeText(context, "No app can open this link.", android.widget.Toast.LENGTH_LONG).show()
+                                    android.widget.Toast.makeText(context, context.getString(com.vervan.chat.R.string.chat_info_no_app_for_link), android.widget.Toast.LENGTH_LONG).show()
                                 }
                         }
                     )
@@ -455,7 +456,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
         }
     }
     previewPath?.let { path ->
-        FullScreenImagePreview(path = path, title = "Shared image", onDismiss = { previewPath = null })
+        FullScreenImagePreview(path = path, title = stringResource(com.vervan.chat.R.string.chat_shared_image), onDismiss = { previewPath = null })
     }
 }
 
@@ -511,12 +512,12 @@ private fun ConversationInsightsCard(
 ) {
     Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-            BalanceRow("Message balance", userMessages, assistantMessages)
-            BalanceRow("Word balance", userWords, assistantWords)
+            BalanceRow(stringResource(com.vervan.chat.R.string.chat_info_message_balance), userMessages, assistantMessages)
+            BalanceRow(stringResource(com.vervan.chat.R.string.chat_info_word_balance), userWords, assistantWords)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                InsightMetric(if (generatedReplies == 0) "—" else formatDuration(averageReplyMs), "Avg. reply", Modifier.weight(1f))
-                InsightMetric(if (tokensPerSecond <= 0f) "—" else String.format("%.1f/s", tokensPerSecond), "Token speed", Modifier.weight(1f))
-                InsightMetric(interrupted.toString(), "Interrupted", Modifier.weight(1f))
+                InsightMetric(if (generatedReplies == 0) "—" else formatDuration(averageReplyMs), stringResource(com.vervan.chat.R.string.chat_info_avg_reply), Modifier.weight(1f))
+                InsightMetric(if (tokensPerSecond <= 0f) "—" else String.format("%.1f/s", tokensPerSecond), stringResource(com.vervan.chat.R.string.chat_info_token_speed), Modifier.weight(1f))
+                InsightMetric(interrupted.toString(), stringResource(com.vervan.chat.R.string.chat_info_interrupted), Modifier.weight(1f))
             }
         }
     }
@@ -532,7 +533,7 @@ private fun BalanceRow(label: String, user: Int, assistant: Int) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(
-                "You $user · AI $assistant",
+                stringResource(com.vervan.chat.R.string.chat_info_you_ai_count, user, assistant),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -588,7 +589,7 @@ private fun ActivityChart(points: List<ActivityPoint>) {
                 points.forEach { Text(it.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             Text(
-                "${points.sumOf { it.count }} messages this week",
+                stringResource(com.vervan.chat.R.string.chat_info_week_messages, points.sumOf { it.count }),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.sm)
@@ -618,10 +619,10 @@ private fun AttachmentOverview(images: Int, documents: Int, audio: Int, links: I
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                AttachmentMetric(Icons.Filled.Image, images, "Images", colors[0], Modifier.weight(1f))
-                AttachmentMetric(Icons.Filled.Description, documents, "Docs", colors[1], Modifier.weight(1f))
-                AttachmentMetric(Icons.Filled.GraphicEq, audio, "Audio", colors[2], Modifier.weight(1f))
-                AttachmentMetric(Icons.Filled.Link, links, "Links", colors[3], Modifier.weight(1f))
+                AttachmentMetric(Icons.Filled.Image, images, stringResource(com.vervan.chat.R.string.chat_info_images), colors[0], Modifier.weight(1f))
+                AttachmentMetric(Icons.Filled.Description, documents, stringResource(com.vervan.chat.R.string.chat_info_docs), colors[1], Modifier.weight(1f))
+                AttachmentMetric(Icons.Filled.GraphicEq, audio, stringResource(com.vervan.chat.R.string.chat_info_audio), colors[2], Modifier.weight(1f))
+                AttachmentMetric(Icons.Filled.Link, links, stringResource(com.vervan.chat.R.string.chat_info_links), colors[3], Modifier.weight(1f))
             }
         }
     }

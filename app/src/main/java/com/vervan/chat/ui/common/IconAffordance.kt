@@ -8,7 +8,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -41,10 +43,20 @@ fun IconAffordance(
     // from avatars/status dots (which may be circular) and from continuous controls (which may
     // be stadium-shaped), so the navigation language stays predictable across routes.
     val shape = MaterialTheme.shapes.small
+    // Feature-size badges are the ones a user actually looks at for a beat — hero cards, empty
+    // states, hands-free entry points — so they get a soft two-tone gradient instead of the flat
+    // fill dense list rows use. Compact/Default stay flat: a gradient recomputed on every list
+    // row is wasted cost for a badge the eye skims past in a scrolling list.
+    val boxModifier = if (size == IconAffordanceSize.Feature) {
+        modifier.size(size.box).background(
+            Brush.linearGradient(listOf(containerColor, lerp(containerColor, tint, 0.16f))),
+            shape
+        )
+    } else {
+        modifier.size(size.box).background(containerColor, shape)
+    }
     Box(
-        modifier = modifier
-            .size(size.box)
-            .background(containerColor, shape),
+        modifier = boxModifier,
         contentAlignment = Alignment.Center
     ) {
         Icon(

@@ -264,7 +264,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep1) {
         ConfirmDialog(
             title = stringResource(R.string.security_wipe_title),
-            body = "Permanently erase all local content and models?",
+            body = stringResource(R.string.ui_securitysettingsscreen_267_permanently_erase_all_local_content_and_mode),
             confirmLabel = stringResource(R.string.action_continue),
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
@@ -274,7 +274,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep2) {
         ConfirmDialog(
             title = stringResource(R.string.security_are_you_sure),
-            body = "This cannot be undone. The app will close when the wipe starts.",
+            body = stringResource(R.string.ui_securitysettingsscreen_277_this_cannot_be_undone_the_app_will_close_whe),
             confirmLabel = stringResource(R.string.security_wipe_everything),
             destructive = true,
             onConfirm = {

@@ -182,13 +182,13 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                     selectionMode = false
                     scope.launch {
                         if (snackbarHostState.showSnackbar(
-                                "Moved $count chat${if (count == 1) "" else "s"} to the recycle bin",
-                                "Undo"
+                                context.resources.getQuantityString(R.plurals.chat_moved_to_recycle_bin, count, count),
+                                context.getString(R.string.action_undo)
                             ) == SnackbarResult.ActionPerformed
                         ) vm.restoreFromTrash(trashed)
                     }
                 },
-                deleteContentDescription = "Move selected to recycle bin",
+                deleteContentDescription = stringResource(R.string.action_recycle),
                 extraActions = {
                     IconButton(
                         enabled = selected.isNotEmpty(),
@@ -202,7 +202,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                             }
                         }
                     ) {
-                        Icon(Icons.Filled.PushPin, contentDescription = "Pin selected")
+                        Icon(Icons.Filled.PushPin, contentDescription = stringResource(R.string.chat_pin_selected))
                     }
                     // Archive/move-to-folder are extras this screen needs beyond the shared
                     // select-all + delete shape — kept exactly as before, just relocated into
@@ -216,12 +216,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                 selected = emptySet()
                                 selectionMode = false
                                 scope.launch {
-                                    if (snackbarHostState.showSnackbar("Restored $count chat${if (count == 1) "" else "s"} to All", "View") == SnackbarResult.ActionPerformed) {
+                                    if (snackbarHostState.showSnackbar(context.resources.getQuantityString(R.plurals.chat_restored_count, count, count), context.getString(R.string.action_view)) == SnackbarResult.ActionPerformed) {
                                         vm.setFilter(ChatFilter.ALL)
                                     }
                                 }
                             }
-                        ) { Text("Restore") }
+                        ) { Text(stringResource(R.string.action_restore_archive)) }
                     } else {
                         IconButton(
                             enabled = selected.isNotEmpty(),
@@ -233,18 +233,18 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                 selectionMode = false
                                 scope.launch {
                                     if (snackbarHostState.showSnackbar(
-                                            "Archived $count chat${if (count == 1) "" else "s"}",
-                                            "Undo"
+                                            context.resources.getQuantityString(R.plurals.chat_archived_count, count, count),
+                                            context.getString(R.string.action_undo)
                                         ) == SnackbarResult.ActionPerformed
                                     ) vm.unarchive(ids)
                                 }
                             }
-                        ) { Icon(Icons.Filled.Archive, "Archive selected") }
+                        ) { Icon(Icons.Filled.Archive, stringResource(R.string.chat_archive_selected)) }
                     }
                     Box {
-                        IconButton(onClick = { showFolders = true }, enabled = selected.isNotEmpty()) { Icon(Icons.Filled.Folder, "Move to folder") }
+                        IconButton(onClick = { showFolders = true }, enabled = selected.isNotEmpty()) { Icon(Icons.Filled.Folder, stringResource(R.string.chat_move_to_folder)) }
                         DropdownMenu(showFolders, { showFolders = false }) {
-                            DropdownMenuItem(text = { Text("Default folder") }, onClick = { vm.moveToFolder(selected, null); selected = emptySet(); selectionMode = false; showFolders = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_default_folder)) }, onClick = { vm.moveToFolder(selected, null); selected = emptySet(); selectionMode = false; showFolders = false })
                             folders.forEach { folder -> DropdownMenuItem(text = { Text(folder.name) }, onClick = { vm.moveToFolder(selected, folder.id); selected = emptySet(); selectionMode = false; showFolders = false }) }
                         }
                     }
@@ -259,17 +259,17 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize()) {
             ModernistScreenHeader(
-                eyebrow = "CONVERSATIONS",
-                title = "Find a conversation",
-                body = "Search, filter, and pick up where you left off.",
+                eyebrow = stringResource(R.string.search_scope_chats).uppercase(),
+                title = stringResource(R.string.chat_find_title),
+                body = stringResource(R.string.chat_find_body),
                 trailing = { ModernistTag(filter.name.replace('_', ' '), active = true) }
             )
             ModernistMetricStrip(
                 metrics = listOf(
-                    "TOTAL" to totalChatCount.toString(),
-                    "PINNED" to chats.count { it.pinned }.toString(),
-                    "FOLDERS" to folders.size.toString(),
-                    "MODE" to "LOCAL"
+                    stringResource(R.string.chat_metric_total) to totalChatCount.toString(),
+                    stringResource(R.string.chat_metric_pinned) to chats.count { it.pinned }.toString(),
+                    stringResource(R.string.chat_metric_folders) to folders.size.toString(),
+                    stringResource(R.string.chat_metric_mode) to stringResource(R.string.chat_metric_local)
                 ),
                 modifier = Modifier.padding(bottom = Space.md)
             )
@@ -306,6 +306,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                             ChatBucketHeader(label = bucketLabel, count = bucketChats.size)
                         }
                         items(bucketChats, key = { "$bucketLabel-${it.id}" }) { chat ->
+                            // Wrapping (rather than threading a modifier param into
+                            // ChatListRow's own swipe-gesture Modifier chain) keeps this animation
+                            // opt-in without touching that row's already-intricate drag math.
+                            // animateItem() smooths pin/archive/filter re-sorts and delete/insert
+                            // into a slide instead of the list just snapping to its new order.
+                            Box(Modifier.animateItem()) {
                             ChatListRow(
                                 chat = chat,
                                 projectName = chat.projectId?.let { projectNames[it] },
@@ -325,8 +331,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                     vm.toggleArchive(chat)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
-                                            if (restoring) "Chat restored to All" else "Chat archived",
-                                            actionLabel = if (restoring) "View" else "Undo"
+                                            if (restoring) context.getString(R.string.chat_restored_to_all) else context.getString(R.string.chat_archived),
+                                            actionLabel = if (restoring) context.getString(R.string.action_view) else context.getString(R.string.action_undo)
                                         )
                                         if (restoring && result == SnackbarResult.ActionPerformed) vm.setFilter(ChatFilter.ALL)
                                         if (!restoring && result == SnackbarResult.ActionPerformed) vm.unarchive(setOf(chat.id))
@@ -336,8 +342,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                     vm.moveToTrash(chat)
                                     scope.launch {
                                         if (snackbarHostState.showSnackbar(
-                                                "Moved chat to the recycle bin",
-                                                "Undo"
+                                                context.getString(R.string.chat_moved_single_to_recycle_bin),
+                                                context.getString(R.string.action_undo)
                                             ) == SnackbarResult.ActionPerformed
                                         ) vm.restoreFromTrash(listOf(chat))
                                     }
@@ -351,10 +357,11 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                             putExtra(Intent.EXTRA_SUBJECT, chat.title)
                                             putExtra(Intent.EXTRA_TEXT, vm.exportText(chat))
                                         }
-                                        context.startActivity(Intent.createChooser(send, "Export chat"))
+                                        context.startActivity(Intent.createChooser(send, context.getString(R.string.chat_export)))
                                     }
                                 }
                             )
+                            }
                         }
                     }
                     if (buckets.isEmpty()) {
@@ -381,10 +388,10 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
         var title by remember(chat.id) { mutableStateOf(chat.title) }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("Rename chat") },
+            title = { Text(stringResource(R.string.chat_rename)) },
             text = { BoundedTextField(value = title, onValueChange = { title = it }, maxLength = 120, singleLine = true) },
-            confirmButton = { TextButton(onClick = { vm.rename(chat, title); renameTarget = null }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = { vm.rename(chat, title); renameTarget = null }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text(stringResource(R.string.action_save)) } },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 }
@@ -629,7 +636,7 @@ private fun ChatListRow(
                     )
                     if (chat.pinned) {
                         Icon(
-                            Icons.Filled.PushPin, contentDescription = "Pinned",
+                            Icons.Filled.PushPin, contentDescription = stringResource(R.string.chat_filter_pinned),
                             modifier = Modifier.size(14.dp).padding(end = 2.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -655,8 +662,7 @@ private fun ChatListRow(
                     .joinToString(" · ")
                 val secondaryText = listOfNotNull(
                     previewText?.let {
-                        val prefix = if (lastMessage != null && lastMessage.role == com.vervan.chat.data.db.entities.MessageRole.USER) "You: " else ""
-                        "$prefix$it"
+                        if (lastMessage != null && lastMessage.role == com.vervan.chat.data.db.entities.MessageRole.USER) stringResource(R.string.chat_you_prefix, it) else it
                     },
                     metadata.takeIf { it.isNotBlank() }
                 ).joinToString(" · ")
@@ -673,15 +679,15 @@ private fun ChatListRow(
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Chat options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_options), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text(if (chat.pinned) "Unpin" else "Pin") }, onClick = { onTogglePin(); showMenu = false })
-                    DropdownMenuItem(text = { Text(if (selected) "Unselect" else "Select") }, onClick = { onSelect(); showMenu = false })
+                    DropdownMenuItem(text = { Text(if (chat.pinned) stringResource(R.string.chat_unpin) else stringResource(R.string.chat_pin)) }, onClick = { onTogglePin(); showMenu = false })
+                    DropdownMenuItem(text = { Text(if (selected) stringResource(R.string.chat_unselect) else stringResource(R.string.chat_select)) }, onClick = { onSelect(); showMenu = false })
                     ArchiveMenuItem(archived = chat.archived, onClick = { onToggleArchive(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { onRename(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Duplicate") }, onClick = { onDuplicate(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Export") }, onClick = { onExport(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { onRename(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.chat_duplicate)) }, onClick = { onDuplicate(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_export)) }, onClick = { onExport(); showMenu = false })
                     DeleteMenuItem(onClick = { onMoveToTrash(); showMenu = false })
                 }
             }

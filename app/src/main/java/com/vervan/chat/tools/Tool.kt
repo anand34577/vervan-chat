@@ -16,7 +16,10 @@ enum class ToolCategory(val label: String) {
     ACTION("Open another app")
 }
 
-data class ToolResult(val success: Boolean, val summary: String)
+/** [imagePath] is set only by tools that produce a viewable image (currently just
+ * `generate_barcode`) — [com.vervan.chat.ui.chat.ChatMessageCards.ToolResultCard] renders it
+ * inline instead of the generic text-only result card. Every other tool leaves it null. */
+data class ToolResult(val success: Boolean, val summary: String, val imagePath: String? = null)
 
 /**
  * A tool the model can ask the app to run. [execute] is only ever called by
@@ -33,3 +36,10 @@ data class ToolDefinition(
 )
 
 data class ToolCall(val name: String, val params: JSONObject, val rawBlock: String)
+
+/** Threads "the image attached to this conversation turn" into a tool call without the model
+ * ever having to name a file path — used only by `scan_qr_code`. Returns a copy so the caller's
+ * own copy of [this] (stored/displayed as the tool call's params) is untouched. No-op if there
+ * is no such image. */
+fun JSONObject.withImagePathContext(imagePath: String?): JSONObject =
+    if (imagePath == null) this else JSONObject(toString()).put("_imagePath", imagePath)

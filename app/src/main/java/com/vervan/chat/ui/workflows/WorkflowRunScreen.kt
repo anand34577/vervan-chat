@@ -43,11 +43,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.EmptyState
@@ -91,11 +93,11 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(workflow?.name ?: "Workflow") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { showSourcePicker = true }, enabled = workflowFound && !isLoading) {
                         Icon(
-                            Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Sources",
+                            Icons.AutoMirrored.Filled.MenuBook, contentDescription = stringResource(R.string.chat_sources),
                             tint = if (sourceKbIds.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -106,44 +108,44 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
       PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Workflow unavailable",
+                title = stringResource(R.string.ui_workflowrunscreen_111_workflow_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your workflow is safe. Retry loading it or return to the workflow list.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.ui_workflow_run_lookup_recovery),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 7, modifier = Modifier.padding(Space.md))
             !workflowFound -> EmptyState(
                 icon = Icons.Filled.Description,
-                title = "Workflow not found",
-                body = "This workflow may have been deleted or moved to the recycle bin.",
+                title = stringResource(R.string.ui_workflowrunscreen_121_workflow_not_found),
+                body = stringResource(R.string.ui_workflowrunscreen_122_this_workflow_may_have_been_deleted_or_moved),
                 modifier = Modifier.fillMaxSize(),
                 centered = true,
-                actionLabel = "Back",
+                actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg)) {
             BoundedTextField(
                 value = input,
                 onValueChange = { input = it },
-                label = "Input text",
+                label = stringResource(R.string.ui_workflowrunscreen_132_input_text),
                 maxLength = ValidationLimits.WORKFLOW_RUN_INPUT,
                 modifier = Modifier.fillMaxWidth().height(140.dp)
             )
             ResponsiveActions(Modifier.padding(top = Space.sm)) {
                 OutlinedButton(onClick = { pickFile.launch(arrayOf("text/plain", "text/markdown", "application/pdf", "*/*")) }, enabled = !running) {
-                    Text("Import file")
+                    Text(stringResource(R.string.transcription_import_file))
                 }
                 if (running) {
-                    OutlinedButton(onClick = { vm.pauseRun() }) { Text("Pause") }
-                    OutlinedButton(onClick = { vm.cancelRun() }) { Text("Cancel") }
+                    OutlinedButton(onClick = { vm.pauseRun() }) { Text(stringResource(R.string.action_pause)) }
+                    OutlinedButton(onClick = { vm.cancelRun() }) { Text(stringResource(R.string.action_cancel)) }
                 } else if (paused) {
-                    Button(onClick = { vm.resumeRun() }, shape = MaterialTheme.shapes.small) { Text("Resume") }
-                    OutlinedButton(onClick = { vm.cancelRun() }) { Text("Cancel") }
+                    Button(onClick = { vm.resumeRun() }, shape = MaterialTheme.shapes.small) { Text(stringResource(R.string.action_resume)) }
+                    OutlinedButton(onClick = { vm.cancelRun() }) { Text(stringResource(R.string.action_cancel)) }
                 } else {
                     Button(onClick = { vm.run(input) }, enabled = input.isNotBlank(), shape = MaterialTheme.shapes.small) {
-                        Text("Run")
+                        Text(stringResource(R.string.ui_workflowrunscreen_148_run))
                     }
                 }
             }
@@ -164,7 +166,7 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 if (step.done) {
                                     Icon(
-                                        Icons.Filled.CheckCircle, contentDescription = "Done",
+                                        Icons.Filled.CheckCircle, contentDescription = stringResource(R.string.action_done),
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(16.dp).padding(end = Space.xs)
                                     )
@@ -190,8 +192,8 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                             }
                             if (step.done && index == steps.lastIndex) {
                                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                                    TextButton(onClick = { vm.saveAsLibraryOutput(step.output) }) { Text("Save to library") }
-                                    TextButton(onClick = { vm.saveAsNote(step.output) }) { Text("Save as note") }
+                                    TextButton(onClick = { vm.saveAsLibraryOutput(step.output) }) { Text(stringResource(R.string.writing_save_library)) }
+                                    TextButton(onClick = { vm.saveAsNote(step.output) }) { Text(stringResource(R.string.translation_save_note)) }
                                 }
                             }
                         }
@@ -206,11 +208,11 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
         var selected by remember { mutableStateOf(sourceKbIds) }
         AlertDialog(
             onDismissRequest = { showSourcePicker = false },
-            title = { Text("Pull sources into this run") },
+            title = { Text(stringResource(R.string.ui_workflowrunscreen_211_pull_sources_into_this_run)) },
             text = {
                 Column {
                     if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet. Import a document in Knowledge.")
+                        Text(stringResource(R.string.workspace_no_knowledge))
                     }
                     knowledgeBases.forEach { kb ->
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -226,8 +228,8 @@ fun WorkflowRunScreen(workflowId: String, onBack: () -> Unit) {
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { vm.setSourceKbIds(selected); showSourcePicker = false }) { Text("Done") } },
-            dismissButton = { TextButton(onClick = { showSourcePicker = false }) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = { vm.setSourceKbIds(selected); showSourcePicker = false }) { Text(stringResource(R.string.action_done)) } },
+            dismissButton = { TextButton(onClick = { showSourcePicker = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 }

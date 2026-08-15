@@ -7,10 +7,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -53,9 +58,9 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Appearance") },
+                title = { Text(stringResource(com.vervan.chat.R.string.appearance_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) }
                 }
             )
         }
@@ -63,9 +68,9 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
         ScrollablePage(padding) {
             FeatureHero(
                 icon = Icons.Filled.Palette,
-                eyebrow = "Personalize your workspace",
-                title = "Make Vervan feel at home",
-                body = "Choose the visual mood, color source, and display contrast that feel comfortable throughout the app."
+                eyebrow = stringResource(com.vervan.chat.R.string.appearance_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.appearance_hero_title),
+                body = stringResource(com.vervan.chat.R.string.appearance_hero_body)
             )
             ContentCard {
                 Column(
@@ -73,7 +78,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     verticalArrangement = Arrangement.spacedBy(Space.lg)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Text("Theme", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(com.vervan.chat.R.string.appearance_theme), style = MaterialTheme.typography.bodyMedium)
                         Row(
                             Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(Space.sm)
@@ -82,7 +87,13 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                                 VervanFilterChip(
                                     selected = themeMode == mode,
                                     onClick = { vm.setThemeMode(mode) },
-                                    label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                    label = {
+                                        Text(stringResource(when (mode) {
+                                            ThemeMode.SYSTEM -> com.vervan.chat.R.string.appearance_theme_system
+                                            ThemeMode.LIGHT -> com.vervan.chat.R.string.appearance_theme_light
+                                            ThemeMode.DARK -> com.vervan.chat.R.string.appearance_theme_dark
+                                        }))
+                                    }
                                 )
                             }
                         }
@@ -92,13 +103,13 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
+                            Text(stringResource(com.vervan.chat.R.string.appearance_device_color), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
                             Switch(checked = dynamicColor, onCheckedChange = { vm.setDynamicColor(it) })
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Text(
-                            "Accent color",
+                            stringResource(com.vervan.chat.R.string.appearance_accent_color),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                         )
@@ -117,7 +128,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         }
                         if (dynamicColor) {
                             Text(
-                                "Custom accent colors are ignored while device color is on.",
+                                stringResource(com.vervan.chat.R.string.appearance_dynamic_accent_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -128,7 +139,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "OLED true black (dark theme)",
+                            stringResource(com.vervan.chat.R.string.appearance_oled_black),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (themeMode == ThemeMode.LIGHT) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.onSurface,
@@ -141,6 +152,56 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         )
                     }
                 }
+            }
+            LanguageCard()
+        }
+    }
+}
+
+/** Hands off to the OS's own per-app language picker (Settings -> App info -> Language) rather
+ * than reimplementing a language switcher in-app — the OS one already persists the choice per-app,
+ * restarts activities with the new locale, and lists exactly what locales_config.xml declares
+ * (see AndroidManifest's android:localeConfig). Only available on Android 13+ (LocaleManager);
+ * older Android has no per-app language API, so this card is replaced with a note there — the app
+ * still follows the system language as it always has. */
+@Composable
+private fun LanguageCard() {
+    val context = LocalContext.current
+    ContentCard {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .let { m ->
+                    if (android.os.Build.VERSION.SDK_INT >= 33) m.clickable {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS)
+                                .setData(android.net.Uri.fromParts("package", context.packageName, null))
+                        )
+                    } else m
+                }
+                .padding(Space.lg),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Language, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text(stringResource(com.vervan.chat.R.string.appearance_language), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (android.os.Build.VERSION.SDK_INT >= 33)
+                        stringResource(com.vervan.chat.R.string.appearance_language_android)
+                    else
+                        stringResource(com.vervan.chat.R.string.appearance_language_older_android),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForwardIos,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

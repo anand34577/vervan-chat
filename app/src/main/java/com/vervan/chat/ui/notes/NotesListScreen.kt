@@ -96,19 +96,19 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                         selectionMode = false
                         scope.launch {
                             if (snackbarHostState.showSnackbar(
-                                    "Moved $count note${if (count == 1) "" else "s"} to the recycle bin",
-                                    "Undo"
+                                    app.resources.getQuantityString(R.plurals.notes_moved_to_recycle_bin, count, count),
+                                    app.getString(R.string.action_undo)
                                 ) == SnackbarResult.ActionPerformed
                             ) vm.restoreAll(trashed)
                         }
                     },
-                    deleteContentDescription = "Move selected to recycle bin"
+                    deleteContentDescription = app.getString(R.string.action_recycle)
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Notes") },
+                    title = { Text(stringResource(R.string.folder_notes)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                     }
                     // Long-press a row to enter selection mode — no separate top-bar entry
                     // point, matching every other list screen in the app.
@@ -117,7 +117,7 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) {
-                Icon(Icons.Filled.Add, contentDescription = "New note")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.widget_new_note))
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -137,11 +137,11 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
             } else if (notes.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Note,
-                    title = "No notes yet",
-                    body = "Capture ideas, meeting notes, and anything worth keeping.",
+                    title = stringResource(R.string.notes_empty_title),
+                    body = stringResource(R.string.notes_empty_body),
                     modifier = Modifier.fillMaxSize(),
                     centered = true,
-                    actionLabel = "Write a note",
+                    actionLabel = stringResource(R.string.notes_write_action),
                     onAction = { scope.launch { onOpenNote(vm.createNote()) } }
                 )
             } else {
@@ -204,7 +204,7 @@ private fun NoteRow(
                 if (note.pinned) {
                     Icon(
                         Icons.Filled.PushPin,
-                        contentDescription = "Pinned",
+                        contentDescription = stringResource(R.string.chat_filter_pinned),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = Space.sm).size(14.dp)
                     )
@@ -265,7 +265,7 @@ private fun NoteRow(
                     if (note.pinned) {
                         Icon(
                             Icons.Filled.PushPin,
-                            contentDescription = "Pinned",
+                            contentDescription = stringResource(R.string.chat_filter_pinned),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = Space.sm).size(14.dp)
                         )

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13+ per-app language: pairs with android:localeConfig on <application> so Settings ->
+     App info -> Language offers this list natively, and app.container's LanguageSettingsScreen
+     calls LocaleManager.setApplicationLocales() with one of these tags. Below API 33 there's no
+     platform per-app language switcher; the app follows the system locale there. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="hi" />
+    <locale android:name="es" />
+    <locale android:name="fr" />
+    <locale android:name="de" />
+    <locale android:name="pt" />
+    <locale android:name="ru" />
+    <locale android:name="ja" />
+    <locale android:name="bn" />
+</locale-config>

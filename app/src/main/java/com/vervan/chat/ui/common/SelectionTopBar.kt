@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
@@ -33,23 +35,25 @@ fun SelectionTopBar(
     onExit: () -> Unit,
     onDelete: (() -> Unit)? = null,
     deleteEnabled: Boolean = selectedCount > 0,
-    deleteContentDescription: String = "Delete selected",
+    deleteContentDescription: String? = null,
     extraActions: @Composable RowScope.() -> Unit = {}
 ) {
+    val selectedLabel = stringResource(R.string.selection_selected_count, selectedCount)
+    val deleteLabel = deleteContentDescription ?: stringResource(R.string.library_delete_selected)
     VervanTopAppBar(
-        title = { Text("$selectedCount selected") },
-        navigationIcon = { IconButton(onClick = onExit) { Icon(Icons.Filled.Close, contentDescription = "Exit selection") } },
+        title = { Text(selectedLabel) },
+        navigationIcon = { IconButton(onClick = onExit) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.ui_selectiontopbar_41_exit_selection)) } },
         actions = {
             IconButton(onClick = onToggleSelectAll) {
                 Icon(
                     if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                    contentDescription = if (allSelected) "Deselect all" else "Select all"
+                    contentDescription = stringResource(if (allSelected) R.string.selection_deselect_all else R.string.selection_select_all)
                 )
             }
             extraActions()
             if (onDelete != null) {
                 IconButton(enabled = deleteEnabled, onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = deleteContentDescription, tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Filled.Delete, contentDescription = deleteLabel, tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

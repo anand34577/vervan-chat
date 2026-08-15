@@ -3,12 +3,15 @@ package com.vervan.chat.ui.nav
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,10 +62,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -107,6 +114,7 @@ import com.vervan.chat.ui.notes.NotesListScreen
 import com.vervan.chat.ui.onboarding.OnboardingScreen
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
+import com.vervan.chat.ui.common.ActivityStatusPill
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.ModernistTokens
@@ -248,7 +256,7 @@ fun VervanNavGraph(
                 )
             }
             "capture" -> {
-                val note = Note(title = "Quick note")
+                val note = Note(title = app.getString(R.string.ui_navgraph_259_quick_note))
                 app.container.db.noteDao().upsert(note)
                 navController.navigate("note/${note.id}")
             }
@@ -290,6 +298,24 @@ fun VervanNavGraph(
     // phone (adaptive-layout gap) — same destinations, just repositioned.
     val useRail = windowSizeClass?.widthSizeClass != null && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val useTwoPane = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded
+    // The compact navigation surface is intentionally painted as an overlay, but the content
+    // viewport still needs to reserve the space it occupies. Include the system gesture inset so
+    // the last list row/action remains visible on phones; the rail path reserves that inset too.
+    val systemBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Navigation labels are part of the accessible text scale. Keep the shell's minimum geometry
+    // intact at normal sizes, but let it grow when large system/in-app text would otherwise clip
+    // the icon + label stack inside the fixed 80dp surface.
+    val navigationScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val bottomNavigationHeight = ModernistTokens.Layout.bottomNavigationHeight * navigationScale
+    val bottomNavigationItemHeight = ModernistTokens.Layout.bottomNavigationItemHeight * navigationScale
+    val navigationRailItemHeight = ModernistTokens.Layout.navigationRailItemHeight * navigationScale
+    val bottomContentReserve = when {
+        !showBottomBar -> 0.dp
+        useRail -> systemBottomInset
+        else -> bottomNavigationHeight + Space.lg + systemBottomInset
+    }
+    val overlayBottomReserve = systemBottomInset +
+        if (!useRail && showBottomBar) bottomNavigationHeight + Space.lg else 0.dp
     val activeJobs by app.container.db.jobDao().observeActive().collectAsStateWithLifecycle(initialValue = emptyList())
     val modelLoadState by app.container.modelLoadCoordinator.state.collectAsStateWithLifecycle()
     val loadingModels = modelLoadState.values.count { it.phase == ModelLoadPhase.LOADING }
@@ -301,6 +327,20 @@ fun VervanNavGraph(
             ModelStatus.PAUSING, ModelStatus.VERIFYING, ModelStatus.IMPORTING,
         )
     }
+    val activityLabel = when {
+        activeJobs.size == 1 && loadingModels == 0 && activeDownloads == 0 -> activeJobs.first().label
+        loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> stringResource(R.string.activity_loading_model)
+        activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> stringResource(R.string.activity_downloading_model)
+        activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0 ->
+            pluralStringResource(
+                R.plurals.activity_count_running,
+                activeJobs.size + loadingModels + activeDownloads,
+                activeJobs.size + loadingModels + activeDownloads,
+            )
+        else -> null
+    }
+    val activityRoute = if (activeJobs.isNotEmpty()) "jobs" else "models"
+    val chatRouteActive = currentRoute?.route == AppRoutes.CHAT || currentRoute?.route == AppRoutes.CHAT_START
     val createLabel = stringResource(R.string.action_create)
     val reducedMotion = rememberReducedMotion()
 
@@ -317,7 +357,7 @@ fun VervanNavGraph(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Vervan", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = stringResource(R.string.role_vervan), modifier = Modifier.size(20.dp))
                     }
                 }
                 FloatingActionButton(
@@ -328,9 +368,9 @@ fun VervanNavGraph(
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = createLabel)
                 }
-                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
+                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController, navigationRailItemHeight) }
                 Spacer(Modifier.weight(1f))
-                trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
+                trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController, navigationRailItemHeight) }
             }
         }
         Scaffold(
@@ -341,16 +381,15 @@ fun VervanNavGraph(
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
-            // No bottomBar here on purpose: the nav bar is rendered as an overlay at the bottom
-            // of the content Box below instead (see VervanNavigationBar call), so screen content
-            // extends the full height of the screen and genuinely sits behind it, rather than
-            // Scaffold reserving a dedicated strip that's never painted by any screen.
+            // No bottomBar here on purpose: the nav bar is rendered as a themed overlay at the
+            // bottom of the content Box below. NavHost reserves that overlay's measured height so
+            // scrollable content does not disappear underneath it.
         ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(bottom = bottomContentReserve),
             // Compose Navigation's default transition is a plain crossfade — both the outgoing
             // and incoming screen are partially transparent at the same time mid-animation, which
             // reads as a jumbled "overlay" flash rather than one screen replacing another
@@ -426,6 +465,9 @@ fun VervanNavGraph(
                     onBack = { navController.popBackStack() },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") }
                 )
+            }
+            composable("tools/qr-scanner") {
+                com.vervan.chat.ui.tools.QrScannerScreen(onBack = { navController.popBackStack() })
             }
             composable("tools/voice-chat") {
                 androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -710,6 +752,8 @@ fun VervanNavGraph(
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    activityLabel = activityLabel,
+                    onOpenActivity = { navController.navigate(activityRoute) },
                     // Forking replaces this chat in the back stack instead of stacking on top of
                     // it — otherwise forking twice then pressing Back walks back through each
                     // fork instead of leaving the chat entirely (user ask).
@@ -735,6 +779,8 @@ fun VervanNavGraph(
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    activityLabel = activityLabel,
+                    onOpenActivity = { navController.navigate(activityRoute) },
                     onForkChat = { forkedChatId ->
                         navController.navigate(AppRoutes.chat(forkedChatId)) {
                             popUpTo(entry.destination.id) { inclusive = true }
@@ -929,30 +975,14 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.knowledge.PdfPageViewerScreen(documentId = documentId, initialPage = page, onBack = { navController.popBackStack() })
             }
         }
-        if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
-            val count = activeJobs.size + loadingModels + activeDownloads
-            val label = when {
-                activeJobs.size == 1 && loadingModels == 0 -> activeJobs.first().label
-                loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> "Loading model"
-                activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> "Downloading model"
-                else -> "$count activities running"
-            }
-            Surface(
-                onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md),
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shadowElevation = 6.dp,
-            ) {
-                Row(
-                    Modifier.padding(horizontal = Space.md, vertical = Space.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
-                }
-            }
+        if (activityLabel != null && !chatRouteActive) {
+            ActivityStatusPill(
+                label = activityLabel,
+                onClick = { navController.navigate(activityRoute) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = Space.md, bottom = overlayBottomReserve + Space.md),
+            )
         }
         if (!useRail && showBottomBar) {
             VervanNavigationBar(
@@ -961,6 +991,8 @@ fun VervanNavGraph(
                 currentRoute = currentRoute,
                 navController = navController,
                 onCreate = { showCreateSheet = true },
+                barHeight = bottomNavigationHeight,
+                itemHeight = bottomNavigationItemHeight,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -1026,17 +1058,21 @@ private fun VervanNavigationBar(
     currentRoute: NavDestination?,
     navController: NavHostController,
     onCreate: () -> Unit,
+    barHeight: androidx.compose.ui.unit.Dp,
+    itemHeight: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
     val createLabel = stringResource(R.string.action_create)
-    Box(
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            // Wider side margins and a taller bottom gap than a flush-docked bar, so it reads as
-            // an inset floating group instead of a bar glued to the screen edges.
-            .padding(horizontal = Space.xxl, vertical = Space.md)
+            // Keep the navigation surface visually connected to the display. The old 24dp
+            // gutters made a five-item bar look undersized on phones and left each label with
+            // too little room; the bar itself already has an inset border and shadow.
     ) {
+        val horizontalPadding = if (maxWidth < 600.dp) Space.sm else Space.md
+        Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = Space.sm)) {
         // A real painted surface, not the transparent M3 NavigationBar — floating over arbitrary
         // scrolled content needs its own background to stay legible, or the tabs read as loose
         // icons with nothing grouping them. Plain Surface (not NavigationBar) also gives us the
@@ -1044,7 +1080,7 @@ private fun VervanNavigationBar(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(ModernistTokens.Layout.bottomNavigationHeight),
+                .height(barHeight),
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1054,17 +1090,18 @@ private fun VervanNavigationBar(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(ModernistTokens.Layout.bottomNavigationHeight)
+                    .height(barHeight)
                     // Without this, the first/last tab's own surface touches the card's edge
                     // directly, right where the rounded corner starts — reads as stuck/clipped.
                     .padding(horizontal = Space.sm),
                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
-                NavigationBarCreateAction(createLabel, onCreate)
-                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController) }
+                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemHeight) }
+                NavigationBarCreateAction(createLabel, onCreate, itemHeight)
+                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemHeight) }
             }
+        }
         }
     }
 }
@@ -1073,14 +1110,16 @@ private fun VervanNavigationBar(
 private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController
+    navController: NavHostController,
+    itemHeight: androidx.compose.ui.unit.Dp,
 ) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
     Surface(
         onClick = { navController.navigatePrimaryRoot(tab.route) },
         modifier = Modifier
             .weight(1f)
-            .height(ModernistTokens.Layout.bottomNavigationItemHeight),
+            .height(itemHeight)
+            .semantics { this.selected = selected },
         shape = MaterialTheme.shapes.small,
         // Navigation is an active brand state, so keep it on the accent family. The secondary
         // palette is intentionally blue/amber in several themes and made the selected tab look
@@ -1105,6 +1144,8 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
                 stringResource(tab.labelRes),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1114,12 +1155,13 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
 private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateAction(
     label: String,
     onClick: () -> Unit,
+    itemHeight: androidx.compose.ui.unit.Dp,
 ) {
     Surface(
         onClick = onClick,
         modifier = Modifier
             .weight(1f)
-            .height(ModernistTokens.Layout.bottomNavigationItemHeight),
+            .height(itemHeight),
         shape = MaterialTheme.shapes.small,
         color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.primary,
@@ -1130,7 +1172,7 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateActio
             verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
         ) {
             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(24.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1139,7 +1181,8 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateActio
 private fun androidx.compose.foundation.layout.ColumnScope.RailTabItem(
     tab: Tab,
     currentRoute: NavDestination?,
-    navController: NavHostController
+    navController: NavHostController,
+    itemHeight: androidx.compose.ui.unit.Dp,
 ) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
     Surface(
@@ -1148,8 +1191,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.RailTabItem(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .height(ModernistTokens.Layout.navigationRailItemHeight)
-            .padding(horizontal = Space.xs),
+            .height(itemHeight)
+            .padding(horizontal = Space.xs)
+            .semantics { this.selected = selected },
         shape = MaterialTheme.shapes.small,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1164,7 +1208,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.RailTabItem(
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
             )
-            Text(stringResource(tab.labelRes), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(
+                stringResource(tab.labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

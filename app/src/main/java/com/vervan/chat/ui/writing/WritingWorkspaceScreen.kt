@@ -34,12 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ScrollablePage
@@ -68,8 +70,8 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Writing workspace") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.writing_workspace_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -77,12 +79,12 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
         ScrollablePage(contentPadding = padding, modifier = Modifier.imePadding(), maxContentWidth = 840.dp) {
             BoundedTextField(
                 value = original, onValueChange = { original = it },
-                label = "Your text", minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
+                label = stringResource(R.string.writing_text_label), minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = targetLanguage, onValueChange = { targetLanguage = it.take(80) },
-                label = { Text("Target language (for Translate)") }, singleLine = true,
+                    label = { Text(stringResource(R.string.writing_target_language_label)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             Row(
@@ -95,21 +97,21 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
             }
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Preparing the revision",
-                    body = "Rewriting locally. Your original stays unchanged.",
+                    title = stringResource(R.string.ui_writingworkspacescreen_100_preparing_the_revision),
+                    body = stringResource(R.string.ui_writingworkspacescreen_101_rewriting_locally_your_original_stays_unchan),
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't complete the writing action",
+                    title = stringResource(R.string.ui_writingworkspacescreen_107_couldn_t_complete_the_writing_action),
                     message = it,
-                    recovery = "Your text is safe. Shorten it or check the model, then try again.",
+                    recovery = stringResource(R.string.ui_writingworkspace_text_recovery),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (revision.isNotBlank()) {
-                Text("Revision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+                Text(stringResource(R.string.writing_revision), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
                 DiffViewer(
                     original = original,
                     transformed = revision,
@@ -123,11 +125,11 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                     TextButton(onClick = {
                         vm.saveAsNote(original.take(60))
                         scope.launch { snackbarHostState.showSnackbar("Added to notes") }
-                    }) { Text("Add to note") }
+                    }) { Text(stringResource(R.string.chat_add_note)) }
                     TextButton(onClick = {
                         vm.saveToLibrary()
                         scope.launch { snackbarHostState.showSnackbar("Saved to library") }
-                    }) { Text("Save to library") }
+                    }) { Text(stringResource(R.string.writing_save_library)) }
                 }
             }
         }

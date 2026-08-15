@@ -254,11 +254,21 @@ fun VervanTheme(
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if (darkTheme) {
         val scheme = darkSchemeFor(DarkAccents.getValue(accent))
-        // OLED true-black variant — same accent, background/surface pushed
-        // to pure black so OLED panels can actually turn those pixels off.
-        if (oledTrueBlack) scheme.copy(background = Color(0xFF000000), surface = Color(0xFF000000), surfaceVariant = Color(0xFF121212)) else scheme
+        scheme
     } else {
         lightSchemeFor(LightAccents.getValue(accent))
+    }
+    // Apply the OLED preference after resolving the color source so it also works with Material
+    // You dynamic color. Previously the dynamic-color branch returned early from this adjustment,
+    // which made the setting appear to do nothing on Android 12+ when device color was enabled.
+    if (darkTheme && oledTrueBlack) {
+        colorScheme = colorScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceVariant = Color(0xFF121212),
+            surfaceContainerLowest = Color.Black,
+            surfaceDim = Color.Black,
+        )
     }
     if (highContrast) colorScheme = colorScheme.withHighContrast(darkTheme)
     MaterialTheme(

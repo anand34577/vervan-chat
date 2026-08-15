@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -106,42 +107,42 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 title = {
                     Column {
                         OverflowTooltipText(setName)
-                        Text("Active recall review", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(com.vervan.chat.R.string.study_review_subtitle), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           when {
             loadError != null -> OperationErrorCard(
-                title = "Study deck unavailable",
+                title = stringResource(com.vervan.chat.R.string.study_deck_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your study progress is safe. Retry loading this deck.",
-                actionLabel = "Retry",
+                recovery = stringResource(com.vervan.chat.R.string.study_deck_recovery),
+                actionLabel = stringResource(com.vervan.chat.R.string.action_retry),
                 onAction = vm::retry,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
             ModernistScreenHeader(
-                eyebrow = "REVIEW SESSION",
+                eyebrow = stringResource(com.vervan.chat.R.string.study_review_eyebrow),
                 title = setName,
-                body = "Active recall. Reveal, rate, and strengthen the next card.",
-                trailing = { ModernistTag(if (missedOnly) "MISSED ONLY" else "FULL DECK", active = missedOnly) }
+                body = stringResource(com.vervan.chat.R.string.study_review_body),
+                trailing = { ModernistTag(if (missedOnly) stringResource(com.vervan.chat.R.string.study_missed_only) else stringResource(com.vervan.chat.R.string.study_full_deck), active = missedOnly) }
             )
             ResponsiveActions {
                 VervanFilterChip(
                     selected = missedOnly,
                     onClick = { vm.setMissedOnly(!missedOnly) },
-                    label = { Text("Needs practice") },
+                    label = { Text(stringResource(com.vervan.chat.R.string.study_needs_practice)) },
                     leadingIcon = { Icon(Icons.Filled.School, contentDescription = null) }
                 )
                 VervanFilterChip(
                     selected = shuffled,
                     onClick = { shuffled = !shuffled },
-                    label = { Text("Shuffle") },
+                    label = { Text(stringResource(com.vervan.chat.R.string.study_shuffle)) },
                     leadingIcon = { Icon(Icons.Filled.Shuffle, contentDescription = null) }
                 )
             }
@@ -149,8 +150,8 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             if (sessionCards.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.CheckCircle,
-                    title = if (missedOnly) "Nothing needs practice" else "This deck has no cards",
-                    body = if (missedOnly) "Nice work — your missed cards are cleared for now." else "Create a new deck with study material to begin.",
+                    title = if (missedOnly) stringResource(com.vervan.chat.R.string.study_nothing_needs_practice) else stringResource(com.vervan.chat.R.string.study_deck_no_cards),
+                    body = if (missedOnly) stringResource(com.vervan.chat.R.string.study_missed_cleared) else stringResource(com.vervan.chat.R.string.study_create_deck_begin),
                     modifier = Modifier.weight(1f),
                     centered = true
                 )
@@ -172,12 +173,12 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
 
             val progress = (index + 1f) / sessionCards.size
             Row(Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Card ${index + 1} of ${sessionCards.size}", style = MaterialTheme.typography.labelMedium)
-                Text("$sessionCorrect correct", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(com.vervan.chat.R.string.study_card_progress, index + 1, sessionCards.size), style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(com.vervan.chat.R.string.study_correct_count, sessionCorrect), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             ModernistMeter(
                 value = progress,
-                label = "CARD ${index + 1} / ${sessionCards.size}",
+                label = stringResource(com.vervan.chat.R.string.study_card_label, index + 1, sessionCards.size),
                 modifier = Modifier.padding(top = Space.sm)
             )
 
@@ -216,7 +217,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        if (showAnswer) "ANSWER" else "QUESTION",
+                        if (showAnswer) stringResource(com.vervan.chat.R.string.study_answer) else stringResource(com.vervan.chat.R.string.study_question),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (showAnswer) accent.onContainer else MaterialTheme.colorScheme.primary
                     )
@@ -228,7 +229,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                         modifier = Modifier.padding(top = Space.lg)
                     )
                     Text(
-                        if (showAnswer) "Tap to flip back" else "Think first, then tap to flip",
+                        if (showAnswer) stringResource(com.vervan.chat.R.string.study_tap_flip_back) else stringResource(com.vervan.chat.R.string.study_think_then_flip),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (showAnswer) accent.onContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xxl)
@@ -244,17 +245,17 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                             sessionSeen++; revealed = false; index++
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Again") }
+                    ) { Text(stringResource(com.vervan.chat.R.string.study_again)) }
                     Button(
                         onClick = {
                             vm.markResult(card, true)
                             sessionCorrect++; sessionSeen++; revealed = false; index++
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Got it") }
+                    ) { Text(stringResource(com.vervan.chat.R.string.study_got_it)) }
                 }
             } else {
-                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text("Reveal answer") }
+                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text(stringResource(com.vervan.chat.R.string.study_reveal_answer)) }
             }
             }
           }
@@ -291,19 +292,19 @@ private fun SessionComplete(
                 drawArc(ringColor, -90f, 360f * sweep, useCenter = false, style = stroke, topLeft = topLeft, size = arcSize)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("$correct of $seen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(com.vervan.chat.R.string.ui_studyreview_percent, percent), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(com.vervan.chat.R.string.ui_studyreview_correct_of_seen, correct, seen), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text("Review complete", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.xl))
+        Text(stringResource(com.vervan.chat.R.string.study_review_complete), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.xl))
         Text(
-            if (percent >= 80) "Strong recall. A short review later will help it stick." else "Review the cards you missed while they are still fresh.",
+            if (percent >= 80) stringResource(com.vervan.chat.R.string.study_strong_recall) else stringResource(com.vervan.chat.R.string.study_review_missed_fresh),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = Space.sm)
         )
-        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = Space.xxl)) { Text("Review again") }
-        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) { Text("Practice missed cards") }
+        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = Space.xxl)) { Text(stringResource(com.vervan.chat.R.string.study_review_again)) }
+        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) { Text(stringResource(com.vervan.chat.R.string.study_practice_missed)) }
     }
 }

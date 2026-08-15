@@ -1772,6 +1772,50 @@ internal fun rememberOcrAttachLaunchers(
     return OcrAttachLaunchers(pickOcrImage, requestOcrCameraPermission)
 }
 
+internal data class QrAttachLaunchers(
+    val pickQrImage: androidx.activity.compose.ManagedActivityResultLauncher<androidx.activity.result.PickVisualMediaRequest, Uri?>,
+    val requestQrCameraPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>
+)
+
+/** QR/barcode counterpart of [rememberOcrAttachLaunchers] — same camera/gallery plumbing, just
+ * decoding via [ChatViewModel.extractQr]/[ChatViewModel.extractQrFromFile] instead of OCR. */
+@Composable
+internal fun rememberQrAttachLaunchers(
+    vm: ChatViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onRunningChange: (Boolean) -> Unit,
+    onQrResult: (Result<ChatViewModel.QrResult>) -> Unit,
+    onError: (String) -> Unit
+): QrAttachLaunchers {
+    var pendingQrCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val pickQrImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            onRunningChange(true)
+            scope.launch { onQrResult(vm.extractQr(uri)) }
+        }
+    }
+    val takeQrPicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = pendingQrCameraFile
+        pendingQrCameraFile = null
+        if (success && file != null) {
+            onRunningChange(true)
+            scope.launch { onQrResult(vm.extractQrFromFile(file)) }
+        } else {
+            file?.delete()
+        }
+    }
+    val requestQrCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val (file, uri) = vm.newCameraImageFile()
+            pendingQrCameraFile = file
+            takeQrPicture.launch(uri)
+        } else {
+            onError("Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions.")
+        }
+    }
+    return QrAttachLaunchers(pickQrImage, requestQrCameraPermission)
+}
+
 @Composable
 internal fun rememberDocumentAttachLauncher(
     context: Context,

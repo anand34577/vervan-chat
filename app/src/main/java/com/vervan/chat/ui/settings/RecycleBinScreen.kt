@@ -251,7 +251,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                             selected = selectedCategory == category,
                             onClick = { selectedCategory = category },
                             shape = MaterialTheme.shapes.extraSmall,
-                            label = { Text("$category · $count", maxLines = 1) }
+                            label = { Text(stringResource(R.string.ui_recyclebin_category_count, category, count), maxLines = 1) }
                          )
                      }
                  }

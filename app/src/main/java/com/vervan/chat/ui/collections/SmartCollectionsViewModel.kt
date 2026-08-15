@@ -14,13 +14,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /** Dynamic collections — read-only filters, never move underlying content. */
-enum class SmartCollection(val label: String, val description: String) {
-    THIS_WEEK("This week", "Chats and notes from the last 7 days"),
-    INTERRUPTED("Interrupted", "Responses cut off before finishing"),
-    WITH_ATTACHMENTS("With attachments", "Chats containing images or audio"),
-    PINNED("Pinned", "Everything you've pinned"),
-    ARCHIVED("Archived", "Chats you've archived"),
-    FAILED_DOCS("Failed imports", "Documents that didn't index")
+enum class SmartCollection(val labelRes: Int, val descriptionRes: Int) {
+    THIS_WEEK(com.vervan.chat.R.string.smart_collection_this_week, com.vervan.chat.R.string.smart_collection_this_week_description),
+    INTERRUPTED(com.vervan.chat.R.string.smart_collection_interrupted, com.vervan.chat.R.string.smart_collection_interrupted_description),
+    WITH_ATTACHMENTS(com.vervan.chat.R.string.smart_collection_attachments, com.vervan.chat.R.string.smart_collection_attachments_description),
+    PINNED(com.vervan.chat.R.string.smart_collection_pinned, com.vervan.chat.R.string.smart_collection_pinned_description),
+    ARCHIVED(com.vervan.chat.R.string.smart_collection_archived, com.vervan.chat.R.string.smart_collection_archived_description),
+    FAILED_DOCS(com.vervan.chat.R.string.smart_collection_failed_imports, com.vervan.chat.R.string.smart_collection_failed_imports_description)
 }
 
 data class CollectionContents(

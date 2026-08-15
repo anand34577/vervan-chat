@@ -27,10 +27,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.FeatureHero
@@ -58,10 +60,10 @@ fun ExperienceControlsSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat behavior") },
+                title = { Text(stringResource(R.string.settings_chat_behavior)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
             )
@@ -70,9 +72,9 @@ fun ExperienceControlsSettingsScreen(
         ScrollablePage(padding) {
             FeatureHero(
                 icon = Icons.Filled.Tune,
-                eyebrow = "Calm by default, powerful on demand",
-                title = "Shape how Vervan works",
-                body = "Keep the everyday experience simple, or expose more control over models, routing, and response behavior."
+                eyebrow = stringResource(R.string.ui_experiencecontrolssettingsscreen_75_calm_by_default_powerful_on_demand),
+                title = stringResource(R.string.ui_experiencecontrolssettingsscreen_76_shape_how_vervan_works),
+                body = stringResource(R.string.ui_experiencecontrolssettingsscreen_77_keep_the_everyday_experience_simple_or_expos)
             )
             SystemStatusStrip(
                 title = if (expertMode) "Expert mode active" else "Standard mode",
@@ -84,11 +86,11 @@ fun ExperienceControlsSettingsScreen(
                 tone = if (expertMode) StatusTone.Info else StatusTone.Ready
             )
 
-            SectionLabel("Mode")
+            SectionLabel(stringResource(R.string.ui_experience_mode))
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Expert mode") },
-                    supportingContent = { Text("Show advanced model and response controls.") },
+                    headlineContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_92_expert_mode)) },
+                    supportingContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_93_show_advanced_model_and_response_controls)) },
                     leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                     trailingContent = {
                         Switch(
@@ -103,8 +105,8 @@ fun ExperienceControlsSettingsScreen(
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Choose models automatically") },
-                    supportingContent = { Text("Selects a suitable installed model for each message. Turn off to choose one yourself.") },
+                    headlineContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_108_choose_models_automatically)) },
+                    supportingContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_109_selects_a_suitable_installed_model_for_each)) },
                     leadingContent = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = autoModelSelectionEnabled, onCheckedChange = vm::setAutoModelSelectionEnabled)
@@ -113,7 +115,7 @@ fun ExperienceControlsSettingsScreen(
                 if (autoModelSelectionEnabled) {
                     androidx.compose.material3.HorizontalDivider()
                     ListItem(
-                        headlineContent = { Text("Route short/long messages differently") },
+                        headlineContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_118_route_short_long_messages_differently)) },
                         supportingContent = {
                             Text(
                                 "For a chat left on Balanced, uses a smaller installed model for short messages " +
@@ -131,8 +133,8 @@ fun ExperienceControlsSettingsScreen(
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Adapt to device conditions") },
-                    supportingContent = { Text("Reduces demand when Android reports low power or high heat.") },
+                    headlineContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_136_adapt_to_device_conditions)) },
+                    supportingContent = { Text(stringResource(R.string.ui_experiencecontrolssettingsscreen_137_reduces_demand_when_android_reports_low_powe)) },
                     leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
                     trailingContent = {
                         Switch(checked = deviceAwarePerformance, onCheckedChange = vm::setDeviceAwarePerformance)
@@ -140,12 +142,12 @@ fun ExperienceControlsSettingsScreen(
                 )
             }
 
-            SectionLabel("Current defaults")
+            SectionLabel(stringResource(R.string.ui_experience_current_defaults))
             SettingsRow(Icons.Filled.Memory, "Context capacity", "$contextLimit tokens") {}
             SettingsRow(Icons.Filled.Speed, "Response length", responseLength.lowercase().replaceFirstChar { it.uppercase() }) {}
             SettingsRow(Icons.Filled.Tune, "Performance", preferredBackend.lowercase().replaceFirstChar { it.uppercase() }) {}
 
-            SectionLabel("More settings")
+            SectionLabel(stringResource(R.string.ui_experience_more_settings))
             SettingsRow(
                 Icons.Filled.Tune,
                 "Generation settings",

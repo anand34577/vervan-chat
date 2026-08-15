@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.nav
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
@@ -46,7 +48,7 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg).padding(bottom = Space.md)) {
-            Text("Create", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Space.xs))
+            Text(stringResource(R.string.action_create), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Space.xs))
             Text(
                 if (showAll) "Choose what you want to create or import." else "Start with a common action.",
                 style = MaterialTheme.typography.bodySmall,

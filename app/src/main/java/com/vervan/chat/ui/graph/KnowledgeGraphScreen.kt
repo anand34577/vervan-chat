@@ -53,6 +53,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -92,10 +93,10 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Knowledge graph") },
+                title = { Text(stringResource(com.vervan.chat.R.string.graph_title)) },
                 navigationIcon = {
                     IconButton(onClick = { if (canGoBack) vm.back() else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back))
                     }
                 }
             )
@@ -105,23 +106,23 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
           Column(Modifier.fillMaxSize().padding(top = Space.sm)) {
             FeatureHero(
                 icon = Icons.Filled.AutoAwesome,
-                eyebrow = "CONNECTED CONTEXT",
-                title = "Knowledge graph",
-                body = "Explore how your workspace, conversations, sources, and memories connect.",
+                eyebrow = stringResource(com.vervan.chat.R.string.graph_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.graph_title),
+                body = stringResource(com.vervan.chat.R.string.graph_body),
                 modifier = Modifier.padding(bottom = Space.md)
             )
             VervanSearchField(
                 value = query,
                 onValueChange = vm::setQuery,
-                placeholder = "Search your connected context",
+                placeholder = stringResource(com.vervan.chat.R.string.graph_search_placeholder),
                 modifier = Modifier.padding(bottom = Space.md)
             )
             if (query.isNotBlank()) {
                 if (searchResults.isEmpty()) {
                     EmptyState(
                         icon = Icons.Filled.AutoAwesome,
-                        title = "No matches yet",
-                        body = "Try a shorter name or search for a workspace, chat, note, document, or memory.",
+                        title = stringResource(com.vervan.chat.R.string.graph_no_matches),
+                        body = stringResource(com.vervan.chat.R.string.graph_no_matches_body),
                         modifier = Modifier.fillMaxSize(),
                         centered = true
                     )
@@ -158,7 +159,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                                         }
                                         Icon(
                                             Icons.AutoMirrored.Filled.OpenInNew,
-                                            contentDescription = "Open ${node.label}",
+                                            contentDescription = stringResource(com.vervan.chat.R.string.ui_graph_open_node, node.label),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -171,8 +172,8 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
             } else if (center == null) {
                 EmptyState(
                     icon = Icons.Filled.AutoAwesome,
-                    title = "Nothing to graph yet",
-                    body = "Create a workspace, chat, or note to see connections here.",
+                    title = stringResource(com.vervan.chat.R.string.graph_empty_title),
+                    body = stringResource(com.vervan.chat.R.string.graph_empty_body),
                     modifier = Modifier.fillMaxSize(),
                     centered = true
                 )
@@ -252,14 +253,14 @@ private fun GraphCanvas(
             shape = MaterialTheme.shapes.medium
         ) {
             Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
-                Text("CONNECTED CONTEXT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(com.vervan.chat.R.string.graph_eyebrow), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(
-                    "${neighbors.size} connection${if (neighbors.size == 1) "" else "s"}",
+                    stringResource(com.vervan.chat.R.string.graph_connections, neighbors.size, if (neighbors.size == 1) "" else "s"),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text("Focused on ${center.label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(com.vervan.chat.R.string.graph_focused_on, center.label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
@@ -273,7 +274,7 @@ private fun GraphCanvas(
                     x = (centerOffset.x - 90.dp.toPx()).toDp(),
                     y = (centerOffset.y - 28.dp.toPx()).toDp()
                 ),
-                trailingAction = { IconButton(onClick = { onOpenEntity(center) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open") } }
+                trailingAction = { IconButton(onClick = { onOpenEntity(center) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(com.vervan.chat.R.string.action_open)) } }
             )
             positions.forEach { (edge, pos) ->
                 Column(
@@ -300,7 +301,7 @@ private fun GraphCanvas(
         }
         if (!loading && neighbors.isEmpty()) {
             Text(
-                "No connections found for this item yet.",
+                stringResource(com.vervan.chat.R.string.graph_no_connections),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.offset(y = 8.dp).padding(Space.lg)

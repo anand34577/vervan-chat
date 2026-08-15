@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,8 +43,8 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat with a file") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.chat_with_file_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -49,8 +52,8 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
             Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 ToolIntro(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Ask questions about a document",
-        body = "Choose a PDF, Word, or text file. Answers cite it and stay on-device."
+                    title = stringResource(R.string.ui_chatwithfilescreen_55_ask_questions_about_a_document),
+        body = stringResource(R.string.ui_chatwithfilescreen_56_choose_a_pdf_word_or_text_file_answers_cite)
                 )
                 Button(
                     onClick = {
@@ -68,7 +71,7 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = Space.xl)
                 ) {
                     Icon(Icons.Filled.UploadFile, null, Modifier.size(18.dp))
-                    Text("Choose a file", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.chat_with_file_choose), modifier = Modifier.padding(start = Space.sm))
                 }
             }
         }

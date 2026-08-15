@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -97,18 +99,18 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Model capabilities") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_modelcapabilitydashboardscreen_100_model_capabilities)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Model capabilities unavailable",
+                title = stringResource(R.string.ui_modelcapabilitydashboardscreen_108_model_capabilities_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Installed models are safe. Retry loading their capability details.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.ui_modelcapability_capability_recovery),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retry,
                 modifier = Modifier.padding(Space.md)
             )
@@ -117,13 +119,13 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(Space.md)) {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
-                    title = "Know what each model can do",
-                    body = "Compare model features, context, and compatible runtimes."
+                    title = stringResource(R.string.ui_modelcapabilitydashboardscreen_120_know_what_each_model_can_do),
+                    body = stringResource(R.string.ui_modelcapabilitydashboardscreen_121_compare_model_features_context_and_compatibl)
                 )
                 EmptyState(
                     icon = Icons.Filled.Memory,
-                    title = "No models to compare",
-                    body = "Import a model to see its features and device compatibility.",
+                    title = stringResource(R.string.ui_modelcapabilitydashboardscreen_125_no_models_to_compare),
+                    body = stringResource(R.string.ui_modelcapabilitydashboardscreen_126_import_a_model_to_see_its_features_and_devic),
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     centered = true
                 )
@@ -137,8 +139,8 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
             item {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
-                    title = "Know what each model can do",
-                    body = "Compare model features, context, and compatible runtimes.",
+                    title = stringResource(R.string.ui_modelcapabilitydashboardscreen_140_know_what_each_model_can_do),
+                    body = stringResource(R.string.ui_modelcapabilitydashboardscreen_141_compare_model_features_context_and_compatibl),
                     modifier = Modifier.padding(bottom = Space.md)
                 )
             }

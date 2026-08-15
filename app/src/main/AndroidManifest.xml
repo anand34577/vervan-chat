@@ -89,6 +89,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Vervan"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true">
         <!-- Native extraction is controlled by packaging.jniLibs.useLegacyPackaging in the app
              Gradle configuration. This keeps
@@ -179,7 +180,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Vervan">
             <intent-filter>

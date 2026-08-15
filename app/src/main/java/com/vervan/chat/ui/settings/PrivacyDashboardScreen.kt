@@ -94,15 +94,15 @@ fun PrivacyDashboardScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.privacy_dashboard_title)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
             ModernistScreenHeader(
-                eyebrow = "TRUST & PRIVACY",
-                title = "Privacy",
-                body = "See exactly what can leave this device.",
+                eyebrow = stringResource(R.string.ui_privacydashboardscreen_103_trust_privacy),
+                title = stringResource(R.string.ui_privacydashboardscreen_104_privacy),
+                body = stringResource(R.string.ui_privacydashboardscreen_105_see_exactly_what_can_leave_this_device),
                 trailing = { ModernistTag("NO OUTBOUND TRAFFIC", active = !remoteModelActive && !apiServerOn) }
             )
             ModernistMetricStrip(
@@ -263,7 +263,13 @@ private fun PrivacySection(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun PrivacyRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.58f))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(0.58f),
+        )
         Text(
             value,
             style = MaterialTheme.typography.bodySmall,

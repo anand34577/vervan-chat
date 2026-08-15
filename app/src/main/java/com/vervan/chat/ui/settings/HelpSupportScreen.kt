@@ -50,10 +50,10 @@ fun HelpSupportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Help & troubleshooting") },
+                title = { Text(stringResource(R.string.settings_help_troubleshooting)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
             )
@@ -61,34 +61,34 @@ fun HelpSupportScreen(
     ) { padding ->
         ScrollablePage(padding) {
                 SystemStatusStrip(
-                    title = "Start with what you were trying to do",
-                    body = "Each option opens the setting or status screen that can resolve it.",
+                    title = stringResource(R.string.ui_helpsupportscreen_64_start_with_what_you_were_trying_to_do),
+                    body = stringResource(R.string.ui_helpsupportscreen_65_each_option_opens_the_setting_or_status_scre),
                     tone = StatusTone.Info
                 )
 
-                SectionLabel("How to")
+                SectionLabel(stringResource(R.string.ui_helpsupportscreen_how_to))
                 SectionCard(
                     items = listOf(
                         {
                             SectionRow(
-                                title = "Set up local AI",
-                                subtitle = "Download, import, or activate a model",
+                                title = stringResource(R.string.ui_helpsupportscreen_74_set_up_local_ai),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_75_download_import_or_activate_a_model),
                                 icon = Icons.Filled.Memory,
                                 onClick = onOpenModels
                             )
                         },
                         {
                             SectionRow(
-                                title = "Chat with your documents",
-                                subtitle = "Add sources for grounded answers and citations",
+                                title = stringResource(R.string.ui_helpsupportscreen_82_chat_with_your_documents),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_83_add_sources_for_grounded_answers_and_citatio),
                                 icon = Icons.AutoMirrored.Filled.MenuBook,
                                 onClick = onOpenKnowledge
                             )
                         },
                         {
                             SectionRow(
-                                title = "Adjust reply behavior",
-                                subtitle = "Change response length, tone, and retrieval",
+                                title = stringResource(R.string.ui_helpsupportscreen_90_adjust_reply_behavior),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_91_change_response_length_tone_and_retrieval),
                                 icon = Icons.Filled.Tune,
                                 onClick = onOpenGeneration
                             )
@@ -123,45 +123,45 @@ fun HelpSupportScreen(
                     )
                 )
 
-                SectionLabel("Fix a problem")
+                SectionLabel(stringResource(R.string.ui_helpsupportscreen_fix_problem))
                 SectionCard(
                     items = listOf(
                         {
                             SectionRow(
-                                title = "Chat will not start",
-                                subtitle = "Check that a compatible model is installed and active",
+                                title = stringResource(R.string.ui_helpsupportscreen_131_chat_will_not_start),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_132_check_that_a_compatible_model_is_installed_a),
                                 icon = Icons.AutoMirrored.Filled.Chat,
                                 onClick = onOpenModels
                             )
                         },
                         {
                             SectionRow(
-                                title = "Camera or microphone is unavailable",
-                                subtitle = "Review Android permissions for Vervan",
+                                title = stringResource(R.string.ui_helpsupportscreen_139_camera_or_microphone_is_unavailable),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_140_review_android_permissions_for_vervan),
                                 icon = Icons.Filled.PermDeviceInformation,
                                 onClick = onOpenPermissions
                             )
                         },
                         {
                             SectionRow(
-                                title = "A download or task is stuck",
-                                subtitle = "View running work, failures, and retry options",
+                                title = stringResource(R.string.ui_helpsupportscreen_147_a_download_or_task_is_stuck),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_148_view_running_work_failures_and_retry_options),
                                 icon = Icons.Filled.Download,
                                 onClick = onOpenJobs
                             )
                         },
                         {
                             SectionRow(
-                                title = "The app is using too much space",
-                                subtitle = "Review models, cache, backups, and deleted items",
+                                title = stringResource(R.string.ui_helpsupportscreen_155_the_app_is_using_too_much_space),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_156_review_models_cache_backups_and_deleted_item),
                                 icon = Icons.Filled.Storage,
                                 onClick = onOpenStorage
                             )
                         },
                         {
                             SectionRow(
-                                title = "Something else is not working",
-                                subtitle = "Check app health and copy diagnostic details",
+                                title = stringResource(R.string.ui_helpsupportscreen_163_something_else_is_not_working),
+                                subtitle = stringResource(R.string.ui_helpsupportscreen_164_check_app_health_and_copy_diagnostic_details),
                                 icon = Icons.Filled.BugReport,
                                 onClick = onOpenDiagnostics
                             )

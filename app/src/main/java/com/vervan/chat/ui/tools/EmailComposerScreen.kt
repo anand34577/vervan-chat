@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import android.content.Intent
@@ -103,7 +104,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                     runContext = com.vervan.chat.llm.ToolRunContext("tools/email-composer", "Email composer", listOf(originalMessage, keyPoints).filter { it.isNotBlank() }.joinToString("\n\n")),
                 )
                 if (flow == null) {
-                    errorText = "No model is ready. Open Settings → AI models, load one, then draft again."
+                    errorText = context.getString(com.vervan.chat.R.string.email_no_model)
                 } else {
                     val sb = StringBuilder()
                     var lastEmit = 0L
@@ -113,7 +114,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                         if (now - lastEmit > 60) { output = sb.toString().trim(); lastEmit = now }
                     }
                     output = sb.toString().trim()
-                    if (output.isBlank()) errorText = "The model returned an empty draft. Try again."
+                    if (output.isBlank()) errorText = context.getString(com.vervan.chat.R.string.email_empty_draft)
                 }
             } catch (c: CancellationException) {
                 throw c
@@ -128,8 +129,8 @@ fun EmailComposerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Email & message composer") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(com.vervan.chat.R.string.email_composer_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -137,32 +138,32 @@ fun EmailComposerScreen(onBack: () -> Unit) {
       ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             FeatureHero(
                 icon = Icons.Filled.Mail,
-                eyebrow = "On-device assistant",
-                title = "Email & message composer",
-                body = "Draft an email from a few key points. No account access needed."
+                eyebrow = stringResource(com.vervan.chat.R.string.email_composer_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.email_composer_title),
+                body = stringResource(com.vervan.chat.R.string.email_composer_body)
             )
             OutlinedTextField(
                 value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 3,
                 shape = MaterialTheme.shapes.medium,
-                label = { Text("Original message (optional)") }
+                label = { Text(stringResource(com.vervan.chat.R.string.email_original_optional)) }
             )
             OutlinedTextField(
                 value = keyPoints, onValueChange = { keyPoints = it.take(12_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm), minLines = 2,
                 shape = MaterialTheme.shapes.medium,
-                label = { Text("Key points to include") }
+                label = { Text(stringResource(com.vervan.chat.R.string.email_key_points)) }
             )
             OutlinedTextField(
                 value = relationship, onValueChange = { relationship = it.take(200) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 shape = MaterialTheme.shapes.medium,
-                label = { Text("Relationship to recipient (optional)") }
+                label = { Text(stringResource(com.vervan.chat.R.string.email_relationship_optional)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { toneMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Tone: $tone", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(com.vervan.chat.R.string.email_tone, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(expanded = toneMenuOpen, onDismissRequest = { toneMenuOpen = false }) {
                         TONES.forEach { t -> DropdownMenuItem(text = { Text(t) }, onClick = { tone = t; toneMenuOpen = false }) }
@@ -170,7 +171,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 }
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { lengthMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Length: $length", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(com.vervan.chat.R.string.email_length, length), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(expanded = lengthMenuOpen, onDismissRequest = { lengthMenuOpen = false }) {
                         LENGTHS.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { length = l; lengthMenuOpen = false }) }
@@ -179,21 +180,21 @@ fun EmailComposerScreen(onBack: () -> Unit) {
             }
             if (isGenerating) {
                 OutlinedButton(onClick = { genJob?.cancel(); isGenerating = false }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) {
-                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text("Stop", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text(stringResource(com.vervan.chat.R.string.email_stop), modifier = Modifier.padding(start = Space.sm))
                 }
             } else {
                 Button(
                     onClick = ::generate,
                     enabled = keyPoints.isNotBlank() || originalMessage.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                ) { Text("Draft reply") }
+                ) { Text(stringResource(com.vervan.chat.R.string.email_draft_reply)) }
             }
 
             when {
                 isGenerating && output.isBlank() -> {
                     Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("Drafting…", modifier = Modifier.padding(start = Space.md))
+                        Text(stringResource(com.vervan.chat.R.string.email_drafting), modifier = Modifier.padding(start = Space.md))
                     }
                 }
                 output.isNotBlank() -> {
@@ -204,13 +205,13 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                                 ResponsiveActions(Modifier.padding(top = Space.md)) {
                                     OutlinedButton(onClick = {
                                         context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .setSensitiveText(output, scope, "Draft")
-                                        scope.launch { snackbarHostState.showSnackbar("Copied") }
-                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
+                                            .setSensitiveText(output, scope, context.getString(com.vervan.chat.R.string.email_draft_clipboard))
+                                        scope.launch { snackbarHostState.showSnackbar(context.getString(com.vervan.chat.R.string.email_copied)) }
+                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(com.vervan.chat.R.string.action_copy), modifier = Modifier.padding(start = Space.sm)) }
                                     OutlinedButton(onClick = {
                                         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, output) }
-                                        context.startActivity(Intent.createChooser(send, "Share draft"))
-                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Share", modifier = Modifier.padding(start = Space.sm)) }
+                                        context.startActivity(Intent.createChooser(send, context.getString(com.vervan.chat.R.string.email_share_draft)))
+                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(com.vervan.chat.R.string.action_share), modifier = Modifier.padding(start = Space.sm)) }
                                 }
                             }
                         }
@@ -218,10 +219,10 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't draft a reply",
+                        title = stringResource(com.vervan.chat.R.string.email_draft_failed),
                         message = errorText!!,
-                        recovery = "Your notes are safe. Check the model or shorten the input, then try again.",
-                        actionLabel = "Try again",
+                        recovery = stringResource(com.vervan.chat.R.string.email_recovery),
+                        actionLabel = stringResource(com.vervan.chat.R.string.action_try_again),
                         onAction = { generate() },
                         modifier = Modifier.padding(top = Space.lg)
                     )

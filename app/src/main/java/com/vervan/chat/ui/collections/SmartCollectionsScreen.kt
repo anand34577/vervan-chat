@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -71,8 +72,8 @@ fun SmartCollectionsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Smart collections") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(com.vervan.chat.R.string.smart_collections_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -83,11 +84,15 @@ fun SmartCollectionsScreen(
                 horizontalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 SmartCollection.entries.forEach { col ->
-                    VervanFilterChip(selected = selected == col, onClick = { selected = col }, label = { Text(col.label) })
+                    VervanFilterChip(
+                        selected = selected == col,
+                        onClick = { selected = col },
+                        label = { Text(stringResource(col.labelRes)) }
+                    )
                 }
             }
             Text(
-                "Automatic · ${selected.description}",
+                stringResource(com.vervan.chat.R.string.smart_collections_automatic, stringResource(selected.descriptionRes)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = Space.xs)
@@ -95,8 +100,8 @@ fun SmartCollectionsScreen(
             if (contents.total == 0) {
                 EmptyState(
                     icon = Icons.Filled.Collections,
-                    title = "Nothing here yet",
-                    body = "Matching chats, notes, and documents appear here automatically.",
+                    title = stringResource(com.vervan.chat.R.string.smart_collections_empty_title),
+                    body = stringResource(com.vervan.chat.R.string.smart_collections_empty_body),
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     centered = true
                 )

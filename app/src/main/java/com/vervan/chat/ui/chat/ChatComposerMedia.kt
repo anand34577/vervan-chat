@@ -128,6 +128,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
@@ -378,11 +379,14 @@ internal fun ModernChatAttachmentSheet(
     audioAvailable: Boolean?,
     isImportingAudio: Boolean,
     isRunningOcr: Boolean,
+    isRunningQr: Boolean,
     onDismiss: () -> Unit,
     onPhoto: () -> Unit,
     onCamera: () -> Unit,
     onOcrPhoto: () -> Unit,
     onOcrCamera: () -> Unit,
+    onQrPhoto: () -> Unit,
+    onQrCamera: () -> Unit,
     onRecordAudio: () -> Unit,
     onAudioFile: () -> Unit,
     onDocument: () -> Unit,
@@ -432,7 +436,24 @@ internal fun ModernChatAttachmentSheet(
                     vervanAccentFor(5),
                     Modifier.weight(1f)
                 )
-                Spacer(Modifier.weight(2f))
+                CompactAttachmentAction(
+                    Icons.Filled.QrCodeScanner,
+                    stringResource(R.string.media_scan_qr),
+                    if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+                    !isRunningQr,
+                    onQrPhoto,
+                    vervanAccentFor(2),
+                    Modifier.weight(1f)
+                )
+                CompactAttachmentAction(
+                    Icons.Filled.QrCodeScanner,
+                    stringResource(R.string.media_scan_qr_camera),
+                    stringResource(R.string.media_from_photo),
+                    !isRunningQr,
+                    onQrCamera,
+                    vervanAccentFor(2),
+                    Modifier.weight(1f)
+                )
             }
         }
     }
@@ -856,7 +877,10 @@ internal fun OcrPreviewDialog(
     confirmEnabled: Boolean,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    title: String = stringResource(R.string.media_ocr_preview),
+    subtitle: String = stringResource(R.string.media_ocr_on_device),
+    removeDescription: String = stringResource(R.string.media_remove_ocr)
 ) {
     var showExtractedText by remember(imagePath) { mutableStateOf(false) }
     Dialog(
@@ -868,11 +892,11 @@ internal fun OcrPreviewDialog(
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White) }
                     Column {
-                        Text(stringResource(R.string.media_ocr_preview), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.media_ocr_on_device), color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                        Text(title, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                        Text(subtitle, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, stringResource(R.string.media_remove_ocr), tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, removeDescription, tint = androidx.compose.ui.graphics.Color.White) }
                 }
 
                 val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }

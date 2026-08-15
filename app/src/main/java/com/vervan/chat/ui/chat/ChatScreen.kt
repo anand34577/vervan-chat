@@ -104,6 +104,7 @@ import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.DatePill
+import com.vervan.chat.ui.common.ActivityStatusPill
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.collectAsState
@@ -148,6 +149,16 @@ internal fun sameDay(a: Long, b: Long): Boolean {
     )
 }
 
+/** Folds any scanned-attachment text (OCR, QR/barcode) ahead of [bodyBase] — shared by both send
+ * paths (voice-respond and [ChatScreen]'s own sendPendingMessage) so the two prefixes stay in
+ * sync instead of drifting as separate copies. Either or both may be present. */
+private fun withScannedAttachmentsPrefix(bodyBase: String, ocrText: String?, qrText: String?): String {
+    var body = bodyBase
+    if (qrText != null) body = "Decoded from a QR/barcode photo:\n\"\"\"\n$qrText\n\"\"\"\n\n$body"
+    if (ocrText != null) body = "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$body"
+    return body
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -169,6 +180,8 @@ fun ChatScreen(
     onOpenModels: () -> Unit = {},
     onOpenVoiceSettings: () -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
+    activityLabel: String? = null,
+    onOpenActivity: () -> Unit = {},
     onForkChat: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -420,6 +433,7 @@ fun ChatScreen(
     var showResetConfirm by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var isRunningOcr by remember { mutableStateOf(false) }
+    var isRunningQr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val latestDraft = rememberUpdatedState(draft)
@@ -453,6 +467,7 @@ fun ChatScreen(
                         vm.pendingDocument.value as? ChatViewModel.DocumentAttachState.Ready
                     vm.clearPendingDocument()
                     val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+                    val qrText = attached.qrText?.takeIf { it.isNotBlank() }
                     val mergedSpeech =
                         listOf(typedPrefix, input.text.trim()).filter { it.isNotBlank() }
                             .joinToString(" ")
@@ -466,9 +481,7 @@ fun ChatScreen(
                             else -> ""
                         }
                     }
-                    val body = if (ocrText != null) {
-                        "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-                    } else bodyBase
+                    val body = withScannedAttachmentsPrefix(bodyBase, ocrText, qrText)
                     vm.sendVoiceAndAwait(
                         text = quotePrefix + body,
                         imagePath = attached.imagePath,
@@ -581,6 +594,32 @@ fun ChatScreen(
         scope = scope,
         onRunningChange = { isRunningOcr = it },
         onOcrResult = ::applyOcrResult,
+        onError = { attachmentError = it })
+
+    // QR/barcode attach — same shape as OCR attach above, decoding via ML Kit's barcode
+    // scanner instead of its text recognizer.
+    val pendingQrImagePath = pendingAttachments.qrImagePath
+    val pendingQrText = pendingAttachments.qrText
+    var showQrPreview by remember { mutableStateOf(false) }
+    fun applyQrResult(result: Result<ChatViewModel.QrResult>) {
+        isRunningQr = false
+        result.onSuccess { r ->
+            vm.setPendingQr(r.imagePath, r.text)
+            showQrPreview = true
+            if (r.text.isBlank()) {
+                android.widget.Toast.makeText(
+                    context, "No QR code or barcode found in that image", android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }.onFailure {
+            attachmentError = it.toUserMessage()
+        }
+    }
+    val (pickQrImage, requestQrCameraPermission) = rememberQrAttachLaunchers(
+        vm = vm,
+        scope = scope,
+        onRunningChange = { isRunningQr = it },
+        onQrResult = ::applyQrResult,
         onError = { attachmentError = it })
 
     fun startVoiceMessageRecording() {
@@ -938,7 +977,7 @@ fun ChatScreen(
     fun sendPendingMessage(): Boolean {
         val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
         val canSend =
-            (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || draftVoiceRecordingPath != null || documentReady) && modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
+            (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || draftVoiceRecordingPath != null || documentReady) && modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
         if (!canSend) return false
 
         val quotePrefix = pendingQuote?.let { quoted ->
@@ -947,6 +986,7 @@ fun ChatScreen(
         val attached = vm.consumeAttachments()
         val audioForSend = attached.audioPath ?: draftVoiceRecordingPath
         val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+        val qrText = attached.qrText?.takeIf { it.isNotBlank() }
         val bodyBase = draft.ifBlank {
             when {
                 documentReady -> "Describe this document."
@@ -957,9 +997,7 @@ fun ChatScreen(
                 else -> draft
             }
         }
-        val body = if (ocrText != null) {
-            "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-        } else bodyBase
+        val body = withScannedAttachmentsPrefix(bodyBase, ocrText, qrText)
         val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
         val sendModality = when {
             attached.imagePath != null && audioForSend != null -> "IMAGE_AUDIO"
@@ -1622,7 +1660,7 @@ fun ChatScreen(
                 com.vervan.chat.ui.common.OperationErrorCard(
             title = stringResource(R.string.chat_attachment_error),
                     message = it,
-                    recovery = "Your message is safe. Check the file or permission, then try again.",
+                    recovery = stringResource(R.string.ui_chat_message_recovery),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Space.md, vertical = Space.xs),
@@ -1656,7 +1694,7 @@ fun ChatScreen(
             // Quote reply and a pending attachment are both "context attached to the next
             // message" — grouped into one composing tray instead of two separately-floating
             // rows so they read as one unit sitting above the composer, not a growing stack.
-            if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
+            if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -1792,7 +1830,7 @@ fun ChatScreen(
                                 }
                             }
                         }
-                        if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null) HorizontalDivider()
+                        if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null) HorizontalDivider()
                     }
                     pendingQuote?.let { quoted ->
                         Row(
@@ -1833,7 +1871,7 @@ fun ChatScreen(
                             }
                         }
                     }
-                    if (pendingQuote != null && (pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null)) {
+                    if (pendingQuote != null && (pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null)) {
                         HorizontalDivider()
                     }
                     pendingOcrImagePath?.let { path ->
@@ -1884,6 +1922,59 @@ fun ChatScreen(
                                 Icon(
                                     Icons.Filled.Close,
                         contentDescription = stringResource(R.string.chat_remove_ocr),
+                                    tint = MaterialTheme.colorScheme.inverseOnSurface
+                                )
+                            }
+                        }
+                    }
+                    pendingQrImagePath?.let { path ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(Space.sm)
+                                .clickable { showQrPreview = true }) {
+                            val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
+                            val bitmap = rememberThumbnail(path, thumbnailPx)
+                            bitmap?.let {
+                                Image(
+                                    it,
+                        contentDescription = stringResource(R.string.chat_qr_preview),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 140.dp, max = 220.dp)
+                                        .clip(MaterialTheme.shapes.medium),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(Space.sm),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                            ) {
+                                Text(
+                                    if (pendingQrText.isNullOrBlank()) "QR · no code found · tap to view" else "QR · tap to view decoded text",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(
+                                        horizontal = Space.sm, vertical = Space.xs
+                                    )
+                                )
+                            }
+                            IconButton(
+                                onClick = { vm.setPendingQr(null, null) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(Space.xs)
+                                    .background(
+                                        MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
+                                        MaterialTheme.shapes.small
+                                    )
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.chat_remove_qr),
                                     tint = MaterialTheme.colorScheme.inverseOnSurface
                                 )
                             }
@@ -1969,6 +2060,16 @@ fun ChatScreen(
             }
             val composerEnabled =
                 modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived
+            activityLabel?.let { label ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Space.lg, vertical = Space.xs),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    ActivityStatusPill(label = label, onClick = onOpenActivity)
+                }
+            }
             if (handsFreeActive) {
                 IntegratedVoicePanel(
                     state = voiceState,
@@ -1991,7 +2092,7 @@ fun ChatScreen(
 
                         pendingImagePath != null -> "Photo ready"
                         pendingAudioPath != null -> "Audio file ready"
-                        pendingOcrImagePath != null -> "Scanned text ready"
+                        pendingOcrImagePath != null || pendingQrImagePath != null -> "Scanned text ready"
                         else -> null
                     },
                     errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
@@ -2408,7 +2509,7 @@ fun ChatScreen(
                                     val documentReady =
                                         pendingDocument is ChatViewModel.DocumentAttachState.Ready
                                     val canSend =
-                                        (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) && composerEnabled && draft.length <= 12_000
+                                        (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || documentReady) && composerEnabled && draft.length <= 12_000
                                     val sendActive = canSend || isGenerating
                                     Box(
                                         Modifier
@@ -2466,6 +2567,7 @@ fun ChatScreen(
             modelRunsOnDevice = modelRunsOnDevice,
             isImportingAudio = isImportingAudio,
             isRunningOcr = isRunningOcr,
+            isRunningQr = isRunningQr,
             onDismiss = { showAttachmentSheet = false },
             onPhoto = {
                 showAttachmentSheet = false
@@ -2482,6 +2584,14 @@ fun ChatScreen(
             onOcrCamera = {
                 showAttachmentSheet = false
                 requestOcrCameraPermission.launch(android.Manifest.permission.CAMERA)
+            },
+            onQrPhoto = {
+                showAttachmentSheet = false
+                pickQrImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onQrCamera = {
+                showAttachmentSheet = false
+                requestQrCameraPermission.launch(android.Manifest.permission.CAMERA)
             },
             onRecordAudio = {
                 showAttachmentSheet = false
@@ -2539,7 +2649,7 @@ fun ChatScreen(
 
                     pendingImagePath != null -> "Photo ready"
                     pendingAudioPath != null -> "Audio file ready"
-                    pendingOcrImagePath != null -> "Scanned text ready"
+                    pendingOcrImagePath != null || pendingQrImagePath != null -> "Scanned text ready"
                     else -> null
                 },
                 errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
@@ -2669,6 +2779,30 @@ fun ChatScreen(
             })
     }
 
+    pendingQrImagePath?.takeIf { showQrPreview }?.let { path ->
+        OcrPreviewDialog(
+            imagePath = path,
+            text = pendingQrText.orEmpty(),
+            onTextChange = { vm.updateQrText(it) },
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
+            confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
+            onRemove = {
+                vm.setPendingQr(null, null)
+                showQrPreview = false
+            },
+            onDismiss = { showQrPreview = false },
+            onSend = {
+                if (sendPendingMessage()) showQrPreview = false
+            },
+            title = stringResource(R.string.media_qr_preview),
+            subtitle = stringResource(R.string.media_qr_on_device),
+            removeDescription = stringResource(R.string.media_remove_qr))
+    }
+
     if (showRenameDialog) {
         RenameChatDialog(
             initialTitle = chat?.title.orEmpty(),
@@ -2716,7 +2850,7 @@ fun ChatScreen(
     if (showDeleteConfirm) {
         com.vervan.chat.ui.common.ConfirmDialog(
             title = stringResource(R.string.action_recycle),
-            body = "This chat will be moved to the recycle bin. You can restore it later.",
+            body = stringResource(R.string.ui_chatscreen_2853_this_chat_will_be_moved_to_the_recycle_bin_y),
             confirmLabel = stringResource(R.string.chat_recycle_confirm),
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.moveToTrash(onDone = onBack) },

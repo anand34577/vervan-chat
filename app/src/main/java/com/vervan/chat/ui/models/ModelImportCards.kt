@@ -484,6 +484,29 @@ internal fun RemoteApiModelDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Quick-fill for the handful of endpoints nearly everyone types by hand — the
+                // engine underneath (RemoteOpenAiEngine) already talks to any OpenAI-compatible
+                // server generically, this just saves re-typing the well-known ones. Ollama/LM
+                // Studio point at the device's own loopback address: on a physical device that's
+                // this phone itself (only useful if the server also runs on-device or is port-
+                // forwarded); from an emulator, 10.0.2.2 is the host machine's loopback.
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                ) {
+                    listOf(
+                        "OpenAI" to "https://api.openai.com/v1",
+                        "OpenRouter" to "https://openrouter.ai/api/v1",
+                        "Ollama (local)" to "http://127.0.0.1:11434/v1",
+                        "LM Studio (local)" to "http://127.0.0.1:1234/v1"
+                    ).forEach { (label, url) ->
+                        VervanFilterChip(
+                            selected = baseUrl.trim().trimEnd('/') == url.trimEnd('/'),
+                            onClick = { baseUrl = url },
+                            label = { Text(label) }
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it.take(512) },
@@ -965,8 +988,8 @@ internal fun WhisperCppImportDialog(
 
 @Composable
 internal fun EmbeddingImportStep(stepNumber: Int, label: String, fileName: String?, onPick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = Space.sm)) {
             Text(stringResource(R.string.model_step, stepNumber, label), style = MaterialTheme.typography.labelMedium)
             Text(
                 fileName ?: "Not selected",
@@ -1051,7 +1074,7 @@ internal fun ModelCard(
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     Card(
-        Modifier.fillMaxWidth().padding(bottom = 10.dp).animateContentSize()
+        Modifier.fillMaxWidth().padding(bottom = Space.sm).animateContentSize()
             .combinedClickable(onClick = { if (selectionMode) onToggleSelect() else onEdit() }, onLongClick = onLongPress),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -1064,13 +1087,13 @@ internal fun ModelCard(
             androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
         } else null
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     if (selectionMode) {
-                        Checkbox(checked = selected, onCheckedChange = { onToggleSelect() }, modifier = Modifier.padding(end = 4.dp))
+                        Checkbox(checked = selected, onCheckedChange = { onToggleSelect() }, modifier = Modifier.padding(end = Space.xs))
                     }
-                    Column(Modifier.padding(end = 8.dp)) {
+                    Column(Modifier.padding(end = Space.sm)) {
                         OverflowTooltipText(
                             text = model.displayName,
                             style = MaterialTheme.typography.titleSmall
@@ -1108,8 +1131,8 @@ internal fun ModelCard(
                     }
                 }
                 if (!selectionMode) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (busy) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 4.dp), strokeWidth = 2.dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         // A remote model never "loads" into memory — it's just the one requests
                         // currently go to. "Using"/"Use" instead of "Loaded"/"Load" says that
                         // truthfully instead of implying a local weights file just got read in.
@@ -1153,13 +1176,13 @@ internal fun ModelCard(
                     busyLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = Space.xs)
                 )
             }
             if (model.role == ModelRole.GENERATION) {
                 Row(
-                    Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     fun state(supported: Boolean?) = when (supported) {
                         true -> com.vervan.chat.ui.common.CapabilityState.Supported
@@ -1183,11 +1206,11 @@ internal fun ModelCard(
                     "Last ran on ${model.lastWorkingBackend.displayName()}$mtpNote",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.vervanSuccess,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             if (!selectionMode) {
-                ResponsiveActions(Modifier.padding(top = 12.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.md)) {
                     Button(
                         onClick = onToggleLoad,
                         enabled = !busy,
@@ -1198,7 +1221,7 @@ internal fun ModelCard(
                         Text(
                             if (model.traits.runsOnDevice) (if (isLoaded) "Unload" else "Load")
                             else (if (isLoaded) "Stop using" else "Use"),
-                            modifier = Modifier.padding(start = 6.dp)
+                            modifier = Modifier.padding(start = Space.xs)
                         )
                     }
                 }
@@ -1209,7 +1232,7 @@ internal fun ModelCard(
     if (confirmDelete) {
         ConfirmDialog(
         title = stringResource(R.string.model_delete_title),
-            body = "Remove \"${model.displayName}\" permanently?",
+            body = stringResource(R.string.ui_modelimportcards_remove_model, model.displayName),
         confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },

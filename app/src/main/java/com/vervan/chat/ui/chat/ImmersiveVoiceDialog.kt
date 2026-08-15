@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -159,7 +161,7 @@ private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExi
                 }
                 if (!compact) LiveVoicePill() else LiveStatusDot()
                 IconButton(onClick = onExitImmersive, modifier = Modifier.padding(start = Space.xs)) {
-                    Icon(Icons.Filled.CloseFullscreen, contentDescription = "Exit full screen")
+                    Icon(Icons.Filled.CloseFullscreen, contentDescription = stringResource(R.string.ui_immersivevoicedialog_162_exit_full_screen))
                 }
             }
         }
@@ -299,7 +301,7 @@ private fun LiveCaptionBubble(liveTranscript: String) {
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Column(Modifier.padding(Space.md)) {
-                Text("YOU · LIVE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.ui_immersivevoicedialog_302_you_live), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(liveTranscript, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = Space.xs))
             }
         }

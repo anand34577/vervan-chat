@@ -46,9 +46,8 @@ import kotlinx.coroutines.withContext
 
 /** Simple hand-rolled DI container — no framework needed for this many dependencies. */
 class AppContainer(app: Application) {
-    // Pre-release: no shipped installs to preserve, so a schema mismatch (someone upgrading from
-    // an old dev build with the old 50-version schema) destructively rebuilds instead of crashing
-    // on a missing Migration. MIGRATIONS starts real again once this app ships — see Migrations.kt.
+    // Keep migration handling fail-closed: an unknown schema must not silently destroy chats,
+    // documents, or model metadata. Every supported upgrade belongs in MIGRATIONS.
     val db: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "vervan.db")
         .addMigrations(*MIGRATIONS)
         .build()
@@ -477,6 +476,14 @@ class VervanApp : Application() {
                     container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
                 }
             }.onFailure { Log.e(TAG, "Cold-start housekeeping: crash/interrupted-message recovery failed", it) }
+
+            // Same recovery, for Background Jobs (model validation/benchmark/import etc.) — a job
+            // still WAITING/PREPARING/RUNNING/PAUSED at cold start can't actually still be running
+            // (its coroutine died with the previous process), so it's stuck showing "In progress"
+            // forever with no visibility into what happened unless swept here.
+            runCatching {
+                container.db.jobDao().failOrphanedActive()
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: orphaned-job recovery failed", it) }
 
             // Incognito mode — a temporary chat is meant to hard-delete itself on
             // close (see ChatViewModel.purgeTemporaryChat); this is the fallback for a process

@@ -37,6 +37,10 @@ fun EmptyState(
     onSecondaryAction: (() -> Unit)? = null,
     centered: Boolean = false,
 ) {
+    // An empty state is exactly the moment there's nothing else on screen competing for
+    // attention, so it's a cheap place for the shared one-shot entrance (see EnterMotion) instead
+    // of just popping in fully formed.
+    EnterMotion {
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xxl),
         verticalArrangement = Arrangement.Center,
@@ -82,5 +86,6 @@ fun EmptyState(
                 Text(secondaryActionLabel)
             }
         }
+    }
     }
 }

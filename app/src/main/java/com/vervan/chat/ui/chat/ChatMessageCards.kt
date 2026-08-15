@@ -413,6 +413,27 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
         }
         return
     }
+    val imagePath = obj.optString("imagePath").takeIf { it.isNotBlank() }
+    if (success && imagePath != null && toolName == "generate_barcode") {
+        com.vervan.chat.ui.common.AssistantSubCard(
+            kind = com.vervan.chat.ui.common.SubCardKind.ToolResult,
+            title = stringResource(R.string.ui_chatmessagecards_420_generated_code),
+            modifier = Modifier.padding(top = Space.sm),
+            initiallyExpanded = true
+        ) {
+            val bitmap = com.vervan.chat.ui.common.rememberThumbnail(imagePath, 600)
+            bitmap?.let {
+                androidx.compose.foundation.Image(
+                    it,
+                    contentDescription = stringResource(R.string.ui_chatmessagecards_428_generated_qr_code),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+            }
+            Text(obj.optString("summary"), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm))
+        }
+        return
+    }
     var expanded by remember { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().padding(top = Space.sm).clickable { expanded = !expanded },

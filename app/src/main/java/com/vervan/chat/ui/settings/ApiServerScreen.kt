@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.heading
@@ -68,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
@@ -129,8 +131,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Local API server") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.settings_local_api_server)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -215,7 +217,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                                 modifier = Modifier.padding(top = Space.sm)
                             ) {
                                 Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Open web UI", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.ui_apiserverscreen_220_open_web_ui), modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                     }
@@ -223,7 +225,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Start automatically",
+                title = stringResource(R.string.ui_apiserverscreen_228_start_automatically),
                 icon = Icons.Filled.RestartAlt,
                 trailing = { Switch(checked = autoStart, onCheckedChange = { vm.setApiServerAutoStart(it) }) }
             ) {
@@ -241,7 +243,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Web app mode",
+                title = stringResource(R.string.ui_apiserverscreen_246_web_app_mode),
                 icon = Icons.Filled.Language,
                 trailing = { Switch(checked = fullMode, onCheckedChange = { vm.setApiServerFullMode(it) }) }
             ) {
@@ -275,7 +277,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 }
             }
 
-            ApiSection(title = "Server configuration", icon = Icons.Filled.Router) {
+            ApiSection(title = stringResource(R.string.ui_apiserverscreen_280_server_configuration), icon = Icons.Filled.Router) {
                 OutlinedTextField(
                     value = portText,
                     onValueChange = { text ->
@@ -287,7 +289,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         }
                         portText.toIntOrNull()?.let { if (it in 1024..65535) vm.setApiServerPort(it) }
                     },
-                    label = { Text("Port") },
+                    label = { Text(stringResource(R.string.ui_apiserverscreen_292_port)) },
                     isError = portError != null,
                     supportingText = portError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -325,7 +327,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         }
                         ttlText.toIntOrNull()?.let { if (it in 0..86_400) vm.setApiModelTtlSeconds(it) }
                     },
-                    suffix = { Text("seconds") },
+                    suffix = { Text(stringResource(R.string.ui_apiserverscreen_330_seconds)) },
                     isError = ttlError != null,
                     supportingText = ttlError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -339,7 +341,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             // included. In the app a tool call is a card the user sees and can approve; an API
             // request has no such moment, which is why both default to off.
             ApiSection(
-                title = "Let API clients use this device's tools",
+                title = stringResource(R.string.ui_apiserverscreen_344_let_api_clients_use_this_device_s_tools),
                 icon = Icons.Filled.Build,
                 trailing = { Switch(checked = appTools, onCheckedChange = { vm.setApiServerAppTools(it) }) }
             ) {
@@ -373,7 +375,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Require an API key",
+                title = stringResource(R.string.ui_apiserverscreen_378_require_an_api_key),
                 icon = if (requireAuth) Icons.Filled.Lock else Icons.Filled.LockOpen,
                 trailing = {
                     Switch(
@@ -407,11 +409,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                             OutlinedButton(onClick = { clipboard.setSensitiveText(token, scope) }) {
                                 Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Text("Copy", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.xs))
                             }
                             OutlinedButton(onClick = { confirmRegenerate = true }) {
                                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Text("Regenerate", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.chat_regenerate), modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                     }
@@ -428,9 +430,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)
                     )
                     Column(Modifier.padding(start = Space.md)) {
-                        Text("Requests this session: $requestCount", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.ui_apiserverscreen_requests_this_session, requestCount), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "View requests in Settings → Storage & backup → Diagnostics.",
+                            stringResource(R.string.ui_apiserverscreen_requests_diagnostics_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -442,11 +444,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
             // happened; this says where from — which is the part worth acting on when the server is
             // reachable over the network with no key.
             ApiSection(
-                title = "Connected clients",
+                title = stringResource(R.string.ui_apiserverscreen_447_connected_clients),
                 icon = Icons.Filled.Devices,
                 trailing = {
                     if (clients.isNotEmpty()) {
-                        OutlinedButton(onClick = { app.container.apiClientRegistry.clear() }) { Text("Clear") }
+                        OutlinedButton(onClick = { app.container.apiClientRegistry.clear() }) { Text(stringResource(R.string.action_clear)) }
                     }
                 }
             ) {
@@ -473,8 +475,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
 
     if (confirmRegenerate) {
         ConfirmDialog(
-            title = "Regenerate API key?",
-            body = "The current key stops working now. Update it in every connected app.",
+            title = stringResource(R.string.ui_apiserverscreen_478_regenerate_api_key),
+            body = stringResource(R.string.ui_apiserverscreen_479_the_current_key_stops_working_now_update_it),
             confirmLabel = "Regenerate",
             destructive = true,
             onConfirm = { token = vm.regenerateApiServerToken(); confirmRegenerate = false },

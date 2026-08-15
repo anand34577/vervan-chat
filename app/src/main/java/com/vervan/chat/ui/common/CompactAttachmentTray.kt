@@ -25,12 +25,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.R
 
 /**
  * Compact attachment chips rendered above the composer when the user has pending attachments
@@ -102,7 +104,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
         IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Filled.Close,
-                contentDescription = "Remove ${attachment.label}",
+                contentDescription = stringResource(R.string.ui_remove_attachment, attachment.label),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )

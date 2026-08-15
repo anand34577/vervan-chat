@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,7 +116,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
     fun saveTranscript() {
         scope.launch {
             val note = Note(
-                title = "$title · ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date())}",
+                title = context.getString(com.vervan.chat.R.string.ui_turnbasedchat_saved_title, title, java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date())),
                 content = transcriptText()
             )
             app.container.db.noteDao().upsert(note)
@@ -192,7 +194,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(title) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -206,9 +208,9 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     ) {
                         FeatureHero(
                             icon = Icons.Filled.Forum,
-                            eyebrow = "Guided practice",
+                            eyebrow = stringResource(R.string.ui_turnbasedchatscreen_211_guided_practice),
                             title = title,
-                            body = "Set a focus and work through it one response at a time."
+                            body = stringResource(R.string.ui_turnbasedchatscreen_211_set_a_focus_and_work_through_it_one_response)
                         )
                         VervanSectionHeader("1 · Set the focus")
                         OutlinedTextField(
@@ -217,7 +219,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 3,
                             shape = MaterialTheme.shapes.medium,
-                            label = { Text("Session context") },
+                            label = { Text(stringResource(R.string.ui_turnbasedchatscreen_220_session_context)) },
                             placeholder = { Text(setupHint) }
                         )
                         VervanSectionHeader("2 · Begin the session")
@@ -236,7 +238,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             onClick = { started = true; send(null) },
                             enabled = setup.isNotBlank(),
                             modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                        ) { Text("Start guided session") }
+                        ) { Text(stringResource(R.string.ui_turnbasedchatscreen_239_start_guided_session)) }
                     }
                 }
             }
@@ -248,7 +250,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)
                 ) {
                     Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
-                        Text("Session focus", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(stringResource(R.string.ui_turnbasedchatscreen_251_session_focus), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
                         Text(setup, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -276,7 +278,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                         item {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Space.xs)) {
                                 CircularProgressIndicator(Modifier.padding(end = Space.sm).size(16.dp), strokeWidth = 2.dp)
-                                Text("Thinking…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(R.string.ui_turnbasedchatscreen_279_thinking), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -297,7 +299,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                     Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = draft, onValueChange = { draft = it.take(InputLimits.CHAT_TEXT_CHARS) },
-                            modifier = Modifier.weight(1f), placeholder = { Text("Your response") }, enabled = !isThinking,
+                            modifier = Modifier.weight(1f), placeholder = { Text(stringResource(R.string.ui_turnbasedchatscreen_300_your_response)) }, enabled = !isThinking,
                             shape = MaterialTheme.shapes.medium, maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,

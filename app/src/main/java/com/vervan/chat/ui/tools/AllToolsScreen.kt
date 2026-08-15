@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Star
@@ -140,6 +141,7 @@ private val categories = listOf(
         listOf(
             ToolEntry(Icons.Filled.PhotoCamera, "Document scanner", "Capture multiple pages and export a PDF.", "tools/document-scanner"),
             ToolEntry(Icons.Filled.Image, "OCR scanner", "Extract editable text from an image.", "tools/ocr-scanner"),
+            ToolEntry(Icons.Filled.QrCodeScanner, "QR & barcode scanner", "Decode a QR code or barcode from an image.", "tools/qr-scanner"),
             ToolEntry(Icons.Filled.Description, "Receipt scanner", "Extract totals, items, and payment details.", "tools/receipt-scanner"),
             ToolEntry(Icons.AutoMirrored.Filled.Rule, "Table scanner", "Convert a photographed table to structured data.", "tools/table-scanner"),
             ToolEntry(Icons.Filled.Description, "Smart form filler", "Extract the fields you specify from an image.", "tools/smart-form-filler"),
@@ -243,7 +245,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     val showRecent = recentEntries.isNotEmpty() && query.isBlank() && selectedCategory == null
     fun readiness(entry: ToolEntry): String {
         val noModelNeeded = setOf(
-            "tools/document-scanner", "tools/ocr-scanner", "tools/chat-with-file", "study",
+            "tools/document-scanner", "tools/ocr-scanner", "tools/qr-scanner", "tools/chat-with-file", "study",
             "knowledge", "models", "memory", "collections", "tools/runs",
         )
         if (entry.route in noModelNeeded) return "Ready"
@@ -271,11 +273,11 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Tools") },
+                title = { Text(stringResource(R.string.nav_tools)) },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back))
                         }
                     }
                 },
@@ -294,9 +296,9 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             ) {
                 item(key = "modernist-header", span = { GridItemSpan(maxLineSpan) }) {
                     ModernistScreenHeader(
-                        eyebrow = "TASK DIRECTORY",
-                        title = "Find a task",
-                        body = "Start with the outcome you want. Vervan keeps the workflow focused and local.",
+                        eyebrow = stringResource(R.string.ui_alltoolsscreen_299_task_directory),
+                        title = stringResource(R.string.ui_alltoolsscreen_300_find_a_task),
+                        body = stringResource(R.string.ui_alltoolsscreen_301_start_with_the_outcome_you_want_vervan_keeps),
                         trailing = { ModernistTag("$visibleCount TOOLS", active = visibleCount > 0) }
                     )
                 }
@@ -304,7 +306,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     VervanSearchField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = "Search tools and outcomes",
+                        placeholder = stringResource(R.string.tools_search_placeholder),
                     )
                 }
                 item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
@@ -320,7 +322,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 VervanFilterChip(
                                     selected = selectedCategory == null,
                                     onClick = { selectedCategory = null },
-                                    label = { Text("All") },
+                                    label = { Text(stringResource(R.string.action_all)) },
                                 )
                             }
                             items(categories, key = { it.title }) { category ->
@@ -357,7 +359,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = "Show more tool categories",
+                                        contentDescription = stringResource(R.string.tools_show_more_categories),
                                     )
                                 }
                             }
@@ -381,7 +383,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                 if (showPinned) {
                     item(key = "pinned-header", span = { GridItemSpan(maxLineSpan) }) {
                         VervanSectionHeader(
-                            title = "Pinned",
+                            title = stringResource(R.string.chat_filter_pinned),
                             count = pinnedEntries.size,
                             topPadding = 0.dp,
                         )
@@ -418,8 +420,8 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                         EmptyState(
                             icon = Icons.Filled.GridView,
-                            title = "No tools found",
-                            body = "Try another term or choose All.",
+                            title = stringResource(R.string.ui_alltoolsscreen_423_no_tools_found),
+                            body = stringResource(R.string.ui_alltoolsscreen_424_try_another_term_or_choose_all),
                             modifier = Modifier.fillMaxWidth().padding(vertical = Space.xxl),
                             centered = true,
                         )

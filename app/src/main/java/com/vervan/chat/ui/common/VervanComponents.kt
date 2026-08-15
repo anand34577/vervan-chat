@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -169,7 +171,7 @@ fun VervanSearchField(
         trailingIcon = if (value.isNotEmpty()) {
             {
                 VervanIconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.ui_vervancomponents_172_clear_search))
                 }
             }
         } else null,
@@ -195,38 +197,73 @@ fun FeatureHero(
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(Space.xl),
-            verticalAlignment = Alignment.CenterVertically
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val compact = maxWidth < 440.dp
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 1.dp,
         ) {
-            IconAffordance(
-                icon = icon,
-                size = IconAffordanceSize.Feature,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            )
-            Column(
-                Modifier.weight(1f).padding(start = Space.md),
-                verticalArrangement = Arrangement.spacedBy(Space.xs)
-            ) {
-                Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
+            if (compact) {
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.lg),
+                    verticalArrangement = Arrangement.spacedBy(Space.md),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        IconAffordance(
+                            icon = icon,
+                            size = IconAffordanceSize.Feature,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        )
+                        trailing?.let {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { it() }
+                        }
+                    }
+                    HeroCopy(eyebrow = eyebrow, title = title, body = body)
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().padding(Space.xl),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconAffordance(
+                        icon = icon,
+                        size = IconAffordanceSize.Feature,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    )
+                    HeroCopy(
+                        eyebrow = eyebrow,
+                        title = title,
+                        body = body,
+                        modifier = Modifier.weight(1f).padding(start = Space.md),
+                    )
+                    trailing?.invoke()
+                }
             }
-            trailing?.invoke()
         }
+    }
+}
+
+@Composable
+private fun HeroCopy(
+    eyebrow: String,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -361,6 +398,37 @@ fun StatusChip(
             color = color,
             modifier = Modifier.padding(start = Space.xs)
         )
+    }
+}
+
+/** A compact activity summary that can sit above the shell navigation bar or chat composer. */
+@Composable
+fun ActivityStatusPill(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = Space.sm),
+            )
+        }
     }
 }
 
@@ -523,7 +591,7 @@ fun OperationErrorCard(
 ) {
     ErrorCard(
         title = title,
-        body = "$message\n$recovery",
+        body = if (recovery.isBlank()) message else "$message\n$recovery",
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
         actionLabel = actionLabel,
         onAction = onAction
@@ -596,6 +664,7 @@ fun BoundedTextField(
         nearLimit -> MaterialTheme.colorScheme.vervanWarning
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val characterDescription = stringResource(R.string.ui_characters_used, count, maxLength)
     OutlinedTextField(
         value = value,
         onValueChange = { newValue ->
@@ -629,7 +698,7 @@ fun BoundedTextField(
         supportingText = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (atLimit) "Limit reached. Shorten this text before saving or sending." else supportingText.orEmpty(),
+                    if (atLimit) stringResource(R.string.ui_bounded_text_limit_reached) else supportingText.orEmpty(),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (atLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
@@ -640,7 +709,7 @@ fun BoundedTextField(
                     color = counterColor,
                     textAlign = TextAlign.End,
                     modifier = Modifier.padding(start = Space.sm).semantics {
-                        contentDescription = "$count of $maxLength characters used"
+                        contentDescription = characterDescription
                     }
                 )
             }

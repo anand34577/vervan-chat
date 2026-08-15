@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Column
@@ -57,8 +59,8 @@ fun PermissionsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Permissions") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_permissionsscreen_60_permissions)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
