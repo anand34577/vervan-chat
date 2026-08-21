@@ -131,6 +131,9 @@ data class ModelInfo(
     val supportsAudio: Boolean? = null,
     val supportsTools: Boolean? = null,
     val supportsThinking: Boolean? = null,
+    // JSON-encoded ThinkingSpec. Null means the model predates protocol metadata and is resolved
+    // from imported template/catalog data or the Configure screen's compatibility fallback.
+    val thinkingSpecJson: String? = null,
     // Default thinking mode (OFF/FAST/BALANCED/DEEP) for a new chat on this model, and for any
     // existing chat left on "use model default" — null means OFF. See ThinkingPolicy.effectiveThinkingMode.
     val defaultThinkingMode: String? = null,
@@ -176,8 +179,8 @@ data class ModelInfo(
     val vulkanDeviceIndex: Int? = null,
     val ropeFreqBase: Float? = null,
     val ropeFreqScale: Float? = null,
-    // A llama_chat_builtin_templates() name (e.g. "chatml") or raw custom Jinja text — null uses
-    // the GGUF's own embedded tokenizer.chat_template.
+    // A llama_chat_builtin_templates() name (e.g. "chatml") — raw custom Jinja is not supported
+    // by the JNI template matcher. Null uses the GGUF's own embedded tokenizer.chat_template.
     val chatTemplateOverride: String? = null,
     val loraPath: String? = null,
     val loraScale: Float? = null,

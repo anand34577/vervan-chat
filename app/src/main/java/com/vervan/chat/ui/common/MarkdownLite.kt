@@ -70,6 +70,8 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 
@@ -270,6 +272,8 @@ private const val MERMAID_FIX_PROMPT = "The following Mermaid diagram failed to 
     "Fix ONLY the syntax so it renders correctly. Keep the same diagram type, structure, and content. " +
     "Respond with ONLY the corrected Mermaid source — no explanation, no code fences.\n\nDiagram:\n%s"
 
+private const val MERMAID_MAX_REPAIR_CHARS = 12_000
+
 /** Strips a ```mermaid fence the model may wrap its fix in, despite the prompt asking it not to
  * — cheaper than reprompting, and matches how the rest of the app tolerates minor instruction
  * drift from small local models. */
@@ -295,32 +299,36 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
     var fixedSource by remember(source) { mutableStateOf<String?>(null) }
     var renderError by remember(source) { mutableStateOf<String?>(null) }
     var fixing by remember(source) { mutableStateOf(false) }
-    // A small on-device model invalidating its own Mermaid syntax (unquoted labels, raw HTML) is
-    // routine enough that making the user notice a small red line and tap a button is a dead end
-    // more often than a rescue — try once automatically, silently, the moment a render fails.
-    // Still keyed on `source` so a genuinely new diagram (streaming, branch switch, regenerate)
-    // gets its own fresh attempt rather than being stuck remembering an old one's outcome.
-    var autoFixAttempted by remember(source) { mutableStateOf(false) }
+    // Repair is deliberately opt-in. Rendering a message must not silently start model work or
+    // send diagram contents to a configured remote provider. The OneShotLlm localOnly guard is
+    // the final boundary; this state just makes the affordance honest before the tap.
+    var localRepairAvailable by remember(source) { mutableStateOf(false) }
     var showFullscreen by remember { mutableStateOf(false) }
     val effectiveSource = fixedSource ?: source
     val currentErrorCallback by rememberUpdatedState<(String?) -> Unit>(newValue = { renderError = it })
 
-    fun fixWithAi() {
-        val error = renderError ?: return
-        fixing = true
-        scope.launch {
-            val fixed = runCatching {
-                OneShotLlm.run(app, MERMAID_FIX_PROMPT.format(error, effectiveSource), maxOutputTokensOverride = 800)
-            }.getOrNull()
-            fixing = false
-            if (!fixed.isNullOrBlank()) fixedSource = stripCodeFence(fixed)
+    LaunchedEffect(app, source) {
+        localRepairAvailable = withContext(Dispatchers.IO) {
+            app.container.db.modelDao().getActiveModel(com.vervan.chat.data.db.entities.ModelRole.GENERATION)
+                ?.engine != com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API
         }
     }
 
-    LaunchedEffect(renderError) {
-        if (renderError != null && !autoFixAttempted) {
-            autoFixAttempted = true
-            fixWithAi()
+    fun fixWithAi() {
+        val error = renderError ?: return
+        if (!localRepairAvailable || effectiveSource.length > MERMAID_MAX_REPAIR_CHARS) return
+        fixing = true
+        scope.launch {
+            val fixed = runCatching {
+                OneShotLlm.run(
+                    app,
+                    MERMAID_FIX_PROMPT.format(error.take(1_000), effectiveSource),
+                    maxOutputTokensOverride = 800,
+                    localOnly = true
+                )
+            }.getOrNull()
+            fixing = false
+            if (!fixed.isNullOrBlank()) fixedSource = stripCodeFence(fixed)
         }
     }
 
@@ -364,12 +372,19 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Couldn't render this diagram — showing raw source below.",
+                        if (effectiveSource.length > MERMAID_MAX_REPAIR_CHARS) {
+                            "Couldn't render this diagram. It is too large for automatic repair."
+                        } else {
+                            "Couldn't render this diagram — showing raw source below."
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = ::fixWithAi, enabled = !fixing) {
+                    TextButton(
+                        onClick = ::fixWithAi,
+                        enabled = !fixing && localRepairAvailable && effectiveSource.length <= MERMAID_MAX_REPAIR_CHARS
+                    ) {
                         if (fixing) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {

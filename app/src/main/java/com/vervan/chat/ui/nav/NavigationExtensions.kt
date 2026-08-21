@@ -24,3 +24,10 @@ internal fun NavHostController.navigatePrimaryRoot(route: String) {
         restoreState = true
     }
 }
+
+/** Opens an existing destination without building duplicate copies from repeated taps. */
+internal fun NavHostController.navigateSingleTop(route: String) {
+    navigate(route) {
+        launchSingleTop = true
+    }
+}

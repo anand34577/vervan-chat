@@ -149,6 +149,7 @@
     <plurals name="activity_count_running">
         <item quantity="one">%d actividad en curso</item>
         <item quantity="other">%d actividades en curso</item>
+        <item quantity="many">%d actividades en curso</item>
     </plurals>
     <string name="action_back">Atrás</string>
     <string name="action_cancel">Cancelar</string>
@@ -268,6 +269,35 @@
     <string name="screen_assist_turn_off">Desactivar Quick</string>
     <string name="home_choose_local_model">Elige un modelo local</string>
     <string name="home_local_model_hint">Importa o descarga un modelo. Se ejecuta en este dispositivo.</string>
+    <string name="home_greeting_late">Trabajando hasta tarde</string>
+    <string name="home_greeting_morning">Buenos días</string>
+    <string name="home_greeting_afternoon">Buenas tardes</string>
+    <string name="home_greeting_evening">Buenas noches</string>
+    <string name="home_hero_remote_model">%1$s · Modelo remoto configurado</string>
+    <string name="home_hero_no_model">%1$s · Elige un modelo para empezar</string>
+    <string name="home_hero_local_model">%1$s · Listo en este dispositivo</string>
+    <string name="home_start_prompt">Empieza con una pregunta o elige una tarea.</string>
+    <string name="home_model_ready">Modelo listo</string>
+    <string name="home_ask_documents">Preguntar a los documentos</string>
+    <string name="home_status_selected">Seleccionado</string>
+    <string name="home_status_working">En curso</string>
+    <string name="home_status_setup">Configuración</string>
+    <string name="home_status_open">Abrir</string>
+    <string name="home_tool_group_common">Tareas comunes</string>
+    <string name="home_tool_voice_title">Chat de voz</string>
+    <string name="home_tool_voice_body">Habla con naturalidad con tu modelo local</string>
+    <string name="home_tool_writing_title">Asistente de escritura</string>
+    <string name="home_tool_writing_body">Reescribe, mejora o cambia el tono</string>
+    <string name="home_tool_scanner_title">Escáner de documentos</string>
+    <string name="home_tool_scanner_body">Captura páginas y extrae texto útil</string>
+    <string name="home_tool_translate_title">Traducir</string>
+    <string name="home_tool_translate_body">Traduce texto o una página fotografiada</string>
+    <string name="home_quick_tools">Herramientas rápidas</string>
+    <string name="home_quick_tools_body">Inicia una tarea o explora todas las herramientas.</string>
+    <string name="home_backend_npu">Backend NPU</string>
+    <string name="home_backend_gpu">Backend GPU</string>
+    <string name="home_backend_cpu">Backend CPU</string>
+    <string name="home_backend_unverified">Configuración no comprobada</string>
     <string name="home_ask_content_description">Preguntar a Vervan</string>
     <string name="home_ask_hint">Pregunta lo que sea o inicia un chat…</string>
     <string name="home_start_chat_question">Iniciar un chat con esta pregunta</string>
@@ -279,6 +309,7 @@
     <plurals name="home_indexing_documents">
         <item quantity="one">Indexando 1 documento para la búsqueda.</item>
         <item quantity="other">Indexando %d documentos para la búsqueda.</item>
+        <item quantity="many">Indexando %d documentos para la búsqueda.</item>
     </plurals>
     <string name="home_local_workspace">Espacio de trabajo local</string>
     <string name="home_no_generation_model">Ningún modelo de generación</string>
@@ -566,14 +597,17 @@
     <plurals name="relative_minutes_ago">
         <item quantity="one">Hace %d minuto</item>
         <item quantity="other">Hace %d minutos</item>
+        <item quantity="many">Hace %d minutos</item>
     </plurals>
     <plurals name="relative_hours_ago">
         <item quantity="one">Hace %d hora</item>
         <item quantity="other">Hace %d horas</item>
+        <item quantity="many">Hace %d horas</item>
     </plurals>
     <plurals name="relative_days_ago">
         <item quantity="one">Hace %d día</item>
         <item quantity="other">Hace %d días</item>
+        <item quantity="many">Hace %d días</item>
     </plurals>
 
     <!-- Trust and recovery surfaces. Keep these shared so the same promise is not rewritten
@@ -1033,5 +1067,59 @@
     <plurals name="lock_too_many_attempts">
         <item quantity="one">Demasiados intentos. Vuelve a intentarlo en %d segundo.</item>
         <item quantity="other">Demasiados intentos. Vuelve a intentarlo en %d segundos.</item>
+        <item quantity="many">Demasiados intentos. Vuelve a intentarlo en %d segundos.</item>
     </plurals>
+    <!-- Acciones nuevas de creación y chat, incluidas para que no falte texto en la interfaz localizada. -->
+    <string name="create_sheet_quick_body">Empieza con una acción habitual.</string>
+    <string name="create_sheet_all_body">Elige qué quieres crear o importar.</string>
+    <string name="create_sheet_more_actions">Más acciones de creación e importación</string>
+    <string name="create_sheet_show_fewer">Mostrar menos acciones</string>
+    <string name="create_group_quick_start">Inicio rápido</string>
+    <string name="create_group_start">Inicio</string>
+    <string name="create_group_sources">Fuentes</string>
+    <string name="create_group_library">Biblioteca</string>
+    <string name="create_group_organize">Organizar</string>
+    <string name="create_group_import">Importar</string>
+    <string name="create_group_capture">Capturar</string>
+    <string name="create_new_chat">Nuevo chat</string>
+    <string name="create_new_chat_body">Abre un compositor vacío con el teclado enfocado.</string>
+    <string name="create_new_note">Nueva nota</string>
+    <string name="create_new_note_body">Captura textos locales extensos.</string>
+    <string name="create_projects">Proyectos</string>
+    <string name="create_projects_body">Abre proyectos para crear o gestionar trabajos agrupados.</string>
+    <string name="create_add_source">Añadir fuente</string>
+    <string name="create_add_source_body">Crea una colección de fuentes o importa un documento para obtener respuestas fundamentadas.</string>
+    <string name="create_new_persona">Nueva personalidad</string>
+    <string name="create_new_persona_body">Guarda un comportamiento y estilo reutilizables.</string>
+    <string name="create_prompt_template">Plantilla de prompt</string>
+    <string name="create_prompt_template_body">Crea prompts reutilizables para comandos de barra.</string>
+    <string name="create_new_workflow">Nuevo flujo de trabajo</string>
+    <string name="create_new_workflow_body">Encadena pasos de IA repetibles.</string>
+    <string name="create_spaces">Espacios</string>
+    <string name="create_spaces_body">Abre espacios para crear o gestionar contextos separados.</string>
+    <string name="create_folders">Carpetas</string>
+    <string name="create_folders_body">Abre carpetas para crear o gestionar el archivo manual.</string>
+    <string name="create_collections">Colecciones</string>
+    <string name="create_collections_body">Explora filtros inteligentes guardados para chats, notas y fuentes.</string>
+    <string name="create_import_model">Importar modelo</string>
+    <string name="create_import_model_body">Prepara la generación de IA local.</string>
+    <string name="create_scan_image">Escanear imagen</string>
+    <string name="create_scan_image_body">Inicia un chat con una imagen adjunta.</string>
+    <string name="create_voice_note">Nota de voz</string>
+    <string name="create_voice_note_body">Graba audio en un chat nuevo.</string>
+    <string name="chat_ocr_no_text">OCR · no se encontró texto · toca para ver</string>
+    <string name="chat_ocr_view_text">OCR · toca para ver el texto extraído</string>
+    <string name="chat_qr_no_code">QR · no se encontró ningún código · toca para ver</string>
+    <string name="chat_qr_view_text">QR · toca para ver el texto decodificado</string>
+    <string name="chat_ocr_no_text_toast">No se encontró texto en esa imagen</string>
+    <string name="chat_qr_no_code_toast">No se encontró ningún código QR o de barras en esa imagen</string>
+    <string name="chat_message_placeholder">Mensaje para Vervan…</string>
+    <string name="chat_waiting_for_model">Esperando un modelo local</string>
+    <string name="chat_character_limit">%1$d / 12.000 caracteres</string>
+    <string name="chat_character_limit_exceeded">El mensaje supera el límite de 12.000 caracteres</string>
+    <string name="chat_converting_audio">Convirtiendo audio…</string>
+    <string name="chat_voice_replies_label">Respuestas de voz: %1$s</string>
+    <string name="chat_voice_replies_automatic">Automático</string>
+    <string name="chat_voice_replies_off">Desactivado</string>
+    <string name="chat_voice_replies_manual">Manual</string>
 </resources>

@@ -1,6 +1,6 @@
 package com.vervan.chat.store.storage
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import java.io.File
 import java.security.MessageDigest
 

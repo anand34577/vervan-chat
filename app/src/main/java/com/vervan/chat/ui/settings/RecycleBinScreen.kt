@@ -82,7 +82,6 @@ import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.chat.chatPreviewText
-import com.vervan.chat.llm.ThinkingParser
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
@@ -387,8 +386,7 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
 }
 
 private fun cleanBinTitle(raw: String, fallback: String): String {
-    val visible = ThinkingParser.parse(raw).answer
-    return chatPreviewText(visible, isUser = true)
+    return chatPreviewText(raw, isUser = false)
         .replace(Regex("\\s+"), " ")
         .trim()
         .take(80)

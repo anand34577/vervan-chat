@@ -5,6 +5,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.audio.ContinuousAudioCapture
 import com.vervan.chat.audio.VoiceActivityDetector
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.PromptPolicy
 import com.vervan.chat.modelload.LoadTrigger
 import java.io.File
 import com.vervan.chat.model.readBytesLimited
@@ -852,9 +853,7 @@ class RealtimeVoiceController(
         private const val LIVE_WAVEFORM_BARS = 40
         private const val MAX_TRANSCRIPT_TOKENS = 128
         private val TRANSCRIBE_STOP_SEQUENCES = listOf("\n\n", "\nAssistant:", "\nassistant:")
-        private const val TRANSCRIBE_SYSTEM_PROMPT =
-            "STT mode. Output only the exact spoken words in the language spoken. Never translate, answer, or explain."
-        private const val TRANSCRIBE_PROMPT =
-            "Transcribe audio only. Preserve the spoken language; do not translate."
+        private const val TRANSCRIBE_SYSTEM_PROMPT = PromptPolicy.TRANSCRIPTION_SYSTEM
+        private const val TRANSCRIBE_PROMPT = PromptPolicy.TRANSCRIPTION_REQUEST
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.core.net.toUri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -80,15 +81,14 @@ fun PrivacyDashboardScreen(
     val calendarOn by vm.calendarToolEnabled.collectAsState()
     val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
     val apiServerOn by vm.apiServerEnabled.collectAsState()
+    val apiServerLanOn by vm.apiServerAllowLan.collectAsState()
     val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
 
-    // The server always binds every network interface while it's on (see ApiServerService) —
-    // there's no longer a separate "allow LAN" toggle gating that. The only thing standing
-    // between "on" and "anyone on this network can use it with no key" is whether an API key is
-    // required, so that's what actually drives the warning here now, not a bind-address flag.
-    val lanRisk = apiServerOn && !apiServerAuthOn
+    // Localhost-only mode is not a LAN exposure. LAN mode is explicit and authentication is
+    // enforced for it by both settings persistence and ApiServerService.
+    val lanRisk = apiServerOn && apiServerLanOn && !apiServerAuthOn
     val remoteModelActive = activeModel?.traits?.runsOnDevice == false
-    val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { android.net.Uri.parse(it).host }.getOrNull() }
+    val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { it.toUri().host }.getOrNull() }
 
     Scaffold(
         topBar = {

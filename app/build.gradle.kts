@@ -44,6 +44,14 @@ val releaseSigningAvailable = !releaseStoreFile.isNullOrBlank() && File(releaseS
 
 val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
 
+// Android App Bundles already receive ABI splits from Play. AGP's resource shrinker cannot consume
+// multiple ABI-specific shrunk-resource packs produced by android.splits.abi in the same bundle,
+// so disable the direct-APK split configuration whenever a bundle task is part of this invocation.
+// APK-only builds keep the smaller ABI-specific artifacts for direct sideloading.
+val bundleTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.substringAfterLast(':').startsWith("bundle", ignoreCase = true)
+}
+
 // Availability is decided by the *source* checkout, not by build outputs: the libraries may not
 // exist yet at configuration time precisely because buildLlamaCppNative hasn't run.
 val llamaCppAvailable = llamaCppDir?.let { dir ->
@@ -130,6 +138,7 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "1.1.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
@@ -194,12 +203,18 @@ android {
 
     testOptions {
         unitTests {
-            // Plain JVM unit tests (testDebugUnitTest) run without the real Android framework —
-            // any unmocked android.* call (e.g. Log.w/Log.e) throws instead of no-opping unless
-            // this is set. Coordinator logic increasingly logs on its failure/warning paths
-            // (§9/§11 diagnostics), so tests exercising those paths need this to run at all.
-            isReturnDefaultValues = true
+            // Keep framework calls strict: a JVM test must not pass because android.* returned a
+            // meaningless default. Android-dependent behavior belongs in the instrumentation
+            // suite (including the Room migration execution test).
+            isReturnDefaultValues = false
         }
+    }
+
+    // Room's migration helper loads the exported schema JSON from test assets on the device.
+    // Keep the same committed schema history available to instrumentation tests as to the JVM
+    // continuity check above.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 
     // MigrationsTest reads the exported Room schemas (see `room.schemaLocation` below) to derive
@@ -236,14 +251,17 @@ android {
         }
     }
 
-    // Produce ABI-specific APKs. Play-distributed app bundles already split by ABI; this keeps
-    // direct APK builds from making every user download both native stacks too.
+    // Produce ABI-specific APKs for direct APK builds. When bundleRelease is requested, the
+    // bundle pipeline owns ABI delivery and must receive one unsplit resource input; otherwise
+    // AGP fails while collecting multiple shrunk-resource packs into the AAB.
     splits {
         abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+            isEnable = !bundleTaskRequested
+            if (!bundleTaskRequested) {
+                reset()
+                include("arm64-v8a", "armeabi-v7a")
+                isUniversalApk = false
+            }
         }
     }
 
@@ -337,6 +355,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.1")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     // Loads the vendored Mermaid 10.9.6 browser bundle from APK assets over a safe local
     // HTTPS origin. Runtime network loads are disabled in OfflineMermaidView.
     implementation("androidx.webkit:webkit:1.16.0")
@@ -456,6 +475,10 @@ dependencies {
     // so plain JVM unit tests that exercise JSONObject parsing (ToolCallParserTest) need the
     // real reference implementation on the test classpath instead.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
+
 
     // Settings storage
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -477,6 +500,24 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Room 2.8.4's migration bundle reader is compiled against kotlinx.serialization 1.8.1.
+// Lifecycle contributes a strict 1.7.3 constraint, which otherwise leaves the generated Room
+// serializers running against an older core on the instrumentation APK and crashes with
+// AbstractMethodError. Align the Android-test runtime only; production code does not use Room's
+// schema reader.
+configurations.matching { configuration ->
+    configuration.name.endsWith("AndroidTestCompileClasspath") ||
+        configuration.name.endsWith("AndroidTestRuntimeClasspath")
+}.configureEach {
+    resolutionStrategy.force(
+        "org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.8.1",
+    )
 }
 
 // --- llama.cpp native build ------------------------------------------------------------------

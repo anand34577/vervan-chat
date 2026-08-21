@@ -148,6 +148,7 @@ class SettingsRepository(context: Context) {
         // see ApiServerAuth's EncryptedSharedPreferences, same reasoning as the app-lock PIN.
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
         val API_SERVER_PORT = intPreferencesKey("api_server_port")
+        val API_SERVER_ALLOW_LAN = booleanPreferencesKey("api_server_allow_lan")
         val API_SERVER_REQUIRE_AUTH = booleanPreferencesKey("api_server_require_auth")
         val API_SERVER_SECURITY_DEFAULTS_APPLIED = booleanPreferencesKey("api_server_security_defaults_applied")
         val API_SERVER_FULL_MODE = booleanPreferencesKey("api_server_full_mode")
@@ -411,9 +412,9 @@ class SettingsRepository(context: Context) {
     val autoContextSummarization: Flow<Boolean> = store.data.map { it[Keys.AUTO_CONTEXT_SUMMARIZATION] ?: true }
     suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
 
-    /** UI text scale multiplier, 0.85x-1.3x — font-scale accessibility setting. */
-    val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.3f) }
-    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.3f) } }
+    /** UI text scale multiplier, 0.85x-1.5x — font-scale accessibility setting. */
+    val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.5f) }
+    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.5f) } }
 
     // Default stays 4096 (unchanged) — only the ceiling moved, to 128K, for models that can
     // actually use a longer context.
@@ -564,10 +565,21 @@ class SettingsRepository(context: Context) {
     suspend fun setApiServerAutoStart(v: Boolean) { store.edit { it[Keys.API_SERVER_AUTO_START] = v } }
     val apiServerPort: Flow<Int> = store.data.map { it[Keys.API_SERVER_PORT] ?: 8080 }
     suspend fun setApiServerPort(v: Int) { store.edit { it[Keys.API_SERVER_PORT] = v.coerceIn(1024, 65535) } }
-    // Authentication is secure by default because the server binds to the LAN when enabled.
-    // The local API server binds to the LAN when enabled and can expose inference, data, and
-    // optional app tools. Authentication is therefore secure-by-default; users can still
-    // deliberately disable it for a trusted-network workflow.
+    // Localhost-only by default. LAN exposure is a separate, explicit trust decision rather than
+    // an accidental side effect of enabling the API server. LAN access also turns authentication
+    // on in the same transaction so the UI cannot persist an unsafe combination.
+    val apiServerAllowLan: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ALLOW_LAN] ?: false }
+    suspend fun setApiServerAllowLan(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_ALLOW_LAN] = v
+            if (v) {
+                it[Keys.API_SERVER_REQUIRE_AUTH] = true
+                it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+            }
+        }
+    }
+    // Authentication is secure by default and mandatory whenever the socket is LAN-facing.
+    // On localhost only, a user may deliberately disable it for a trusted local workflow.
     val apiServerRequireAuth: Flow<Boolean> = store.data.map { prefs ->
         // Older builds persisted false by default. Until the one-time hardening marker is
         // written, expose the secure value immediately so the UI never briefly claims that a

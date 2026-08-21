@@ -98,22 +98,21 @@ internal fun ClarificationCard(
     }
 }
 
-/**
- * Text for a message-list/home-screen preview line (one truncated line, no formatting) — strips
- * `<tool_call>`/`<thinking>`/`<clarify>` markup the same way the bubble's own visible text does,
- * so a chat whose last reply was a reasoning block or tool call doesn't show raw tags in the
- * preview (see [com.vervan.chat.ui.chat.MessageBubble]'s `quotableText`).
- */
-fun chatPreviewText(content: String, isUser: Boolean): String {
+/** Returns only the user-facing answer, removing internal reasoning, tool-call, and clarification
+ * protocol blocks while preserving the answer's markdown for full-text destinations. */
+fun visibleMessageText(content: String, isUser: Boolean): String {
     if (content.isBlank()) return ""
     val stripped = com.vervan.chat.tools.ToolCallParser.stripForDisplay(content)
-    // User text is not reasoning, but it still passes through the lightweight cleanup so a
-    // malformed/partial model tag copied into a draft cannot become a noisy list preview.
     val answer = if (isUser) stripped else com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
     val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
     // Fall back to the request's question, never to the pre-clarification `answer` — that still
     // has the <clarify> tag in it whenever the tag's own JSON failed to parse into a question.
-    val text = clarification.answer.ifBlank { clarification.request?.question ?: answer }.trim()
+    return clarification.answer.ifBlank { clarification.request?.question ?: answer }.trim()
+}
+
+/** Text for list/tree/home/search previews: visible answer only, with markdown decoration removed. */
+fun chatPreviewText(content: String, isUser: Boolean): String {
+    val text = visibleMessageText(content, isUser)
     return stripMarkdownForPreview(text)
 }
 

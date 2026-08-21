@@ -7,6 +7,7 @@ import com.vervan.chat.modelload.GenerationLoadable
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
@@ -195,8 +196,9 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
     /** Streaming generation — own method, not part of [GenerationLoadable] (which only covers
      * load/state), called directly once a caller has resolved this engine as the active one for
      * a given model. [imagePath] is only meaningful if the loaded model has an mmproj/[visionEnabled].
-     * [chatTemplateOverride] is a `llama_chat_builtin_templates()` name (e.g. "chatml") or raw
-     * custom Jinja text — null uses the GGUF's own embedded `tokenizer.chat_template`.
+     * [chatTemplateOverride] is a `llama_chat_builtin_templates()` name (e.g. "chatml") — raw
+     * custom Jinja is rejected because this JNI surface intentionally uses llama.cpp's built-in
+     * template matcher, not a Jinja interpreter. Null uses the GGUF's embedded template.
      * [systemPrompt], when non-null/non-blank, is sent as its own `"system"` chat-template turn
      * instead of being folded into [prompt]'s `"user"` turn — most instruction-tuned models treat
      * system content very differently (higher trust, different RLHF shaping) from user content,
@@ -224,6 +226,15 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
          * [systemPrompt] with real per-turn chat templating — see [LlamaCppJni.nativeGenerate]. */
         messages: List<Pair<String, String>>? = null
     ): Flow<String> = callbackFlow flow@{
+        chatTemplateOverride?.trim()?.takeIf { it.isNotEmpty() }?.let { override ->
+            require(!override.contains("{{") && !override.contains("{%")) {
+                "Raw Jinja chat templates are not supported by this llama.cpp build. Choose a supported preset or use the model's embedded template."
+            }
+            val known = builtinChatTemplates
+            require(known.isEmpty() || override in known) {
+                "Unsupported llama.cpp chat-template preset '$override'. Choose one of the presets shown in Model settings."
+            }
+        }
         // Labeled + this@flow.close() throughout, not bare close() — this class has its own
         // close() (GenerationLoadable conformance), which would otherwise shadow/collide with
         // ProducerScope's close() inside this lambda (same reasoning as LlmEngine.generate()).
@@ -232,7 +243,10 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
             this@flow.close(IllegalStateException("No model loaded"))
             return@flow
         }
-        val callback = LlamaCppJni.TokenCallback { token -> trySend(token) }
+        // Native generation can outrun the Room/UI collector during token bursts. Apply
+        // backpressure here; trySend() would silently drop text when the callbackFlow buffer is
+        // full and produce incomplete answers.
+        val callback = LlamaCppJni.TokenCallback { token -> trySendBlocking(token) }
         // nativeGenerate() is a blocking native call with no cancellation checks of its own
         // besides polling session->cancelled once per token (see nativeCancelGeneration's doc
         // comment: "signals ... on another thread"). Running it inline in this producer block
@@ -257,8 +271,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
             }
         }
         awaitClose { LlamaCppJni.nativeCancelGeneration(activeHandle) }
-        // Same reasoning as LlmEngine.generate(): callbackFlow's default 64-slot buffer lets
-        // trySend silently drop tokens when the native producer outruns the collector.
+        // Same bounded, lossless handoff as LlmEngine.generate().
     }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
 
     // handle is a plain Long read/written on whichever thread calls load()/close(); the native

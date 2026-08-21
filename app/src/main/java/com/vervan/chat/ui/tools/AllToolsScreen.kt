@@ -290,7 +290,9 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                 // list keeps the task title primary and makes descriptions readable.
                 columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = Space.lg, bottom = Space.md),
+                // The app bar already supplies the screen's top rhythm. Keep the first header
+                // aligned with Library and Chats instead of adding a second 16dp gap here.
+                contentPadding = PaddingValues(bottom = Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {

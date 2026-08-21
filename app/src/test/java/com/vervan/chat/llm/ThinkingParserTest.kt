@@ -116,4 +116,28 @@ class ThinkingParserTest {
         assertEquals("", parsed.answer)
         assertEquals(true, parsed.thinkingInProgress)
     }
+
+    @Test
+    fun `litert thought channel chunks become a visible reasoning block`() {
+        val output = ThinkingChannelOutput()
+        val raw = buildString {
+            append(output.append(mapOf("thought" to "weighing "), ""))
+            append(output.append(mapOf("thought" to "options"), ""))
+            append(output.append(emptyMap(), "The answer is 42."))
+            append(output.finish())
+        }
+
+        val parsed = ThinkingParser.parse(raw)
+        assertEquals("weighing options", parsed.reasoning)
+        assertEquals("The answer is 42.", parsed.answer)
+    }
+
+    @Test
+    fun `future reasoning channel names are recognized by protocol markers`() {
+        val output = ThinkingChannelOutput()
+        val raw = output.append(mapOf("hidden_reasoning" to "private work"), "") + output.finish() + "Answer"
+        val parsed = ThinkingParser.parse(raw)
+        assertEquals("private work", parsed.reasoning)
+        assertEquals("Answer", parsed.answer)
+    }
 }

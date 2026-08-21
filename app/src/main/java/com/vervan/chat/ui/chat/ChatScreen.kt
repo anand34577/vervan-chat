@@ -574,6 +574,7 @@ fun ChatScreen(
     // any loaded model, vision-capable or not.
     val pendingOcrImagePath = pendingAttachments.ocrImagePath
     val pendingOcrText = pendingAttachments.ocrText
+    val ocrNoTextToast = stringResource(R.string.chat_ocr_no_text_toast)
     var showOcrPreview by remember { mutableStateOf(false) }
     fun applyOcrResult(result: Result<ChatViewModel.OcrResult>) {
         isRunningOcr = false
@@ -582,7 +583,7 @@ fun ChatScreen(
             showOcrPreview = true
             if (r.text.isBlank()) {
                 android.widget.Toast.makeText(
-                    context, "No text found in that image", android.widget.Toast.LENGTH_LONG
+                    context, ocrNoTextToast, android.widget.Toast.LENGTH_LONG
                 ).show()
             }
         }.onFailure {
@@ -600,6 +601,7 @@ fun ChatScreen(
     // scanner instead of its text recognizer.
     val pendingQrImagePath = pendingAttachments.qrImagePath
     val pendingQrText = pendingAttachments.qrText
+    val qrNoCodeToast = stringResource(R.string.chat_qr_no_code_toast)
     var showQrPreview by remember { mutableStateOf(false) }
     fun applyQrResult(result: Result<ChatViewModel.QrResult>) {
         isRunningQr = false
@@ -608,7 +610,7 @@ fun ChatScreen(
             showQrPreview = true
             if (r.text.isBlank()) {
                 android.widget.Toast.makeText(
-                    context, "No QR code or barcode found in that image", android.widget.Toast.LENGTH_LONG
+                    context, qrNoCodeToast, android.widget.Toast.LENGTH_LONG
                 ).show()
             }
         }.onFailure {
@@ -1353,6 +1355,9 @@ fun ChatScreen(
                 val defaultContextLimit by app.container.settingsRepository.contextTokenLimit.collectAsState(
                     initial = 4096
                 )
+                val includePastThinking by app.container.settingsRepository.includePastThinkingInContext.collectAsState(
+                    initial = false
+                )
                 // Prefer the resolved model's actual context window over the app-wide default —
                 // the old version measured the whole branch against the global setting, so a chat
                 // that would fit fine after history trimming could still read a scary "400%".
@@ -1363,7 +1368,17 @@ fun ChatScreen(
                 // showed up here when the model also happened to be the global "Default" one.
                 val contextLimit = selectedGenerationModel?.contextTokens ?: defaultContextLimit
                 val estimatedTokens =
-                    messages.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
+                    messages
+                        .filterNot {
+                            it.state == MessageState.STREAMING ||
+                                (it.role == MessageRole.ASSISTANT &&
+                                    (it.state == MessageState.CANCELLED || it.state == MessageState.FAILED))
+                        }
+                        .sumOf {
+                            com.vervan.chat.llm.estimateTokens(
+                                ChatFormatting.contextMessageContent(it, includePastThinking)
+                            )
+                        }
                 val contextPercent =
                     if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(
                         0, 100
@@ -1902,7 +1917,10 @@ fun ChatScreen(
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
                             ) {
                                 Text(
-                                    if (pendingOcrText.isNullOrBlank()) "OCR · no text found · tap to view" else "OCR · tap to view extracted text",
+                                    stringResource(
+                                        if (pendingOcrText.isNullOrBlank()) R.string.chat_ocr_no_text
+                                        else R.string.chat_ocr_view_text
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(
                                         horizontal = Space.sm, vertical = Space.xs
@@ -1955,7 +1973,10 @@ fun ChatScreen(
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
                             ) {
                                 Text(
-                                    if (pendingQrText.isNullOrBlank()) "QR · no code found · tap to view" else "QR · tap to view decoded text",
+                                    stringResource(
+                                        if (pendingQrText.isNullOrBlank()) R.string.chat_qr_no_code
+                                        else R.string.chat_qr_view_text
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(
                                         horizontal = Space.sm, vertical = Space.xs
@@ -2339,7 +2360,8 @@ fun ChatScreen(
                                 // long draft gets the width back.
                                 if (draft.length >= 9_600) {
                                     Text(
-                                        if (draft.length > 12_000) "Message is over the 12,000 character limit" else "${draft.length} / 12,000 characters",
+                                        if (draft.length > 12_000) stringResource(R.string.chat_character_limit_exceeded)
+                                        else stringResource(R.string.chat_character_limit, draft.length),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (draft.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier
@@ -2356,7 +2378,7 @@ fun ChatScreen(
                                             Modifier.size(12.dp), strokeWidth = 2.dp
                                         )
                                         Text(
-                                            "Converting audio…",
+                                            stringResource(R.string.chat_converting_audio),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = Space.sm)
@@ -2407,7 +2429,8 @@ fun ChatScreen(
                                             ) {
                                                 if (draft.isEmpty()) {
                                                     Text(
-                                                        if (composerEnabled) "Message Vervan…" else "Waiting for a local model",
+                                                        if (composerEnabled) stringResource(R.string.chat_message_placeholder)
+                                                        else stringResource(R.string.chat_waiting_for_model),
                                                         style = MaterialTheme.typography.bodyLarge,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         maxLines = 1,
@@ -2464,11 +2487,16 @@ fun ChatScreen(
                                                     })
                                                 DropdownMenuItem(text = {
                                                     Text(
-                                                        "Voice replies: " + when (voiceReplyMode) {
-                                                            "AUTOMATIC" -> "Automatic"
-                                                            "NEVER" -> "Off"
-                                                            else -> "Manual"
-                                                        }
+                                                        stringResource(
+                                                            R.string.chat_voice_replies_label,
+                                                            stringResource(
+                                                                when (voiceReplyMode) {
+                                                                    "AUTOMATIC" -> R.string.chat_voice_replies_automatic
+                                                                    "NEVER" -> R.string.chat_voice_replies_off
+                                                                    else -> R.string.chat_voice_replies_manual
+                                                                }
+                                                            )
+                                                        )
                                                     )
                                                 }, leadingIcon = {
                                                     Icon(

@@ -157,7 +157,10 @@ private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLe
                     if (isCurrentLeaf) SemanticChip(stringResource(com.vervan.chat.R.string.branch_current), ChipTone.Success)
                 }
                 Text(
-                    message.content.take(120).ifBlank { "…" },
+                    chatPreviewText(
+                        message.content,
+                        message.role == MessageRole.USER
+                    ).take(120).ifBlank { "…" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,

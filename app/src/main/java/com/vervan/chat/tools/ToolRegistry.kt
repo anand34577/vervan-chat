@@ -773,12 +773,8 @@ object ToolRegistry {
         // and params.
         val names = visible.filter { it.name !in META_TOOL_NAMES }.map { it.name }
         val namesLine = if (names.isNotEmpty()) "Available tools: ${names.joinToString(", ")}.\n" else ""
-        return "You have access to tools, called by emitting a block like this on its own: " +
-            "<tool_call>{\"tool\": \"tool_name\", \"params\": {\"param\": \"value\"}}</tool_call>\n" +
-            namesLine +
-            "Call search_tools(query) with a keyword for what you need (e.g. \"timer\", \"calendar\") to " +
-            "find a specific tool fast, or list_tools for the full grouped list, then tool_details(name) " +
-            "for a specific tool's parameters before calling it. Only reach for a tool when you actually need one.\n"
+        return namesLine +
+            "Discover tools with search_tools(query) or list_tools; use tool_details(name) before an unfamiliar tool.\n"
     }
 
     private fun launch(app: com.vervan.chat.VervanApp, intent: Intent, label: String): ToolResult = try {

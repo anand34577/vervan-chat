@@ -156,10 +156,10 @@
     "<path d='M27.4,33 C30.3,31.3 33.6,32.2 35.4,35.3 L54,61.6 L72.6,35.3 C74.4,32.2 77.7,31.3 80.6,33 C83.3,34.6 84,37.8 82.4,40.5 L63.8,73.8 C62.1,76.9 59.1,78.7 54,78.7 C48.9,78.7 45.9,76.9 44.2,73.8 L25.6,40.5 C24,37.8 24.7,34.6 27.4,33 Z' fill='url(#bv)'/>" +
     "<circle cx='66' cy='64' r='5.2' fill='url(#bs)'/>" +
     "<path d='M76,25 L81.5,30.5 L76,36 L70.5,30.5 Z' fill='#FFE1B0' fill-opacity='.94'/></svg>";
-  var params = new URLSearchParams(location.search);
-  var urlToken = params.get("token");
-  if (urlToken) { localStorage.setItem("vervan_api_token", urlToken); history.replaceState({}, "", location.pathname); }
-  var token = (localStorage.getItem("vervan_api_token") || "").trim();
+  var hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  var urlToken = hashParams.get("token");
+  if (urlToken) { sessionStorage.setItem("vervan_api_token", urlToken); history.replaceState({}, "", location.pathname); }
+  var token = (sessionStorage.getItem("vervan_api_token") || "").trim();
   var headers = token ? { "Authorization": "Bearer " + token } : {};
   document.getElementById("example").textContent =
     "curl " + location.origin + "/v1/chat/completions \\\n" +
@@ -200,7 +200,7 @@
     })
     .catch(function (err) {
       var el = document.getElementById("models");
-      el.textContent = /401|unauthorized/i.test(err.message) ? "This server needs an API key. Add ?token=… to the URL or use the full app." : "Could not load models: " + err.message;
+      el.textContent = /401|unauthorized/i.test(err.message) ? "This server needs an API key. Use the full app or open it from Settings." : "Could not load models: " + err.message;
     });
 })();
 </script>

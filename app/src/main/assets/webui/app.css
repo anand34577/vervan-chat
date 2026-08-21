@@ -93,6 +93,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+button, [role="button"] { touch-action: manipulation; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 70%, white);
+  outline-offset: 2px;
+}
+.skip-link {
+  position: fixed; left: 12px; top: 12px; z-index: 300; transform: translateY(-180%);
+  background: var(--surface-raised); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 10px 14px; font-weight: 700; box-shadow: var(--shadow-strong);
+}
+.skip-link:focus { transform: none; }
 a { color: var(--accent); }
 .ui-icon { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .eyebrow { display: block; color: var(--text-faint); font: 600 10px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
@@ -162,7 +173,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .button-with-icon .ui-icon { width: 15px; height: 15px; }
 .icon-btn {
   border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
-  border-radius: 11px; padding: 8px; font-size: 12.5px; display: inline-grid; place-items: center; min-width: 34px; min-height: 34px;
+  border-radius: 11px; padding: 8px; font-size: 12.5px; display: inline-grid; place-items: center; min-width: 44px; min-height: 44px;
 }
 .icon-btn:hover { background: var(--surface-alt); color: var(--text); }
 .icon-btn.destructive:hover { background: var(--danger-soft); color: var(--danger); }
@@ -490,7 +501,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow); }
 .composer-box > .menu-wrap { display: grid; place-items: center; }
-.composer-box > .menu-wrap > .icon-btn { width: 38px; min-width: 38px; height: 38px; }
+.composer-box > .menu-wrap > .icon-btn { width: 44px; min-width: 44px; height: 44px; }
 .composer-box textarea {
   width: 100%; min-width: 0; border: 0 !important; background: none; padding: 7px 4px; max-height: 190px; min-height: 24px;
   line-height: 1.45;
@@ -544,14 +555,14 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .modal-back.show { display: flex; }
 .modal {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-strong); width: min(560px, 100%); max-height: 86dvh; overflow-y: auto; padding: 24px;
+  box-shadow: var(--shadow-strong); width: min(560px, 100%); max-height: 86dvh; overflow-y: auto; padding: 24px; outline: none;
 }
 .modal h2 { margin: 0 0 14px; font-size: 17px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
 .dropzone {
   border: 2px dashed var(--border-strong); border-radius: var(--radius); padding: 26px;
-  text-align: center; color: var(--text-muted); cursor: pointer; font-size: 13.5px;
+  text-align: center; color: var(--text-muted); cursor: pointer; font-size: 13.5px; min-height: 88px;
 }
 .dropzone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
@@ -565,7 +576,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .xselect-btn {
   width: 100%; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left;
   background: var(--surface-raised); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 9px 11px; color: var(--text); font-size: 14px;
+  border-radius: var(--radius-sm); padding: 9px 11px; color: var(--text); font-size: 14px; min-height: 44px;
 }
 .xselect-btn:hover { border-color: var(--border-strong); }
 .xselect.open .xselect-btn { border-color: var(--accent); }
@@ -581,7 +592,7 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .xselect.drop-up .xselect-list { top: auto; bottom: calc(100% + 5px); }
 .xselect-opt {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  border: 0; background: none; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13.5px;
+  border: 0; background: none; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13.5px; min-height: 44px;
 }
 .xselect-opt:hover, .xselect-opt.cursor { background: var(--surface-alt); }
 .xselect-opt[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -624,8 +635,8 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
   .detail-scroll { padding: 14px; }
   .messages { padding: 14px 12px 4px; }
   .composer-wrap { padding: 10px 12px max(12px, env(safe-area-inset-bottom)); }
-  .composer-box { grid-template-columns: 36px minmax(0, 1fr) 40px; gap: 6px; padding-left: 8px; padding-right: 6px; }
-  .composer-box > .menu-wrap > .icon-btn { width: 36px; min-width: 36px; }
+  .composer-box { grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; padding-left: 8px; padding-right: 6px; }
+  .composer-box > .menu-wrap > .icon-btn { width: 44px; min-width: 44px; }
   .msg.user .msg-body { max-width: 92%; }
   .opts-col { width: min(310px, 88vw); flex-basis: auto; }
 

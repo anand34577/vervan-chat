@@ -28,4 +28,31 @@ class ChatPreviewTextTest {
     fun `reasoning-only messages produce an empty preview`() {
         assertEquals("", chatPreviewText("<think>still working</think>", isUser = false))
     }
+
+    @Test
+    fun `channel reasoning is hidden from previews`() {
+        assertEquals(
+            "Actual response",
+            chatPreviewText(
+                "<|channel|>thought\nThinking process<|channel|>final\nActual response",
+                isUser = false
+            )
+        )
+    }
+
+    @Test
+    fun `unclosed channel reasoning is hidden from previews`() {
+        assertEquals(
+            "Before",
+            chatPreviewText("Before<|channel|>thought\nprivate work", isUser = false)
+        )
+    }
+
+    @Test
+    fun `full text destination keeps answer markdown but removes internal blocks`() {
+        assertEquals(
+            "**Answer**",
+            visibleMessageText("<think>private</think>**Answer**<tool_call>{}</tool_call>", isUser = false)
+        )
+    }
 }

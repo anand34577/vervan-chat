@@ -1,6 +1,7 @@
 package com.vervan.chat.llm
 
 import com.vervan.chat.data.db.entities.ModelEngine
+import com.vervan.chat.data.db.entities.ModelInfo
 
 /**
  * The prompt-engineered "thinking mode" policy — extracted out of `ChatViewModel` so
@@ -18,6 +19,30 @@ object ThinkingPolicy {
 
     /** Valid thinking-mode values, in escalating order. */
     val MODES = listOf("OFF", "FAST", "BALANCED", "DEEP")
+
+    /**
+     * Adds the model-native activation token at the beginning of the system turn. The token and
+     * protocol come from [ThinkingSpec], not from a model-name branch, so future model packages
+     * can declare their own activation text through metadata or the Configure screen.
+     *
+     * [mode] is already the resolved mode, so OFF deliberately leaves the system prompt alone.
+     * [ThinkingSpec.forModel] handles persisted metadata, embedded templates, catalog entries,
+     * and the compatibility fallback for older model rows.
+     */
+    fun withModelThinkingActivation(systemPrompt: String, model: ModelInfo?, mode: String): String {
+        if (mode == "OFF" || model == null || model.supportsThinking == false) return systemPrompt
+        val spec = ThinkingSpec.forModel(model)
+        if (spec.activation != ThinkingSpec.Activation.SYSTEM_TOKEN) return systemPrompt
+        val token = spec.enableText?.takeIf { it.isNotBlank() } ?: return systemPrompt
+        if (systemPrompt.trimStart().startsWith(token)) return systemPrompt
+        return buildString {
+            append(token)
+            if (systemPrompt.isNotBlank()) {
+                append('\n')
+                append(systemPrompt)
+            }
+        }.trim()
+    }
 
     /**
      * Resolves the capability → model-default → chat-override hierarchy into the single mode
@@ -95,9 +120,14 @@ object ThinkingPolicy {
         // a non-reasoning GGUF (e.g. a plain Gemma) would make it emit stray reasoning tags and,
         // worse, arm the native reasoning-budget counter against ordinary answer tokens — so the
         // </think> auto-inject could fire mid-answer. null here leaves such models untouched.
-        isReasoningModel: Boolean
+        isReasoningModel: Boolean,
+        thinkingSpec: ThinkingSpec = ThinkingSpec()
     ): String? {
-        if (engine != ModelEngine.LLAMA_CPP || !isReasoningModel) return null
+        if (
+            engine != ModelEngine.LLAMA_CPP ||
+            !isReasoningModel ||
+            thinkingSpec.activation == ThinkingSpec.Activation.SYSTEM_TOKEN
+        ) return null
         return if (mode == "OFF") "<think>\n\n</think>\n\n" else "<think>\n"
     }
 
@@ -112,9 +142,14 @@ object ThinkingPolicy {
     fun reasoningBudgetFor(
         mode: String,
         engine: ModelEngine,
-        isReasoningModel: Boolean
+        isReasoningModel: Boolean,
+        thinkingSpec: ThinkingSpec = ThinkingSpec()
     ): Int {
-        if (engine != ModelEngine.LLAMA_CPP || !isReasoningModel) return -1
+        if (
+            engine != ModelEngine.LLAMA_CPP ||
+            !isReasoningModel ||
+            thinkingSpec.activation == ThinkingSpec.Activation.SYSTEM_TOKEN
+        ) return -1
         return when (mode) {
             "FAST" -> 256
             "BALANCED" -> 1024

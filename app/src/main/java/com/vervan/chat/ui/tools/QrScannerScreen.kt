@@ -1,3 +1,5 @@
+@file:Suppress("LocalContextGetResourceValueCall")
+
 package com.vervan.chat.ui.tools
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,8 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -230,7 +232,7 @@ fun QrScannerScreen(onBack: () -> Unit) {
                                 }
                             }
                         ) {
-                            Icon(Icons.Filled.OpenInNew, null, Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))
                             Text(stringResource(com.vervan.chat.R.string.media_open_link), modifier = Modifier.padding(start = Space.sm))
                         }
                     }

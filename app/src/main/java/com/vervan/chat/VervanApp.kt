@@ -8,6 +8,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room.Room
 import com.vervan.chat.security.AppLockManager
 import com.vervan.chat.system.ThermalMonitor
+import com.vervan.chat.system.StorageSpace
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.MIGRATIONS
 import com.vervan.chat.data.db.entities.MessageState
@@ -25,6 +26,7 @@ import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.data.settings.SettingsRepository
 import com.vervan.chat.llm.LlamaCppEngine
 import com.vervan.chat.llm.LlmEngine
+import com.vervan.chat.llm.RemoteRequestOptions
 import com.vervan.chat.llm.stoppingAt
 import com.vervan.chat.model.DocumentImportManager
 import com.vervan.chat.model.ModelImportManager
@@ -70,7 +72,7 @@ class AppContainer(app: Application) {
     val networkAuditLog = com.vervan.chat.system.NetworkAuditLog()
     val documentImportManager = DocumentImportManager(
         app, db.documentDao(), db.chunkDao(), embeddingEngine, db.modelDao(), db.jobDao(),
-        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
+        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog, db
     )
     val retrievalEngine = RetrievalEngine(
         db.chunkDao(), db.documentDao(), embeddingEngine, db.modelDao(),
@@ -180,7 +182,7 @@ class AppContainer(app: Application) {
         recorder = com.vervan.chat.store.install.RoomInstallSessionRecorder(
             db.storeInstallSessionDao(), db.storeInstallArtifactDao()
         ),
-        usableSpaceProvider = { runCatching { app.filesDir.usableSpace }.getOrDefault(-1L) }
+        usableSpaceProvider = { runCatching { StorageSpace.allocatableBytes(app) }.getOrDefault(-1L) }
     )
 
     val storeInstallRecovery = com.vervan.chat.store.install.StoreInstallRecovery(
@@ -301,7 +303,8 @@ class AppContainer(app: Application) {
          * pre-flattened [prompt]; the other two engines ignore it (LiteRT-LM keeps its own
          * Conversation object, and the remote engine forwards to a server that does its own
          * templating), so [prompt]/[systemPrompt] must still be filled in as the fallback. */
-        messages: List<Pair<String, String>>? = null
+        messages: List<Pair<String, String>>? = null,
+        remoteOptions: RemoteRequestOptions = RemoteRequestOptions()
     ): Flow<String> = flow {
         when (model.engine) {
             // llama.cpp already gets an exact native output-token cap (nativeGenerate's maxTokens
@@ -331,7 +334,15 @@ class AppContainer(app: Application) {
                         prompt, imagePath, temperature, topP, topK, seed, maxOutputTokens, minP,
                         repetitionPenalty, chatTemplateOverride = model.chatTemplateOverride,
                         assistantPrefill = assistantPrefill, systemPrompt = systemPrompt,
-                        reasoningBudget = reasoningBudget, messages = messages
+                        reasoningBudget = reasoningBudget,
+                        // llama.cpp templates do not consistently define a tool role. Preserve
+                        // tool turns for remote providers, but make local tool results ordinary
+                        // user context when entering the native bridge so older GGUF templates
+                        // remain usable.
+                        messages = messages?.map { (role, content) ->
+                            if (role.equals("tool", ignoreCase = true)) "user" to "Tool result: $content"
+                            else role to content
+                        }
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -360,7 +371,8 @@ class AppContainer(app: Application) {
                         // the OpenAI spec; sending the ambient default to every request on every
                         // endpoint that happens to accept the vendor extension would silently
                         // change behavior nobody asked to change.
-                        topK = model.topK
+                        topK = model.topK,
+                        options = remoteOptions.copy(messages = remoteOptions.messages ?: messages)
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -394,6 +406,9 @@ class VervanApp : Application() {
     private suspend fun maybeAutoStartApiServer() {
         val settings = container.settingsRepository
         if (!settings.apiServerAutoStart.first() || !settings.apiServerEnabled.first()) return
+        // The API is an external data surface. Do not bring it back while the app-lock gate is
+        // active; the user must unlock in the main app before a local client can read anything.
+        if (settings.appLockEnabled.first() && container.appLockManager.isLocked.value) return
         withContext(Dispatchers.Main.immediate) {
             // A foreground-service start can still be refused (battery restrictions, an edge case
             // in the foregrounding race). That is not worth crashing the app over — the user can
@@ -418,10 +433,16 @@ class VervanApp : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
-                // Quick stays available while the app process is running, in foreground or background.
                 applicationScope.launch(Dispatchers.IO) {
                     runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                        val appLockEnabled = container.settingsRepository.appLockEnabled.first()
+                        // External surfaces must not remain available while an app-lock-enabled
+                        // session is backgrounded. The lock timeout is evaluated on the next
+                        // foreground transition, so stopping them here closes that timing gap.
+                        if (appLockEnabled) {
+                            com.vervan.chat.server.ApiServerService.stop(this@VervanApp)
+                            com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
+                        } else if (container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
                         ) {
                             withContext(Dispatchers.Main.immediate) {
@@ -436,7 +457,14 @@ class VervanApp : Application() {
             override fun onStart(owner: LifecycleOwner) {
                 applicationScope.launch(Dispatchers.IO) {
                     runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                        val appLockEnabled = container.settingsRepository.appLockEnabled.first()
+                        if (appLockEnabled) {
+                            container.appLockManager.onAppForegrounded(
+                                container.settingsRepository.autoLockTimeoutSeconds.first()
+                            )
+                        }
+                        val locked = appLockEnabled && container.appLockManager.isLocked.value
+                        if (!locked && container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
                         ) {
                             withContext(Dispatchers.Main.immediate) {
@@ -444,11 +472,14 @@ class VervanApp : Application() {
                                     com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
                                 }
                             }
+                        } else if (locked) {
+                            com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
                         }
-                        if (container.settingsRepository.appLockEnabled.first()) {
-                            container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
+                        if (locked) {
+                            com.vervan.chat.server.ApiServerService.stop(this@VervanApp)
+                        } else {
+                            maybeAutoStartApiServer()
                         }
-                        maybeAutoStartApiServer()
                     }.onFailure { Log.e(TAG, "onAppForegrounded housekeeping failed", it) }
                 }
             }

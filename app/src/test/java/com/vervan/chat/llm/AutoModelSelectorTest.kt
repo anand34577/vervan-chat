@@ -1,6 +1,7 @@
 package com.vervan.chat.llm
 
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -12,7 +13,8 @@ class AutoModelSelectorTest {
         name: String,
         sizeBytes: Long,
         supportsVision: Boolean? = null,
-        supportsAudio: Boolean? = null
+        supportsAudio: Boolean? = null,
+        engine: ModelEngine = ModelEngine.LLAMA_CPP
     ) = ModelInfo(
         displayName = name,
         // Doesn't exist on disk in a unit test, so AutoModelSelector's File(filePath).isFile
@@ -22,7 +24,8 @@ class AutoModelSelectorTest {
         sha256 = "",
         role = ModelRole.GENERATION,
         supportsVision = supportsVision,
-        supportsAudio = supportsAudio
+        supportsAudio = supportsAudio,
+        engine = engine
     )
 
     private val small = model("small", 1_000_000_000L)
@@ -84,5 +87,17 @@ class AutoModelSelectorTest {
         val noVisionLarge = model("b", 8_000_000_000L, supportsVision = false)
         val picked = AutoModelSelector.select(listOf(noVisionSmall, noVisionLarge), ModelProfileType.QUALITY, needsVision = true)
         assertEquals(noVisionLarge, picked)
+    }
+
+    @Test
+    fun `does not choose a remote model when a local candidate exists`() {
+        val remote = model("remote", 0L, engine = ModelEngine.REMOTE_API)
+        assertEquals(small, AutoModelSelector.select(listOf(remote, small), ModelProfileType.FAST))
+    }
+
+    @Test
+    fun `uses a remote model when it is the only installed option`() {
+        val remote = model("remote", 0L, engine = ModelEngine.REMOTE_API)
+        assertEquals(remote, AutoModelSelector.select(listOf(remote), ModelProfileType.BALANCED))
     }
 }

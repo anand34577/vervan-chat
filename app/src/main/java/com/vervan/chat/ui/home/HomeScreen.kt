@@ -2,8 +2,6 @@ package com.vervan.chat.ui.home
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,7 +26,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -37,7 +34,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
@@ -57,9 +53,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import com.vervan.chat.ui.common.VervanIconButton as IconButton
@@ -79,12 +73,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,9 +109,11 @@ import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.validation.InputLimits
-import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanBreakpoints
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import com.vervan.chat.system.toUserMessage
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -164,10 +158,8 @@ fun HomeScreen(
     // starts the moment the chat opens, rather than landing as an unsent draft the user has to
     // tap Send on a second time (which read as the first tap having failed). Blank text just
     // opens an empty chat, same as "New chat".
-    fun askVervan(text: String) {
-        scope.launch {
-            onOpenChat(if (text.isBlank()) vm.createChat() else vm.createChatAndSend(text))
-        }
+    suspend fun askVervan(text: String) {
+        onOpenChat(if (text.isBlank()) vm.createChat() else vm.createChatAndSend(text))
     }
 
     Scaffold(
@@ -181,18 +173,20 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(40.dp)
                                 .background(
                                     MaterialTheme.colorScheme.primaryContainer,
                                     MaterialTheme.shapes.small
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Image(
-                                painter = painterResource(R.drawable.ic_launcher_foreground),
-                                contentDescription = stringResource(R.string.role_vervan),
-                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimaryContainer),
-                                modifier = Modifier.size(38.dp)
+                            // Keep the shell independent from launcher artwork. The mark stays
+                            // legible when the app icon is replaced, the user changes theme, or
+                            // the display uses a large font scale.
+                            Text(
+                                text = "V",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                         // The active workspace name already appears right below in the hero (with
@@ -202,8 +196,12 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search workspace") }
-                    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, "Settings") }
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(Icons.Filled.Search, stringResource(R.string.shortcut_search))
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, stringResource(R.string.shortcut_settings))
+                    }
                 }
             )
         }
@@ -290,6 +288,26 @@ fun HomeScreen(
 @Composable
 private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
     val remote = model?.traits?.runsOnDevice == false
+    val statusIcon = when {
+        remote -> Icons.Filled.Cloud
+        model == null -> Icons.Outlined.Memory
+        else -> Icons.Filled.Lock
+    }
+    val statusIconTint = when {
+        remote -> MaterialTheme.colorScheme.onSecondaryContainer
+        model == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val statusIconContainer = when {
+        remote -> MaterialTheme.colorScheme.secondaryContainer
+        model == null -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val statusIconDescription = when {
+        remote -> stringResource(R.string.privacy_remote_icon_description)
+        model == null -> stringResource(R.string.privacy_no_model_icon_description)
+        else -> stringResource(R.string.privacy_local_icon_description)
+    }
     Surface(
         onClick = onOpenPrivacy,
         modifier = Modifier
@@ -303,10 +321,11 @@ private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconAffordance(
-                icon = if (remote) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                icon = statusIcon,
                 size = IconAffordanceSize.Compact,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                tint = statusIconTint,
+                containerColor = statusIconContainer,
+                contentDescription = statusIconDescription,
             )
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                 Text(
@@ -375,7 +394,7 @@ private fun HomeHero(
     workspaceName: String?,
     model: ModelInfo?,
     compact: Boolean,
-    onAsk: (String) -> Unit,
+    onAsk: suspend (String) -> Unit,
     onOpenModels: () -> Unit,
     onOpenKnowledge: () -> Unit
 ) {
@@ -385,19 +404,50 @@ private fun HomeHero(
     // "Good morning" all evening. Recomputing on recomposition is trivially cheap.
     val greeting =
         when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
-            in 0..4 -> "Working late"
-            in 5..11 -> "Good morning"
-            in 12..16 -> "Good afternoon"
-            else -> "Good evening"
-        }
+            in 0..4 -> stringResource(R.string.home_greeting_late)
+            in 5..11 -> stringResource(R.string.home_greeting_morning)
+            in 12..16 -> stringResource(R.string.home_greeting_afternoon)
+            else -> stringResource(R.string.home_greeting_evening)
+    }
     EnterMotion {
-    Column(
-        Modifier.fillMaxWidth().animateContentSize().padding(bottom = Space.sm)
-    ) {
+        // The home hero is the product's signature surface. Keep the readable content on a
+        // semantic surface role and reserve the accent gradient for a small visual signal. A
+        // primary/secondary container gradient is not guaranteed to have one safe foreground
+        // color across dynamic, high-contrast, light, and dark schemes.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = VervanExtraShapes.hero,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 1.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant,
+            ),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().animateContentSize()
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.secondary,
+                                )
+                            )
+                        )
+                )
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.xl)
+                ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "LOCAL WORKSPACE",
+                        stringResource(R.string.home_local_workspace),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -408,12 +458,21 @@ private fun HomeHero(
                     )
                     Text(
                         when {
-                            remoteModel -> "${workspaceName ?: "Personal workspace"} · Remote model configured"
-                            model == null -> "${workspaceName ?: "Personal workspace"} · Choose a model to begin"
-                            else -> "${workspaceName ?: "Personal workspace"} · Ready on this device"
+                            remoteModel -> stringResource(
+                                R.string.home_hero_remote_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
+                            model == null -> stringResource(
+                                R.string.home_hero_no_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
+                            else -> stringResource(
+                                R.string.home_hero_local_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = heroFg.copy(alpha = 0.76f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = Space.xs)
@@ -458,17 +517,17 @@ private fun HomeHero(
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
             Text(
-                "Start with a question or choose a task below.",
+                stringResource(R.string.home_start_prompt),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = heroFg.copy(alpha = 0.78f),
                 modifier = Modifier.padding(top = Space.lg, bottom = Space.sm)
             )
             if (model != null) {
                 QuickAskField(onAsk = onAsk)
                 Spacer(Modifier.height(Space.md))
                 ResponsiveActions {
-                    HeroChip(Icons.Outlined.Memory, "Model ready", onOpenModels)
-                    HeroChip(Icons.Filled.Description, "Ask documents", onOpenKnowledge)
+                    HeroChip(Icons.Outlined.Memory, stringResource(R.string.home_model_ready), onOpenModels)
+                    HeroChip(Icons.Filled.Description, stringResource(R.string.home_ask_documents), onOpenKnowledge)
                 }
             } else {
                 Surface(
@@ -493,6 +552,8 @@ private fun HomeHero(
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
+                }
+            }
         }
     }
 }
@@ -501,22 +562,38 @@ private fun HomeHero(
  * immediately submits this text — generation is already underway by the time the chat screen
  * appears. Blank send just opens an empty chat. */
 @Composable
-private fun QuickAskField(onAsk: (String) -> Unit) {
+private fun QuickAskField(onAsk: suspend (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     var submitting by rememberSaveable { mutableStateOf(false) }
+    var submitError by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val askContentDescription = stringResource(R.string.home_ask_content_description)
+    val sendContentDescription = stringResource(R.string.home_start_chat_question)
     fun submit() {
         // The navigation happens asynchronously, so a fast double tap could otherwise create
         // two chats from one question before the destination replaces Home.
         if (submitting) return
         submitting = true
         val t = text
-        text = ""
-        onAsk(t)
+        submitError = null
+        scope.launch {
+            try {
+                onAsk(t)
+                text = ""
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                // Preserve the question so a transient database or navigation failure does not
+                // force the user to type it again, and keep the failure inside the UI scope.
+                submitError = failure.toUserMessage()
+            } finally {
+                submitting = false
+            }
+        }
     }
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
         tonalElevation = 1.dp
     ) {
         Row(
@@ -541,38 +618,38 @@ private fun QuickAskField(onAsk: (String) -> Unit) {
                     }
                 }
             )
-            val sendTint = MaterialTheme.colorScheme.primary
-            Box(
-                Modifier
+            Surface(
+                onClick = ::submit,
+                enabled = !submitting,
+                modifier = Modifier
                     .padding(vertical = Space.xs)
                     .size(48.dp)
-                    // A soft shadow + gradient instead of the flat fill every other control on
-                    // this screen already uses — this is the one button that actually starts a
-                    // conversation, so it earns being the thing your eye lands on first.
-                    .shadow(4.dp, MaterialTheme.shapes.small, clip = false)
-                    .background(
-                        Brush.linearGradient(listOf(sendTint, lerp(sendTint, MaterialTheme.colorScheme.tertiary, 0.3f))),
-                        MaterialTheme.shapes.small
-                    )
-                    .clickable(enabled = !submitting, onClick = ::submit, role = Role.Button),
-                contentAlignment = Alignment.Center
+                    .semantics { contentDescription = sendContentDescription },
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shadowElevation = 3.dp,
             ) {
-                if (submitting) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = stringResource(R.string.home_start_chat_question),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Box(contentAlignment = Alignment.Center) {
+                    if (submitting) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+    submitError?.let { error ->
+        com.vervan.chat.ui.common.ValidationMessage(error, modifier = Modifier.padding(top = Space.sm))
     }
 }
 
@@ -588,7 +665,7 @@ private fun HeroChip(
         // These are compact task controls, not badges. Use the same rectangular control geometry
         // as the rest of the redesigned app so the first frame cannot flash a legacy pill style.
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier.heightIn(min = 48.dp)
@@ -869,11 +946,12 @@ private fun WorkspaceStatusSection(
     }
 }
 
+@Composable
 private fun statusLabel(tone: StatusTone): String = when (tone) {
-    StatusTone.Ready -> "Selected"
-    StatusTone.Running -> "Working"
-    StatusTone.Warning -> "Setup"
-    else -> "Open"
+    StatusTone.Ready -> stringResource(R.string.home_status_selected)
+    StatusTone.Running -> stringResource(R.string.home_status_working)
+    StatusTone.Warning -> stringResource(R.string.home_status_setup)
+    else -> stringResource(R.string.home_status_open)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -886,22 +964,22 @@ private fun ToolsSection(
     onOpenAllTools: () -> Unit,
 ) {
     val toolGroups = listOf(
-        "Common tasks" to listOf(
-            ModernHomeTool(Icons.Filled.RecordVoiceOver, "Voice chat", "Talk naturally with your local model", onOpenVoiceChat),
-            ModernHomeTool(Icons.Filled.EditNote, "Writing assistant", "Rewrite, refine, or change tone", onOpenWritingAssistant),
-            ModernHomeTool(Icons.Filled.DocumentScanner, "Document scanner", "Capture pages and extract useful text", onOpenDocScanner),
-            ModernHomeTool(Icons.Filled.Translate, "Translate", "Translate text or a photographed page", onOpenTranslate),
+        stringResource(R.string.home_tool_group_common) to listOf(
+            ModernHomeTool(Icons.Filled.RecordVoiceOver, stringResource(R.string.home_tool_voice_title), stringResource(R.string.home_tool_voice_body), onOpenVoiceChat),
+            ModernHomeTool(Icons.Filled.EditNote, stringResource(R.string.home_tool_writing_title), stringResource(R.string.home_tool_writing_body), onOpenWritingAssistant),
+            ModernHomeTool(Icons.Filled.DocumentScanner, stringResource(R.string.home_tool_scanner_title), stringResource(R.string.home_tool_scanner_body), onOpenDocScanner),
+            ModernHomeTool(Icons.Filled.Translate, stringResource(R.string.home_tool_translate_title), stringResource(R.string.home_tool_translate_body), onOpenTranslate),
         ),
     )
     Column {
         VervanSectionHeader(
-            "Quick tools",
+            stringResource(R.string.home_quick_tools),
             actionLabel = stringResource(R.string.ui_homescreen_899_see_all),
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )
         Text(
-            "Start a task, or browse all tools.",
+            stringResource(R.string.home_quick_tools_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -941,9 +1019,10 @@ private data class ModernHomeTool(
     val onClick: () -> Unit,
 )
 
+@Composable
 private fun ModelBackend.label(): String = when (this) {
-    ModelBackend.NPU -> "NPU backend"
-    ModelBackend.GPU -> "GPU backend"
-    ModelBackend.CPU -> "CPU backend"
-    ModelBackend.UNVERIFIED -> "Setup not checked"
+    ModelBackend.NPU -> stringResource(R.string.home_backend_npu)
+    ModelBackend.GPU -> stringResource(R.string.home_backend_gpu)
+    ModelBackend.CPU -> stringResource(R.string.home_backend_cpu)
+    ModelBackend.UNVERIFIED -> stringResource(R.string.home_backend_unverified)
 }

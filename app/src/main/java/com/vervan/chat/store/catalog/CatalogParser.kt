@@ -1,6 +1,6 @@
 package com.vervan.chat.store.catalog
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.store.model.AcceleratorRequirement
 import com.vervan.chat.store.model.Artifact
 import com.vervan.chat.store.model.ArtifactRole

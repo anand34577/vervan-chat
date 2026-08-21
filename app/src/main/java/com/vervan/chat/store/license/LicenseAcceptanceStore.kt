@@ -1,7 +1,7 @@
 package com.vervan.chat.store.license
 
 import android.content.Context
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.store.model.ModelLicense
 import com.vervan.chat.store.model.StoreModel
 import java.io.File

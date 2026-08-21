@@ -1,6 +1,6 @@
 package com.vervan.chat.modelload
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.ModelBackend

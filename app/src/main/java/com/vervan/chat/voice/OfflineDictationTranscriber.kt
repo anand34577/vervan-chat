@@ -2,6 +2,7 @@ package com.vervan.chat.voice
 
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.PromptPolicy
 import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.modelload.LoadTrigger
@@ -99,8 +100,6 @@ object OfflineDictationTranscriber {
     private const val MODEL_AUDIO_MAX_MS = 30_000L
     private const val MAX_TRANSCRIPT_TOKENS = 128
     private val TRANSCRIBE_STOP_SEQUENCES = listOf("\n\n", "\nAssistant:", "\nassistant:")
-      private const val TRANSCRIBE_SYSTEM_PROMPT =
-          "STT mode. Output only the exact spoken words in the language spoken. Never translate, answer, or explain."
-      private const val TRANSCRIBE_PROMPT =
-          "Transcribe audio only. Preserve the spoken language; do not translate."
+      private const val TRANSCRIBE_SYSTEM_PROMPT = PromptPolicy.TRANSCRIPTION_SYSTEM
+      private const val TRANSCRIBE_PROMPT = PromptPolicy.TRANSCRIPTION_REQUEST
 }

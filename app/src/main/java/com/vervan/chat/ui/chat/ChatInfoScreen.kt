@@ -1,3 +1,5 @@
+@file:Suppress("LocalContextGetResourceValueCall")
+
 package com.vervan.chat.ui.chat
 
 import android.content.Intent
@@ -111,7 +113,13 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     // recomposition (e.g. tapping an image to set previewPath) doesn't re-scan the whole
     // transcript. Same reasoning for the word counts below, which used to compile a fresh
     // Regex("\\s+") per message and run twice (user + assistant) on each recomposition.
-    val links = remember(messages) { messages.flatMap { message -> URL.findAll(message.content).map { it.value }.toList() }.distinct() }
+    val links = remember(messages) {
+        messages.flatMap { message ->
+            URL.findAll(visibleMessageText(message.content, message.role == MessageRole.USER))
+                .map { it.value }
+                .toList()
+        }.distinct()
+    }
 
     // Conversation stats (WhatsApp-info-style counters) — computed from the visible turns only.
     val visible = remember(messages) { messages.filter { it.role != MessageRole.SYSTEM } }
@@ -120,7 +128,9 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val (userWords, aiWords) = remember(visible) {
         val whitespace = Regex("\\s+")
         fun words(role: MessageRole) = visible.filter { it.role == role }.sumOf { message ->
-            message.content.split(whitespace).count { it.isNotBlank() }
+            visibleMessageText(message.content, role == MessageRole.USER)
+                .split(whitespace)
+                .count { it.isNotBlank() }
         }
         words(MessageRole.USER) to words(MessageRole.ASSISTANT)
     }

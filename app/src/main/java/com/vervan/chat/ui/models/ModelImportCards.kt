@@ -424,19 +424,18 @@ internal fun RemoteApiModelDialog(
         } else {
             // Display name defaults to the provider's id — that's what the user recognizes and what
             // their billing shows. Renameable afterwards from this same dialog (single) or the
-            // model's own edit action. Tools/Thinking default ON — "on until proven otherwise", the
-            // same convention ModelEditDialog uses for a local model's own toggles; both are pure
-            // prompt-level behavior with nothing to break. Vision is guessed from the id
-            // (RemoteModelCatalog.inferVision); Audio has no comparable naming convention to guess
-            // from, so it stays off until set by hand.
+            // model's own edit action. `/models` does not expose reliable capability metadata, so
+            // unknown tools/thinking stay off until the user declares them. Vision is guessed from
+            // the id (RemoteModelCatalog.inferVision); audio has no comparable naming convention
+            // to guess from, so it stays off until set by hand.
             picked + ModelManagerViewModel.RemoteModelSelection(
                 remoteApiModelId = id,
                 displayName = id,
                 role = RemoteModelCatalog.inferRole(id),
                 capabilities = ModelManagerViewModel.RemoteCapabilities(
                     vision = RemoteModelCatalog.inferVision(id),
-                    tools = true,
-                    thinking = true
+                    tools = false,
+                    thinking = false
                 )
             )
         }
@@ -497,8 +496,8 @@ internal fun RemoteApiModelDialog(
                     listOf(
                         "OpenAI" to "https://api.openai.com/v1",
                         "OpenRouter" to "https://openrouter.ai/api/v1",
-                        "Ollama (local)" to "http://127.0.0.1:11434/v1",
-                        "LM Studio (local)" to "http://127.0.0.1:1234/v1"
+                        "Ollama (local)" to "http://localhost:11434/v1",
+                        "LM Studio (local)" to "http://localhost:1234/v1"
                     ).forEach { (label, url) ->
                         VervanFilterChip(
                             selected = baseUrl.trim().trimEnd('/') == url.trimEnd('/'),
@@ -519,8 +518,8 @@ internal fun RemoteApiModelDialog(
                 shownBaseUrlError?.let { ValidationMessage(it) }
                 if (cleartext) {
                     Text(
-                        "http:// sends the API key unencrypted — fine for a server on your own " +
-                            "network, but use https:// for anything over the internet.",
+                        "Plain HTTP is allowed only for this device or an emulator host. Use https:// " +
+                            "for any model server on another device or network.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )

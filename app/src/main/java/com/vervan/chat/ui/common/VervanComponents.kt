@@ -388,6 +388,7 @@ fun StatusChip(
     Row(
         modifier = modifier
             .background(color.copy(alpha = 0.14f), MaterialTheme.shapes.small)
+            .semantics { contentDescription = label }
             .padding(horizontal = Space.sm, vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -477,7 +478,7 @@ fun ActionTile(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 104.dp),
+        modifier = modifier.heightIn(min = 112.dp),
         shape = MaterialTheme.shapes.small,
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,

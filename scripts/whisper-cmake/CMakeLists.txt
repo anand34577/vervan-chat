@@ -72,14 +72,7 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
 
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    # Same tier as the llama.cpp build's single-`-march` fallback path (see
-    # build-llama-android-vulkan.ps1's -CpuArmArch default): every mainstream arm64 phone since
-    # ~2019. GGML_CPU_ALL_VARIANTS runtime dispatch is deliberately skipped above — it requires
-    # GGML_BACKEND_DL, which requires BUILD_SHARED_LIBS, which would turn ggml back into a
-    # separate .so, the exact collision this file exists to avoid.
-    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+i8mm" CACHE STRING "" FORCE)
-elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
     set(ANDROID_ARM_NEON ON CACHE BOOL "" FORCE)
     # Vulkan is 64-bit only (same reasoning as build-llama-android-vulkan.ps1's ABI split):
     # Vulkan's non-dispatchable handles are plain uint64_t on 32-bit targets rather than distinct

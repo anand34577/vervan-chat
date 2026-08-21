@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -243,7 +244,7 @@ fun VervanNavGraph(
         if (shortcut == null || !onboarded) return@LaunchedEffect
         // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
         if (shortcut.startsWith("open_chat:")) {
-            navController.navigate(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
+            navController.navigateSingleTop(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
             return@LaunchedEffect
         }
         when (shortcut) {
@@ -433,12 +434,12 @@ fun VervanNavGraph(
             }
             composable(AppRoutes.HOME) {
                 HomeScreen(
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenModels = { navController.navigate("models") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenModels = { navController.navigateSingleTop("models") },
                     onOpenChats = { navController.navigatePrimaryRoot(AppRoutes.CHATS) },
-                    onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                    onOpenSettings = { navController.navigateSingleTop(AppRoutes.SETTINGS) },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenToolRun = { runId -> navController.navigate("tools/runs?highlightId=$runId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
                     onOpenSearch = { navController.navigate(AppRoutes.SEARCH) },
@@ -582,8 +583,8 @@ fun VervanNavGraph(
             composable("search") {
                 SearchScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") },
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
@@ -688,7 +689,7 @@ fun VervanNavGraph(
             }
             composable("notes") {
                 NotesListScreen(
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -711,8 +712,8 @@ fun VervanNavGraph(
                 ProjectDashboardScreen(
                     projectId = projectId,
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") }
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") }
                 )
             }
             composable(AppRoutes.CHATS) {
@@ -726,7 +727,7 @@ fun VervanNavGraph(
                         onOpenModels = { navController.navigate("models") }
                     )
                 } else {
-                    ChatListScreen(onOpenChat = { chatId -> navController.navigate("chat/$chatId") })
+                    ChatListScreen(onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") })
                 }
             }
             composable(AppRoutes.CHAT) { backStackEntry2 ->
@@ -936,15 +937,15 @@ fun VervanNavGraph(
                 FolderDetailScreen(
                     folderId = folderId,
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") }
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") }
                 )
             }
             composable("collections") {
                 SmartCollectionsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") }
                 )
             }
@@ -978,7 +979,7 @@ fun VervanNavGraph(
         if (activityLabel != null && !chatRouteActive) {
             ActivityStatusPill(
                 label = activityLabel,
-                onClick = { navController.navigate(activityRoute) },
+                onClick = { navController.navigateSingleTop(activityRoute) },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = Space.md, bottom = overlayBottomReserve + Space.md),
@@ -1025,8 +1026,8 @@ fun VervanNavGraph(
                 // "Import document" were two near-duplicate entries to the same "knowledge" route
                 // (now merged into one), and "New workspace"/"New folder" sat under the generic
                 // "Organize" label instead of the "Space" concept users are actually taught.
-                CreateAction(Icons.AutoMirrored.Filled.Chat, "New chat", "Open an empty composer with keyboard focus", "Start") { newChat() },
-                CreateAction(Icons.Filled.Edit, "New note", "Capture long-form local writing", "Start") {
+                CreateAction(Icons.AutoMirrored.Filled.Chat, R.string.create_new_chat, R.string.create_new_chat_body, R.string.create_group_start, quickStart = true) { newChat() },
+                CreateAction(Icons.Filled.Edit, R.string.create_new_note, R.string.create_new_note_body, R.string.create_group_start, quickStart = true) {
                     showCreateSheet = false
                     scope.launch {
                         val note = Note()
@@ -1034,17 +1035,17 @@ fun VervanNavGraph(
                         navController.navigate("note/${note.id}")
                     }
                 },
-                CreateAction(Icons.Filled.Workspaces, "Projects", "Open projects to create or manage grouped work", "Organize") { go("projects") },
-                CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Add source", "Create a source collection or import a document for grounded answers", "Sources") { go("knowledge") },
-                CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Library") { go("persona-new") },
-                CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Library") { go("template-new") },
-                CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Library") { go("workflow-new") },
-                CreateAction(Icons.Filled.Dashboard, "Spaces", "Open spaces to create or manage separate contexts", "Organize") { go("workspaces") },
-                CreateAction(Icons.Filled.Folder, "Folders", "Open folders to create or manage manual filing", "Organize") { go("folders") },
-                CreateAction(Icons.Filled.Collections, "Collections", "Browse saved smart filters over chats, notes, and sources", "Organize") { go("collections") },
-                CreateAction(Icons.Filled.AutoAwesome, "Import model", "Prepare local AI generation", "Import") { go("models") },
-                CreateAction(Icons.Filled.PhotoCamera, "Scan image", "Start a chat with an image attachment", "Capture") { newChat("image") },
-                CreateAction(Icons.Filled.Mic, "Voice note", "Record audio into a new chat", "Capture") { newChat("voice") }
+                CreateAction(Icons.Filled.Workspaces, R.string.create_projects, R.string.create_projects_body, R.string.create_group_organize) { go("projects") },
+                CreateAction(Icons.AutoMirrored.Filled.MenuBook, R.string.create_add_source, R.string.create_add_source_body, R.string.create_group_sources) { go("knowledge") },
+                CreateAction(Icons.Outlined.Person, R.string.create_new_persona, R.string.create_new_persona_body, R.string.create_group_library) { go("persona-new") },
+                CreateAction(Icons.Filled.Extension, R.string.create_prompt_template, R.string.create_prompt_template_body, R.string.create_group_library) { go("template-new") },
+                CreateAction(Icons.Filled.Widgets, R.string.create_new_workflow, R.string.create_new_workflow_body, R.string.create_group_library) { go("workflow-new") },
+                CreateAction(Icons.Filled.Dashboard, R.string.create_spaces, R.string.create_spaces_body, R.string.create_group_organize) { go("workspaces") },
+                CreateAction(Icons.Filled.Folder, R.string.create_folders, R.string.create_folders_body, R.string.create_group_organize) { go("folders") },
+                CreateAction(Icons.Filled.Collections, R.string.create_collections, R.string.create_collections_body, R.string.create_group_organize) { go("collections") },
+                CreateAction(Icons.Filled.AutoAwesome, R.string.create_import_model, R.string.create_import_model_body, R.string.create_group_import) { go("models") },
+                CreateAction(Icons.Filled.PhotoCamera, R.string.create_scan_image, R.string.create_scan_image_body, R.string.create_group_capture, quickStart = true) { newChat("image") },
+                CreateAction(Icons.Filled.Mic, R.string.create_voice_note, R.string.create_voice_note_body, R.string.create_group_capture, quickStart = true) { newChat("voice") }
             ),
             onDismiss = { showCreateSheet = false }
         )
@@ -1082,10 +1083,10 @@ private fun VervanNavigationBar(
                 .fillMaxWidth()
                 .height(barHeight),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 8.dp,
+            shadowElevation = 12.dp,
         ) {
             Row(
                 Modifier
@@ -1164,15 +1165,32 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateActio
             .height(itemHeight),
         shape = MaterialTheme.shapes.small,
         color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
     ) {
         Column(
-            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            Modifier.fillMaxSize().padding(top = Space.xs),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
         ) {
-            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(24.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Add, contentDescription = label, modifier = Modifier.size(24.dp))
+                }
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.vervan.chat.llm
 
+import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import java.io.File
 
@@ -37,14 +38,21 @@ object AutoModelSelector {
         needsAudio: Boolean = false
     ): ModelInfo? {
         if (candidates.isEmpty()) return null
-        val capable = candidates.filter {
+        // Remote models are intentionally not part of automatic local model selection when at
+        // least one on-device candidate exists. Their synthetic file size is zero, which would
+        // otherwise make them look like the fastest model and could move private prompts off the
+        // device without an explicit chat/default-model choice. If the user installed only remote
+        // models, keep them eligible so Auto still has a usable answer.
+        val localCandidates = candidates.filter { it.engine != ModelEngine.REMOTE_API }
+        val selectionCandidates = localCandidates.ifEmpty { candidates }
+        val capable = selectionCandidates.filter {
             (!needsVision || it.supportsVision != false) && (!needsAudio || it.supportsAudio != false)
         }
         // Degrade gracefully: if nothing claims the modality, still answer with the best model
         // available rather than refusing outright — the existing per-generate vision/audio
         // guards in ChatViewModel.beginGeneration already tell the user plainly when the
         // resolved model truly can't handle the attachment.
-        val pool = capable.ifEmpty { candidates }
+        val pool = capable.ifEmpty { selectionCandidates }
         // File size is the same size/capability proxy already used by ModelLoadCoordinator's
         // memory-budget check, Model Calculator, and the onboarding recommendation — no per-model
         // benchmark data exists at this layer to do better than that.

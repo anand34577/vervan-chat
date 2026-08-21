@@ -456,7 +456,9 @@ class ModelDownloadRepository(
             modelDao.upsert(
                 installed.copy(
                     origin = ModelOrigin.DOWNLOADED, catalogModelId = catalog.modelId,
-                    catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl
+                    catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl,
+                    thinkingSpecJson = catalog.thinkingSpecJson ?: installed.thinkingSpecJson,
+                    supportsThinking = if (catalog.thinkingSpecJson != null) true else installed.supportsThinking
                 )
             )
         }

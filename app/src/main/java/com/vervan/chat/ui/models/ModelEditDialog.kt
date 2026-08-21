@@ -38,6 +38,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSubtleDividerColor
+import com.vervan.chat.llm.ThinkingSpec
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -108,7 +109,6 @@ import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.model.readTextLimited
 import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
@@ -157,6 +157,14 @@ internal fun ModelEditDialog(
     var audio by remember(model.id) { mutableStateOf(audioSupported && model.supportsAudio != false) }
     var tools by remember(model.id) { mutableStateOf(model.supportsTools != false) }
     var thinking by remember(model.id) { mutableStateOf(model.supportsThinking != false) }
+    val initialThinkingSpec = remember(model.id, model.thinkingSpecJson, model.chatTemplateOverride) {
+        ThinkingSpec.forModel(model)
+    }
+    var thinkingActivation by remember(model.id) { mutableStateOf(initialThinkingSpec.activation) }
+    var thinkingEnableText by remember(model.id) { mutableStateOf(initialThinkingSpec.enableText.orEmpty()) }
+    var remoteThinkingParameter by remember(model.id) {
+        mutableStateOf(initialThinkingSpec.remoteParameter ?: "reasoning_effort")
+    }
     var defaultThinkingMode by remember(model.id) { mutableStateOf(model.defaultThinkingMode ?: "OFF") }
     var mtpEnabled by remember(model.id) { mutableStateOf(model.mtpEnabled) }
     // llama.cpp has no NPU backend — a stale NPU choice persisted by an older build is shown
@@ -237,28 +245,6 @@ internal fun ModelEditDialog(
 
     val loraApp = LocalContext.current.applicationContext as VervanApp
     val loraScope = rememberCoroutineScope()
-    // Unlike LoRA/mmproj, a template is plain text stored in the DB — read the content, no import.
-    val pickTemplateFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            loraScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    loraApp.contentResolver.openInputStream(it)?.use { s ->
-                        s.reader(Charsets.UTF_8).use { reader -> reader.readTextLimited(InputLimits.MAX_CHAT_TEMPLATE_CHARS) }
-                    } ?: error("Couldn't open the selected template file")
-                }.onSuccess { text ->
-                    if (text.isBlank()) {
-                        loraError = "The selected template file is empty"
-                    } else {
-                        chatTemplateOverride = text.trim()
-                        chatTemplateOverrideOn = true
-                        loraError = null
-                    }
-                }.onFailure { error ->
-                    loraError = "Couldn't read chat template: ${error.toUserMessage()}"
-                }
-            }
-        }
-    }
     // Copies the picked file into internal storage (same reasoning as the mmproj import flow —
     // a content:// Uri isn't a real filesystem path the native loader can fopen) rather than
     // storing the raw picked Uri.
@@ -295,6 +281,14 @@ internal fun ModelEditDialog(
                                         supportsAudio = audio,
                                         supportsTools = tools,
                                         supportsThinking = thinking,
+                                        thinkingSpecJson = if (thinking) {
+                                            ThinkingSpec(
+                                                activation = if (isRemote) ThinkingSpec.Activation.PROMPT_ONLY else thinkingActivation,
+                                                enableText = thinkingEnableText.trim().takeIf { !isRemote && thinkingActivation == ThinkingSpec.Activation.SYSTEM_TOKEN && it.isNotBlank() },
+                                                remoteParameter = remoteThinkingParameter.trim().takeIf { isRemote && it.isNotBlank() },
+                                                source = ThinkingSpec.Source.USER
+                                            ).toJson()
+                                        } else model.thinkingSpecJson,
                                         defaultThinkingMode = defaultThinkingMode.takeIf { thinking },
                                         temperature = temperature.takeIf { temperatureOn },
                                         topP = topP.takeIf { topPOn },
@@ -460,6 +454,59 @@ internal fun ModelEditDialog(
                         ) { audio = it }
                         CapabilityToggle("Tools", tools) { tools = it }
                         CapabilityToggle("Thinking", thinking) { thinking = it }
+                        if (thinking && isRemote) {
+                            OutlinedTextField(
+                                value = remoteThinkingParameter,
+                                onValueChange = { remoteThinkingParameter = it.take(64) },
+                                label = { Text("Thinking API parameter") },
+                                supportingText = {
+                                    Text("Default: reasoning_effort. Use enable_thinking for providers that expose a boolean switch.")
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            )
+                        }
+                        if (thinking && !isRemote) {
+                            Text(
+                                "Thinking activation",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    ThinkingSpec.Activation.PROMPT_ONLY to "Prompt only",
+                                    ThinkingSpec.Activation.SYSTEM_TOKEN to "System token"
+                                ).forEach { (activation, label) ->
+                                    VervanFilterChip(
+                                        selected = thinkingActivation == activation,
+                                        onClick = {
+                                            thinkingActivation = activation
+                                            if (activation == ThinkingSpec.Activation.SYSTEM_TOKEN && thinkingEnableText.isBlank()) {
+                                                thinkingEnableText = "<|think|>"
+                                            }
+                                        },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            if (thinkingActivation == ThinkingSpec.Activation.SYSTEM_TOKEN) {
+                                OutlinedTextField(
+                                    value = thinkingEnableText,
+                                    onValueChange = { thinkingEnableText = it.take(128) },
+                                    label = { Text("Enable token") },
+                                    supportingText = { Text("Read from the model template when available; change only if needed.") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                )
+                            } else {
+                                Text(
+                                    "The app will ask the model to expose reasoning using its prompt format.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                        }
                         if (thinking) {
                             Text(
                                 "Default thinking mode",
@@ -551,12 +598,12 @@ internal fun ModelEditDialog(
                         // (see its param list), so showing them here would be a slider that quietly
                         // does nothing, exactly the kind of "feature" that reads as broken.
                         if (!isRemote) {
-                        OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
-                        OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
+                            OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
+                            OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
                         }
                         OverrideSlider("Max output tokens", maxOutputTokensOn, { maxOutputTokensOn = it }, maxOutputTokens, { maxOutputTokens = it }, defaults.maxOutputTokens.toFloat(), "%.0f", 64f..4096f, steps = 20)
                         if (!isRemote) {
-                        OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
+                            OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
                         }
                         OverrideSlider(
                             "Context length", contextOn, { contextOn = it }, context, { context = it }, defaults.contextTokens.toFloat(),
@@ -700,12 +747,11 @@ internal fun ModelEditDialog(
                             if (chatTemplateOverrideOn) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "Tap a preset, paste Jinja text above, or load a template file.",
+                                        "Choose a supported llama.cpp preset. Raw Jinja text is not executable in this build.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f).padding(top = 2.dp)
                                     )
-                                    TextButton(onClick = { pickTemplateFile.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.ui_modeleditdialog_708_from_file)) }
                                 }
                                 Row(
                                     Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.xs),

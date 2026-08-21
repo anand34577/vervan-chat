@@ -37,15 +37,15 @@
 
   // ---------------------------------------------------------------- token + transport
 
-  // Settings' "Open web UI" hands the key over once as ?token=; it is stashed and stripped from
-  // the address bar so it does not sit in history or get copied out of the URL bar by accident.
-  var params = new URLSearchParams(location.search);
-  var urlToken = params.get("token");
+  // Settings' "Open web UI" hands the key over once as a URL fragment. Fragments are not sent in
+  // HTTP requests or referrers. Keep it only for this browser tab, then scrub the address bar.
+  var hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  var urlToken = hashParams.get("token");
   if (urlToken) {
-    localStorage.setItem("vervan_api_token", urlToken);
+    sessionStorage.setItem("vervan_api_token", urlToken);
     history.replaceState({}, "", location.pathname);
   }
-  function token() { return localStorage.getItem("vervan_api_token") || ""; }
+  function token() { return sessionStorage.getItem("vervan_api_token") || ""; }
   function authHeaders() {
     var t = token();
     return t ? { Authorization: "Bearer " + t } : {};
@@ -160,11 +160,31 @@
     return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
   }
 
+  var modalReturnFocus = null;
+  function showModal() {
+    var back = el("modalBack");
+    var modal = el("modal");
+    if (!back.classList.contains("show")) modalReturnFocus = document.activeElement;
+    var heading = modal.querySelector("h2, h3");
+    if (heading) {
+      heading.id = "modalTitle";
+      modal.setAttribute("aria-labelledby", "modalTitle");
+    } else {
+      modal.removeAttribute("aria-labelledby");
+    }
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("tabindex", "-1");
+    back.setAttribute("aria-hidden", "false");
+    back.className = "modal-back show";
+  }
+
   /** A modal built from a field spec. Every editor in the Library and Knowledge sections uses this
    * rather than hand-rolling a form, so they stay consistent and there is one place that handles
    * focus, Escape and the save/cancel pair. */
   function openModal(title, fields, onSave, extraButtons) {
     var modal = el("modal");
+    modal.className = "modal";
     var html = "<h2>" + esc(title) + "</h2>";
     var defaultMax = {
       title: 120, name: 100, description: 1000, content: 100000, body: 24000,
@@ -178,7 +198,7 @@
       if (f.type === "textarea") {
         html += '<textarea id="mf_' + f.key + '"' + maxAttr + ' rows="' + (f.rows || 4) + '"' + '>' + esc(f.value || "") + "</textarea>";
       } else if (f.type === "select") {
-        html += '<select id="mf_' + f.key + '">' + f.options.map(function (o) {
+        html += '<select id="mf_' + f.key + '" aria-label="' + esc(f.label) + '">' + f.options.map(function (o) {
           return '<option value="' + esc(o.value) + '"' + (o.value === f.value ? " selected" : "") + ">" + esc(o.label) + "</option>";
         }).join("") + "</select>";
       } else if (f.type === "checkbox") {
@@ -195,7 +215,7 @@
     html += '<button class="secondary" type="button" id="mCancel">Cancel</button>' +
             '<button class="primary" type="button" id="mSave">Save</button></div>';
     modal.innerHTML = html;
-    el("modalBack").className = "modal-back show";
+    showModal();
 
     (extraButtons || []).forEach(function (b, i) {
       el("mx_" + i).addEventListener("click", function () { b.onClick(closeModal); });
@@ -215,9 +235,43 @@
     var first = modal.querySelector("input, textarea");
     if (first) first.focus();
   }
-  function closeModal() { el("modalBack").className = "modal-back"; }
+  function closeModal() {
+    var back = el("modalBack");
+    if (!back.classList.contains("show")) return;
+    back.className = "modal-back";
+    back.setAttribute("aria-hidden", "true");
+    var target = modalReturnFocus;
+    modalReturnFocus = null;
+    if (target && typeof target.focus === "function" && document.contains(target)) target.focus();
+  }
   el("modalBack").addEventListener("click", function (e) { if (e.target === el("modalBack")) closeModal(); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
+  document.addEventListener("keydown", function (e) {
+    var back = el("modalBack");
+    if (!back.classList.contains("show")) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeModal();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    var modal = el("modal");
+    var focusable = Array.prototype.slice.call(modal.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(function (node) { return node.offsetParent !== null; });
+    if (!focusable.length) {
+      e.preventDefault();
+      modal.focus();
+      return;
+    }
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
 
   /**
    * In-page confirmation, replacing window.confirm().
@@ -239,7 +293,7 @@
         '<button class="' + (opts.danger === false ? "primary" : "danger") + '" type="button" id="cOk">' +
           esc(opts.confirmLabel || "Delete") + "</button>" +
       "</div>";
-    el("modalBack").className = "modal-back show";
+    showModal();
     el("cCancel").addEventListener("click", closeModal);
     el("cOk").addEventListener("click", function () {
       var button = el("cOk");
@@ -281,6 +335,20 @@
       list.hidden = true;
       wrap.appendChild(button);
       wrap.appendChild(list);
+      select.setAttribute("aria-hidden", "true");
+      select.tabIndex = -1;
+      button.setAttribute("aria-haspopup", "listbox");
+      button.setAttribute("aria-expanded", "false");
+      list.setAttribute("role", "listbox");
+      var controlId = select.id || ("xselect-" + Math.random().toString(36).slice(2));
+      list.id = controlId + "-options";
+      button.setAttribute("aria-controls", list.id);
+      if (select.getAttribute("aria-label")) button.setAttribute("aria-label", select.getAttribute("aria-label"));
+      else {
+        var label = select.closest && select.closest("label");
+        var labelText = label && label.querySelector("span");
+        if (labelText && labelText.textContent.trim()) button.setAttribute("aria-label", labelText.textContent.trim());
+      }
 
       button.addEventListener("click", function (e) {
         e.stopPropagation();
@@ -292,9 +360,28 @@
         wrap.classList.toggle("drop-up", button.getBoundingClientRect().bottom > window.innerHeight - 300);
         list.hidden = false;
         wrap.classList.add("open");
+        button.setAttribute("aria-expanded", "true");
         openSelect = wrap;
         var active = list.querySelector('[aria-selected="true"]');
         if (active) active.scrollIntoView({ block: "nearest" });
+      });
+      button.addEventListener("keydown", function (e) {
+        if (select.disabled) return;
+        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (list.hidden) button.click();
+          var options = Array.prototype.slice.call(list.querySelectorAll(".xselect-opt"));
+          if (!options.length) return;
+          var currentIndex = options.findIndex(function (option) { return option.getAttribute("aria-selected") === "true"; });
+          var nextIndex = currentIndex < 0 ? 0 : currentIndex;
+          if (e.key === "ArrowDown") nextIndex = Math.min(options.length - 1, nextIndex + 1);
+          if (e.key === "ArrowUp") nextIndex = Math.max(0, nextIndex - 1);
+          options.forEach(function (option, index) { option.classList.toggle("cursor", index === nextIndex); });
+          options[nextIndex].focus();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closeAllSelects();
+        }
       });
       list.addEventListener("click", function (e) {
         var option = e.target.closest && e.target.closest(".xselect-opt");
@@ -305,6 +392,7 @@
         syncSelect(select);
         // Dispatched so the existing change listeners fire exactly as for a native pick.
         select.dispatchEvent(new Event("change", { bubbles: true }));
+        button.focus();
       });
     }
     syncSelect(select);
@@ -319,8 +407,9 @@
     button.querySelector(".val").textContent =
       (select.selectedIndex >= 0 && options[select.selectedIndex]) ? options[select.selectedIndex].text : "";
     button.disabled = select.disabled || !options.length;
+    button.setAttribute("aria-expanded", wrap.classList.contains("open") ? "true" : "false");
     list.innerHTML = options.map(function (option) {
-      return '<button type="button" class="xselect-opt" data-value="' + esc(option.value) + '"' +
+      return '<button type="button" role="option" class="xselect-opt" data-value="' + esc(option.value) + '"' +
         ' aria-selected="' + (option.value === select.value ? "true" : "false") + '">' +
         "<span>" + esc(option.text) + '</span><span class="tick">✓</span></button>';
     }).join("");
@@ -331,6 +420,8 @@
       wrap.classList.remove("open");
       var list = wrap.querySelector(".xselect-list");
       if (list) list.hidden = true;
+      var button = wrap.querySelector(".xselect-btn");
+      if (button) button.setAttribute("aria-expanded", "false");
     });
     openSelect = null;
   }
@@ -415,7 +506,10 @@
       el("section-" + key).classList.toggle("active", key === name);
     });
     Array.prototype.forEach.call(document.querySelectorAll(".rail-btn"), function (b) {
-      b.classList.toggle("active", b.getAttribute("data-section") === name);
+      var active = b.getAttribute("data-section") === name;
+      b.classList.toggle("active", active);
+      if (active) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
     });
     el("pageTitle").textContent = SECTIONS[name].title;
     closeLists();
@@ -449,7 +543,7 @@
   el("scrim").addEventListener("click", closeLists);
   el("keyBtn").addEventListener("click", function () {
     openModal("API key", [{ key: "token", label: "Bearer token (leave blank if the server does not require one)", value: token() }], function (v) {
-      localStorage.setItem("vervan_api_token", v.token.trim());
+      sessionStorage.setItem("vervan_api_token", v.token.trim());
       toast("Key saved");
       go(current);
     });
@@ -1025,7 +1119,10 @@
             return Chat.refreshList().then(function () { return Chat.open(res.id); });
           }).catch(fail);
         }
-        if (act === "copy" && navigator.clipboard) { navigator.clipboard.writeText(m.content || ""); toast("Copied"); }
+        if (act === "copy" && navigator.clipboard) {
+          navigator.clipboard.writeText(m.visible_content != null ? m.visible_content : (m.content || ""));
+          toast("Copied");
+        }
         // Clicking the reaction already set clears it, so a mis-tap is undoable. A negative reaction asks for the
         // optional reason the app collects, since that is what makes the feedback useful later.
         if (act === "up" || act === "down") {
@@ -1047,7 +1144,11 @@
           }
         }
         if (act === "save") {
-          api("/api/saved-outputs", { content: m.content, source_chat_id: Chat.activeId, label: "From chat" })
+          api("/api/saved-outputs", {
+            content: m.visible_content != null ? m.visible_content : m.content,
+            source_chat_id: Chat.activeId,
+            label: "From chat"
+          })
             .then(function () { toast("Saved to Library"); }).catch(fail);
         }
         // Edit a question, or retry an answer. Both are "drop this turn and ask again": the
@@ -1386,9 +1487,16 @@
   /** A stored assistant message keeps its `<think>` block inline; the live stream splits reasoning
    * out into its own delta. Both end up in the same collapsible block. */
   function splitThinking(content) {
-    var m = /^\s*<think>([\s\S]*?)<\/think>\s*/i.exec(content);
-    if (!m) return { thinking: "", answer: content };
-    return { thinking: m[1].trim(), answer: content.slice(m[0].length) };
+    var open = /<\s*(?:think(?:s|ing)?|analysis|reasoning|thoughts?)\s*>|<\|(?:think(?:s|ing)?|analysis|reasoning|thoughts?|begin_of_thought)\|>|<\|channel\|?>\s*(?:thought|thinking|analysis|reasoning)|<\|channel\|?(?:thought|thinking|analysis|reasoning)/i.exec(content);
+    if (!open) return { thinking: "", answer: content };
+    var start = open.index + open[0].length;
+    var rest = content.slice(start);
+    var close = /<\s*\/?\s*(?:think(?:s|ing)?|analysis|reasoning|thoughts?)\s*>|<\|\/(?:think(?:s|ing)?|analysis|reasoning|thoughts?)\|>|<\|end_(?:think(?:s|ing)?|analysis|reasoning|thoughts?|of_thought)\|>|<channel\|>|<\|channel\|>\s*(?:final|message|commentary|answer)|<\|message\|>/i.exec(rest);
+    if (!close) return { thinking: rest.trim(), answer: content.slice(0, open.index).trim() };
+    return {
+      thinking: rest.slice(0, close.index).trim(),
+      answer: (content.slice(0, open.index) + rest.slice(close.index + close[0].length)).trim()
+    };
   }
   function tryParse(raw) { try { return JSON.parse(raw); } catch (e) { return null; } }
 
@@ -1504,6 +1612,7 @@
       var tokens = messages.reduce(function (sum, m) { return sum + (m.token_count || 0); }, 0);
       var characters = messages.reduce(function (sum, m) { return sum + (m.content || "").length; }, 0);
       var persona = Chat.personas.find(function (p) { return p.id === config.persona_id; });
+      el("modal").className = "modal";
       el("modal").innerHTML = "<h2>Chat info</h2>" +
         '<div class="card-grid">' +
         [["Messages", messages.length], ["Questions", users], ["Replies", replies],
@@ -1514,8 +1623,9 @@
         " · Persona: " + esc(persona ? persona.name : "none") +
         " · Thinking: " + esc(config.thinking_mode || "model default") + "</p>" +
         '<div class="modal-actions"><button class="primary" type="button" id="mCancel">Close</button></div>';
-      el("modalBack").className = "modal-back show";
+      showModal();
       el("mCancel").addEventListener("click", closeModal);
+      el("mCancel").focus();
       return;
     }
 
@@ -2056,7 +2166,7 @@
         "<h2>" + esc(kb.name) + "</h2><p>" + esc(kb.description || "") + "</p>" +
         '<div class="modal-actions" style="justify-content:flex-start;margin:0 0 14px">' +
         '<button class="secondary" type="button" id="kbEditBtn">Rename</button></div>' +
-        '<div class="dropzone" id="dropzone">Drop files here, or click to choose.<br>' +
+        '<div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Choose documents to upload">Drop files here, or click to choose.<br>' +
         '<span class="row-sub">PDF, Word, PowerPoint, Excel, EPUB, HTML, CSV, text and images.</span></div>' +
         '<input type="file" id="docInput" multiple hidden>' +
         '<div class="card" style="margin-top:14px"><h3>Documents</h3><div id="docList"></div></div>';
@@ -2064,6 +2174,12 @@
       el("kbEditBtn").addEventListener("click", function () { Knowledge.edit(kb); });
       var dropzone = el("dropzone");
       dropzone.addEventListener("click", function () { el("docInput").click(); });
+      dropzone.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          el("docInput").click();
+        }
+      });
       dropzone.addEventListener("dragover", function (e) { e.preventDefault(); dropzone.classList.add("over"); });
       dropzone.addEventListener("dragleave", function () { dropzone.classList.remove("over"); });
       dropzone.addEventListener("drop", function (e) {

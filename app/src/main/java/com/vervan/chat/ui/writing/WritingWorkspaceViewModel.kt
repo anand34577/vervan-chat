@@ -8,6 +8,7 @@ import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.Note
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.system.toUserMessage
+import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -42,6 +43,10 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
 
     fun run(action: WritingAction, originalText: String, targetLanguage: String = "") {
         if (originalText.isBlank() || _running.value) return
+        if (originalText.length > InputLimits.GENERAL_TOOL_INPUT_CHARS) {
+            _error.value = "Selected text is too long for this action (maximum ${InputLimits.GENERAL_TOOL_INPUT_CHARS} characters). Select a shorter passage."
+            return
+        }
         if (action == WritingAction.TRANSLATE && targetLanguage.isBlank()) {
             _error.value = "Enter a target language first"
             return

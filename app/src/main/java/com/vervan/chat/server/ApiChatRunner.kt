@@ -6,7 +6,11 @@ import com.vervan.chat.data.audit.ToolAuditSanitizer
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ToolAudit
 import com.vervan.chat.llm.ThinkingPolicy
+import com.vervan.chat.llm.ThinkingSpec
 import com.vervan.chat.llm.estimateTokens
+import com.vervan.chat.llm.PromptPolicy
+import com.vervan.chat.llm.RemoteRequestOptions
+import com.vervan.chat.llm.RemoteToolDefinition
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolCallParser
 import com.vervan.chat.tools.ToolRegistry
@@ -112,12 +116,26 @@ class ApiChatRunner(private val app: VervanApp) {
     fun run(request: Request): Flow<Event> = flow {
         val isReasoningModel = request.model.supportsThinking == true
         val engine = request.model.engine
+        val thinkingSpec = ThinkingSpec.forModel(request.model)
         val instruction = ThinkingPolicy.reasoningInstruction(request.thinkingMode, engine, isReasoningModel)
-        val assistantPrefill = ThinkingPolicy.assistantPrefillFor(request.thinkingMode, engine, isReasoningModel)
-        val reasoningBudget = ThinkingPolicy.reasoningBudgetFor(request.thinkingMode, engine, isReasoningModel)
+        val assistantPrefill = ThinkingPolicy.assistantPrefillFor(request.thinkingMode, engine, isReasoningModel, thinkingSpec)
+        val reasoningBudget = ThinkingPolicy.reasoningBudgetFor(request.thinkingMode, engine, isReasoningModel, thinkingSpec)
 
-        val systemPrompt = buildString {
-            append(request.systemPrompt)
+        val formatting = PromptPolicy.formattingInstructions(
+            request.turns.asReversed().firstOrNull { it.first == "user" }?.second.orEmpty()
+        )
+        val baseSystemPrompt = buildString {
+            append(PromptPolicy.CORE_SYSTEM)
+            if (request.systemPrompt.isNotBlank()) {
+                append("\n\n")
+                append(request.systemPrompt)
+            }
+            append("\n\n")
+            append(PromptPolicy.CLARIFICATION)
+            if (formatting.isNotBlank()) {
+                append("\n\n")
+                append(formatting)
+            }
             if (instruction.isNotBlank()) {
                 if (isNotEmpty()) append("\n\n")
                 append(instruction)
@@ -128,6 +146,9 @@ class ApiChatRunner(private val app: VervanApp) {
                 append(toolInstructions)
             }
         }.trim()
+        val systemPrompt = ThinkingPolicy.withModelThinkingActivation(
+            baseSystemPrompt, request.model, request.thinkingMode
+        )
 
         // Extra turns accumulated across tool hops: the model's own tool-calling reply, then the
         // result it gets back. Rebuilt into the turn list each hop so the model sees the whole
@@ -167,7 +188,19 @@ class ApiChatRunner(private val app: VervanApp) {
                 assistantPrefill = assistantPrefill,
                 systemPrompt = systemPrompt,
                 reasoningBudget = reasoningBudget,
-                messages = turns
+                messages = turns,
+                remoteOptions = RemoteRequestOptions(
+                    tools = if (request.model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) {
+                        remoteToolDefinitions(request)
+                    } else emptyList(),
+                    toolChoice = if (request.model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API && request.toolChoice != ToolChoice.None) "auto" else null,
+                    thinkingMode = request.thinkingMode,
+                    supportsThinking = isReasoningModel,
+                    thinkingParameter = ThinkingSpec.forModel(request.model).remoteParameter,
+                    seed = request.sampling.seed,
+                    minP = request.model.minP,
+                    repetitionPenalty = request.model.repetitionPenalty
+                )
             ).collect { chunk ->
                 val (answer, reasoning) = splitter.push(chunk)
                 if (reasoning.isNotEmpty()) emit(Event.Reasoning(reasoning))
@@ -277,6 +310,29 @@ class ApiChatRunner(private val app: VervanApp) {
     private fun toolsAdvertised(request: Request): Boolean =
         request.toolChoice != ToolChoice.None && (request.clientTools.isNotEmpty() || request.appToolsEnabled)
 
+    private fun remoteToolDefinitions(request: Request): List<RemoteToolDefinition> {
+        val client = request.clientTools.mapNotNull { tool ->
+            val schema = runCatching { JSONObject(tool.parametersJson) }.getOrNull() ?: return@mapNotNull null
+            RemoteToolDefinition(tool.name, tool.description, schema)
+        }
+        val appTools = if (request.appToolsEnabled) {
+            ToolRegistry.tools.filter { it.name in request.enabledAppToolIds }.map { tool ->
+                val properties = JSONObject()
+                tool.paramNames.forEach { name -> properties.put(name, JSONObject().put("type", "string")) }
+                RemoteToolDefinition(
+                    tool.name,
+                    tool.description,
+                    JSONObject()
+                        .put("type", "object")
+                        .put("properties", properties)
+                        .put("required", JSONArray().apply { tool.paramNames.forEach(::put) })
+                        .put("additionalProperties", false)
+                )
+            }
+        } else emptyList()
+        return (client + appTools).distinctBy { it.name }
+    }
+
     /**
      * The prompt block that teaches the model this app's `<tool_call>` protocol and lists what it
      * may call. Client tools are described in full (name, description, JSON Schema) because the
@@ -305,6 +361,7 @@ class ApiChatRunner(private val app: VervanApp) {
             if (catalog.isNotBlank()) sections += catalog
         }
         if (sections.isEmpty()) return ""
+        sections.add(0, PromptPolicy.TOOLS)
         when (val choice = request.toolChoice) {
             is ToolChoice.Required -> sections += "You must call one of the tools above before answering."
             is ToolChoice.Named -> sections += "You must call the tool \"${choice.name}\" before answering."

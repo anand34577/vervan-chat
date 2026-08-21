@@ -8,8 +8,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.lifecycleScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.theme.VervanThemeFromPreferences
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * handles `ACTION_PROCESS_TEXT` (the "select text in any app → Vervan Chat" entry
@@ -32,17 +35,31 @@ class QuickActionActivity : ComponentActivity() {
         val readonly = intent?.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true) ?: true
         val app = application as VervanApp
 
-        setContent {
-            VervanThemeFromPreferences(app) {
-                QuickActionScreen(
-                    originalText = selectedText,
-                    canInsertBack = !readonly,
-                    onInsertBack = { result ->
-                        setResult(Activity.RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, result))
-                        finish()
-                    },
-                    onDismiss = { finish() }
+        // Process-text is an exported activity and can write notes/library output. It must obey
+        // the same app-lock boundary as MainActivity instead of becoming a private-data side
+        // door while the main task is locked.
+        lifecycleScope.launch {
+            val lockEnabled = runCatching { app.container.settingsRepository.appLockEnabled.first() }.getOrDefault(true)
+            if (lockEnabled && app.container.appLockManager.isLocked.value) {
+                startActivity(
+                    Intent(this@QuickActionActivity, com.vervan.chat.MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 )
+                finish()
+                return@launch
+            }
+            setContent {
+                VervanThemeFromPreferences(app) {
+                    QuickActionScreen(
+                        originalText = selectedText,
+                        canInsertBack = !readonly,
+                        onInsertBack = { result ->
+                            setResult(Activity.RESULT_OK, Intent().putExtra(Intent.EXTRA_PROCESS_TEXT, result))
+                            finish()
+                        },
+                        onDismiss = { finish() }
+                    )
+                }
             }
         }
     }

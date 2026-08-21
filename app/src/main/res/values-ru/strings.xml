@@ -148,6 +148,8 @@
     <string name="activity_downloading_model">Скачивание модели</string>
     <plurals name="activity_count_running">
         <item quantity="one">%d активность выполняется</item>
+        <item quantity="few">Выполняются %d активности</item>
+        <item quantity="many">Выполняется %d активностей</item>
         <item quantity="other">%d активностей выполняется</item>
     </plurals>
     <string name="action_back">Назад</string>
@@ -268,6 +270,35 @@
     <string name="screen_assist_turn_off">Отключить Quick</string>
     <string name="home_choose_local_model">Выберите локальную модель</string>
     <string name="home_local_model_hint">Импортируйте или скачайте модель. Она работает на этом устройстве.</string>
+    <string name="home_greeting_late">Работаем допоздна</string>
+    <string name="home_greeting_morning">Доброе утро</string>
+    <string name="home_greeting_afternoon">Добрый день</string>
+    <string name="home_greeting_evening">Добрый вечер</string>
+    <string name="home_hero_remote_model">%1$s · Удалённая модель настроена</string>
+    <string name="home_hero_no_model">%1$s · Выберите модель, чтобы начать</string>
+    <string name="home_hero_local_model">%1$s · Готово на этом устройстве</string>
+    <string name="home_start_prompt">Начните с вопроса или выберите задачу ниже.</string>
+    <string name="home_model_ready">Модель готова</string>
+    <string name="home_ask_documents">Спросить документы</string>
+    <string name="home_status_selected">Выбрано</string>
+    <string name="home_status_working">Выполняется</string>
+    <string name="home_status_setup">Настройка</string>
+    <string name="home_status_open">Открыть</string>
+    <string name="home_tool_group_common">Частые задачи</string>
+    <string name="home_tool_voice_title">Голосовой чат</string>
+    <string name="home_tool_voice_body">Естественно общайтесь с локальной моделью</string>
+    <string name="home_tool_writing_title">Помощник для письма</string>
+    <string name="home_tool_writing_body">Перепишите, улучшите или измените тон</string>
+    <string name="home_tool_scanner_title">Сканер документов</string>
+    <string name="home_tool_scanner_body">Снимайте страницы и извлекайте текст</string>
+    <string name="home_tool_translate_title">Перевести</string>
+    <string name="home_tool_translate_body">Переводите текст или сфотографированную страницу</string>
+    <string name="home_quick_tools">Быстрые инструменты</string>
+    <string name="home_quick_tools_body">Начните задачу или просмотрите все инструменты.</string>
+    <string name="home_backend_npu">Бэкенд NPU</string>
+    <string name="home_backend_gpu">Бэкенд GPU</string>
+    <string name="home_backend_cpu">Бэкенд CPU</string>
+    <string name="home_backend_unverified">Настройка не проверена</string>
     <string name="home_ask_content_description">Спросить Vervan</string>
     <string name="home_ask_hint">Спросите что угодно или начните чат…</string>
     <string name="home_start_chat_question">Начать чат с этим вопросом</string>
@@ -277,7 +308,9 @@
     <string name="home_thermal_warning_body">Длительная работа может замедлиться для защиты батареи и производительности.</string>
     <string name="home_preparing_knowledge">Подготовка ваших знаний</string>
     <plurals name="home_indexing_documents">
-        <item quantity="one">Индексируется 1 документ для поиска.</item>
+        <item quantity="one">Индексируется %d документ для поиска.</item>
+        <item quantity="few">Индексируется %d документа для поиска.</item>
+        <item quantity="many">Индексируется %d документов для поиска.</item>
         <item quantity="other">Индексируется документов для поиска: %d.</item>
     </plurals>
     <string name="home_local_workspace">Локальное рабочее пространство</string>
@@ -565,14 +598,20 @@
     <string name="relative_just_now">Только что</string>
     <plurals name="relative_minutes_ago">
         <item quantity="one">%d минуту назад</item>
+        <item quantity="few">%d минуты назад</item>
+        <item quantity="many">%d минут назад</item>
         <item quantity="other">%d минут назад</item>
     </plurals>
     <plurals name="relative_hours_ago">
         <item quantity="one">%d час назад</item>
+        <item quantity="few">%d часа назад</item>
+        <item quantity="many">%d часов назад</item>
         <item quantity="other">%d часов назад</item>
     </plurals>
     <plurals name="relative_days_ago">
         <item quantity="one">%d день назад</item>
+        <item quantity="few">%d дня назад</item>
+        <item quantity="many">%d дней назад</item>
         <item quantity="other">%d дней назад</item>
     </plurals>
 
@@ -1036,4 +1075,57 @@
         <item quantity="many">Слишком много попыток. Повторите через %d секунд.</item>
         <item quantity="other">Слишком много попыток. Повторите через %d секунд.</item>
     </plurals>
+    <!-- Новые действия создания и чата переведены для полной локализации интерфейса. -->
+    <string name="create_sheet_quick_body">Начните с обычного действия.</string>
+    <string name="create_sheet_all_body">Выберите, что создать или импортировать.</string>
+    <string name="create_sheet_more_actions">Другие действия создания и импорта</string>
+    <string name="create_sheet_show_fewer">Показать меньше действий</string>
+    <string name="create_group_quick_start">Быстрый старт</string>
+    <string name="create_group_start">Начать</string>
+    <string name="create_group_sources">Источники</string>
+    <string name="create_group_library">Библиотека</string>
+    <string name="create_group_organize">Организация</string>
+    <string name="create_group_import">Импорт</string>
+    <string name="create_group_capture">Захват</string>
+    <string name="create_new_chat">Новый чат</string>
+    <string name="create_new_chat_body">Откройте пустое поле ввода с фокусом клавиатуры.</string>
+    <string name="create_new_note">Новая заметка</string>
+    <string name="create_new_note_body">Создайте длинную локальную запись.</string>
+    <string name="create_projects">Проекты</string>
+    <string name="create_projects_body">Откройте проекты для создания и управления сгруппированной работой.</string>
+    <string name="create_add_source">Добавить источник</string>
+    <string name="create_add_source_body">Создайте коллекцию источников или импортируйте документ для ответов с опорой на данные.</string>
+    <string name="create_new_persona">Новая персона</string>
+    <string name="create_new_persona_body">Сохраните повторно используемые стиль и поведение.</string>
+    <string name="create_prompt_template">Шаблон промпта</string>
+    <string name="create_prompt_template_body">Создайте повторно используемые промпты для слэш-команд.</string>
+    <string name="create_new_workflow">Новый рабочий процесс</string>
+    <string name="create_new_workflow_body">Объедините повторяемые шаги ИИ.</string>
+    <string name="create_spaces">Пространства</string>
+    <string name="create_spaces_body">Откройте пространства для создания и управления отдельными контекстами.</string>
+    <string name="create_folders">Папки</string>
+    <string name="create_folders_body">Откройте папки для создания и управления ручной сортировкой.</string>
+    <string name="create_collections">Коллекции</string>
+    <string name="create_collections_body">Просматривайте сохранённые смарт-фильтры для чатов, заметок и источников.</string>
+    <string name="create_import_model">Импортировать модель</string>
+    <string name="create_import_model_body">Подготовьте локальную генерацию ИИ.</string>
+    <string name="create_scan_image">Сканировать изображение</string>
+    <string name="create_scan_image_body">Начните чат с прикреплённым изображением.</string>
+    <string name="create_voice_note">Голосовая заметка</string>
+    <string name="create_voice_note_body">Запишите аудио в новом чате.</string>
+    <string name="chat_ocr_no_text">OCR · текст не найден · нажмите для просмотра</string>
+    <string name="chat_ocr_view_text">OCR · нажмите, чтобы увидеть извлечённый текст</string>
+    <string name="chat_qr_no_code">QR · код не найден · нажмите для просмотра</string>
+    <string name="chat_qr_view_text">QR · нажмите, чтобы увидеть расшифрованный текст</string>
+    <string name="chat_ocr_no_text_toast">В этом изображении текст не найден</string>
+    <string name="chat_qr_no_code_toast">В этом изображении QR-код или штрихкод не найден</string>
+    <string name="chat_message_placeholder">Сообщение для Vervan…</string>
+    <string name="chat_waiting_for_model">Ожидание локальной модели</string>
+    <string name="chat_character_limit">%1$d / 12 000 символов</string>
+    <string name="chat_character_limit_exceeded">Сообщение превышает ограничение в 12 000 символов</string>
+    <string name="chat_converting_audio">Преобразование аудио…</string>
+    <string name="chat_voice_replies_label">Голосовые ответы: %1$s</string>
+    <string name="chat_voice_replies_automatic">Автоматически</string>
+    <string name="chat_voice_replies_off">Выкл.</string>
+    <string name="chat_voice_replies_manual">Вручную</string>
 </resources>

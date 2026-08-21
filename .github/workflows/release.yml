@@ -1,6 +1,6 @@
 name: Android Release
 
-# Builds signed release APKs with the llama.cpp and whisper.cpp native backends compiled in
+# Builds signed release APKs/AABs with the llama.cpp and whisper.cpp native backends compiled in
 # (CPU-only — see scripts/ci/build-native-android-linux.sh for why: the Vulkan GPU backend needs
 # MSVC + the Vulkan SDK on the host, which only scripts/build-llama-android-vulkan.ps1's Windows
 # dev-machine path has) and attaches them to a GitHub Release. .github/workflows/android.yml
@@ -85,13 +85,18 @@ jobs:
           whispercpp.autobuild=false
           EOF
 
-      - name: Build signed release APKs
+      - name: Build, lint, and test signed release artifacts
         env:
+          # Release verification is intentionally fail-closed. Configure these as masked
+          # repository secrets (CATALOG_PUBLIC_KEYS and CATALOG_ENDPOINTS) rather than copying
+          # trust material into the workflow or the checkout.
+          VERVAN_CATALOG_PUBLIC_KEYS: ${{ secrets.CATALOG_PUBLIC_KEYS }}
+          VERVAN_CATALOG_ENDPOINTS: ${{ secrets.CATALOG_ENDPOINTS }}
           VERVAN_RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
           VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
 
       - name: Remove keystore
         if: always()
@@ -100,5 +105,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
           generate_release_notes: true

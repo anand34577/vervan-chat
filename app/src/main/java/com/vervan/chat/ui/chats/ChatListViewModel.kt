@@ -7,7 +7,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Folder
 import com.vervan.chat.data.db.entities.Message
+import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.ui.chat.visibleMessageText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -161,9 +163,11 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     suspend fun exportText(chat: Chat): String = buildString {
         appendLine("# ${chat.title}")
         db.messageDao().getMessages(chat.id).forEach { message ->
+            val visible = visibleMessageText(message.content, message.role == MessageRole.USER)
+            if (visible.isBlank()) return@forEach
             appendLine()
             appendLine("${message.role.name.lowercase().replaceFirstChar(Char::uppercase)}:")
-            appendLine(message.content)
+            appendLine(visible)
         }
     }
 

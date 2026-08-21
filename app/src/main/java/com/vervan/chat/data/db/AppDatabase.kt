@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.Transaction
 import com.vervan.chat.data.db.dao.ChatDao
 import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
@@ -148,7 +149,7 @@ class Converters {
         StoreInstallSession::class, StoreInstallArtifact::class, TranscriptionProject::class,
         TtsProject::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -182,4 +183,26 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun storeInstallArtifactDao(): StoreInstallArtifactDao
     abstract fun transcriptionProjectDao(): TranscriptionProjectDao
     abstract fun ttsProjectDao(): TtsProjectDao
+
+    /** Clears denormalized knowledge-base references in one SQLite transaction before a KB is
+     * removed. Without this, chats could continue to claim they are grounded while retrieval
+     * silently found no chunks for the deleted id. */
+    @Transaction
+    suspend fun clearKnowledgeBaseReferences(knowledgeBaseId: String) {
+        chatDao().clearKnowledgeBaseReference(knowledgeBaseId)
+        folderDao().clearKnowledgeBaseReference(knowledgeBaseId)
+        workspaceDao().clearKnowledgeBaseReference(knowledgeBaseId)
+    }
+
+    /** Atomically replaces a document's searchable index while preserving its stable id and
+     * existing links. The caller builds [stagedDocument] completely before this method runs. */
+    @Transaction
+    suspend fun replaceDocumentIndex(stagedDocument: Document, targetDocument: Document) {
+        chunkDao().deleteForDocument(targetDocument.id)
+        chunkDao().deleteFtsForDocument(stagedDocument.id)
+        chunkDao().moveChunksToDocument(stagedDocument.id, targetDocument.id)
+        chunkDao().rebuildFtsForDocument(targetDocument.id)
+        documentDao().update(targetDocument)
+        documentDao().delete(stagedDocument)
+    }
 }

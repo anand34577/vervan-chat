@@ -57,6 +57,11 @@ class ApiServerService : Service() {
                     // A sticky service can be recreated after the user disabled it. DataStore is
                     // the source of truth; never reopen a listening socket when its toggle is off.
                     if (!settings.apiServerEnabled.first()) return@runCatching false
+                    // The API is an external data surface. A service recreated while the app is
+                    // locked must stop instead of exposing chats, documents, or inference.
+                    if (settings.appLockEnabled.first() && app.container.appLockManager.isLocked.value) {
+                        return@runCatching false
+                    }
                     if (restart) {
                         server?.stop()
                         server = null
@@ -64,22 +69,16 @@ class ApiServerService : Service() {
                     if (server != null) return@runCatching true
 
                     val port = settings.apiServerPort.first()
-                    // Always binds every interface (0.0.0.0) — null is NanoHTTPD's bind-all
-                    // convention — user ask, not gated by the old "Allow other devices on this
-                    // Wi-Fi" toggle anymore (that flag now only affects the exposure copy shown in
-                    // Settings/Privacy Dashboard, not the actual bind address). requireAuth is
-                    // therefore the ONLY thing standing between "on" and "reachable by anyone who
-                    // can route to this device with no key" — it follows the user's own "Require
-                    // an API key" choice directly, with no automatic force-on.
-                    val host: String? = null
+                    val allowLan = settings.apiServerAllowLan.first()
+                    // Bind localhost unless the user explicitly opts into LAN access. NanoHTTPD's
+                    // null host means 0.0.0.0, so it is never used as the default.
+                    val host: String? = if (allowLan) null else "127.0.0.1"
                     val fullMode = settings.apiServerFullMode.first()
-                    // The API key is optional and applies only when the user turns it on — including
-                    // in full web app mode. That mode does expose /api/* (chats, messages,
-                    // attachments, knowledge bases) rather than only inference, so running it
-                    // without a key on an untrusted network is a real exposure; the Settings screen
-                    // and Privacy Dashboard both call that out in red rather than the server
-                    // overriding the choice.
-                    val requireAuth = settings.apiServerRequireAuth.first()
+                    // A localhost-only server may be used without a key, but LAN access is an
+                    // externally reachable data surface. Enforce authentication here as the
+                    // final gate even if a legacy preference or concurrent settings update
+                    // briefly presents an unsafe combination to the service.
+                    val requireAuth = settings.apiServerRequireAuth.first() || allowLan
                     val auth = app.container.apiServerAuth
                     if (requireAuth) auth.tokenOrGenerate()
 

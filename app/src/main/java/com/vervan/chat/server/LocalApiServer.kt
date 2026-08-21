@@ -20,6 +20,7 @@ import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolRegistry
 import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.chat.ChatFormatting
+import com.vervan.chat.ui.chat.visibleMessageText
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
 import java.io.PipedInputStream
@@ -200,6 +201,15 @@ class LocalApiServer(
         // the CORS spec requires, and it discloses nothing beyond the headers set in withCors().
         if (session.method == Method.OPTIONS) {
             return newFixedLengthResponse(Response.Status.NO_CONTENT, "text/plain", "")
+        }
+
+        // Service shutdown on backgrounding closes the normal lock transition, but a request can
+        // already be in flight during that hand-off. Re-check the lock at the HTTP boundary so a
+        // locked session cannot finish a queued read, write, or generation through the small race
+        // between ProcessLifecycleOwner and ApiServerService.onDestroy().
+        val appLockEnabled = runBlocking { app.container.settingsRepository.appLockEnabled.first() }
+        if (appLockEnabled && app.container.appLockManager.isLocked.value) {
+            return errorResponse(Response.Status.FORBIDDEN, "Unlock Vervan to use the local API server")
         }
 
         // The bundled web UI's page shell (HTML/CSS/JS) carries no user data of its own — it's
@@ -1576,9 +1586,19 @@ class LocalApiServer(
                     it.state == com.vervan.chat.data.db.entities.MessageState.COMPLETE
             }
         val contextLimit = runCatching { app.container.settingsRepository.contextTokenLimit.first() }.getOrDefault(4096)
-        val priorTurns = ChatFormatting.trimHistoryToBudget(history, contextLimit).map { message ->
+        val includePastThinking = runCatching {
+            app.container.settingsRepository.includePastThinkingInContext.first()
+        }.getOrDefault(false)
+        val priorTurns = ChatFormatting.trimHistoryToBudget(
+            history,
+            contextLimit,
+            includePastThinking
+        ).mapNotNull { message ->
             val role = if (message.role == com.vervan.chat.data.db.entities.MessageRole.USER) "user" else "assistant"
-            role to message.content
+            val content = ChatFormatting.contextMessageContent(message, includePastThinking)
+                .takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            role to content
         }
 
         // Union, not replace: the page's picker can add a knowledge base for one question without
@@ -2106,6 +2126,7 @@ class LocalApiServer(
             // on-disk copies are cleaned up too — deleting the parent row alone would orphan all
             // three.
             app.container.db.documentDao().getForKb(id).forEach { app.container.documentImportManager.delete(it) }
+            app.container.db.clearKnowledgeBaseReferences(id)
             app.container.db.knowledgeBaseDao().delete(kb)
             jsonResponse(Response.Status.OK, JSONObject().put("deleted", true).put("id", id))
         }
@@ -2190,6 +2211,10 @@ class LocalApiServer(
                         .put("id", m.id)
                         .put("role", m.role.name.lowercase())
                         .put("content", m.content)
+                        .put("visible_content", visibleMessageText(
+                            m.content,
+                            m.role == com.vervan.chat.data.db.entities.MessageRole.USER
+                        ))
                         .put("created_at", m.createdAt)
                         .put("generation_ms", m.generationMs ?: JSONObject.NULL)
                         .put("token_count", m.tokenCount ?: JSONObject.NULL)

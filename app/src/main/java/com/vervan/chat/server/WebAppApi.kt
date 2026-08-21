@@ -16,6 +16,7 @@ import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolRegistry
+import com.vervan.chat.ui.chat.visibleMessageText
 import com.vervan.chat.validation.InputLimits
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Method
@@ -413,14 +414,16 @@ internal class WebAppApi(private val app: VervanApp) {
             val chat = db.chatDao().getChat(body.optString("chat_id")) ?: return@runBlocking notFound("chat")
             val kbId = body.optString("knowledge_base_id")
             if (db.knowledgeBaseDao().get(kbId) == null) return@runBlocking notFound("knowledge base")
-            val transcript = db.messageDao().getMessages(chat.id).joinToString("\n\n") { message ->
+            val transcript = db.messageDao().getMessages(chat.id).mapNotNull { message ->
                 val who = when (message.role) {
                     com.vervan.chat.data.db.entities.MessageRole.USER -> "You"
                     com.vervan.chat.data.db.entities.MessageRole.ASSISTANT -> "Assistant"
                     else -> "System"
                 }
-                "$who: ${message.content}"
-            }
+                visibleMessageText(message.content, message.role == com.vervan.chat.data.db.entities.MessageRole.USER)
+                    .takeIf { it.isNotBlank() }
+                    ?.let { "$who: $it" }
+            }.joinToString("\n\n")
             if (transcript.isBlank()) return@runBlocking badRequest("This chat has nothing to file yet")
             app.container.documentImportManager.importRawText(kbId, chat.title, transcript)
             ok()
@@ -552,6 +555,7 @@ internal class WebAppApi(private val app: VervanApp) {
                         effectiveKbId = kb.id
                     }
                     is com.vervan.chat.model.DocumentImportOutcome.Duplicate -> {
+                        db.clearKnowledgeBaseReferences(kb.id)
                         db.knowledgeBaseDao().delete(kb)
                         document = outcome.existing
                         effectiveKbId = outcome.existing.knowledgeBaseId
@@ -565,7 +569,10 @@ internal class WebAppApi(private val app: VervanApp) {
                 }
                 if (document.status != com.vervan.chat.data.db.entities.DocumentStatus.READY) {
                     app.container.documentImportManager.delete(document)
-                    db.knowledgeBaseDao().get(effectiveKbId)?.let { db.knowledgeBaseDao().delete(it) }
+                    db.knowledgeBaseDao().get(effectiveKbId)?.let {
+                        db.clearKnowledgeBaseReferences(effectiveKbId)
+                        db.knowledgeBaseDao().delete(it)
+                    }
                     return@runBlocking badRequest(
                         document.failureReason ?: "That document could not be read (${document.status.name.lowercase()})"
                     )
@@ -593,7 +600,12 @@ internal class WebAppApi(private val app: VervanApp) {
             } catch (t: Throwable) {
                 if (t is VirtualMachineError) throw t
                 Log.e(TAG, "document attach failed for chat ${chat.id}", t)
-                runCatching { db.knowledgeBaseDao().get(kb.id)?.let { db.knowledgeBaseDao().delete(it) } }
+                runCatching {
+                    db.knowledgeBaseDao().get(kb.id)?.let {
+                        db.clearKnowledgeBaseReferences(kb.id)
+                        db.knowledgeBaseDao().delete(it)
+                    }
+                }
                 badRequest(t.toUserMessage())
             } finally {
                 temp.delete()

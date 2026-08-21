@@ -28,7 +28,7 @@ The privacy promise is intentionally specific rather than absolute:
 - On-device models process prompts locally.
 - Model and voice downloads happen only when you request them.
 - Remote OpenAI-compatible models are optional. If you add one, prompts sent to it leave the device and are handled by that provider.
-- The local API server is optional and off by default. When enabled, it listens on the device network, so use an API key—especially in full web-app mode.
+- The local API server is optional and off by default. It binds to localhost by default; enabling the explicit LAN-access option exposes it to the network, so use an API key—especially in full web-app mode.
 - Network activity is recorded in Vervan’s in-app audit log.
 
 ## What you can do
@@ -77,7 +77,7 @@ docs/api/v1/catalog.json.sig  # detached signature
 
 The app verifies the catalogue signature against a public key compiled into the release build. Catalogue entries also use SHA-256 hashes, immutable source revisions, device requirements, and license metadata. Downloads are resumable and installed variants are checked before they are offered to the user.
 
-The sample catalogue you already have is the right starting point. Follow [the Model Store publishing guide](docs/model-store-publishing.md) to create the GitHub repository, generate your own signing key, publish with GitHub Pages, and configure the Android release build.
+The repository includes an offline bootstrap catalogue for first-run discovery. Follow [the Model Store publishing guide](docs/model-store-publishing.md) to create the GitHub repository, generate your own signing key, publish with GitHub Pages, and configure the Android release build. The bootstrap is only a signed-build trust input; it is not a substitute for publishing and rotating a real catalogue.
 
 Never use the sample/demo private key for a real catalogue. Anyone who has that private key can sign a catalogue that your app would trust.
 
@@ -130,7 +130,7 @@ Microphone, camera, calendar, notifications, overlay, and screen capture are opt
 
 Turn on **Settings → Local API server → Full web app mode** to serve a browser interface from the phone. It is a live view of the same local workspace, not a separate cloud copy: chats, notes, documents, knowledge bases, tools, and models remain on the device.
 
-Basic API mode exposes only the OpenAI-compatible inference endpoints. Full web-app mode exposes much more of the workspace, so an API key is strongly recommended. The server is off until you enable it.
+Basic API mode exposes only the OpenAI-compatible inference endpoints. Full web-app mode exposes much more of the workspace, so an API key is required whenever LAN access is enabled. The server is off until you enable it, binds to `127.0.0.1` unless LAN access is explicitly enabled, and passes the browser token in a URL fragment so it is not sent as an HTTP query parameter. Browser credentials are kept in session storage rather than persistent local storage. Remote model endpoints must use HTTPS unless they are loopback/emulator-host services; the app disables cleartext traffic globally.
 
 ## Technical overview
 
@@ -164,6 +164,7 @@ Vervan is an Android application built with Kotlin and Jetpack Compose.
 git clone <your-repository-url>
 cd vervan-chat
 ./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
 ```
 
@@ -202,22 +203,22 @@ Once the catalogue is configured, build the Play upload artifact with:
 ./gradlew :app:bundleRelease
 ```
 
-Release builds also fail closed without an app signing key. Supply it the same way:
+Release builds also fail closed without an app signing key. For local signing, prefer environment variables so passwords do not enter `local.properties`:
 
-```properties
-release.storeFile=/path/to/your.keystore
-release.storePassword=...
-release.keyAlias=...
-release.keyPassword=...
+```text
+VERVAN_RELEASE_STORE_FILE=/path/to/your.keystore
+VERVAN_RELEASE_STORE_PASSWORD=<secret>
+VERVAN_RELEASE_KEY_ALIAS=<alias>
+VERVAN_RELEASE_KEY_PASSWORD=<secret>
 ```
 
-CI equivalents: `VERVAN_RELEASE_STORE_FILE`, `VERVAN_RELEASE_STORE_PASSWORD`, `VERVAN_RELEASE_KEY_ALIAS`, `VERVAN_RELEASE_KEY_PASSWORD`.
+CI uses the same four variables plus `CATALOG_PUBLIC_KEYS` and `CATALOG_ENDPOINTS` repository secrets, mapped to the `VERVAN_CATALOG_*` variables in the release workflow.
 
 ### Continuous integration
 
 [`.github/workflows/android.yml`](.github/workflows/android.yml) runs a debug build/lint/test verification on every push (no native backends — `llamacpp.dir`/`whispercpp.dir` are unset in CI, so that target is skipped, same as an offline checkout).
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on a `vX.Y.Z` tag push: it builds llama.cpp and whisper.cpp **CPU-only** for Android (`scripts/ci/build-native-android-linux.sh` — a Linux/CI-only counterpart to the Vulkan-capable `scripts/build-llama-android-vulkan.ps1`/`scripts/build-whisper-android.ps1`, which stay Windows-only since the Vulkan backend needs MSVC + the Vulkan SDK on the host), signs the resulting APKs, and attaches them to a GitHub Release. See the comments at the top of `release.yml` for the repo secrets it needs. Build the Vulkan-accelerated variant locally if you need GPU acceleration in a release.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on a `vX.Y.Z` tag push: it builds llama.cpp and whisper.cpp **CPU-only** for Android (`scripts/ci/build-native-android-linux.sh` — a Linux/CI-only counterpart to the Vulkan-capable `scripts/build-llama-android-vulkan.ps1`/`scripts/build-whisper-android.ps1`, which stay Windows-only since the Vulkan backend needs MSVC + the Vulkan SDK on the host), runs unit tests and release lint, signs the resulting APK and AAB, and attaches both to a GitHub Release. See the comments in `release.yml` for the required repository secrets. Build the Vulkan-accelerated variant locally if you need GPU acceleration in a release.
 
 ## Project map
 
@@ -226,6 +227,7 @@ app/src/main/java/        Android application and feature code
 app/src/main/assets/      Bundled runtime assets and optional catalogue bootstrap
 app/src/main/cpp/         JNI bridges for optional native runtimes
 app/src/test/             JVM unit tests
+app/src/androidTest/      Android/Room migration tests (run on a connected device or emulator)
 app/schemas/              Exported Room database schemas
 docs/                     Screenshots, mockups, and publishing notes
 scripts/                  Native build and development helpers
@@ -240,7 +242,6 @@ Vervan is a serious early-development project with a broad product surface. The 
 Before calling it production-ready, complete at least the following:
 
 - publish a real signed Model Store catalogue and configure its public key and HTTPS endpoints;
-- add a trusted bootstrap catalogue under `app/src/main/assets/store/bootstrap-catalog.json` if the Store should show curated models before the first sync;
 - test the release bundle on real low-, mid-, and high-memory ARM devices, including interrupted downloads and thermal throttling;
 - review every permission, foreground-service type, overlay flow, screen-capture flow, and remote API path for Play Console disclosure and policy fit;
 - publish a privacy policy and complete Play Console’s Data safety, content rating, target audience, app access, and foreground-service declarations;

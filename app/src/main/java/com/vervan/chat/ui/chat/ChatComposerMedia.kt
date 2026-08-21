@@ -9,7 +9,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.animateContentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -204,9 +203,7 @@ import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.rememberDocumentFirstPagePreview
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
-import com.vervan.chat.ui.theme.VervanAccent
 import com.vervan.chat.ui.theme.VervanMotion
-import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
@@ -392,10 +389,85 @@ internal fun ModernChatAttachmentSheet(
     onDocument: () -> Unit,
     modelRunsOnDevice: Boolean = true,
 ) {
+    val actions = listOf(
+        AttachmentSheetAction(
+            icon = Icons.Filled.Image,
+            title = stringResource(R.string.media_gallery),
+            helper = if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos),
+            enabled = visionAvailable != false,
+            onClick = onPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.PhotoCamera,
+            title = stringResource(R.string.media_camera),
+            helper = if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo),
+            enabled = visionAvailable != false,
+            onClick = onCamera
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.Description,
+            title = stringResource(R.string.media_document),
+            helper = stringResource(R.string.media_pdf_file),
+            enabled = true,
+            onClick = onDocument
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.DocumentScanner,
+            title = stringResource(R.string.media_scan_text),
+            helper = if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningOcr,
+            onClick = onOcrPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.Mic,
+            title = stringResource(R.string.media_record),
+            helper = when {
+                isImportingAudio -> stringResource(R.string.media_transcribing)
+                audioAvailable == true -> stringResource(R.string.media_transcribe)
+                else -> stringResource(R.string.media_stt_off)
+            },
+            enabled = audioAvailable == true && !isImportingAudio,
+            onClick = onRecordAudio
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.AudioFile,
+            title = stringResource(R.string.media_audio),
+            helper = when {
+                isImportingAudio -> stringResource(R.string.media_transcribing)
+                audioAvailable == true -> stringResource(R.string.media_transcribe_file)
+                else -> stringResource(R.string.media_stt_off)
+            },
+            enabled = audioAvailable == true && !isImportingAudio,
+            onClick = onAudioFile
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.CameraAlt,
+            title = stringResource(R.string.media_scan_camera),
+            helper = if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningOcr,
+            onClick = onOcrCamera
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.QrCodeScanner,
+            title = stringResource(R.string.media_scan_qr),
+            helper = if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningQr,
+            onClick = onQrPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.QrCodeScanner,
+            title = stringResource(R.string.media_scan_qr_camera),
+            helper = if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningQr,
+            onClick = onQrCamera
+        )
+    )
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
+                .padding(horizontal = Space.lg).padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -413,99 +485,71 @@ internal fun ModernChatAttachmentSheet(
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.Image, stringResource(R.string.media_gallery), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos), visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.PhotoCamera, stringResource(R.string.media_camera), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo), visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Description, stringResource(R.string.media_document), stringResource(R.string.media_pdf_file), true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.DocumentScanner, stringResource(R.string.media_scan_text), if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo), !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Mic, stringResource(R.string.media_record), if (audioAvailable == true) stringResource(R.string.media_transcribe) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_audio), if (audioAvailable == true) stringResource(R.string.media_transcribe_file) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(top = Space.sm),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
-            ) {
-                CompactAttachmentAction(
-                    Icons.Filled.CameraAlt,
-                    stringResource(R.string.media_scan_camera),
-                    stringResource(R.string.media_from_photo),
-                    !isRunningOcr,
-                    onOcrCamera,
-                    vervanAccentFor(5),
-                    Modifier.weight(1f)
-                )
-                CompactAttachmentAction(
-                    Icons.Filled.QrCodeScanner,
-                    stringResource(R.string.media_scan_qr),
-                    if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
-                    !isRunningQr,
-                    onQrPhoto,
-                    vervanAccentFor(2),
-                    Modifier.weight(1f)
-                )
-                CompactAttachmentAction(
-                    Icons.Filled.QrCodeScanner,
-                    stringResource(R.string.media_scan_qr_camera),
-                    stringResource(R.string.media_from_photo),
-                    !isRunningQr,
-                    onQrCamera,
-                    vervanAccentFor(2),
-                    Modifier.weight(1f)
-                )
+            actions.chunked(3).forEach { rowActions ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                ) {
+                    rowActions.forEach { action ->
+                        CompactAttachmentAction(action, Modifier.weight(1f))
+                    }
+                    repeat(3 - rowActions.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
 }
 
+private data class AttachmentSheetAction(
+    val icon: ImageVector,
+    val title: String,
+    val helper: String,
+    val enabled: Boolean,
+    val onClick: () -> Unit,
+)
+
 @Composable
-internal fun CompactAttachmentAction(
-    icon: ImageVector,
-    title: String,
-    helper: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    accent: VervanAccent,
+private fun CompactAttachmentAction(
+    action: AttachmentSheetAction,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.alpha(if (enabled) 1f else 0.45f),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        onClick = action.onClick,
+        enabled = action.enabled,
+        modifier = modifier
+            .heightIn(min = 104.dp)
+            .alpha(if (action.enabled) 1f else 0.45f),
+        shape = MaterialTheme.shapes.large,
+        color = androidx.compose.ui.graphics.Color.Transparent
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.md),
+            Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Surface(
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(40.dp),
                 shape = MaterialTheme.shapes.small,
-                color = accent.container,
-                contentColor = accent.onContainer
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(action.icon, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
             }
             Text(
-                title,
+                action.title,
                 style = MaterialTheme.typography.labelLarge,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = Space.sm),
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                modifier = Modifier.padding(top = Space.xs),
             )
             Text(
-                helper,
+                action.helper,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                modifier = Modifier.padding(top = 2.dp),
             )
         }
     }
@@ -683,7 +727,8 @@ internal fun AttachmentCaptionBar(
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
             if (caption.length >= 9_600) {
                 Text(
-                    if (caption.length > 12_000) "Message is over the 12,000 character limit" else "${caption.length} / 12,000",
+                    if (caption.length > 12_000) stringResource(R.string.chat_character_limit_exceeded)
+                    else stringResource(R.string.chat_character_limit, caption.length),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (caption.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End).padding(horizontal = Space.lg, vertical = Space.xs)

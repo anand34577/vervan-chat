@@ -25,17 +25,20 @@ object ThinkingParser {
         // Last alternative: Gemma's own template on LM Studio/vLLM emits a literal
         // "<|channel>thought" open marker — no pipe before the closing angle bracket, and
         // "thought" glued directly on rather than being the tag name itself.
-        "(?is)<\\s*$TAGS(?:\\s+[^>]*)?>|<\\|(?:$TAGS|begin_of_thought)\\|>|<\\|channel>thought"
+        "(?is)<\\s*$TAGS(?:\\s+[^>]*)?>|<\\|(?:$TAGS|begin_of_thought)\\|>|" +
+            "<\\|channel\\|?>\\s*(?:thought|thinking|analysis|reasoning)|<\\|channel\\|?(?:thought|thinking|analysis|reasoning)"
     )
     private val CLOSE = Regex(
         // Gemma's matching close marker is bare "<channel|>", not "<|channel|>" — deliberately
-        // asymmetric with its own open marker above.
-        "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>|<channel\\|>"
+        // asymmetric with its own open marker above. Some chat templates switch from an analysis
+        // channel to a final/message channel instead of emitting a closing thought tag.
+        "(?is)<\\s*/\\s*$TAGS\\s*>|<\\|/(?:$TAGS)\\|>|<\\|end_(?:$TAGS|of_thought)\\|>|" +
+            "<channel\\|>|<\\|channel\\|>\\s*(?:final|message|commentary|answer)|<\\|message\\|>"
     )
     private val PARTIAL_OPEN_CANDIDATES = listOf(
         "<think>", "<thinks>", "<thinking>", "<analysis>", "<reasoning>", "<thought>", "<thoughts>",
         "<|think|>", "<|thinks|>", "<|thinking|>", "<|analysis|>", "<|reasoning|>", "<|thought|>", "<|thoughts|>",
-        "<|begin_of_thought|>", "<|channel>thought"
+        "<|begin_of_thought|>", "<|channel>thought", "<|channel|>thought", "<|channel|thought"
     )
 
     fun parse(content: String): Parsed {

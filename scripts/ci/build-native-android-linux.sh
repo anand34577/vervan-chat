@@ -7,10 +7,9 @@
 # changes; set llamacpp.autobuild=false / whispercpp.autobuild=false so Gradle just packages what
 # this script already built instead of re-invoking powershell.exe.
 #
-# ponytail: single -march build, not llama.cpp's GGML_CPU_ALL_VARIANTS per-device dispatch (see
-# the .ps1 script) — CI needs a working release artifact, not the last mile of on-device matmul
-# throughput. Switch to GGML_CPU_ALL_VARIANTS if CI-built APKs ship to devices with varied ARM
-# feature tiers.
+# Release artifacts are installed on a wide range of ARM64 devices. Build llama.cpp's upstream
+# GGML_CPU_ALL_VARIANTS backend plugins so the runtime dispatches to the features the device
+# actually has instead of baking an armv8.2/i8mm instruction assumption into every APK.
 set -euo pipefail
 
 : "${LLAMA_CPP_DIR:?set LLAMA_CPP_DIR}"
@@ -49,7 +48,7 @@ apply_patches "$LLAMA_CPP_DIR"
 
 for abi in $ABIS; do
     case "$abi" in
-        arm64-v8a)   triple=aarch64-linux-android; abi_flags=(-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+i8mm) ;;
+        arm64-v8a)   triple=aarch64-linux-android; abi_flags=(-DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON) ;;
         armeabi-v7a) triple=arm-linux-androideabi; abi_flags=(-DANDROID_ARM_NEON=ON -DGGML_LLAMAFILE=OFF) ;;
         *) echo "Unsupported ABI: $abi" >&2; exit 1 ;;
     esac
@@ -74,9 +73,17 @@ for abi in $ABIS; do
     stl="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$triple/libc++_shared.so"
     [ -f "$stl" ] && cp "$stl" "$out_dir/"
 
-    for lib in libllama.so libggml.so libggml-base.so libggml-cpu.so; do
+    for lib in libllama.so libggml.so libggml-base.so; do
         [ -f "$out_dir/$lib" ] || { echo "Missing expected library $lib in $out_dir" >&2; exit 1; }
     done
+    if [ "$abi" = "arm64-v8a" ]; then
+        compgen -G "$out_dir/libggml-cpu-*.so" > /dev/null || {
+            echo "No runtime-dispatched libggml-cpu-*.so backend for $abi in $out_dir" >&2
+            exit 1
+        }
+    else
+        [ -f "$out_dir/libggml-cpu.so" ] || { echo "Missing libggml-cpu.so for $abi" >&2; exit 1; }
+    fi
     echo "  $abi -> $out_dir"
 done
 

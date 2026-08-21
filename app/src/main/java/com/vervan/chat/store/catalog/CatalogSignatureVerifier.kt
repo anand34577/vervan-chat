@@ -1,7 +1,7 @@
 package com.vervan.chat.store.catalog
 
 import android.util.Base64
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.BuildConfig
 import java.security.KeyFactory
 import java.security.PublicKey

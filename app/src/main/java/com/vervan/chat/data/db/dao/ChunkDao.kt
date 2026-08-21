@@ -103,4 +103,12 @@ interface ChunkDao {
 
     @Query("DELETE FROM chunks WHERE documentId = :documentId")
     suspend fun deleteChunksOnlyForDocument(documentId: String)
+
+    /** Moves a fully-built shadow index onto the stable document id during a re-index swap. */
+    @Query("UPDATE chunks SET documentId = :targetDocumentId WHERE documentId = :stagedDocumentId")
+    suspend fun moveChunksToDocument(stagedDocumentId: String, targetDocumentId: String)
+
+    /** Rebuilds the manually-maintained FTS mirror after a shadow-index document-id swap. */
+    @Query("INSERT INTO chunks_fts(chunkId, documentId, text) SELECT id, documentId, text FROM chunks WHERE documentId = :documentId")
+    suspend fun rebuildFtsForDocument(documentId: String)
 }

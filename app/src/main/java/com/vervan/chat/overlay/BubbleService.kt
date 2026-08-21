@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
@@ -16,6 +18,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
@@ -33,6 +36,7 @@ import com.vervan.chat.data.db.entities.Message
 import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.PromptPolicy
 import java.lang.ref.WeakReference
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ValidationLimits
@@ -67,6 +71,13 @@ class BubbleService : Service() {
     private var windowManager: WindowManager? = null
     private var bubbleView: ImageView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var dismissTargetContainer: FrameLayout? = null
+    private var dismissTargetView: ImageView? = null
+    private var dismissTargetBackground: GradientDrawable? = null
+    private var dismissTargetSizePx = 0
+    private var dismissTargetCenterX = 0
+    private var dismissTargetCenterY = 0
+    private var dismissTargetHighlighted = false
     private var menuView: ComposeView? = null
     private var menuOwner: OverlayLifecycleOwner? = null
     // The result overlay is a Compose panel (markdown rendering) hosted in a WindowManager view,
@@ -142,6 +153,9 @@ class BubbleService : Service() {
             y = 200
         }
         layoutParams = params
+        // Add the hidden target first so its overlay window stays behind the bubble while it is
+        // dragged. It becomes visible only after the touch crosses the drag threshold.
+        addDismissTarget()
         bubble.setOnClickListener { toggleMenu(params) }
 
         // Use the platform gesture threshold so a slightly shaky tap is not mistaken for a drag.
@@ -160,20 +174,36 @@ class BubbleService : Service() {
                     val dx = (event.rawX - downX).toInt()
                     val dy = (event.rawY - downY).toInt()
                     if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                        if (!moved) {
+                            hideMenu()
+                            showDismissTarget()
+                        }
                         moved = true
                         bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(100).start()
                     }
                     params.x = (startX + dx).coerceIn(0, (resources.displayMetrics.widthPixels - sizePx).coerceAtLeast(0))
                     params.y = (startY + dy).coerceIn(0, (resources.displayMetrics.heightPixels - sizePx).coerceAtLeast(0))
                     runCatching { wm.updateViewLayout(bubble, params) }
+                    if (moved) updateDismissTargetState(params.x + sizePx / 2, params.y + sizePx / 2)
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(140).start()
+                    val droppedOnDismissTarget = moved && dismissTargetHighlighted
+                    hideDismissTarget()
+                    if (droppedOnDismissTarget) {
+                        bubble.animate()
+                            .scaleX(0.78f).scaleY(0.78f).alpha(0f)
+                            .setDuration(140)
+                            .withEndAction { hideForNow() }
+                            .start()
+                    } else {
+                        bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(140).start()
+                    }
                     if (!moved) view.performClick()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    hideDismissTarget()
                     bubble.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(100).start()
                     true
                 }
@@ -183,10 +213,122 @@ class BubbleService : Service() {
 
         runCatching { wm.addView(bubble, params) }.onFailure {
             android.util.Log.w(TAG, "addBubble: wm.addView failed", it)
+            hideDismissTarget(remove = true)
             stopSelf(); return false
         }
         bubbleView = bubble
         return true
+    }
+
+    /** Adds the non-touchable drop target before the bubble window so it remains behind it. */
+    private fun addDismissTarget() {
+        if (dismissTargetView != null) return
+        val wm = windowManager ?: return
+        val density = resources.displayMetrics.density
+        val sizePx = (64 * density).toInt()
+        val windowSizePx = (80 * density).toInt()
+        val bottomOffsetPx = (96 * density).toInt()
+        val params = WindowManager.LayoutParams(
+            windowSizePx,
+            windowSizePx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = ((resources.displayMetrics.widthPixels - windowSizePx) / 2).coerceAtLeast(0)
+            y = (resources.displayMetrics.heightPixels - windowSizePx - bottomOffsetPx).coerceAtLeast(0)
+        }
+        val targetBackground = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.rgb(22, 27, 41))
+            setStroke((2 * density).toInt(), Color.rgb(246, 178, 78))
+        }
+        val target = ImageView(this).apply {
+            contentDescription = getString(R.string.screen_assist_hide)
+            background = targetBackground
+            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            val paddingPx = (18 * density).toInt()
+            setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
+            visibility = View.INVISIBLE
+            alpha = 0f
+            scaleX = 0.82f
+            scaleY = 0.82f
+        }
+        val container = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+            addView(target, FrameLayout.LayoutParams(sizePx, sizePx, Gravity.CENTER))
+        }
+        runCatching { wm.addView(container, params) }.onFailure {
+            android.util.Log.w(TAG, "showDismissTarget: wm.addView failed", it)
+            return
+        }
+        dismissTargetContainer = container
+        dismissTargetView = target
+        dismissTargetBackground = targetBackground
+        dismissTargetSizePx = sizePx
+        dismissTargetCenterX = params.x + windowSizePx / 2
+        dismissTargetCenterY = params.y + windowSizePx / 2
+        dismissTargetHighlighted = false
+    }
+
+    /** Reveals the already-behind target once the bubble has become a real drag. */
+    private fun showDismissTarget() {
+        val target = dismissTargetView ?: return
+        dismissTargetHighlighted = false
+        target.visibility = View.VISIBLE
+        target.alpha = 0f
+        target.scaleX = 0.82f
+        target.scaleY = 0.82f
+        target.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).start()
+    }
+
+    private fun updateDismissTargetState(bubbleCenterX: Int, bubbleCenterY: Int) {
+        if (dismissTargetView == null || dismissTargetSizePx == 0) return
+        val hitRadius = dismissTargetSizePx * 0.86f
+        val dx = bubbleCenterX - dismissTargetCenterX
+        val dy = bubbleCenterY - dismissTargetCenterY
+        val highlighted = (dx * dx + dy * dy) <= hitRadius * hitRadius
+        if (highlighted == dismissTargetHighlighted) return
+        dismissTargetHighlighted = highlighted
+        val density = resources.displayMetrics.density
+        dismissTargetBackground?.apply {
+            setColor(if (highlighted) Color.rgb(246, 178, 78) else Color.rgb(22, 27, 41))
+            setStroke(
+                (2 * density).toInt(),
+                if (highlighted) Color.rgb(22, 27, 41) else Color.rgb(246, 178, 78)
+            )
+        }
+        dismissTargetView?.apply {
+            imageTintList = ColorStateList.valueOf(if (highlighted) Color.rgb(22, 27, 41) else Color.WHITE)
+            animate().scaleX(if (highlighted) 1.12f else 1f).scaleY(if (highlighted) 1.12f else 1f).setDuration(100).start()
+        }
+    }
+
+    private fun hideDismissTarget(remove: Boolean = false) {
+        val target = dismissTargetView ?: return
+        target.animate().cancel()
+        if (!remove) {
+            target.visibility = View.INVISIBLE
+            target.alpha = 0f
+            target.scaleX = 0.82f
+            target.scaleY = 0.82f
+            dismissTargetHighlighted = false
+            return
+        }
+        val container = dismissTargetContainer ?: return
+        runCatching { windowManager?.removeView(container) }
+        dismissTargetContainer = null
+        dismissTargetView = null
+        dismissTargetBackground = null
+        dismissTargetSizePx = 0
+        dismissTargetCenterX = 0
+        dismissTargetCenterY = 0
+        dismissTargetHighlighted = false
     }
 
     /** Tapping the bubble no longer jumps straight into a capture — a floating button with no
@@ -386,7 +528,8 @@ class BubbleService : Service() {
             app.container.generate(
                 model, prompt, imagePath, null,
                 params.temperature, params.topP, params.topK, params.seed,
-                params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
+                params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences,
+                systemPrompt = PromptPolicy.SCREEN_ASSIST_SYSTEM
             ).collect { chunk ->
                 answer.append(chunk)
                 showResult(answer.toString(), busy = true)
@@ -492,7 +635,10 @@ class BubbleService : Service() {
 
     private fun setBubbleVisible(visible: Boolean) {
         bubbleView?.visibility = if (visible) View.VISIBLE else View.INVISIBLE
-        if (!visible) hideMenu()
+        if (!visible) {
+            hideMenu()
+            hideDismissTarget()
+        }
     }
 
     private fun showCaptureFailure(message: String) {
@@ -529,6 +675,7 @@ class BubbleService : Service() {
 
     private fun removeBubble() {
         hideMenu()
+        hideDismissTarget(remove = true)
         hideResult()
         bubbleView?.let { runCatching { windowManager?.removeView(it) } }
         bubbleView = null
@@ -648,8 +795,7 @@ internal fun screenCapturePrompt(continuing: Boolean): String = if (continuing) 
 
 /** Rebuilds the small Screen Assist conversation because each native generation starts fresh. */
 internal fun buildScreenConversationPrompt(messages: List<Message>): String = buildString {
-    appendLine("You are Screen Assist. Answer the latest user question about the attached screenshot.")
-    appendLine("Use both the screenshot and the conversation below. Be direct and concise.")
+    appendLine("Use the attached screenshot and the conversation below.")
     appendLine()
     // Screen Assist sends its short full history; add token-budget trimming only if
     // real-world overlay conversations become long enough to approach model context limits.

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- User-facing copy moved out of Compose call sites during the localization audit. -->
     <string name="branch_tree_title">Branch tree</string>
     <string name="branch_tree_return_active">Return to active branch</string>

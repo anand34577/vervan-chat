@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Vervan" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Vervan" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Compose owns the final theme, but this window is visible before the first Compose
+             frame. Match the default Vervan surface so cold start never exposes platform white. -->
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.Vervan.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Vervan</item>
+    </style>
 
     <!-- Phase I — compact floating window for QuickActionActivity (ACTION_PROCESS_TEXT),
          so it appears as a small popup over the host app instead of taking the full screen. -->

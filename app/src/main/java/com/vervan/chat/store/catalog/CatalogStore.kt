@@ -1,7 +1,7 @@
 package com.vervan.chat.store.catalog
 
 import android.content.Context
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import java.io.File
 import org.json.JSONObject
 

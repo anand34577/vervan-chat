@@ -1,3 +1,5 @@
+@file:Suppress("LocalContextGetResourceValueCall")
+
 package com.vervan.chat.ui.chats
 
 import android.content.Intent

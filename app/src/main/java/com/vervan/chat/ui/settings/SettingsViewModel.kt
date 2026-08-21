@@ -255,6 +255,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     // ---- Local API server ----
     val apiServerEnabled: StateFlow<Boolean> = settings.apiServerEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerPort: StateFlow<Int> = settings.apiServerPort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 8080)
+    val apiServerAllowLan: StateFlow<Boolean> = settings.apiServerAllowLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val apiServerFullMode: StateFlow<Boolean> = settings.apiServerFullMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerAutoStart: StateFlow<Boolean> = settings.apiServerAutoStart.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -280,6 +281,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
         }
     }
     fun setApiServerPort(v: Int) = updateApiServerSetting { settings.setApiServerPort(v) }
+    fun setApiServerAllowLan(v: Boolean) = updateApiServerSetting { settings.setApiServerAllowLan(v) }
     fun setApiServerRequireAuth(v: Boolean) = updateApiServerSetting { settings.setApiServerRequireAuth(v) }
     fun setApiServerFullMode(v: Boolean) = updateApiServerSetting { settings.setApiServerFullMode(v) }
     /** Not routed through [updateApiServerSetting]: this changes what happens at the *next* app

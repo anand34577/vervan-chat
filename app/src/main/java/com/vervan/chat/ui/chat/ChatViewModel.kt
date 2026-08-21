@@ -29,12 +29,18 @@ import com.vervan.chat.model.ImportLimits
 import com.vervan.chat.model.copyToLimited
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.llm.ModelProfiles
+import com.vervan.chat.llm.PromptPolicy
 import com.vervan.chat.llm.TitleGenerator
 import com.vervan.chat.modelload.LoadTrigger
 import com.vervan.chat.modelload.ModelLoadInfo
 import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.retrieval.RetrievalMode
 import com.vervan.chat.llm.ThinkingPolicy
+import com.vervan.chat.llm.ThinkingSpec
+import com.vervan.chat.llm.ThinkingParser
+import com.vervan.chat.llm.ClarificationParser
+import com.vervan.chat.llm.RemoteRequestOptions
+import com.vervan.chat.llm.RemoteToolDefinition
 import com.vervan.chat.retrieval.SourcePassage
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.validation.InputLimits
@@ -995,7 +1001,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val (uncovered, existingSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
         if (uncovered.size <= KEEP_RAW_TURNS) return
 
-        val uncoveredTokens = uncovered.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
+        val includePastThinking = app.container.settingsRepository.includePastThinkingInContext.first()
+        val uncoveredTokens = uncovered.sumOf {
+            com.vervan.chat.llm.estimateTokens(ChatFormatting.contextMessageContent(it, includePastThinking))
+        }
         // Only bother once the not-yet-summarized tail is already eating a large share of the
         // history budget — re-summarizing on every single turn for a chat nowhere near its
         // limit would just be a pointless extra generation call each time.
@@ -1006,14 +1015,18 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val toFold = uncovered.dropLast(KEEP_RAW_TURNS)
         if (toFold.isEmpty()) return
 
-        val transcript = toFold.joinToString("\n") { m ->
+        val transcript = toFold.mapNotNull { m ->
             val label = when (m.role) {
                 MessageRole.USER -> "User"
                 MessageRole.ASSISTANT -> "Assistant"
                 MessageRole.SYSTEM -> "Tool result"
             }
-            "$label: ${m.content.take(2000)}"
-        }
+            val content = ChatFormatting.contextMessageContent(m, includePastThinking)
+                .takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            "$label: ${content.take(2000)}"
+        }.joinToString("\n")
+        if (transcript.isBlank()) return
         val prompt = buildString {
             if (!existingSummary.isNullOrBlank()) {
                 appendLine("Here is a running summary of an earlier part of a conversation:")
@@ -1851,12 +1864,17 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val projectInstructions = chatRow.projectId?.let { db.projectDao().get(it)?.instructions }
             val memories = memoryRecall.matches.map { it.memory }
             val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow.activeLeafId)
-            val contextLimitTokens = effectiveContextLimitTokens(model, profile)
+            val requestedThinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
+            val contextLimitTokens = effectiveContextLimitTokens(model, profile, requestedThinkingMode)
             val (postSummaryHistory, earlierSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
-            val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
+            val includePastThinking = app.container.settingsRepository.includePastThinkingInContext.first()
+            val history = ChatFormatting.trimHistoryToBudget(
+                postSummaryHistory,
+                contextLimitTokens,
+                includePastThinking
+            )
             val promptPassages = ChatFormatting.trimPassagesToBudget(passages, contextLimitTokens)
             val enabledToolIds = if (toolsEnabled) effectiveToolIds(chatRow) else emptySet()
-            val requestedThinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
             // A grounded turn floods the prompt with retrieved source passages — DEEP/BALANCED
             // reasoning over that much material is exactly what was producing "thought for Ns,
             // never answers" (the model spends its whole visible-time budget digesting sources
@@ -1877,7 +1895,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // thinking" on LiteRT: the block leaked through unstripped. ThinkingParser is a no-op
             // on text with no tags, so this is safe for genuinely non-reasoning models.
             val suppressReasoning = effectiveThinkingMode == "OFF"
-            val (systemPrompt, prompt) = buildPrompt(
+            val promptBuild = buildPrompt(
                 persona, projectInstructions, memories, history, promptPassages, toolsEnabled,
                 stylePreferenceText(profile.maxOutputHint),
                 ThinkingPolicy.reasoningInstruction(effectiveThinkingMode, modelEngine, isReasoningModel),
@@ -1886,13 +1904,26 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 historyTrimmed = history.size < postSummaryHistory.size,
                 enabledToolIds = enabledToolIds,
                 earlierSummary = earlierSummary,
-                includePastThinking = app.container.settingsRepository.includePastThinkingInContext.first()
+                includePastThinking = includePastThinking
             )
-            val assistantPrefill = ThinkingPolicy.assistantPrefillFor(effectiveThinkingMode, modelEngine, isReasoningModel)
+            val baseSystemPrompt = promptBuild.systemPrompt
+            val prompt = promptBuild.flatPrompt
+            val thinkingSpec = ThinkingSpec.forModel(model)
+            val systemPrompt = ThinkingPolicy.withModelThinkingActivation(
+                baseSystemPrompt, model, effectiveThinkingMode
+            )
+            val generationMessages = promptBuild.messages.mapIndexed { index, message ->
+                if (index == 0 && message.first == "system") "system" to systemPrompt else message
+            }
+            val assistantPrefill = ThinkingPolicy.assistantPrefillFor(
+                effectiveThinkingMode, modelEngine, isReasoningModel, thinkingSpec
+            )
             // llama.cpp only: hard cap on reasoning tokens before </think> is force-injected
             // natively (see nativeGenerate). -1 when not applicable (LiteRT, non-reasoning model,
             // or OFF — where the prefill already closed the block).
-            val reasoningBudget = ThinkingPolicy.reasoningBudgetFor(effectiveThinkingMode, modelEngine, isReasoningModel)
+            val reasoningBudget = ThinkingPolicy.reasoningBudgetFor(
+                effectiveThinkingMode, modelEngine, isReasoningModel, thinkingSpec
+            )
 
             val assistantMessage = Message(
                 chatId = chatId, parentId = chatRow.activeLeafId, role = MessageRole.ASSISTANT, content = "", state = MessageState.STREAMING,
@@ -1957,7 +1988,20 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     model, prompt, imagePath.takeIf { hop == 1 && sendImageToModel }, audioPath.takeIf { hop == 1 },
                     genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
                     genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences,
-                    assistantPrefill = assistantPrefill, systemPrompt = systemPrompt, reasoningBudget = reasoningBudget
+                    assistantPrefill = assistantPrefill, systemPrompt = systemPrompt, reasoningBudget = reasoningBudget,
+                    messages = generationMessages,
+                    remoteOptions = RemoteRequestOptions(
+                        tools = if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API && toolsEnabled) {
+                            remoteToolDefinitions(enabledToolIds)
+                        } else emptyList(),
+                        toolChoice = if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API && toolsEnabled) "auto" else null,
+                        thinkingMode = effectiveThinkingMode,
+                        supportsThinking = isReasoningModel,
+                        thinkingParameter = ThinkingSpec.forModel(model).remoteParameter,
+                        seed = genParams.seed,
+                        minP = model.minP,
+                        repetitionPenalty = model.repetitionPenalty
+                    )
                 )
             } else {
                 engine.generate(
@@ -2391,9 +2435,28 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return parts.filter { it.isNotBlank() }.joinToString(" ")
     }
 
-    private suspend fun effectiveContextLimitTokens(model: com.vervan.chat.data.db.entities.ModelInfo?, profile: com.vervan.chat.llm.ResolvedProfile): Int {
+    private suspend fun effectiveContextLimitTokens(
+        model: com.vervan.chat.data.db.entities.ModelInfo?,
+        profile: com.vervan.chat.llm.ResolvedProfile,
+        thinkingMode: String = "OFF"
+    ): Int {
         val base = model?.contextTokens ?: app.container.settingsRepository.contextTokenLimit.first()
-        return (base * profile.contextFraction).toInt().coerceAtLeast(1024)
+        val outputTokens = model?.maxOutputTokens ?: app.container.settingsRepository.maxOutputTokens.first()
+        val reasoningReserve = if (model?.supportsThinking == true) {
+            when (thinkingMode) {
+                "FAST" -> 256
+                "BALANCED" -> 1024
+                "DEEP" -> 4096
+                else -> 0
+            }
+        } else 0
+        // History/retrieval trimming used to reserve only 15% for system text while output and
+        // thinking budgets were added later. That allowed the prompt plus max output to exceed a
+        // local KV cache or a remote provider's context window. Keep a conservative structural
+        // reserve and subtract the actual completion budget before trimming input.
+        val structuralReserve = (base * 0.15f).toInt().coerceAtLeast(256)
+        return (base * profile.contextFraction - outputTokens - reasoningReserve - structuralReserve)
+            .toInt().coerceAtLeast(1024)
     }
 
     /** Tool ids this chat can actually call right now: the global Settings → Tools disable
@@ -2408,6 +2471,33 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             .toSet()
     }
 
+    /** Converts the app's tool catalog into native OpenAI function definitions for remote models.
+     * Local engines continue using the compact prompt protocol because their runtimes do not share
+     * one stable function-calling API. Parameter types are conservative hints; ToolRegistry is
+     * still the authoritative validator when the call reaches the device. */
+    private fun remoteToolDefinitions(enabledIds: Set<String>): List<RemoteToolDefinition> =
+        ToolRegistry.tools.filter { it.name in enabledIds }.map { tool ->
+            val properties = JSONObject()
+            tool.paramNames.forEach { name ->
+                val type = when {
+                    name.endsWith("Millis", ignoreCase = true) || name in setOf("seconds", "hour", "minute") -> "integer"
+                    name in setOf("amount", "min", "max") -> "number"
+                    else -> "string"
+                }
+                properties.put(name, JSONObject().put("type", type))
+            }
+            val required = JSONArray().apply { tool.paramNames.forEach(::put) }
+            RemoteToolDefinition(
+                name = tool.name,
+                description = tool.description,
+                parameters = JSONObject()
+                    .put("type", "object")
+                    .put("properties", properties)
+                    .put("required", required)
+                    .put("additionalProperties", false)
+            )
+        }
+
     /** Current date/time for the prompt, or null if the user turned this off in Settings —
      * injected unconditionally (not gated behind tools being on) so the model always knows
      * "now", the same way it always knows who it's talking to via the persona/user profile. */
@@ -2420,6 +2510,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             .apply { timeZone = zone }
         return "${fmt.format(java.util.Date())} — timezone ${zone.id}"
     }
+
+    private data class PromptBuild(
+        val systemPrompt: String,
+        val flatPrompt: String,
+        val messages: List<Pair<String, String>>
+    )
 
     private suspend fun buildPrompt(
         persona: Persona?,
@@ -2436,7 +2532,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         enabledToolIds: Set<String> = ToolRegistry.tools.map { it.name }.toSet(),
         earlierSummary: String? = null,
         includePastThinking: Boolean = false
-    ): Pair<String, String> {
+    ): PromptBuild {
         val sections = buildPromptSections(persona, projectInstructions, memories, history, passages, toolsEnabled, stylePreference, reasoning, userProfile, noEvidenceFound, historyTrimmed, enabledToolIds, earlierSummary, includePastThinking)
         // Split into a real "system" turn (persona/instructions/tools/memory — content every chat
         // template treats as higher-trust, model-behavior-shaping context) and a "user" turn
@@ -2448,7 +2544,32 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // which is the most likely reason "models that work fine elsewhere" misbehave in this app.
         val system = sections.filter { it.first in SYSTEM_SECTION_LABELS }.joinToString("") { it.second }
         val user = sections.filter { it.first !in SYSTEM_SECTION_LABELS }.joinToString("") { it.second }
-        return system to user
+        val currentUser = sections
+            .filter { it.first !in SYSTEM_SECTION_LABELS && it.first != "Conversation history" }
+            .joinToString("") { it.second }
+        val messages = buildList {
+            if (system.isNotBlank()) add("system" to system)
+            history.forEach { message ->
+                if (message.role == MessageRole.ASSISTANT && message.state in CUT_OFF_STATES) return@forEach
+                val content = historyMessageContent(message, includePastThinking)
+                if (content.isBlank()) return@forEach
+                add(
+                    when (message.role) {
+                        MessageRole.USER -> "user"
+                        MessageRole.ASSISTANT -> "assistant"
+                        // Remote OpenAI endpoints understand a real tool role. The AppContainer
+                        // maps it to ordinary user context for llama.cpp templates that lack one.
+                        MessageRole.SYSTEM -> "tool"
+                    } to content
+                )
+            }
+            if (currentUser.isNotBlank()) add("user" to currentUser.removeSuffix("Assistant: ").trim())
+        }
+        return PromptBuild(system, user, messages)
+    }
+
+    private fun historyMessageContent(message: Message, includePastThinking: Boolean): String {
+        return ChatFormatting.contextMessageContent(message, includePastThinking)
     }
 
     /**
@@ -2472,34 +2593,29 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         includePastThinking: Boolean = false
     ): List<Pair<String, String>> {
         val sections = mutableListOf<Pair<String, String>>()
+        sections += "Core behavior" to (PromptPolicy.CORE_SYSTEM + "\n\n")
         currentDateTimeText()?.let { sections += "Current date & time" to "Current date & time: $it\n\n" }
         if (persona != null) {
             val traits = com.vervan.chat.data.repo.PersonaTraits.instructionFor(persona)
-            val text = if (traits.isNotBlank()) "${persona.systemInstruction}\n$traits\n\n" else "${persona.systemInstruction}\n\n"
+            val text = buildString {
+                appendLine("Additional persona instructions. Apply them only when they do not conflict with the core rules.")
+                if (persona.systemInstruction.isNotBlank()) appendLine(persona.systemInstruction)
+                if (traits.isNotBlank()) appendLine(traits)
+                appendLine()
+            }
             sections += "Persona" to text
         }
         if (!projectInstructions.isNullOrBlank()) sections += "Project instructions" to (projectInstructions + "\n\n")
         if (userProfile.isNotBlank()) sections += "User profile" to (userProfile + "\n\n")
         if (stylePreference.isNotBlank()) sections += "Style preference" to (stylePreference + "\n\n")
-        sections += "Clarification" to (
-            "If an essential detail is missing and guessing would materially change the result, pause and ask one concise question. " +
-                "Return the question as <clarify>{\"question\":\"...\",\"options\":[\"...\",\"...\"]}</clarify> with 2 to 4 short, useful options. " +
-                "Do not use this for optional details or questions you can answer with a sensible default.\n\n"
-            )
-        // Both diagram and math rendering are real but narrow: the Mermaid renderer runs with
-        // htmlLabels off and strict security (raw <b>/<br/> tags in an unquoted label fail to
-        // parse — always quote node text), and math renders inline delimiters only, not a full
-        // document. Without this, a model asked for "sample questions" reasonably reaches for
-        // \documentclass{article}, which has nowhere to render and shows as a dead code block.
-        sections += "Formatting" to (
-            "Mermaid diagrams: quote every node's label text (e.g. A[\"Layer 7<br/>Application\"]), " +
-                "never leave raw HTML tags outside quotes, and never use markdown bold (**text**) inside a label. " +
-                "Math: use inline delimiters only (\$...\$ or \$\$...\$\$) — never a full LaTeX document " +
-                "(\\documentclass, \\usepackage, \\begin{document}), which cannot be rendered here.\n\n"
-            )
+        sections += "Clarification" to (PromptPolicy.CLARIFICATION + "\n\n")
+        val latestUserRequest = history.asReversed().firstOrNull { it.role == MessageRole.USER }?.content.orEmpty()
+        PromptPolicy.formattingInstructions(latestUserRequest)
+            .takeIf { it.isNotBlank() }
+            ?.let { sections += "Formatting" to (it + "\n\n") }
         if (toolsEnabled) {
             val catalog = ToolRegistry.catalogDescription(enabledToolIds)
-            if (catalog.isNotBlank()) sections += "Tool catalog" to (catalog + "\n")
+            if (catalog.isNotBlank()) sections += "Tool catalog" to (PromptPolicy.TOOLS + "\n" + catalog + "\n")
         }
         if (memories.isNotEmpty()) {
             val text = buildString {
@@ -2558,16 +2674,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     MessageRole.ASSISTANT -> "Assistant"
                     MessageRole.SYSTEM -> "Tool result"
                 }
-                // Strip any <thinking> block from prior assistant turns by default — the model's
-                // own past reasoning doesn't need to keep re-entering context every future turn,
-                // just its actual answer (adjacent context hygiene). includePastThinking (Settings
-                // → Generation & retrieval) opts back into sending it, for anyone who wants the
-                // model to see its own past reasoning rather than only the answer it settled on.
-                val text = if (m.role == MessageRole.ASSISTANT && !includePastThinking) {
-                    val answer = com.vervan.chat.llm.ThinkingParser.parse(m.content).answer
-                    val clarification = com.vervan.chat.llm.ClarificationParser.parse(answer)
-                    listOf(clarification.answer, clarification.request?.question).filterNotNull().filter { it.isNotBlank() }.joinToString("\n")
-                } else m.content
+                val text = ChatFormatting.contextMessageContent(m, includePastThinking)
                 appendLine("$label: $text")
             }
         }
@@ -2597,9 +2704,24 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             .matches.map { it.memory }
         val fullHistory = BranchUtil.pathTo(getAllMessages(), chatRow?.activeLeafId)
         val model = resolveGenerationModelForChat(chatRow)
-        val contextLimitTokens = effectiveContextLimitTokens(model, profile)
+        val thinkingMode = ThinkingPolicy.effectiveThinkingMode(chatRow?.thinkingMode, model?.defaultThinkingMode, model?.supportsThinking)
+        val contextLimitTokens = effectiveContextLimitTokens(model, profile, thinkingMode)
         val (postSummaryHistory, earlierSummary) = ChatFormatting.historyAfterSummary(fullHistory, chatRow)
-        val history = ChatFormatting.trimHistoryToBudget(postSummaryHistory, contextLimitTokens)
+        val includePastThinking = app.container.settingsRepository.includePastThinkingInContext.first()
+        val historyForPrompt = if (draftText.isBlank()) {
+            postSummaryHistory
+        } else {
+            postSummaryHistory + Message(
+                chatId = chatId,
+                role = MessageRole.USER,
+                content = draftText
+            )
+        }
+        val history = ChatFormatting.trimHistoryToBudget(
+            historyForPrompt,
+            contextLimitTokens,
+            includePastThinking
+        )
         val passages = if (chatRow?.sourceGrounded == true && chatRow.kbIdList().isNotEmpty() && draftText.isNotBlank() && profile.retrievalTopK > 0) {
             retrieveSources(chatRow.kbIdList(), draftText, profile.retrievalTopK)
         } else emptyList()
@@ -2613,9 +2735,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 model?.supportsThinking == true
             ),
             app.container.settingsRepository.userProfilePrompt(),
-            historyTrimmed = history.size < postSummaryHistory.size,
+            historyTrimmed = history.size < historyForPrompt.size,
             enabledToolIds = chatRow?.let { effectiveToolIds(it) } ?: emptySet(),
-            earlierSummary = earlierSummary
+            earlierSummary = earlierSummary,
+            includePastThinking = includePastThinking
         )
         val items = sections.map { (label, text) -> ContextItem(label, text.length, com.vervan.chat.llm.estimateTokens(text)) }
         return ContextBreakdown(items, items.sumOf { it.estimatedTokens }, contextLimitTokens)
@@ -2645,8 +2768,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         // Section labels from buildPromptSections() that belong in the chat template's "system"
         // turn rather than the "user" turn — see buildPrompt().
         private val SYSTEM_SECTION_LABELS = setOf(
-            "Current date & time", "Persona", "Project instructions", "User profile",
-            "Style preference", "Clarification", "Tool catalog", "Memory", "Earlier conversation summary"
+            "Core behavior", "Current date & time", "Persona", "Project instructions", "User profile",
+            "Style preference", "Clarification", "Formatting", "Tool catalog", "Memory", "Earlier conversation summary"
         )
     }
 }

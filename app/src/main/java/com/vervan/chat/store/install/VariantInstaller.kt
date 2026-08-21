@@ -1,6 +1,6 @@
 package com.vervan.chat.store.install
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.data.db.entities.StoreArtifactState
 import com.vervan.chat.data.db.entities.StoreInstallState
 import com.vervan.chat.store.model.Artifact

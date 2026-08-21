@@ -29,6 +29,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -83,26 +84,40 @@ class ScreenCaptureActivity : ComponentActivity() {
             }
         }
         if (savedInstanceState != null) return
-        val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        runCatching {
-            val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val config = if (intent.getBooleanExtra(EXTRA_CAPTURE_APP, false)) {
-                    android.media.projection.MediaProjectionConfig.createConfigForUserChoice()
-                } else {
-                    android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
-                }
-                manager.createScreenCaptureIntent(config)
-            } else {
-                manager.createScreenCaptureIntent()
-            }
-            projectionLauncher.launch(captureIntent)
-        }
-            .onFailure {
-                android.util.Log.w(TAG, "Could not launch screen capture consent", it)
-                moveTaskToBack(true)
-                BubbleService.captureFailed("Screen capture isn't available on this device.")
+        // A transparent/exported capture activity is an external entry point. Check the same
+        // lock gate as the main activity before showing the MediaProjection consent sheet; a
+        // locked session must not let a bubble or shortcut turn into an unlocked screen assistant.
+        lifecycleScope.launch {
+            val locked = runCatching {
+                app.container.settingsRepository.appLockEnabled.first() &&
+                    app.container.appLockManager.isLocked.value
+            }.getOrDefault(true)
+            if (locked) {
+                BubbleService.captureFailed("Unlock Vervan before using the screen assistant.")
                 finish()
+                return@launch
             }
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            runCatching {
+                val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val config = if (intent.getBooleanExtra(EXTRA_CAPTURE_APP, false)) {
+                        android.media.projection.MediaProjectionConfig.createConfigForUserChoice()
+                    } else {
+                        android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                    }
+                    manager.createScreenCaptureIntent(config)
+                } else {
+                    manager.createScreenCaptureIntent()
+                }
+                projectionLauncher.launch(captureIntent)
+            }
+                .onFailure {
+                    android.util.Log.w(TAG, "Could not launch screen capture consent", it)
+                    moveTaskToBack(true)
+                    BubbleService.captureFailed("Screen capture isn't available on this device.")
+                    finish()
+                }
+        }
     }
 
     override fun onDestroy() {
