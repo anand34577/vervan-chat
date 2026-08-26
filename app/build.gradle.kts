@@ -44,6 +44,14 @@ val releaseSigningAvailable = !releaseStoreFile.isNullOrBlank() && File(releaseS
 
 val llamaCppDir: String? = localProperties.getProperty("llamacpp.dir")
 
+// Android App Bundles already receive ABI splits from Play. AGP's resource shrinker cannot consume
+// multiple ABI-specific shrunk-resource packs produced by android.splits.abi in the same bundle,
+// so disable the direct-APK split configuration whenever a bundle task is part of this invocation.
+// APK-only builds keep the smaller ABI-specific artifacts for direct sideloading.
+val bundleTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.substringAfterLast(':').startsWith("bundle", ignoreCase = true)
+}
+
 // Availability is decided by the *source* checkout, not by build outputs: the libraries may not
 // exist yet at configuration time precisely because buildLlamaCppNative hasn't run.
 val llamaCppAvailable = llamaCppDir?.let { dir ->
@@ -121,15 +129,16 @@ val llamaCpp32Available = llamaCppAvailable && llamaCppAbis.contains("armeabi-v7
 
 android {
     namespace = "com.vervan.chat"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "28.1.13356709"
 
     defaultConfig {
         applicationId = "com.vervan.chat"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.1"
+        targetSdk = 36
+        versionCode = 2
+        versionName = "1.1.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
@@ -194,12 +203,18 @@ android {
 
     testOptions {
         unitTests {
-            // Plain JVM unit tests (testDebugUnitTest) run without the real Android framework —
-            // any unmocked android.* call (e.g. Log.w/Log.e) throws instead of no-opping unless
-            // this is set. Coordinator logic increasingly logs on its failure/warning paths
-            // (§9/§11 diagnostics), so tests exercising those paths need this to run at all.
-            isReturnDefaultValues = true
+            // Keep framework calls strict: a JVM test must not pass because android.* returned a
+            // meaningless default. Android-dependent behavior belongs in the instrumentation
+            // suite (including the Room migration execution test).
+            isReturnDefaultValues = false
         }
+    }
+
+    // Room's migration helper loads the exported schema JSON from test assets on the device.
+    // Keep the same committed schema history available to instrumentation tests as to the JVM
+    // continuity check above.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 
     // MigrationsTest reads the exported Room schemas (see `room.schemaLocation` below) to derive
@@ -224,6 +239,10 @@ android {
     }
 
     packaging {
+        resources {
+            // Bouncy Castle's provider/PKIX/utility jars carry identical project metadata.
+            pickFirsts += setOf("META-INF/LICENSE.md", "META-INF/NOTICE.md")
+        }
         jniLibs {
             // llama.cpp discovers backend plugins through nativeLibraryDir, so these libraries
             // must be extracted at install time. Legacy packaging also compresses them in direct
@@ -236,14 +255,17 @@ android {
         }
     }
 
-    // Produce ABI-specific APKs. Play-distributed app bundles already split by ABI; this keeps
-    // direct APK builds from making every user download both native stacks too.
+    // Produce ABI-specific APKs for direct APK builds. When bundleRelease is requested, the
+    // bundle pipeline owns ABI delivery and must receive one unsplit resource input; otherwise
+    // AGP fails while collecting multiple shrunk-resource packs into the AAB.
     splits {
         abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+            isEnable = !bundleTaskRequested
+            if (!bundleTaskRequested) {
+                reset()
+                include("arm64-v8a", "armeabi-v7a")
+                isUniversalApk = false
+            }
         }
     }
 
@@ -262,12 +284,12 @@ val verifyLlamaCppRelease by tasks.registering {
                 "Gradle builds it for Android/Vulkan automatically."
         }
         // Guards against a stale or partial native build silently shipping in a release APK.
-        // Vulkan is only expected on 64-bit — see the ABI table in the build script.
+        // The tagged Linux workflow intentionally ships a CPU-only build; Vulkan is an optional
+        // arm64 acceleration plugin and is validated by the Windows native-build path instead.
         llamaCppAbis.forEach { abi ->
             val libs = llamaCppLibsDirFor(abi)
             val required = buildList {
                 add("libllama.so")
-                if (abi == "arm64-v8a") add("libggml-vulkan.so")
             }
             required.forEach { lib ->
                 check(libs != null && File(libs, lib).isFile) {
@@ -337,6 +359,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.1")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     // Loads the vendored Mermaid 10.9.6 browser bundle from APK assets over a safe local
     // HTTPS origin. Runtime network loads are disabled in OfflineMermaidView.
     implementation("androidx.webkit:webkit:1.16.0")
@@ -419,14 +442,29 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
 
     // PDF text extraction for document import
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        // The fork still requests the retired 1.72 jdk15to18 line. Use the maintained Java-8+
+        // artifacts instead; they expose the same org.bouncycastle APIs consumed by PDFBox.
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.85")
     // On-device OCR for scanned PDFs (spec §13.3/40.27) — the (non play-services) "text-recognition"
     // artifact bundles its model in the APK, so it works with no network at all, unlike
     // com.google.android.gms:play-services-mlkit-text-recognition which fetches the model on first use.
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // On-device QR/barcode decode + generate. Deliberately ZXing's plain "core" artifact, not an
+    // ML Kit module: it's pure Java with zero Android/Play-Services dependencies (no dynamic
+    // model download, no Google Play Services requirement at all), and it covers both directions
+    // (BarcodeExtractor decodes with it, and the same BitMatrix machinery encodes for generation)
+    // so one small library replaces what would otherwise be two.
+    implementation("com.google.zxing:core:3.5.3")
     // HTML extraction with heading/list structure preserved — pure Java, no AWT/StAX, safe on
     // Android (unlike Apache POI's OOXML modules, see below).
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("org.jsoup:jsoup:1.23.1")
     // Legacy binary Office formats (.doc/.xls, pre-2007 OLE2 Compound File format) ONLY —
     // deliberately NOT poi-ooxml (.docx/.xlsx/.pptx): poi-ooxml needs javax.xml.stream (StAX),
     // which Android's core library doesn't ship, and commonly needs java.awt classes Android
@@ -450,6 +488,10 @@ dependencies {
     // so plain JVM unit tests that exercise JSONObject parsing (ToolCallParserTest) need the
     // real reference implementation on the test classpath instead.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
+
 
     // Settings storage
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -458,7 +500,7 @@ dependencies {
     // EncryptedSharedPreferences (Android Keystore-backed) for the PIN hash+salt. Standard
     // AndroidX libraries for this exact job, not custom crypto.
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
     // ProcessLifecycleOwner — detects the whole app going to background/foreground, for
     // auto-lock-on-background instead of a per-Activity onPause (which also fires during
     // in-app navigation, not just when the user actually leaves the app).
@@ -470,7 +512,33 @@ dependencies {
     // much larger dependency graph for what's a handful of endpoints here.
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
+    // Security floors for transitive libraries whose upstream parents are stale. Keep these
+    // explicit until pdfbox-android/POI/LiteRT publish dependency graphs above the advisory ranges.
+    constraints {
+        implementation("com.google.protobuf:protobuf-javalite:4.28.2")
+        implementation("org.apache.commons:commons-lang3:3.18.0")
+        implementation("org.apache.logging.log4j:log4j-api:2.26.1")
+    }
+
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Room 2.8.4's migration bundle reader is compiled against kotlinx.serialization 1.8.1.
+// Lifecycle contributes a strict 1.7.3 constraint, which otherwise leaves the generated Room
+// serializers running against an older core on the instrumentation APK and crashes with
+// AbstractMethodError. Align the Android-test runtime only; production code does not use Room's
+// schema reader.
+configurations.matching { configuration ->
+    configuration.name.endsWith("AndroidTestCompileClasspath") ||
+        configuration.name.endsWith("AndroidTestRuntimeClasspath")
+}.configureEach {
+    resolutionStrategy.force(
+        "org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.8.1",
+    )
 }
 
 // --- llama.cpp native build ------------------------------------------------------------------

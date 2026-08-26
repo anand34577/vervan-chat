@@ -25,7 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,12 +44,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -75,6 +74,7 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -151,7 +151,7 @@ internal fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: 
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(top = Space.xs),
             )
-            Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md)) {
+            Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md), shape = MaterialTheme.shapes.small) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.model_set_up_for_me), modifier = Modifier.padding(start = Space.sm))
             }
@@ -180,7 +180,7 @@ internal fun ModelManagerSwitcher(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(Modifier.padding(4.dp)) {
@@ -213,7 +213,7 @@ private fun ModelManagerSwitchItem(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
         contentColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         shadowElevation = if (selected) 1.dp else 0.dp
@@ -227,7 +227,7 @@ private fun ModelManagerSwitchItem(
             if (supportingLabel != null) {
                 Surface(
                     modifier = Modifier.padding(start = Space.sm),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
@@ -248,7 +248,7 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Icon(
@@ -269,7 +269,7 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.lg)
         )
-        Button(onClick = onDiscover) {
+        Button(onClick = onDiscover, shape = MaterialTheme.shapes.small) {
             Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.model_discover_models), modifier = Modifier.padding(start = Space.sm))
         }
@@ -392,15 +392,15 @@ internal fun RemoteApiModelDialog(
     // of models you're adding together is just a starting point, refinable per model afterward via
     // ModelEditDialog once the row exists.
     var temperatureOn by remember { mutableStateOf(false) }
-    var temperature by remember { mutableStateOf(defaults.temperature) }
+    var temperature by remember { mutableFloatStateOf(defaults.temperature) }
     var topPOn by remember { mutableStateOf(false) }
-    var topP by remember { mutableStateOf(defaults.topP) }
+    var topP by remember { mutableFloatStateOf(defaults.topP) }
     var topKOn by remember { mutableStateOf(false) }
-    var topK by remember { mutableStateOf(defaults.topK.toFloat()) }
+    var topK by remember { mutableFloatStateOf(defaults.topK.toFloat()) }
     var maxOutputTokensOn by remember { mutableStateOf(false) }
-    var maxOutputTokens by remember { mutableStateOf(defaults.maxOutputTokens.toFloat()) }
+    var maxOutputTokens by remember { mutableFloatStateOf(defaults.maxOutputTokens.toFloat()) }
     var contextOn by remember { mutableStateOf(false) }
-    var context by remember { mutableStateOf(defaults.contextTokens.toFloat()) }
+    var context by remember { mutableFloatStateOf(defaults.contextTokens.toFloat()) }
     var catalog by remember { mutableStateOf<List<String>>(emptyList()) }
     var fetching by remember { mutableStateOf(false) }
     var fetchNote by remember { mutableStateOf<String?>(null) }
@@ -425,19 +425,18 @@ internal fun RemoteApiModelDialog(
         } else {
             // Display name defaults to the provider's id — that's what the user recognizes and what
             // their billing shows. Renameable afterwards from this same dialog (single) or the
-            // model's own edit action. Tools/Thinking default ON — "on until proven otherwise", the
-            // same convention ModelEditDialog uses for a local model's own toggles; both are pure
-            // prompt-level behavior with nothing to break. Vision is guessed from the id
-            // (RemoteModelCatalog.inferVision); Audio has no comparable naming convention to guess
-            // from, so it stays off until set by hand.
+            // model's own edit action. `/models` does not expose reliable capability metadata, so
+            // unknown tools/thinking stay off until the user declares them. Vision is guessed from
+            // the id (RemoteModelCatalog.inferVision); audio has no comparable naming convention
+            // to guess from, so it stays off until set by hand.
             picked + ModelManagerViewModel.RemoteModelSelection(
                 remoteApiModelId = id,
                 displayName = id,
                 role = RemoteModelCatalog.inferRole(id),
                 capabilities = ModelManagerViewModel.RemoteCapabilities(
                     vision = RemoteModelCatalog.inferVision(id),
-                    tools = true,
-                    thinking = true
+                    tools = false,
+                    thinking = false
                 )
             )
         }
@@ -485,6 +484,29 @@ internal fun RemoteApiModelDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Quick-fill for the handful of endpoints nearly everyone types by hand — the
+                // engine underneath (RemoteOpenAiEngine) already talks to any OpenAI-compatible
+                // server generically, this just saves re-typing the well-known ones. Ollama/LM
+                // Studio point at the device's own loopback address: on a physical device that's
+                // this phone itself (only useful if the server also runs on-device or is port-
+                // forwarded); from an emulator, 10.0.2.2 is the host machine's loopback.
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                ) {
+                    listOf(
+                        "OpenAI" to "https://api.openai.com/v1",
+                        "OpenRouter" to "https://openrouter.ai/api/v1",
+                        "Ollama (local)" to "http://localhost:11434/v1",
+                        "LM Studio (local)" to "http://localhost:1234/v1"
+                    ).forEach { (label, url) ->
+                        VervanFilterChip(
+                            selected = baseUrl.trim().trimEnd('/') == url.trimEnd('/'),
+                            onClick = { baseUrl = url },
+                            label = { Text(label) }
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it.take(512) },
@@ -497,8 +519,8 @@ internal fun RemoteApiModelDialog(
                 shownBaseUrlError?.let { ValidationMessage(it) }
                 if (cleartext) {
                     Text(
-                        "http:// sends the API key unencrypted — fine for a server on your own " +
-                            "network, but use https:// for anything over the internet.",
+                        "Plain HTTP is allowed only for this device or an emulator host. Use https:// " +
+                            "for any model server on another device or network.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -966,8 +988,8 @@ internal fun WhisperCppImportDialog(
 
 @Composable
 internal fun EmbeddingImportStep(stepNumber: Int, label: String, fileName: String?, onPick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = Space.sm)) {
             Text(stringResource(R.string.model_step, stepNumber, label), style = MaterialTheme.typography.labelMedium)
             Text(
                 fileName ?: "Not selected",
@@ -1052,7 +1074,7 @@ internal fun ModelCard(
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     Card(
-        Modifier.fillMaxWidth().padding(bottom = 10.dp).animateContentSize()
+        Modifier.fillMaxWidth().padding(bottom = Space.sm).animateContentSize()
             .combinedClickable(onClick = { if (selectionMode) onToggleSelect() else onEdit() }, onLongClick = onLongPress),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -1065,13 +1087,13 @@ internal fun ModelCard(
             androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
         } else null
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     if (selectionMode) {
-                        Checkbox(checked = selected, onCheckedChange = { onToggleSelect() }, modifier = Modifier.padding(end = 4.dp))
+                        Checkbox(checked = selected, onCheckedChange = { onToggleSelect() }, modifier = Modifier.padding(end = Space.xs))
                     }
-                    Column(Modifier.padding(end = 8.dp)) {
+                    Column(Modifier.padding(end = Space.sm)) {
                         OverflowTooltipText(
                             text = model.displayName,
                             style = MaterialTheme.typography.titleSmall
@@ -1109,8 +1131,8 @@ internal fun ModelCard(
                     }
                 }
                 if (!selectionMode) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (busy) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 4.dp), strokeWidth = 2.dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         // A remote model never "loads" into memory — it's just the one requests
                         // currently go to. "Using"/"Use" instead of "Loaded"/"Load" says that
                         // truthfully instead of implying a local weights file just got read in.
@@ -1154,13 +1176,13 @@ internal fun ModelCard(
                     busyLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = Space.xs)
                 )
             }
             if (model.role == ModelRole.GENERATION) {
                 Row(
-                    Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
                 ) {
                     fun state(supported: Boolean?) = when (supported) {
                         true -> com.vervan.chat.ui.common.CapabilityState.Supported
@@ -1184,21 +1206,22 @@ internal fun ModelCard(
                     "Last ran on ${model.lastWorkingBackend.displayName()}$mtpNote",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.vervanSuccess,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Space.sm)
                 )
             }
             if (!selectionMode) {
-                ResponsiveActions(Modifier.padding(top = 12.dp)) {
+                ResponsiveActions(Modifier.padding(top = Space.md)) {
                     Button(
                         onClick = onToggleLoad,
                         enabled = !busy,
+                        shape = MaterialTheme.shapes.small,
                         colors = if (isLoaded) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant) else ButtonDefaults.buttonColors()
                     ) {
                         Icon(if (isLoaded) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(
                             if (model.traits.runsOnDevice) (if (isLoaded) "Unload" else "Load")
                             else (if (isLoaded) "Stop using" else "Use"),
-                            modifier = Modifier.padding(start = 6.dp)
+                            modifier = Modifier.padding(start = Space.xs)
                         )
                     }
                 }
@@ -1209,7 +1232,7 @@ internal fun ModelCard(
     if (confirmDelete) {
         ConfirmDialog(
         title = stringResource(R.string.model_delete_title),
-            body = "Remove \"${model.displayName}\" permanently?",
+            body = stringResource(R.string.ui_modelimportcards_remove_model, model.displayName),
         confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },

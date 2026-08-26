@@ -69,6 +69,7 @@ class CatalogRepository(
             try {
                 parser.parse(raw)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // A persisted catalogue that no longer parses means the app was downgraded, or the
                 // file is damaged. Fall through to the bootstrap rather than showing nothing.
                 Log.w(TAG, "Persisted catalogue no longer parses: ${t.message}")
@@ -107,6 +108,7 @@ class CatalogRepository(
 
             acceptCatalog(rawCatalog, decodeSignature(rawSignature))
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             fail(t.message ?: "Catalogue sync failed")
         }
     }
@@ -175,6 +177,7 @@ class CatalogRepository(
                     minimumAppVersion = obj.optInt("minimumAppVersion", 0)
                 )
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "Malformed latest.json at $endpoint: ${t.message}")
             }
         }
@@ -186,6 +189,7 @@ class CatalogRepository(
     private fun decodeSignature(raw: ByteArray): ByteArray? = try {
         Base64.decode(raw.toString(Charsets.UTF_8).trim(), Base64.DEFAULT)
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         raw
     }
 
@@ -226,6 +230,7 @@ class CatalogRepository(
                 out.toByteArray()
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "Catalogue fetch failed for $url: ${t.message}")
             null
         } finally {
@@ -242,6 +247,7 @@ class CatalogRepository(
             if (parsed.host !in allowedHosts) return null
             url
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             null
         }
     }
@@ -253,6 +259,7 @@ class CatalogRepository(
             parser.parse(input.readBytes().toString(Charsets.UTF_8))
         }
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         Log.w(TAG, "No usable bootstrap catalogue: ${t.message}")
         null
     }

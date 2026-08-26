@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.models
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,12 +44,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -136,20 +137,20 @@ internal fun AvailableForDownloadSection(
     Card(
         onClick = { sectionExpanded = !sectionExpanded },
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
     ) {
         Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.padding(Space.md).size(24.dp))
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text("Available for download", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.ui_modeldownloadcards_151_available_for_download), style = MaterialTheme.typography.titleMedium)
                 Text(
                     "${states.size} curated model${if (states.size == 1) "" else "s"} · Categories stay collapsed until you open them",
                     style = MaterialTheme.typography.bodySmall,
@@ -249,14 +250,14 @@ internal fun CatalogEntryCard(
     val accentContainer = categoryAccentContainer(state.category)
     Card(
         Modifier.fillMaxWidth().padding(top = Space.sm),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = accentContainer.copy(alpha = 0.18f)),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = MaterialTheme.shapes.large, color = accentContainer, contentColor = accent) {
+                Surface(shape = MaterialTheme.shapes.small, color = accentContainer, contentColor = accent) {
                     Icon(
                         categoryIcon(state.category),
                         contentDescription = null,
@@ -306,9 +307,9 @@ internal fun CatalogEntryCard(
                 )
             }
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                Button(onClick = onDownload) {
+                Button(onClick = onDownload, shape = MaterialTheme.shapes.small) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Download", modifier = Modifier.padding(start = 6.dp))
+                    Text(stringResource(R.string.ui_modeldownloadcards_310_download), modifier = Modifier.padding(start = 6.dp))
                 }
             }
         }
@@ -342,7 +343,7 @@ internal fun DownloadPackageCard(
 
     Card(
         Modifier.fillMaxWidth().padding(bottom = Space.md),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(1.dp, statusColor.copy(alpha = 0.32f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -350,7 +351,7 @@ internal fun DownloadPackageCard(
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.small,
                     color = statusColor.copy(alpha = 0.14f),
                     contentColor = statusColor
                 ) {
@@ -504,19 +505,19 @@ internal fun DownloadPackageCard(
                 if (ModelAction.PAUSE in state.allowedActions) {
                     TextButton(onClick = onPause) {
                         Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Pause", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.action_pause), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.RESUME in state.allowedActions) {
-                    Button(onClick = onResume) {
+                    Button(onClick = onResume, shape = MaterialTheme.shapes.small) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Resume", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.workspace_resume), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.CANCEL in state.allowedActions) {
                     TextButton(onClick = { confirmStop = true }) {
                         Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Stop", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.DELETE in state.allowedActions) {
@@ -525,7 +526,7 @@ internal fun DownloadPackageCard(
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Delete", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.library_delete), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
             }
@@ -534,8 +535,8 @@ internal fun DownloadPackageCard(
 
     if (confirmStop) {
         ConfirmDialog(
-            title = "Stop downloading?",
-            body = "This removes the download and partial file. Pause to resume later.",
+            title = stringResource(R.string.ui_modeldownloadcards_536_stop_downloading),
+            body = stringResource(R.string.ui_modeldownloadcards_537_this_removes_the_download_and_partial_file_p),
             confirmLabel = "Stop",
             destructive = true,
             onConfirm = { confirmStop = false; onStop() },
@@ -544,9 +545,9 @@ internal fun DownloadPackageCard(
     }
     if (confirmDelete) {
         ConfirmDialog(
-            title = if (state.status == ModelStatus.READY) "Delete downloaded voice?" else "Delete partial download?",
-            body = "Remove downloaded data for \"${state.displayName}\"?",
-            confirmLabel = "Delete",
+            title = stringResource(if (state.status == ModelStatus.READY) R.string.ui_modeldownloadcards_delete_downloaded_voice else R.string.ui_modeldownloadcards_delete_partial_download),
+            body = stringResource(R.string.ui_modeldownloadcards_remove_downloaded_data, state.displayName),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },
             onDismiss = { confirmDelete = false }
@@ -563,7 +564,7 @@ private fun InstalledPackageCard(
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(1.dp, vervanSubtleDividerColor())
     ) {
@@ -572,14 +573,14 @@ private fun InstalledPackageCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.vervanSuccess.copy(alpha = 0.12f),
                 contentColor = MaterialTheme.colorScheme.vervanSuccess
             ) {
                 Icon(
                     Icons.Filled.CheckCircle,
-                    contentDescription = "Installed",
-                    modifier = Modifier.padding(10.dp).size(20.dp)
+                    contentDescription = stringResource(R.string.ui_modeldownloadcards_580_installed),
+                    modifier = Modifier.padding(Space.sm).size(20.dp)
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
@@ -604,7 +605,7 @@ private fun InstalledPackageCard(
             IconButton(onClick = { confirmDelete = true }) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "Delete ${state.displayName}",
+                    contentDescription = stringResource(R.string.ui_modeldownloadcards_delete_model_accessibility, state.displayName),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -613,9 +614,9 @@ private fun InstalledPackageCard(
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete downloaded model?",
-            body = "Remove downloaded data for \"${state.displayName}\"?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.ui_modeldownloadcards_615_delete_downloaded_model),
+            body = stringResource(R.string.ui_modeldownloadcards_remove_downloaded_data, state.displayName),
+            confirmLabel = stringResource(R.string.action_delete),
             destructive = true,
             onConfirm = {
                 confirmDelete = false
@@ -729,7 +730,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
     Card(
         onClick = onOpenStore,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Row(
@@ -737,7 +738,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
@@ -748,7 +749,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text("Model Store", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.ui_modeldownloadcards_750_model_store), style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Curated models with device-aware options",
                     style = MaterialTheme.typography.bodySmall,

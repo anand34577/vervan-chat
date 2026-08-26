@@ -40,8 +40,9 @@ object OneShotLlm {
         model: ModelInfo? = null,
         runContext: ToolRunContext? = null,
         maxOutputTokensOverride: Int? = null,
+        localOnly: Boolean = false,
     ): String? {
-        val flow = stream(app, prompt, imagePath, audioPath, model, runContext, maxOutputTokensOverride) ?: return null
+        val flow = stream(app, prompt, imagePath, audioPath, model, runContext, maxOutputTokensOverride, localOnly) ?: return null
         val out = StringBuilder()
         flow.collect { out.append(it) }
         return out.toString()
@@ -56,8 +57,12 @@ object OneShotLlm {
         model: ModelInfo? = null,
         runContext: ToolRunContext? = null,
         maxOutputTokensOverride: Int? = null,
+        localOnly: Boolean = false,
     ): Flow<String>? {
         val model = model ?: app.container.db.modelDao().getActiveModel(ModelRole.GENERATION) ?: return null
+        check(!localOnly || model.engine != com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) {
+            "This action requires an on-device generation model."
+        }
         val run = runContext?.let {
             ToolRun(
                 toolRoute = it.route,
@@ -78,9 +83,11 @@ object OneShotLlm {
                 model, prompt, imagePath, audioPath,
                 params.temperature, params.topP, params.topK, params.seed,
                 params.minP, params.repetitionPenalty,
-                maxOutputTokensOverride ?: params.maxOutputTokens, params.stopSequences
+                maxOutputTokensOverride ?: params.maxOutputTokens, params.stopSequences,
+                systemPrompt = PromptPolicy.ONE_SHOT_SYSTEM
             )
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             run?.let {
                 app.container.db.toolRunDao().update(
                     it.copy(state = ToolRunState.FAILED, errorMessage = t.message, updatedAt = System.currentTimeMillis())
@@ -105,6 +112,7 @@ object OneShotLlm {
                 )
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 app.container.db.toolRunDao().update(
                     run.copy(
                         output = output.toString(),

@@ -147,6 +147,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _phase.value = Phase.Failed(t.message ?: "Could not generate audio.")
                 restoreOverride()
             }
@@ -189,6 +190,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
             )
             _phase.value = Phase.Done(outFile)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "finishMerge failed", t)
             _phase.value = Phase.Failed(t.message ?: "Could not save audio.")
         } finally {

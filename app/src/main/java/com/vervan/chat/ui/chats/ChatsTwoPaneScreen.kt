@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.chat.ChatScreen
 import com.vervan.chat.ui.common.EmptyState
@@ -84,9 +85,10 @@ fun ChatsTwoPaneScreen(
             } else {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Chat,
-                    title = "Pick a conversation",
-                    body = "Choose a chat on the left. New chats also open here.",
-                    modifier = Modifier.fillMaxSize()
+                    title = stringResource(com.vervan.chat.R.string.chat_pick_conversation),
+                    body = stringResource(com.vervan.chat.R.string.chat_pick_conversation_body),
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true
                 )
             }
         }

@@ -21,7 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.common.ChipTone
@@ -78,11 +79,11 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Branch tree") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(com.vervan.chat.R.string.branch_tree_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { scope.launch { if (activeIndex >= 0) listState.animateScrollToItem(activeIndex) } }) {
-                        Icon(Icons.Filled.MyLocation, contentDescription = "Return to active branch")
+                        Icon(Icons.Filled.MyLocation, contentDescription = stringResource(com.vervan.chat.R.string.branch_tree_return_active))
                     }
                 }
             )
@@ -92,8 +93,10 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
         if (rows.isEmpty()) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.MyLocation,
-                title = "No branches yet",
-            body = "Edit or retry a message to create a branch. Every branch appears here."
+                title = stringResource(com.vervan.chat.R.string.branch_tree_empty_title),
+                body = stringResource(com.vervan.chat.R.string.branch_tree_empty_body),
+                modifier = Modifier.fillMaxSize(),
+                centered = true
             )
         } else {
             LazyColumn(
@@ -119,9 +122,9 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
 @Composable
 private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLeaf: Boolean, onClick: () -> Unit) {
     val label = when (message.role) {
-        MessageRole.USER -> "You"
-        MessageRole.ASSISTANT -> "Vervan"
-        MessageRole.SYSTEM -> "Tool result"
+        MessageRole.USER -> stringResource(com.vervan.chat.R.string.role_you)
+        MessageRole.ASSISTANT -> stringResource(com.vervan.chat.R.string.role_vervan)
+        MessageRole.SYSTEM -> stringResource(com.vervan.chat.R.string.entity_tool_result)
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         if (depth > 0) {
@@ -151,10 +154,13 @@ private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLe
                         style = MaterialTheme.typography.labelSmall,
                         color = if (message.role == MessageRole.ASSISTANT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (isCurrentLeaf) SemanticChip("Current", ChipTone.Success)
+                    if (isCurrentLeaf) SemanticChip(stringResource(com.vervan.chat.R.string.branch_current), ChipTone.Success)
                 }
                 Text(
-                    message.content.take(120).ifBlank { "…" },
+                    chatPreviewText(
+                        message.content,
+                        message.role == MessageRole.USER
+                    ).take(120).ifBlank { "…" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,

@@ -56,6 +56,7 @@ class HttpArtifactFetcher(
                 knownEtag = knownEtag,
                 knownLastModified = knownLastModified,
                 authToken = token,
+                maxBytes = expectedBytes,
                 onProgress = { downloaded, _ -> onProgress(downloaded) }
             )
         } catch (e: ModelDownloadException) {
@@ -87,6 +88,9 @@ class HttpArtifactFetcher(
         // the catalogue's hash can no longer be trusted for this source.
         ModelErrorCode.SOURCE_CHANGED -> PermanentFetchException(
             "The remote file changed unexpectedly for a pinned revision", this
+        )
+        ModelErrorCode.INVALID_MODEL_FILE -> PermanentFetchException(
+            "Source returned more bytes than the signed catalogue allows", this
         )
         // Everything else — timeouts, 5xx, range weirdness, storage hiccups — can plausibly
         // succeed on another attempt or another source.

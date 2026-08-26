@@ -33,17 +33,17 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ScreenSearchDesktop
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
+import com.vervan.chat.ui.common.VervanFilledIconButton as FilledIconButton
+import com.vervan.chat.ui.common.VervanFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SmallFloatingActionButton
+import com.vervan.chat.ui.common.VervanSmallFloatingActionButton as SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -356,7 +356,7 @@ private fun QuickMenuAction(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            shape = VervanExtraShapes.pill,
+            shape = MaterialTheme.shapes.small,
             color = if (emphasized) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = if (emphasized) MaterialTheme.colorScheme.onPrimaryContainer

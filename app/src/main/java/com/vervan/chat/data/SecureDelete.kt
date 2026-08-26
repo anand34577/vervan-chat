@@ -28,7 +28,7 @@ object SecureDelete {
     fun overwriteAndDelete(file: File): Boolean {
         if (!file.exists()) return true
         if (file.isFile) {
-            runCatching {
+            com.vervan.chat.system.runCatchingPreservingCancellation {
                 val length = file.length()
                 RandomAccessFile(file, "rws").use { raf ->
                     val buffer = ByteArray(minOf(length, CHUNK_BYTES.toLong()).toInt().coerceAtLeast(1))

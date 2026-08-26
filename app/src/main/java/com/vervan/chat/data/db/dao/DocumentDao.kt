@@ -22,6 +22,9 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT * FROM documents WHERE id = :id")
     suspend fun get(id: String): Document?
 
+    @Query("SELECT * FROM documents WHERE filePath = :filePath LIMIT 1")
+    suspend fun findByFilePath(filePath: String): Document?
+
     @Query("SELECT * FROM documents WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<Document>>
 

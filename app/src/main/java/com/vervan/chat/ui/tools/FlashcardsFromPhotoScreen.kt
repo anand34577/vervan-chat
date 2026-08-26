@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,14 +16,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -155,37 +157,37 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Flashcards from photo") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_flashcardsfromphotoscreen_158_flashcards_from_photo)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 780.dp) {
                 ToolIntro(
                     icon = Icons.Filled.School,
-                    title = "Turn notes into a study deck",
-                    body = "Photograph pages or notes to create flashcards on-device."
+                    title = stringResource(R.string.ui_flashcardsfromphotoscreen_166_turn_notes_into_a_study_deck),
+                    body = stringResource(R.string.ui_flashcardsfromphotoscreen_167_photograph_pages_or_notes_to_create_flashcar)
                 )
                 ResponsiveActions(Modifier.padding(top = Space.lg)) {
                     OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                        Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                     }
                     OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                        Text("Gallery", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.media_gallery), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 if (ocrRunning) {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("Reading the image…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.ui_flashcardsfromphotoscreen_182_reading_the_image), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 OutlinedTextField(
                     value = sourceText,
                     onValueChange = { sourceText = it.take(ValidationLimits.STUDY_SOURCE) },
-                    label = { Text("Study material (editable)") },
+                    label = { Text(stringResource(R.string.ui_flashcardsfromphotoscreen_188_study_material_editable)) },
                     minLines = 5,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                     enabled = !generating
@@ -193,18 +195,18 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 OutlinedTextField(
                     value = deckName,
                     onValueChange = { deckName = it.take(ValidationLimits.STUDY_SET_NAME) },
-                    label = { Text("Deck name") },
+                    label = { Text(stringResource(R.string.study_deck_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                     enabled = !generating
                 )
-                Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+                Text(stringResource(R.string.ui_flashcardsfromphotoscreen_card_count, cardCount.toInt()), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
                 Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..25f, steps = 19, enabled = !generating)
 
                 if (generating) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f),
-                        shape = MaterialTheme.shapes.large,
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth().padding(top = Space.md)
                     ) {
                         Column(Modifier.padding(Space.lg)) {
@@ -219,7 +221,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         enabled = sourceText.isNotBlank() && deckName.isNotBlank() && !ocrRunning
                     ) {
                         Icon(Icons.Filled.School, null, Modifier.size(18.dp))
-                        Text("Generate deck", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.study_generate), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 error?.let {

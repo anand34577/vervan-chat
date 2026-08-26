@@ -7,7 +7,9 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.data.db.entities.Folder
 import com.vervan.chat.data.db.entities.Message
+import com.vervan.chat.data.db.entities.MessageRole
 import com.vervan.chat.data.db.entities.ModelInfo
+import com.vervan.chat.ui.chat.visibleMessageText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +51,11 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
             emit(emptyList())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Total non-temporary conversations, independent of the current filter and listable query. */
+    val totalChatCount: StateFlow<Int> = db.chatDao().observeAllChats()
+        .map { chats -> chats.count { !it.isTemporary } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val projectNames: StateFlow<Map<String, String>> = db.projectDao().observeAll()
         .map { projects -> projects.associate { it.id to it.name } }
@@ -156,9 +163,11 @@ class ChatListViewModel(private val app: VervanApp) : ViewModel() {
     suspend fun exportText(chat: Chat): String = buildString {
         appendLine("# ${chat.title}")
         db.messageDao().getMessages(chat.id).forEach { message ->
+            val visible = visibleMessageText(message.content, message.role == MessageRole.USER)
+            if (visible.isBlank()) return@forEach
             appendLine()
             appendLine("${message.role.name.lowercase().replaceFirstChar(Char::uppercase)}:")
-            appendLine(message.content)
+            appendLine(visible)
         }
     }
 

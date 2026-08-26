@@ -45,12 +45,15 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
     private val _searchResults = MutableStateFlow<List<GraphNode>>(emptyList())
     val searchResults: StateFlow<List<GraphNode>> = _searchResults
     private var searchJob: Job? = null
+    private var loadJob: Job? = null
 
     init {
         viewModelScope.launch {
-            val workspaceId = app.container.settingsRepository.activeWorkspaceId.first()
-            val workspace = db.workspaceDao().get(workspaceId) ?: db.workspaceDao().getDefault()
-            workspace?.let { open(GraphNode(it.id, GraphNodeType.WORKSPACE, it.name), pushHistory = false) }
+            com.vervan.chat.system.runCatchingPreservingCancellation {
+                val workspaceId = app.container.settingsRepository.activeWorkspaceId.first()
+                val workspace = db.workspaceDao().get(workspaceId) ?: db.workspaceDao().getDefault()
+                workspace?.let { open(GraphNode(it.id, GraphNodeType.WORKSPACE, it.name), pushHistory = false) }
+            }.onFailure { Log.e(TAG, "Could not open the initial knowledge graph", it) }
         }
     }
 
@@ -63,7 +66,10 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
         }
         searchJob = viewModelScope.launch {
             delay(200)
-            _searchResults.value = searchNodes(text)
+            val results = com.vervan.chat.system.runCatchingPreservingCancellation { searchNodes(text) }
+                .onFailure { Log.e(TAG, "Knowledge graph search failed", it) }
+                .getOrDefault(emptyList())
+            if (_query.value == text) _searchResults.value = results
         }
     }
 
@@ -75,25 +81,28 @@ class KnowledgeGraphViewModel(private val app: VervanApp) : ViewModel() {
         _canGoBack.value = backStack.isNotEmpty()
         _query.value = ""
         _searchResults.value = emptyList()
-        viewModelScope.launch {
-            _loading.value = true
-            _neighbors.value = runCatching { loadNeighbors(node) }
-                .onFailure { Log.e(TAG, "loadNeighbors failed for ${node.id}", it) }
-                .getOrDefault(emptyList())
-            _loading.value = false
-        }
+        load(node)
     }
 
     fun back() {
         val prev = backStack.removeLastOrNull() ?: return
         _center.value = prev
         _canGoBack.value = backStack.isNotEmpty()
-        viewModelScope.launch {
+        load(prev)
+    }
+
+    private fun load(node: GraphNode) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _loading.value = true
-            _neighbors.value = runCatching { loadNeighbors(prev) }
-                .onFailure { Log.e(TAG, "loadNeighbors failed for ${prev.id}", it) }
-                .getOrDefault(emptyList())
-            _loading.value = false
+            try {
+                val loaded = com.vervan.chat.system.runCatchingPreservingCancellation { loadNeighbors(node) }
+                    .onFailure { Log.e(TAG, "loadNeighbors failed for ${node.id}", it) }
+                    .getOrDefault(emptyList())
+                if (_center.value == node) _neighbors.value = loaded
+            } finally {
+                if (_center.value == node) _loading.value = false
+            }
         }
     }
 

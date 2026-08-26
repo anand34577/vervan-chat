@@ -10,8 +10,20 @@ import androidx.compose.ui.platform.LocalContext
  * accessibility setting directly rather than adding a separate in-app toggle; if the user
  * turned this on system-wide, every app should honor it, not just ones that also ask again.
  */
-fun isReducedMotionEnabled(context: Context): Boolean =
-    Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+fun isReducedMotionEnabled(context: Context): Boolean {
+    val resolver = context.contentResolver
+    val animatorScale = Settings.Global.getFloat(
+        resolver,
+        Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f
+    )
+    val transitionScale = Settings.Global.getFloat(
+        resolver,
+        Settings.Global.TRANSITION_ANIMATION_SCALE,
+        1f
+    )
+    return animatorScale <= 0f || transitionScale <= 0f
+}
 
 @Composable
 fun rememberReducedMotion(): Boolean {

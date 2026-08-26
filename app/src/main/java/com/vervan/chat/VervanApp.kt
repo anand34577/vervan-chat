@@ -8,9 +8,13 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room.Room
 import com.vervan.chat.security.AppLockManager
 import com.vervan.chat.system.ThermalMonitor
+import com.vervan.chat.system.StorageSpace
+import com.vervan.chat.system.runCatchingPreservingCancellation as safeRunCatching
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.MIGRATIONS
 import com.vervan.chat.data.db.entities.MessageState
+import com.vervan.chat.data.db.entities.Folder
+import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.Workspace
 import com.vervan.chat.data.repo.BuiltInPersonas
 import com.vervan.chat.data.repo.BuiltInPromptTemplates
@@ -23,6 +27,7 @@ import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.data.settings.SettingsRepository
 import com.vervan.chat.llm.LlamaCppEngine
 import com.vervan.chat.llm.LlmEngine
+import com.vervan.chat.llm.RemoteRequestOptions
 import com.vervan.chat.llm.stoppingAt
 import com.vervan.chat.model.DocumentImportManager
 import com.vervan.chat.model.ModelImportManager
@@ -33,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -44,9 +50,8 @@ import kotlinx.coroutines.withContext
 
 /** Simple hand-rolled DI container — no framework needed for this many dependencies. */
 class AppContainer(app: Application) {
-    // Pre-release: no shipped installs to preserve, so a schema mismatch (someone upgrading from
-    // an old dev build with the old 50-version schema) destructively rebuilds instead of crashing
-    // on a missing Migration. MIGRATIONS starts real again once this app ships — see Migrations.kt.
+    // Keep migration handling fail-closed: an unknown schema must not silently destroy chats,
+    // documents, or model metadata. Every supported upgrade belongs in MIGRATIONS.
     val db: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "vervan.db")
         .addMigrations(*MIGRATIONS)
         .build()
@@ -69,7 +74,7 @@ class AppContainer(app: Application) {
     val networkAuditLog = com.vervan.chat.system.NetworkAuditLog()
     val documentImportManager = DocumentImportManager(
         app, db.documentDao(), db.chunkDao(), embeddingEngine, db.modelDao(), db.jobDao(),
-        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog
+        embeddingMutex, remoteOpenAiEngine, remoteApiKeyStore, networkAuditLog, db
     )
     val retrievalEngine = RetrievalEngine(
         db.chunkDao(), db.documentDao(), embeddingEngine, db.modelDao(),
@@ -179,7 +184,7 @@ class AppContainer(app: Application) {
         recorder = com.vervan.chat.store.install.RoomInstallSessionRecorder(
             db.storeInstallSessionDao(), db.storeInstallArtifactDao()
         ),
-        usableSpaceProvider = { runCatching { app.filesDir.usableSpace }.getOrDefault(-1L) }
+        usableSpaceProvider = { safeRunCatching { StorageSpace.allocatableBytes(app) }.getOrDefault(-1L) }
     )
 
     val storeInstallRecovery = com.vervan.chat.store.install.StoreInstallRecovery(
@@ -300,7 +305,8 @@ class AppContainer(app: Application) {
          * pre-flattened [prompt]; the other two engines ignore it (LiteRT-LM keeps its own
          * Conversation object, and the remote engine forwards to a server that does its own
          * templating), so [prompt]/[systemPrompt] must still be filled in as the fallback. */
-        messages: List<Pair<String, String>>? = null
+        messages: List<Pair<String, String>>? = null,
+        remoteOptions: RemoteRequestOptions = RemoteRequestOptions()
     ): Flow<String> = flow {
         when (model.engine) {
             // llama.cpp already gets an exact native output-token cap (nativeGenerate's maxTokens
@@ -330,7 +336,15 @@ class AppContainer(app: Application) {
                         prompt, imagePath, temperature, topP, topK, seed, maxOutputTokens, minP,
                         repetitionPenalty, chatTemplateOverride = model.chatTemplateOverride,
                         assistantPrefill = assistantPrefill, systemPrompt = systemPrompt,
-                        reasoningBudget = reasoningBudget, messages = messages
+                        reasoningBudget = reasoningBudget,
+                        // llama.cpp templates do not consistently define a tool role. Preserve
+                        // tool turns for remote providers, but make local tool results ordinary
+                        // user context when entering the native bridge so older GGUF templates
+                        // remain usable.
+                        messages = messages?.map { (role, content) ->
+                            if (role.equals("tool", ignoreCase = true)) "user" to "Tool result: $content"
+                            else role to content
+                        }
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -359,7 +373,8 @@ class AppContainer(app: Application) {
                         // the OpenAI spec; sending the ambient default to every request on every
                         // endpoint that happens to accept the vendor extension would silently
                         // change behavior nobody asked to change.
-                        topK = model.topK
+                        topK = model.topK,
+                        options = remoteOptions.copy(messages = remoteOptions.messages ?: messages)
                     ).stoppingAt(stopSequences)
                 )
             }
@@ -374,6 +389,8 @@ class VervanApp : Application() {
         private set
     lateinit var crashLogManager: com.vervan.chat.system.CrashLogManager
         private set
+    @Volatile private var appLockEnabledSnapshot = true
+    @Volatile private var autoLockTimeoutSnapshot = 60
 
     /**
      * Brings the local API server back up when the app is opened, if the user asked for that.
@@ -393,11 +410,14 @@ class VervanApp : Application() {
     private suspend fun maybeAutoStartApiServer() {
         val settings = container.settingsRepository
         if (!settings.apiServerAutoStart.first() || !settings.apiServerEnabled.first()) return
+        // The API is an external data surface. Do not bring it back while the app-lock gate is
+        // active; the user must unlock in the main app before a local client can read anything.
+        if (settings.appLockEnabled.first() && container.appLockManager.isLocked.value) return
         withContext(Dispatchers.Main.immediate) {
             // A foreground-service start can still be refused (battery restrictions, an edge case
             // in the foregrounding race). That is not worth crashing the app over — the user can
             // start it from Settings, where the toggle still reflects the stored preference.
-            runCatching { com.vervan.chat.server.ApiServerService.start(this@VervanApp) }
+            safeRunCatching { com.vervan.chat.server.ApiServerService.start(this@VervanApp) }
                 .onFailure { Log.w(TAG, "auto-start of the local API server was refused", it) }
         }
     }
@@ -411,16 +431,35 @@ class VervanApp : Application() {
         crashLogManager.install()
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
+        // Keep the two values needed at the foreground security boundary in memory. Reading
+        // DataStore from an IO coroutine after ON_START left a frame where timed-out private
+        // content could render before the lock state was updated.
+        applicationScope.launch(Dispatchers.IO) {
+            container.settingsRepository.securityPreferences.collect {
+                appLockEnabledSnapshot = it.appLockEnabled
+            }
+        }
+        applicationScope.launch(Dispatchers.IO) {
+            container.settingsRepository.autoLockTimeoutSeconds.collect {
+                autoLockTimeoutSnapshot = it
+            }
+        }
         // App-wide backgrounded/foregrounded detection for auto-lock — observes the
         // whole process's lifecycle, not one Activity's, so in-app navigation (which pauses/
         // resumes the single Activity) never trips it, only actually leaving the app does.
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
-                // Quick stays available while the app process is running, in foreground or background.
                 applicationScope.launch(Dispatchers.IO) {
-                    runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                    safeRunCatching {
+                        val appLockEnabled = container.settingsRepository.appLockEnabled.first()
+                        // External surfaces must not remain available while an app-lock-enabled
+                        // session is backgrounded. The lock timeout is evaluated on the next
+                        // foreground transition, so stopping them here closes that timing gap.
+                        if (appLockEnabled) {
+                            com.vervan.chat.server.ApiServerService.stop(this@VervanApp)
+                            com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
+                        } else if (container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
                         ) {
                             withContext(Dispatchers.Main.immediate) {
@@ -433,9 +472,19 @@ class VervanApp : Application() {
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
+                if (appLockEnabledSnapshot) {
+                    container.appLockManager.onAppForegrounded(autoLockTimeoutSnapshot)
+                }
                 applicationScope.launch(Dispatchers.IO) {
-                    runCatching {
-                        if (container.settingsRepository.quickActionBubbleEnabled.first() &&
+                    safeRunCatching {
+                        val appLockEnabled = container.settingsRepository.appLockEnabled.first()
+                        if (appLockEnabled) {
+                            container.appLockManager.onAppForegrounded(
+                                container.settingsRepository.autoLockTimeoutSeconds.first()
+                            )
+                        }
+                        val locked = appLockEnabled && container.appLockManager.isLocked.value
+                        if (!locked && container.settingsRepository.quickActionBubbleEnabled.first() &&
                             !com.vervan.chat.overlay.BubbleService.shouldRemainRunningInForeground()
                         ) {
                             withContext(Dispatchers.Main.immediate) {
@@ -443,11 +492,14 @@ class VervanApp : Application() {
                                     com.vervan.chat.overlay.BubbleService.start(this@VervanApp)
                                 }
                             }
+                        } else if (locked) {
+                            com.vervan.chat.overlay.BubbleService.stop(this@VervanApp)
                         }
-                        if (container.settingsRepository.appLockEnabled.first()) {
-                            container.appLockManager.onAppForegrounded(container.settingsRepository.autoLockTimeoutSeconds.first())
+                        if (locked) {
+                            com.vervan.chat.server.ApiServerService.stop(this@VervanApp)
+                        } else {
+                            maybeAutoStartApiServer()
                         }
-                        maybeAutoStartApiServer()
                     }.onFailure { Log.e(TAG, "onAppForegrounded housekeeping failed", it) }
                 }
             }
@@ -469,18 +521,26 @@ class VervanApp : Application() {
             // ApplicationExitInfo on the next launch is the only way to learn about them. Bundled
             // with interrupted-message marking since both are the same "recover from process
             // death" concern.
-            runCatching {
+            safeRunCatching {
                 crashLogManager.recordSystemExits()
                 container.db.messageDao().getUnfinished().forEach {
                     container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
                 }
             }.onFailure { Log.e(TAG, "Cold-start housekeeping: crash/interrupted-message recovery failed", it) }
 
+            // Same recovery, for Background Jobs (model validation/benchmark/import etc.) — a job
+            // still WAITING/PREPARING/RUNNING/PAUSED at cold start can't actually still be running
+            // (its coroutine died with the previous process), so it's stuck showing "In progress"
+            // forever with no visibility into what happened unless swept here.
+            safeRunCatching {
+                container.db.jobDao().failOrphanedActive()
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: orphaned-job recovery failed", it) }
+
             // Incognito mode — a temporary chat is meant to hard-delete itself on
             // close (see ChatViewModel.purgeTemporaryChat); this is the fallback for a process
             // that died before that ran. Any chat still marked isTemporary at cold start is one
             // nothing ever cleaned up.
-            runCatching {
+            safeRunCatching {
                 container.db.chatDao().observeAllChats().first().filter { it.isTemporary }.forEach { chat ->
                     chat.kbIdList().forEach { kbId ->
                         container.db.documentDao().getForKb(kbId).forEach { container.documentImportManager.delete(it) }
@@ -499,7 +559,7 @@ class VervanApp : Application() {
             // them. Pinned chats are exempt — a retention timer silently eating something the
             // user deliberately pinned would be a surprise, not a privacy win. 0 (default) means
             // off entirely.
-            runCatching {
+            safeRunCatching {
                 val retentionDays = container.settingsRepository.autoDeleteAfterDays.first()
                 if (retentionDays > 0) {
                     val retentionCutoff = System.currentTimeMillis() - retentionDays * 24L * 60 * 60 * 1000
@@ -511,7 +571,7 @@ class VervanApp : Application() {
 
             // Built-in seeding — fresh-install seed plus refresh of immutable built-in
             // definitions on existing installs.
-            runCatching {
+            safeRunCatching {
                 container.db.personaDao().insertAll(BuiltInPersonas.defaults)
                 // Built-ins are immutable in the editor, so refresh the default definition on
                 // existing installs as well as seeding it on fresh installs.
@@ -527,13 +587,31 @@ class VervanApp : Application() {
                         isDefault = true
                     )
                 )
+                // Keep the first-run workspace useful immediately. These stable rows are
+                // protected from duplicate creation with IGNORE and give new chats a clear,
+                // navigable home for filing and focused work.
+                container.db.folderDao().insertDefault(
+                    Folder(
+                        id = Folder.DEFAULT_FOLDER_ID,
+                        name = "Default Folder",
+                        workspaceId = Workspace.DEFAULT_WORKSPACE_ID
+                    )
+                )
+                container.db.projectDao().insertDefault(
+                    Project(
+                        id = Project.DEFAULT_PROJECT_ID,
+                        name = "Default Project",
+                        workspaceId = Workspace.DEFAULT_WORKSPACE_ID,
+                        instructions = "A general-purpose project for focused work."
+                    )
+                )
                 container.db.promptTemplateDao().insertAll(BuiltInPromptTemplates.defaults)
                 container.db.workflowDao().insertAll(BuiltInWorkflows.defaults)
             }.onFailure { Log.e(TAG, "Cold-start housekeeping: built-in seeding failed", it) }
 
             // Recycle bin auto-purge — anything soft-deleted more than 30 days ago is gone
             // for good. Runs once per cold start, cheap enough not to need WorkManager.
-            runCatching {
+            safeRunCatching {
                 val cutoff = System.currentTimeMillis() - RECYCLE_BIN_RETENTION_MS
                 container.db.chatDao().observeDeleted().first().forEach { chat ->
                     if (chat.deletedAt != null && chat.deletedAt < cutoff) {
@@ -591,7 +669,7 @@ class VervanApp : Application() {
             // A download package left active/paused by a process death needs the
             // foreground service back up to reconcile and (if settings allow) auto-resume it —
             // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
-            runCatching {
+            safeRunCatching {
                 if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
                     com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
                 }
@@ -601,7 +679,7 @@ class VervanApp : Application() {
             // process death is reconciled against the real .part files on disk and parked as
             // PAUSED, never as FAILED. No service is started here — the store has no auto-resume
             // policy yet, so recovery only makes the session resumable when the user returns.
-            runCatching {
+            safeRunCatching {
                 container.storeInstallRecovery.recoverOnStartup()
                 // Catalogue refresh, blob GC and the integrity spot-check, each on its own throttle.
                 // Skipped entirely on a device that has never opened the store, so a feature the user
@@ -661,7 +739,7 @@ class VervanApp : Application() {
 
     private fun notifyModelUnloadedBySystem(filePath: String) {
         applicationScope.launch(Dispatchers.IO) {
-            val name = runCatching {
+            val name = safeRunCatching {
                 container.db.modelDao().observeModels().first().find { it.filePath == filePath }?.displayName
             }.getOrNull() ?: java.io.File(filePath).nameWithoutExtension
             withContext(Dispatchers.Main) {

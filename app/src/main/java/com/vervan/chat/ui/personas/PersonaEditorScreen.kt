@@ -23,18 +23,18 @@ import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -135,6 +135,8 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                 icon = Icons.Outlined.Person,
                 title = stringResource(R.string.persona_not_found),
                 body = stringResource(R.string.persona_not_found_body),
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
@@ -215,6 +217,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             SectionHeader(stringResource(R.string.persona_identity))
             BoundedTextField(
                 value = name, onValueChange = vm::setName, label = stringResource(R.string.persona_name),
+                required = true,
                 maxLength = ValidationLimits.PERSONA_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
@@ -227,6 +230,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             SectionHeader(stringResource(R.string.persona_behavior))
             BoundedTextField(
                 value = systemInstruction, onValueChange = vm::setSystemInstruction, label = stringResource(R.string.persona_system_instruction),
+                required = true,
                 maxLength = ValidationLimits.PERSONA_SYSTEM_INSTRUCTION, minLines = 4,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
@@ -242,7 +246,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             Text(stringResource(R.string.persona_response_length), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("BALANCED", "SHORT", "LONG"), responseLength, vm::setResponseLength)
 
-            val creativityValue = String.format("%.1f", creativity)
+            val creativityValue = String.format(java.util.Locale.getDefault(), "%.1f", creativity)
             val creativityDescription = stringResource(R.string.persona_creativity_accessibility, creativityValue)
             Text(stringResource(R.string.persona_creativity, creativityValue), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
             Slider(
@@ -264,13 +268,23 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             // Mirrors PersonaEditorViewModel.save()'s own requirement — disabling the button on
             // the same condition that would otherwise make it silently no-op is the fix, not a
             // dialog explaining a failure the user could never have triggered in the first place.
-            val withinLimits = name.isNotBlank() && systemInstruction.isNotBlank() &&
-                name.length <= ValidationLimits.PERSONA_NAME &&
+            val withinLimits = name.length <= ValidationLimits.PERSONA_NAME &&
                 description.length <= ValidationLimits.PERSONA_ROLE &&
                 systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text(stringResource(R.string.persona_duplicate)) }
-                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text(stringResource(R.string.persona_save_changes)) }
+                OutlinedButton(onClick = {
+                    if (name.isBlank() || systemInstruction.isBlank()) {
+                        android.widget.Toast.makeText(context, "Complete the required fields before duplicating.", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        scope.launch { onDuplicated(vm.duplicate()) }
+                    }
+                }) { Text(stringResource(R.string.persona_duplicate)) }
+                Button(enabled = withinLimits, onClick = {
+                    scope.launch {
+                        if (vm.save()) onBack()
+                        else android.widget.Toast.makeText(context, vm.saveError.value ?: "Complete the required fields before saving.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }, shape = MaterialTheme.shapes.small) { Text(stringResource(R.string.persona_save_changes)) }
             }
             }
         }
@@ -293,7 +307,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
                         emojis.forEach { emoji ->
                             androidx.compose.material3.Surface(
                                 onClick = { vm.setEmojiAvatar(emoji); showAvatarChooser = false },
-                                shape = CircleShape,
+                                shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.secondaryContainer,
                             ) {
                                 Text(emoji, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(Space.md))

@@ -1,6 +1,6 @@
 name: Android Release
 
-# Builds signed release APKs with the llama.cpp and whisper.cpp native backends compiled in
+# Builds signed release APKs/AABs with the llama.cpp and whisper.cpp native backends compiled in
 # (CPU-only — see scripts/ci/build-native-android-linux.sh for why: the Vulkan GPU backend needs
 # MSVC + the Vulkan SDK on the host, which only scripts/build-llama-android-vulkan.ps1's Windows
 # dev-machine path has) and attaches them to a GitHub Release. .github/workflows/android.yml
@@ -43,10 +43,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # ubuntu-latest ships an Android SDK with ANDROID_HOME/sdkmanager already on PATH — just
-      # add the NDK and the SDK's own CMake+Ninja package the native build needs.
+      # ubuntu-latest ships an Android SDK at ANDROID_HOME, but sdkmanager itself isn't on PATH —
+      # it lives under cmdline-tools/<version>/bin. Add the *newest* installed cmdline-tools dir
+      # rather than hardcoding a version, since the runner image's bundled version drifts.
       - name: Install NDK + CMake
         run: |
+          SDKMANAGER_BIN="$(dirname "$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 2 -name sdkmanager | sort -V | tail -1)")"
+          echo "$SDKMANAGER_BIN" >> "$GITHUB_PATH"
+          export PATH="$SDKMANAGER_BIN:$PATH"
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "ndk;28.1.13356709" "cmake;3.22.1" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
@@ -81,13 +85,22 @@ jobs:
           whispercpp.autobuild=false
           EOF
 
-      - name: Build signed release APKs
+      - name: Build, lint, and test signed release artifacts
         env:
           VERVAN_RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
           VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Verify APK alignment, signature, and checksums
+        run: |
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$BUILD_TOOLS_DIR/zipalign" -c -P 16 -v 4 "$apk"
+            "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$apk"
+          done
+          sha256sum app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab > SHA256SUMS
 
       - name: Remove keystore
         if: always()
@@ -96,5 +109,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+            SHA256SUMS
           generate_release_notes: true

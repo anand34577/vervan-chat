@@ -1,7 +1,7 @@
 package com.vervan.chat.store.license
 
 import android.content.Context
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.store.model.ModelLicense
 import com.vervan.chat.store.model.StoreModel
 import java.io.File
@@ -71,6 +71,7 @@ class LicenseAcceptanceStore(private val file: File) {
                 )
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // A damaged file must not read as "everything is accepted" — an unreadable record is
             // treated as no record, so the user is asked again.
             Log.w(TAG, "Licence acceptance file unreadable, treating as empty: ${t.message}")

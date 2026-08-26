@@ -7,19 +7,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.core.net.toUri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +35,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.traits
+import com.vervan.chat.server.requiresApiAuth
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
 import java.text.DateFormat
@@ -77,25 +81,39 @@ fun PrivacyDashboardScreen(
     val calendarOn by vm.calendarToolEnabled.collectAsState()
     val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
     val apiServerOn by vm.apiServerEnabled.collectAsState()
+    val apiServerLanOn by vm.apiServerAllowLan.collectAsState()
     val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
+    val apiServerFullMode by vm.apiServerFullMode.collectAsState()
+    val apiServerAppTools by vm.apiServerAppTools.collectAsState()
 
-    // The server always binds every network interface while it's on (see ApiServerService) —
-    // there's no longer a separate "allow LAN" toggle gating that. The only thing standing
-    // between "on" and "anyone on this network can use it with no key" is whether an API key is
-    // required, so that's what actually drives the warning here now, not a bind-address flag.
-    val lanRisk = apiServerOn && !apiServerAuthOn
+    val apiServerAuthRequired = requiresApiAuth(apiServerAuthOn, apiServerLanOn, apiServerFullMode, apiServerAppTools)
     val remoteModelActive = activeModel?.traits?.runsOnDevice == false
-    val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { android.net.Uri.parse(it).host }.getOrNull() }
+    val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { it.toUri().host }.getOrNull() }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.privacy_dashboard_title)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
+            ModernistScreenHeader(
+                eyebrow = stringResource(R.string.ui_privacydashboardscreen_103_trust_privacy),
+                title = stringResource(R.string.ui_privacydashboardscreen_104_privacy),
+                body = stringResource(R.string.ui_privacydashboardscreen_105_see_exactly_what_can_leave_this_device),
+                trailing = { ModernistTag("NO OUTBOUND TRAFFIC", active = !remoteModelActive && !apiServerOn) }
+            )
+            ModernistMetricStrip(
+                metrics = listOf(
+                    "MODEL" to (activeModel?.displayName ?: "NONE"),
+                    "CHATS" to chats.size.toString(),
+                    "DOCS" to documents.size.toString(),
+                    "NETWORK" to networkEntries.size.toString()
+                ),
+                modifier = Modifier.padding(bottom = Space.md)
+            )
             Card(
                 Modifier.fillMaxWidth().padding(bottom = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -176,31 +194,30 @@ fun PrivacyDashboardScreen(
 
             Card(
                 Modifier.fillMaxWidth().padding(bottom = Space.sm),
-                colors = if (lanRisk) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                else CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            if (lanRisk) Icons.Filled.Warning else Icons.Filled.CheckCircle,
+                            Icons.Filled.CheckCircle,
                             contentDescription = null,
-                            tint = if (lanRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(end = Space.sm)
                         )
                         Text(
                             stringResource(R.string.privacy_local_api_server),
                             style = MaterialTheme.typography.titleSmall,
-                            color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Text(
                         when {
                             !apiServerOn -> stringResource(R.string.privacy_api_server_off)
-                            lanRisk -> stringResource(R.string.privacy_api_server_no_key)
-                            else -> stringResource(R.string.privacy_api_server_key_required)
+                            apiServerAuthRequired -> stringResource(R.string.privacy_api_server_key_required)
+                            else -> stringResource(R.string.privacy_api_server_no_key)
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs)
                     )
                     OutlinedButton(onClick = onOpenApiServer, modifier = Modifier.padding(top = Space.sm)) {
@@ -245,7 +262,13 @@ private fun PrivacySection(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun PrivacyRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.58f))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(0.58f),
+        )
         Text(
             value,
             style = MaterialTheme.typography.bodySmall,

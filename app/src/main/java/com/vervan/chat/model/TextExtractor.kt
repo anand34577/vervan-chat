@@ -77,6 +77,9 @@ object TextExtractor {
     private fun extractPdf(file: File): ExtractResult {
         return try {
             PDDocument.load(file).use { doc ->
+                if (doc.numberOfPages > MAX_PDF_PAGES) {
+                    throw InputLimitExceededException("PDF contains too many pages")
+                }
                 val stripper = PDFTextStripper()
                 // PDFTextStripper's default walks the PDF's internal content stream order, which
                 // is frequently NOT visual reading order — multi-column layouts, sidebars, and
@@ -114,6 +117,7 @@ object TextExtractor {
      */
     private fun extractDocx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
+            zip.checkedEntries()
             val entry = zip.getEntry("word/document.xml")
                 ?: return ExtractResult.Unsupported("DOCX has no word/document.xml")
             var xml = zip.readEntryTextLimited(entry)
@@ -155,8 +159,11 @@ object TextExtractor {
      * this format specifically gets a POI dependency instead of hand-rolled parsing: OLE2
      * Compound File binary parsing isn't a "few lines" job the way zip/XML formats are. */
     private fun extractDoc(file: File): ExtractResult = try {
+        rejectOversizedLegacyOffice(file)
         HWPFDocument(FileInputStream(file)).use { doc ->
-            val text = WordExtractor(doc).text.trim()
+            val text = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "DOC text")
+                .account(WordExtractor(doc).text)
+                .trim()
             if (text.isBlank()) ExtractResult.Unsupported("DOC contains no readable text") else ExtractResult.Text(text)
         }
     } catch (e: Exception) {
@@ -171,8 +178,13 @@ object TextExtractor {
      * indirection just for a nicer citation label. */
     private fun extractXlsx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
+            val aggregateXml = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "XLSX XML")
+            val extractedText = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "XLSX text")
+            var cellCount = 0L
+            fun readPart(entry: java.util.zip.ZipEntry): String =
+                aggregateXml.account(zip.readEntryTextLimited(entry))
             val sharedStrings = zip.getEntry("xl/sharedStrings.xml")?.let { entry ->
-                val xml = zip.readEntryTextLimited(entry)
+                val xml = readPart(entry)
                 Regex("<si>(.*?)</si>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { m ->
                     Regex("<t[^>]*>(.*?)</t>", RegexOption.DOT_MATCHES_ALL).findAll(m.groupValues[1])
                         .joinToString("") { it.groupValues[1] }
@@ -185,20 +197,40 @@ object TextExtractor {
                 .sortedBy { it.name }
                 .toList()
             if (sheetEntries.isEmpty()) return@use ExtractResult.Unsupported("XLSX has no worksheet parts")
+            if (sheetEntries.size > MAX_OFFICE_PARTS) throw InputLimitExceededException("XLSX contains too many worksheets")
 
             val sheets = sheetEntries.mapIndexed { i, entry ->
-                val xml = zip.readEntryTextLimited(entry)
+                val xml = readPart(entry)
                 val rows = Regex("<row[^>]*>(.*?)</row>", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { rowMatch ->
-                    Regex("<c[^>]*?(?:\\s+t=\"(\\w+)\")?[^>]*>(.*?)</c>", RegexOption.DOT_MATCHES_ALL).findAll(rowMatch.groupValues[1]).map { cellMatch ->
-                        val type = cellMatch.groupValues[1]
-                        val valueMatch = Regex("<v>(.*?)</v>", RegexOption.DOT_MATCHES_ALL).find(cellMatch.groupValues[2])
+                    val cells = mutableListOf<String>()
+                    XLSX_CELL.findAll(rowMatch.groupValues[1]).forEach { cellMatch ->
+                        val attributes = cellMatch.groupValues[1]
+                        val body = cellMatch.groupValues[2]
+                        val type = XLSX_CELL_TYPE.find(attributes)?.groupValues?.get(1).orEmpty()
+                        val reference = XLSX_CELL_REFERENCE.find(attributes)?.groupValues?.get(1)
+                        val column = reference?.let(::spreadsheetColumnIndex) ?: cells.size
+                        if (column !in 0 until MAX_OFFICE_COLUMNS) {
+                            throw InputLimitExceededException("XLSX contains an invalid column reference")
+                        }
+                        while (cells.size <= column) {
+                            if (++cellCount > MAX_OFFICE_CELLS) {
+                                throw InputLimitExceededException("XLSX contains too many cells")
+                            }
+                            cells.add("")
+                        }
+                        val valueMatch = Regex("<v>(.*?)</v>", RegexOption.DOT_MATCHES_ALL).find(body)
                         val raw = valueMatch?.groupValues?.get(1).orEmpty()
-                        when (type) {
+                        val value = when (type) {
                             "s" -> raw.toIntOrNull()?.let { sharedStrings.getOrNull(it) } ?: ""
-                            "inlineStr" -> Regex("<t[^>]*>(.*?)</t>", RegexOption.DOT_MATCHES_ALL).find(cellMatch.groupValues[2])?.groupValues?.get(1)?.let { unescapeXml(it) } ?: ""
+                            "inlineStr" -> Regex("<t[^>]*>(.*?)</t>", RegexOption.DOT_MATCHES_ALL)
+                                .findAll(body)
+                                .joinToString("") { unescapeXml(it.groupValues[1]) }
+                            "str" -> unescapeXml(raw)
                             else -> raw
                         }
-                    }.toList()
+                        cells[column] = extractedText.account(value)
+                    }
+                    cells
                 }.toList()
                 TableSheet("Sheet ${i + 1}", rows.firstOrNull(), if (rows.size > 1) rows.drop(1) else rows)
             }
@@ -213,12 +245,21 @@ object TextExtractor {
      * its displayed text the same way Excel would, so this doesn't need its own per-type
      * switch the way the hand-rolled XLSX parser does for raw XML cell values. */
     private fun extractXls(file: File): ExtractResult = try {
+        rejectOversizedLegacyOffice(file)
         HSSFWorkbook(FileInputStream(file)).use { wb ->
+            if (wb.numberOfSheets > MAX_OFFICE_PARTS) throw InputLimitExceededException("XLS contains too many worksheets")
             val formatter = DataFormatter()
+            val extractedText = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "XLS text")
+            var cellCount = 0L
             val sheets = (0 until wb.numberOfSheets).map { i ->
                 val sheet = wb.getSheetAt(i)
                 val rows = sheet.map { row ->
-                    (0 until row.lastCellNum.coerceAtLeast(0)).map { c -> row.getCell(c)?.let { formatter.formatCellValue(it) } ?: "" }
+                    val width = row.lastCellNum.coerceAtLeast(0).toInt()
+                    cellCount += width
+                    if (cellCount > MAX_OFFICE_CELLS) throw InputLimitExceededException("XLS contains too many cells")
+                    (0 until width).map { c ->
+                        extractedText.account(row.getCell(c)?.let { formatter.formatCellValue(it) } ?: "")
+                    }
                 }
                 TableSheet(sheet.sheetName, rows.firstOrNull(), if (rows.size > 1) rows.drop(1) else rows)
             }
@@ -232,12 +273,19 @@ object TextExtractor {
      * [extractDoc]/[extractXls]. Produces the same [ExtractResult.Slides] shape as [extractPptx]
      * so [Chunker.chunkSlides] doesn't need to know which PowerPoint generation a deck came from. */
     private fun extractPpt(file: File): ExtractResult = try {
+        rejectOversizedLegacyOffice(file)
         HSLFSlideShow(FileInputStream(file)).use { ppt ->
+            if (ppt.slides.size > MAX_OFFICE_PARTS) throw InputLimitExceededException("PPT contains too many slides")
+            val extractedText = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "PPT text")
             val slides = ppt.slides.mapIndexed { i, slide ->
-                val body = slide.shapes.filterIsInstance<HSLFTextShape>()
-                    .joinToString("\n") { it.text.orEmpty() }.trim()
+                val body = extractedText.account(
+                    slide.shapes.filterIsInstance<HSLFTextShape>()
+                        .joinToString("\n") { it.text.orEmpty() }
+                ).trim()
                 val notes = slide.notes?.shapes?.filterIsInstance<HSLFTextShape>()
-                    ?.joinToString("\n") { it.text.orEmpty() }?.trim()
+                    ?.joinToString("\n") { it.text.orEmpty() }
+                    ?.let(extractedText::account)
+                    ?.trim()
                 SlideText(i + 1, body, notes?.takeIf { it.isNotBlank() })
             }
             if (slides.all { it.body.isBlank() && it.notes.isNullOrBlank() }) {
@@ -256,16 +304,20 @@ object TextExtractor {
      * StAX-avoidance reason as DOCX/XLSX. */
     private fun extractPptx(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
+            val aggregateXml = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "PPTX XML")
+            fun readPart(entry: java.util.zip.ZipEntry): String =
+                aggregateXml.account(zip.readEntryTextLimited(entry))
             val slideEntries = zip.checkedEntries().asSequence()
                 .filter { Regex("ppt/slides/slide\\d+\\.xml").matches(it.name) }
                 .sortedBy { slideNumber(it.name) }
                 .toList()
             if (slideEntries.isEmpty()) return@use ExtractResult.Unsupported("PPTX has no slide parts")
+            if (slideEntries.size > MAX_OFFICE_PARTS) throw InputLimitExceededException("PPTX contains too many slides")
             val slides = slideEntries.map { entry ->
                 val num = slideNumber(entry.name)
-                val body = extractDrawingMlText(zip.readEntryTextLimited(entry))
+                val body = extractDrawingMlText(readPart(entry))
                 val notes = zip.getEntry("ppt/notesSlides/notesSlide$num.xml")?.let { ne ->
-                    extractDrawingMlText(zip.readEntryTextLimited(ne))
+                    extractDrawingMlText(readPart(ne))
                 }
                 SlideText(num, body, notes?.takeIf { it.isNotBlank() })
             }
@@ -281,6 +333,17 @@ object TextExtractor {
 
     private fun slideNumber(entryName: String): Int = Regex("(\\d+)\\.xml$").find(entryName)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
+    private fun spreadsheetColumnIndex(reference: String): Int {
+        var oneBased = 0L
+        val letters = reference.takeWhile(Char::isLetter)
+        if (letters.isEmpty()) return -1
+        for (letter in letters) {
+            oneBased = oneBased * 26 + (letter.uppercaseChar() - 'A' + 1)
+            if (oneBased > MAX_OFFICE_COLUMNS) return -1
+        }
+        return (oneBased - 1).toInt()
+    }
+
     private fun extractDrawingMlText(xml: String): String =
         Jsoup.parse(xml, "", Parser.xmlParser()).select("a|t").joinToString(" ") { it.text() }.trim()
 
@@ -288,15 +351,22 @@ object TextExtractor {
         .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
         .replace("&apos;", "'").replace("&amp;", "&")
 
+    private fun rejectOversizedLegacyOffice(file: File) {
+        if (file.length() > MAX_LEGACY_OFFICE_BYTES) {
+            throw InputLimitExceededException("Legacy Office document exceeds the 64 MB safe parsing limit")
+        }
+    }
+
     private fun extractEpub(file: File): ExtractResult = try {
         ZipFile(file).use { zip ->
             val htmlEntries = zip.checkedEntries().asSequence()
                 .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in setOf("html", "htm", "xhtml") }
                 .sortedBy { it.name }
                 .toList()
+            val aggregateHtml = AggregateTextLimit(ImportLimits.MAX_EXTRACTED_CHARS, "EPUB HTML")
             val text = buildString {
                 htmlEntries.forEach { entry ->
-                    val part = Jsoup.parse(zip.readEntryTextLimited(entry)).text()
+                    val part = Jsoup.parse(aggregateHtml.account(zip.readEntryTextLimited(entry))).text()
                     if (length + part.length + 2 > ImportLimits.MAX_EXTRACTED_CHARS) {
                         throw InputLimitExceededException("Extracted EPUB text is too large")
                     }
@@ -363,17 +433,30 @@ object TextExtractor {
     /** RFC4180-ish quoted-field parsing (embedded commas/newlines, escaped `""`) — enough for
      * real-world CSV exports without pulling in a dedicated CSV library for it. */
     private fun extractCsv(file: File): ExtractResult {
-        val content = file.readTextLimited(ImportLimits.MAX_DOCUMENT_SOURCE_BYTES)
-        if (content.isBlank()) return ExtractResult.Unsupported("CSV is empty")
-        val rows = parseCsv(content)
-        if (rows.isEmpty()) return ExtractResult.Unsupported("CSV is empty")
-        return ExtractResult.Tabular(listOf(TableSheet(file.nameWithoutExtension, rows.firstOrNull(), if (rows.size > 1) rows.drop(1) else rows)))
+        return try {
+            val content = file.readTextLimited(ImportLimits.MAX_DOCUMENT_SOURCE_BYTES)
+            if (content.isBlank()) {
+                ExtractResult.Unsupported("CSV is empty")
+            } else {
+                val rows = parseCsv(content)
+                if (rows.isEmpty()) ExtractResult.Unsupported("CSV is empty")
+                else ExtractResult.Tabular(listOf(TableSheet(file.nameWithoutExtension, rows.firstOrNull(), if (rows.size > 1) rows.drop(1) else rows)))
+            }
+        } catch (e: Exception) {
+            ExtractResult.Unsupported("Could not read CSV: ${e.message}")
+        }
     }
 
     private fun parseCsv(content: String): List<List<String>> {
         val rows = mutableListOf<List<String>>()
         var fields = mutableListOf<String>()
         val field = StringBuilder()
+        var cellCount = 0L
+        fun finishField() {
+            if (++cellCount > MAX_OFFICE_CELLS) throw InputLimitExceededException("CSV contains too many cells")
+            fields.add(field.toString())
+            field.clear()
+        }
         var inQuotes = false
         var i = 0
         while (i < content.length) {
@@ -381,11 +464,10 @@ object TextExtractor {
             when {
                 inQuotes && c == '"' && i + 1 < content.length && content[i + 1] == '"' -> { field.append('"'); i++ }
                 c == '"' -> inQuotes = !inQuotes
-                !inQuotes && c == ',' -> { fields.add(field.toString()); field.clear() }
+                !inQuotes && c == ',' -> finishField()
                 !inQuotes && (c == '\n' || c == '\r') -> {
                     if (c == '\r' && i + 1 < content.length && content[i + 1] == '\n') i++
-                    fields.add(field.toString())
-                    field.clear()
+                    finishField()
                     if (fields.size > 1 || fields[0].isNotEmpty()) rows.add(fields)
                     fields = mutableListOf()
                 }
@@ -394,13 +476,22 @@ object TextExtractor {
             i++
         }
         if (field.isNotEmpty() || fields.isNotEmpty()) {
-            fields.add(field.toString())
+            finishField()
             rows.add(fields)
         }
         return rows
     }
 
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp")
+
+    private const val MAX_OFFICE_PARTS = 512
+    private const val MAX_OFFICE_CELLS = 1_000_000L
+    private const val MAX_OFFICE_COLUMNS = 16_384
+    private const val MAX_PDF_PAGES = 2_000
+    private const val MAX_LEGACY_OFFICE_BYTES = 64L * 1024 * 1024
+    private val XLSX_CELL = Regex("<c\\b([^>]*?)(?:/>|>(.*?)</c>)", RegexOption.DOT_MATCHES_ALL)
+    private val XLSX_CELL_TYPE = Regex("""\bt\s*=\s*["']([^"']+)["']""")
+    private val XLSX_CELL_REFERENCE = Regex("""\br\s*=\s*["']([^"']+)["']""")
 
     private val PLAIN_TEXT_EXTENSIONS = setOf(
         "txt", "md", "markdown", "json", "xml", "yaml", "yml", "log",

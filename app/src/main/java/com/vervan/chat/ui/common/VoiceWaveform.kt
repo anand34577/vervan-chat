@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -18,14 +20,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,8 +81,8 @@ fun VoiceWaveform(
             onClick = onTogglePlay,
             modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
                 .semantics { contentDescription = if (isPlaying) "Pause" else "Play" }
         ) {
             Icon(
@@ -128,13 +129,14 @@ private fun WaveformBars(
         ).value
     } else 0f
 
+    val waveformDescription = stringResource(R.string.ui_voicewaveform_136_audio_waveform)
     val playedColor = MaterialTheme.colorScheme.primary
     val unplayedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
     Canvas(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .semantics { contentDescription = "Audio waveform" }
+            .semantics { contentDescription = waveformDescription }
     ) {
         val totalWidth = size.width
         val barCount = amplitudes.size
@@ -179,5 +181,5 @@ private fun synthesizeAmplitudes(count: Int): List<Float> {
 fun formatDuration(seconds: Int): String {
     val m = seconds / 60
     val s = seconds % 60
-    return "%d:%02d".format(m, s)
+    return "%d:%02d".format(java.util.Locale.getDefault(), m, s)
 }

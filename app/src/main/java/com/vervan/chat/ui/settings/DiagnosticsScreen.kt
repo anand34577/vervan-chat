@@ -18,14 +18,14 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,11 +37,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.LoadingSkeletonList
@@ -107,8 +109,8 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.settings_diagnostics)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = {
                         val text = sections.joinToString("\n\n") { (title, rows) ->
@@ -126,10 +128,10 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
         ScrollablePage(padding) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Diagnostics unavailable",
+                    title = stringResource(R.string.ui_diagnosticsscreen_131_diagnostics_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your local data is safe. Retry loading the diagnostic snapshot.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.ui_diagnostics_snapshot_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retry,
                     modifier = Modifier.padding(bottom = Space.md)
                 )
@@ -174,9 +176,9 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
     Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Crash reports", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.ui_diagnosticsscreen_179_crash_reports), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (logs.isNotEmpty()) {
-                    TextButton(onClick = onClear) { Text("Clear") }
+                    TextButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
                 }
             }
             if (logs.isEmpty()) {
@@ -205,7 +207,7 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = Space.sm)
                         )
-                        TextButton(onClick = { onShare(file) }) { Text("Share") }
+                        TextButton(onClick = { onShare(file) }) { Text(stringResource(R.string.action_share)) }
                     }
                 }
             }
@@ -218,7 +220,7 @@ private fun DiagnosticCard(title: String, rows: List<Pair<String, String>>) {
     Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
         Column(Modifier.padding(Space.lg)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            rows.forEach { (label, value) -> Text("$label: $value", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm)) }
+            rows.forEach { (label, value) -> Text(stringResource(R.string.ui_diagnostics_label_value, label, value), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm)) }
         }
     }
 }

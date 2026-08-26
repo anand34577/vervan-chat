@@ -12,13 +12,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilledTonalButton
+import com.vervan.chat.ui.common.VervanFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -30,11 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OperationErrorCard
@@ -82,8 +84,8 @@ fun QuickActionScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAffordance(icon = Icons.Filled.AutoAwesome, size = IconAffordanceSize.Default)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text("QUICK ACTION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Edit with Vervan", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.quick_action_eyebrow), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.quick_action_title), style = MaterialTheme.typography.titleMedium)
                 }
             }
             Card(
@@ -123,51 +125,51 @@ fun QuickActionScreen(
                 OutlinedTextField(
                     value = targetLanguage,
                     onValueChange = { targetLanguage = it.take(80) },
-                    label = { Text("Translate to") },
-                    placeholder = { Text("e.g. Spanish") },
+                    label = { Text(stringResource(R.string.quick_action_translate_label)) },
+                    placeholder = { Text(stringResource(R.string.quick_action_translate_placeholder)) },
                     singleLine = true,
                     enabled = !running,
                     trailingIcon = {
                         TextButton(
                             onClick = { vm.run(WritingAction.TRANSLATE, originalText, targetLanguage) },
                             enabled = !running && targetLanguage.isNotBlank()
-                        ) { Text("Go") }
+                        ) { Text(stringResource(R.string.action_go)) }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md)
                 )
             }
             if (running) {
                 OperationProgressCard(
-                    title = "Preparing your text",
-                    body = "Applying the selected action locally.",
+                    title = stringResource(R.string.ui_quickactionscreen_143_preparing_your_text),
+                    body = stringResource(R.string.ui_quickactionscreen_144_applying_the_selected_action_locally),
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
                 OperationErrorCard(
-                    title = "Couldn't generate a result",
+                    title = stringResource(R.string.ui_quickactionscreen_150_couldn_t_generate_a_result),
                     message = it,
-                    recovery = "Your text is safe. Check the model, then try again.",
+                    recovery = stringResource(R.string.ui_quickaction_text_recovery),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (revision.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(vertical = Space.md), color = vervanSubtleDividerColor())
-                Text("RESULT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.quick_action_result), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(revision, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
                 Row(
                     Modifier.fillMaxWidth().padding(top = Space.md),
                     horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { clipboard.setSensitiveText(revision, scope) }) { Text("Copy") }
+                    TextButton(onClick = { clipboard.setSensitiveText(revision, scope) }) { Text(stringResource(R.string.action_copy)) }
                     if (canInsertBack) {
-                        FilledTonalButton(onClick = { onInsertBack(revision) }) { Text("Replace") }
+                        FilledTonalButton(onClick = { onInsertBack(revision) }) { Text(stringResource(R.string.action_replace)) }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Close") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
             }
         }
     }

@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
@@ -99,6 +100,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         return try {
             Capabilities(modelPath).use { it.hasSpeculativeDecodingSupport() }
         } catch (e: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(e)
             Log.w(TAG, "detectSpeculativeDecodingSupport() failed for ${File(modelPath).name}: ${e.message}")
             false
         }
@@ -226,6 +228,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                         )
                         return LoadResult(activeBackend, fellBackToCpu = gpuFailed && activeBackend == ModelBackend.CPU)
                     } catch (e: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(e)
                         close()
                         lastError = e
                         if (backend is Backend.GPU) gpuFailed = true
@@ -347,18 +350,27 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         )
         var receivedAnyChunk = false
         val startedAt = System.currentTimeMillis()
+        val responseChannels = ThinkingChannelOutput()
         sendInFlight.set(true)
         activeConversation.sendMessageAsync(
             Contents.of(contents),
             object : MessageCallback {
                 override fun onMessage(message: Message) {
-                    textFrom(message).takeIf { it.isNotEmpty() }?.let {
+                    responseChannels.append(message.channels, textFrom(message))
+                        .takeIf { it.isNotEmpty() }?.let {
                         receivedAnyChunk = true
-                        trySend(it)
+                        // The native callback can produce bursts faster than the database/UI
+                        // collector. Blocking here applies backpressure instead of silently
+                        // dropping chunks when the callbackFlow buffer is full.
+                        trySendBlocking(it)
                     }
                 }
 
                 override fun onDone() {
+                    responseChannels.finish().takeIf { it.isNotEmpty() }?.let {
+                        receivedAnyChunk = true
+                        trySendBlocking(it)
+                    }
                     Log.i(TAG, "generate() #$callId done in ${System.currentTimeMillis() - startedAt}ms, receivedAnyChunk=$receivedAnyChunk")
                     sendInFlight.set(false)
                     this@flow.close()
@@ -383,9 +395,8 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                 runCatching { activeConversation.cancelProcess() }
             }
         }
-        // Unbounded buffer: the native callback delivers tokens faster than the collector's
-        // Room-persist cycle can drain during bursts, and callbackFlow's default 64-slot buffer
-        // makes trySend silently DROP overflowing tokens — visibly missing words mid-response.
+        // Keep a bounded buffer, but pair it with trySendBlocking above so a slow collector
+        // applies backpressure rather than losing generated text.
     }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
 
     override fun loadModel(

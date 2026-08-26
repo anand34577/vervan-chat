@@ -1,6 +1,6 @@
 package com.vervan.chat.store.storage
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 
 /**
  * Periodic upkeep for the blob store. Intended to be driven by WorkManager — this is

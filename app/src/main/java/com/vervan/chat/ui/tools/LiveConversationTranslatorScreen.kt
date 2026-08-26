@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -30,9 +32,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -124,6 +126,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                 turns = turns + TranslatedTurn(fromA, text, translated)
                 speak(translated, targetLang)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 snackbarHostState.showSnackbar(t.toUserMessage())
             } finally {
                 isBusy = false
@@ -161,8 +164,8 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Live conversation translator") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_liveconversationtranslatorscreen_164_live_conversation_translator)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -173,8 +176,8 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize()) {
             ToolIntro(
                 icon = Icons.Filled.Translate,
-                title = "Two people, one private translator",
-                body = "Choose two languages and take turns speaking. Translation stays local.",
+                title = stringResource(R.string.ui_liveconversationtranslatorscreen_176_two_people_one_private_translator),
+                body = stringResource(R.string.ui_liveconversationtranslatorscreen_177_choose_two_languages_and_take_turns_speaking),
                 modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
             )
             Row(Modifier.fillMaxWidth().padding(Space.md).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -185,7 +188,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
             if (isBusy) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Text("Translating…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.ui_liveconversationtranslatorscreen_188_translating), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.sm))
                 }
             }
             LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +57,7 @@ fun ThinkingIndicator(
     modifier: Modifier = Modifier
 ) {
     val reducedMotion = rememberReducedMotion()
+    val thinkingDescription = stringResource(R.string.ui_thinkingindicator_65_vervan_is_thinking)
     AnimatedVisibility(visible = visible, enter = androidx.compose.animation.fadeIn(VervanMotion.emphasizedDecelerate(220)), exit = androidx.compose.animation.fadeOut(VervanMotion.emphasizedAccelerate(160))) {
         Row(
             modifier = modifier
@@ -63,7 +65,7 @@ fun ThinkingIndicator(
                 .padding(vertical = Space.xs)
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
-                    contentDescription = "Vervan is thinking"
+                    contentDescription = thinkingDescription
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm)
@@ -107,7 +109,7 @@ fun ThinkingDots(
     Row(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small)
             .padding(horizontal = Space.md, vertical = Space.sm),
         horizontalArrangement = Arrangement.spacedBy(Space.xs),
         verticalAlignment = Alignment.CenterVertically

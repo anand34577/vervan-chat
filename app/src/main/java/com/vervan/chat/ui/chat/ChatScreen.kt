@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -61,16 +62,18 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +88,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -102,11 +106,14 @@ import com.vervan.chat.data.db.entities.MessageState
 import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.DatePill
+import com.vervan.chat.ui.common.ActivityStatusPill
 import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.collectAsState
 import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.theme.ModernistTokens
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -144,6 +151,16 @@ internal fun sameDay(a: Long, b: Long): Boolean {
     )
 }
 
+/** Folds any scanned-attachment text (OCR, QR/barcode) ahead of [bodyBase] — shared by both send
+ * paths (voice-respond and [ChatScreen]'s own sendPendingMessage) so the two prefixes stay in
+ * sync instead of drifting as separate copies. Either or both may be present. */
+private fun withScannedAttachmentsPrefix(bodyBase: String, ocrText: String?, qrText: String?): String {
+    var body = bodyBase
+    if (qrText != null) body = "Decoded from a QR/barcode photo:\n\"\"\"\n$qrText\n\"\"\"\n\n$body"
+    if (ocrText != null) body = "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$body"
+    return body
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -165,6 +182,8 @@ fun ChatScreen(
     onOpenModels: () -> Unit = {},
     onOpenVoiceSettings: () -> Unit = {},
     onOpenWorkspace: (String) -> Unit = {},
+    activityLabel: String? = null,
+    onOpenActivity: () -> Unit = {},
     onForkChat: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -358,7 +377,7 @@ fun ChatScreen(
 
     var showModeSettings by remember { mutableStateOf(false) }
     var handsFreeActive by rememberSaveable(chatId) { mutableStateOf(false) }
-    var voiceSessionKey by rememberSaveable(chatId) { mutableStateOf(0) }
+    var voiceSessionKey by rememberSaveable(chatId) { mutableIntStateOf(0) }
     var showVoiceOptions by remember { mutableStateOf(false) }
     var showComposerVoiceMenu by remember { mutableStateOf(false) }
     var immersiveVoiceActive by rememberSaveable(chatId) { mutableStateOf(false) }
@@ -389,8 +408,8 @@ fun ChatScreen(
     var draftSttLabel by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
     var dictationError by remember { mutableStateOf<String?>(null) }
     var dictationLevels by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var dictationStartedAt by remember { mutableStateOf(0L) }
-    var dictationElapsedMs by remember { mutableStateOf(0L) }
+    var dictationStartedAt by remember { mutableLongStateOf(0L) }
+    var dictationElapsedMs by remember { mutableLongStateOf(0L) }
     var dictationRecorder by remember { mutableStateOf<WavRecorder?>(null) }
     var dictationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var dictationBaseText by remember { mutableStateOf("") }
@@ -416,6 +435,7 @@ fun ChatScreen(
     var showResetConfirm by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var isRunningOcr by remember { mutableStateOf(false) }
+    var isRunningQr by remember { mutableStateOf(false) }
     var sendDocumentWhenReady by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val latestDraft = rememberUpdatedState(draft)
@@ -449,6 +469,7 @@ fun ChatScreen(
                         vm.pendingDocument.value as? ChatViewModel.DocumentAttachState.Ready
                     vm.clearPendingDocument()
                     val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+                    val qrText = attached.qrText?.takeIf { it.isNotBlank() }
                     val mergedSpeech =
                         listOf(typedPrefix, input.text.trim()).filter { it.isNotBlank() }
                             .joinToString(" ")
@@ -462,9 +483,7 @@ fun ChatScreen(
                             else -> ""
                         }
                     }
-                    val body = if (ocrText != null) {
-                        "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-                    } else bodyBase
+                    val body = withScannedAttachmentsPrefix(bodyBase, ocrText, qrText)
                     vm.sendVoiceAndAwait(
                         text = quotePrefix + body,
                         imagePath = attached.imagePath,
@@ -557,6 +576,7 @@ fun ChatScreen(
     // any loaded model, vision-capable or not.
     val pendingOcrImagePath = pendingAttachments.ocrImagePath
     val pendingOcrText = pendingAttachments.ocrText
+    val ocrNoTextToast = stringResource(R.string.chat_ocr_no_text_toast)
     var showOcrPreview by remember { mutableStateOf(false) }
     fun applyOcrResult(result: Result<ChatViewModel.OcrResult>) {
         isRunningOcr = false
@@ -565,7 +585,7 @@ fun ChatScreen(
             showOcrPreview = true
             if (r.text.isBlank()) {
                 android.widget.Toast.makeText(
-                    context, "No text found in that image", android.widget.Toast.LENGTH_LONG
+                    context, ocrNoTextToast, android.widget.Toast.LENGTH_LONG
                 ).show()
             }
         }.onFailure {
@@ -577,6 +597,33 @@ fun ChatScreen(
         scope = scope,
         onRunningChange = { isRunningOcr = it },
         onOcrResult = ::applyOcrResult,
+        onError = { attachmentError = it })
+
+    // QR/barcode attach — same shape as OCR attach above, decoding via ML Kit's barcode
+    // scanner instead of its text recognizer.
+    val pendingQrImagePath = pendingAttachments.qrImagePath
+    val pendingQrText = pendingAttachments.qrText
+    val qrNoCodeToast = stringResource(R.string.chat_qr_no_code_toast)
+    var showQrPreview by remember { mutableStateOf(false) }
+    fun applyQrResult(result: Result<ChatViewModel.QrResult>) {
+        isRunningQr = false
+        result.onSuccess { r ->
+            vm.setPendingQr(r.imagePath, r.text)
+            showQrPreview = true
+            if (r.text.isBlank()) {
+                android.widget.Toast.makeText(
+                    context, qrNoCodeToast, android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }.onFailure {
+            attachmentError = it.toUserMessage()
+        }
+    }
+    val (pickQrImage, requestQrCameraPermission) = rememberQrAttachLaunchers(
+        vm = vm,
+        scope = scope,
+        onRunningChange = { isRunningQr = it },
+        onQrResult = ::applyQrResult,
         onError = { attachmentError = it })
 
     fun startVoiceMessageRecording() {
@@ -934,7 +981,7 @@ fun ChatScreen(
     fun sendPendingMessage(): Boolean {
         val documentReady = pendingDocument is ChatViewModel.DocumentAttachState.Ready
         val canSend =
-            (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || draftVoiceRecordingPath != null || documentReady) && modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
+            (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || draftVoiceRecordingPath != null || documentReady) && modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && draft.length <= 12_000
         if (!canSend) return false
 
         val quotePrefix = pendingQuote?.let { quoted ->
@@ -943,6 +990,7 @@ fun ChatScreen(
         val attached = vm.consumeAttachments()
         val audioForSend = attached.audioPath ?: draftVoiceRecordingPath
         val ocrText = attached.ocrText?.takeIf { it.isNotBlank() }
+        val qrText = attached.qrText?.takeIf { it.isNotBlank() }
         val bodyBase = draft.ifBlank {
             when {
                 documentReady -> "Describe this document."
@@ -953,9 +1001,7 @@ fun ChatScreen(
                 else -> draft
             }
         }
-        val body = if (ocrText != null) {
-            "Text extracted from a photo via OCR:\n\"\"\"\n$ocrText\n\"\"\"\n\n$bodyBase"
-        } else bodyBase
+        val body = withScannedAttachmentsPrefix(bodyBase, ocrText, qrText)
         val documentId = (pendingDocument as? ChatViewModel.DocumentAttachState.Ready)?.documentId
         val sendModality = when {
             attached.imagePath != null && audioForSend != null -> "IMAGE_AUDIO"
@@ -1019,11 +1065,16 @@ fun ChatScreen(
                 Column(
                     Modifier
                         .heightIn(min = 48.dp)
-                        .clickable(onClick = onOpenChatInfo)
+                        .clickable(role = Role.Button, onClick = onOpenChatInfo)
                         .semantics {
                             contentDescription = chatDetailsContentDescription
                         }, verticalArrangement = Arrangement.Center
                 ) {
+                    Text(
+                        "CONVERSATION",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     OverflowTooltipText(
                         text = chat?.title ?: "New conversation",
                         style = MaterialTheme.typography.titleMedium,
@@ -1306,6 +1357,9 @@ fun ChatScreen(
                 val defaultContextLimit by app.container.settingsRepository.contextTokenLimit.collectAsState(
                     initial = 4096
                 )
+                val includePastThinking by app.container.settingsRepository.includePastThinkingInContext.collectAsState(
+                    initial = false
+                )
                 // Prefer the resolved model's actual context window over the app-wide default —
                 // the old version measured the whole branch against the global setting, so a chat
                 // that would fit fine after history trimming could still read a scary "400%".
@@ -1316,7 +1370,17 @@ fun ChatScreen(
                 // showed up here when the model also happened to be the global "Default" one.
                 val contextLimit = selectedGenerationModel?.contextTokens ?: defaultContextLimit
                 val estimatedTokens =
-                    messages.sumOf { com.vervan.chat.llm.estimateTokens(it.content) }
+                    messages
+                        .filterNot {
+                            it.state == MessageState.STREAMING ||
+                                (it.role == MessageRole.ASSISTANT &&
+                                    (it.state == MessageState.CANCELLED || it.state == MessageState.FAILED))
+                        }
+                        .sumOf {
+                            com.vervan.chat.llm.estimateTokens(
+                                ChatFormatting.contextMessageContent(it, includePastThinking)
+                            )
+                        }
                 val contextPercent =
                     if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(
                         0, 100
@@ -1361,14 +1425,14 @@ fun ChatScreen(
                 onOpenModels = onOpenModels
             )
             // Model Loading Strategy — a distinct, non-alarming indicator during
-            // active generation when the device is thermally throttling. ThermalMonitor already
-            // tracked this correctly; it just had no UI consumer anywhere until now, so a
-            // throttled response looked like an unexplained slowdown instead of an informational
-            // state clearly separate from ModelReadinessPanel's loading/error states above.
+            // active generation when the device is thermally throttling. Only SEVERE is shown:
+            // ELEVATED (THERMAL_STATUS_MODERATE) is common during normal sustained generation and
+            // doesn't mean the device is hot to the touch — see HomeAlert, which applies the same
+            // SEVERE-only threshold.
             if (isGenerating) {
                 val thermalLevel by app.container.thermalMonitor.level.collectAsState()
-                if (thermalLevel != com.vervan.chat.system.ThermalLevel.NORMAL) {
-                    ThermalNotice(severe = thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE)
+                if (thermalLevel == com.vervan.chat.system.ThermalLevel.SEVERE) {
+                    ThermalNotice()
                 }
                 val liveStats by vm.liveGenStats.collectAsState()
                 liveStats?.let { LiveGenStatsChip(it) }
@@ -1409,7 +1473,9 @@ fun ChatScreen(
                                 personaName = persona?.name,
                                 modelName = activeModelName?.substringBefore(" · "),
                                 modelRunsOnDevice = modelRunsOnDevice,
-                                modifier = Modifier.fillParentMaxHeight(0.92f),
+                                // A bounded empty-state rhythm keeps the composer visible and
+                                // avoids the unavailable LazyItemScope fillParentMaxHeight API.
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
                                 onSuggestion = { suggestion ->
                                     draft = suggestion
                                     if (draftLoaded) vm.saveDraft(suggestion)
@@ -1578,7 +1644,7 @@ fun ChatScreen(
                         .align(Alignment.BottomEnd)
                         .padding(Space.md)
                 ) {
-                    androidx.compose.material3.SmallFloatingActionButton(
+                    com.vervan.chat.ui.common.VervanSmallFloatingActionButton(
                         onClick = {
                             scope.launch {
                                 listState.animateScrollToItem(messages.size)
@@ -1611,7 +1677,7 @@ fun ChatScreen(
                 com.vervan.chat.ui.common.OperationErrorCard(
             title = stringResource(R.string.chat_attachment_error),
                     message = it,
-                    recovery = "Your message is safe. Check the file or permission, then try again.",
+                    recovery = stringResource(R.string.ui_chat_message_recovery),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Space.md, vertical = Space.xs),
@@ -1637,6 +1703,7 @@ fun ChatScreen(
                     matchingCommands.forEach { template ->
                         AssistChip(
                             onClick = { draft = "/${template.name} "; vm.saveDraft(draft) },
+                            shape = MaterialTheme.shapes.small,
                             label = { Text("/${template.name}") })
                     }
                 }
@@ -1644,15 +1711,15 @@ fun ChatScreen(
             // Quote reply and a pending attachment are both "context attached to the next
             // message" — grouped into one composing tray instead of two separately-floating
             // rows so they read as one unit sitting above the composer, not a growing stack.
-            if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
+            if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .widthIn(max = 840.dp)
                         .align(Alignment.CenterHorizontally)
                         .padding(horizontal = Space.lg, vertical = Space.xs)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium)
                 ) {
                     pendingDocument?.let { docState ->
                         Row(
@@ -1660,6 +1727,7 @@ fun ChatScreen(
                                 .fillMaxWidth()
                                 .clickable(
                                     enabled = docState is ChatViewModel.DocumentAttachState.Ready,
+                                    role = Role.Button,
                                     onClick = {
                                         (docState as? ChatViewModel.DocumentAttachState.Ready)?.let {
                                             onOpenDocument(
@@ -1779,7 +1847,7 @@ fun ChatScreen(
                                 }
                             }
                         }
-                        if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null) HorizontalDivider()
+                        if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null) HorizontalDivider()
                     }
                     pendingQuote?.let { quoted ->
                         Row(
@@ -1820,7 +1888,7 @@ fun ChatScreen(
                             }
                         }
                     }
-                    if (pendingQuote != null && (pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null)) {
+                    if (pendingQuote != null && (pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null)) {
                         HorizontalDivider()
                     }
                     pendingOcrImagePath?.let { path ->
@@ -1838,7 +1906,7 @@ fun ChatScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 140.dp, max = 220.dp)
-                                        .clip(MaterialTheme.shapes.large),
+                                        .clip(MaterialTheme.shapes.medium),
                                     contentScale = ContentScale.Crop
                                 )
                             }
@@ -1851,7 +1919,10 @@ fun ChatScreen(
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
                             ) {
                                 Text(
-                                    if (pendingOcrText.isNullOrBlank()) "OCR · no text found · tap to view" else "OCR · tap to view extracted text",
+                                    stringResource(
+                                        if (pendingOcrText.isNullOrBlank()) R.string.chat_ocr_no_text
+                                        else R.string.chat_ocr_view_text
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(
                                         horizontal = Space.sm, vertical = Space.xs
@@ -1865,12 +1936,68 @@ fun ChatScreen(
                                     .padding(Space.xs)
                                     .background(
                                         MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
-                                        androidx.compose.foundation.shape.CircleShape
+                                        MaterialTheme.shapes.small
                                     )
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
                         contentDescription = stringResource(R.string.chat_remove_ocr),
+                                    tint = MaterialTheme.colorScheme.inverseOnSurface
+                                )
+                            }
+                        }
+                    }
+                    pendingQrImagePath?.let { path ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(Space.sm)
+                                .clickable { showQrPreview = true }) {
+                            val thumbnailPx = with(LocalDensity.current) { 720.dp.roundToPx() }
+                            val bitmap = rememberThumbnail(path, thumbnailPx)
+                            bitmap?.let {
+                                Image(
+                                    it,
+                        contentDescription = stringResource(R.string.chat_qr_preview),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 140.dp, max = 220.dp)
+                                        .clip(MaterialTheme.shapes.medium),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(Space.sm),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.88f),
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (pendingQrText.isNullOrBlank()) R.string.chat_qr_no_code
+                                        else R.string.chat_qr_view_text
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(
+                                        horizontal = Space.sm, vertical = Space.xs
+                                    )
+                                )
+                            }
+                            IconButton(
+                                onClick = { vm.setPendingQr(null, null) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(Space.xs)
+                                    .background(
+                                        MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
+                                        MaterialTheme.shapes.small
+                                    )
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.chat_remove_qr),
                                     tint = MaterialTheme.colorScheme.inverseOnSurface
                                 )
                             }
@@ -1920,7 +2047,7 @@ fun ChatScreen(
                                     .padding(Space.xs)
                                     .background(
                                         MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f),
-                                        androidx.compose.foundation.shape.CircleShape
+                                        MaterialTheme.shapes.small
                                     )
                             ) {
                                 Icon(
@@ -1956,6 +2083,16 @@ fun ChatScreen(
             }
             val composerEnabled =
                 modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived
+            activityLabel?.let { label ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Space.lg, vertical = Space.xs),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    ActivityStatusPill(label = label, onClick = onOpenActivity)
+                }
+            }
             if (handsFreeActive) {
                 IntegratedVoicePanel(
                     state = voiceState,
@@ -1963,6 +2100,7 @@ fun ChatScreen(
                     elapsedMs = voiceElapsedMs,
                     liveTranscript = voiceLiveTranscript,
                     modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                    modelRunsOnDevice = modelRunsOnDevice,
                     sttLabel = voiceSttLabel,
                     ttsLabel = voiceTtsLabel,
                     microphoneMuted = voiceMicrophoneMuted,
@@ -1978,7 +2116,7 @@ fun ChatScreen(
 
                         pendingImagePath != null -> "Photo ready"
                         pendingAudioPath != null -> "Audio file ready"
-                        pendingOcrImagePath != null -> "Scanned text ready"
+                        pendingOcrImagePath != null || pendingQrImagePath != null -> "Scanned text ready"
                         else -> null
                     },
                     errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
@@ -2019,7 +2157,7 @@ fun ChatScreen(
                     onPushToTalkRelease = voiceController::pushToTalkRelease
                 )
             } else {
-                Card(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = 840.dp)
@@ -2033,16 +2171,19 @@ fun ChatScreen(
                             bottom = if (imeVisible) Space.xs else Space.lg
                         )
                         .alpha(if (composerEnabled || isGenerating) 1f else 0.62f)
-                        .animateContentSize(),
-                    // VervanExtraShapes.composer = 28dp, a deliberate "this is the composer" size
-                    // distinct from cards (16dp) and the previous extraLarge (now 32dp, dialogs).
-                    shape = com.vervan.chat.ui.theme.VervanExtraShapes.composer,
-                    colors = SurfaceRole.Floating.cardColors(),
+                        .animateContentSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, VervanExtraShapes.composer)
+                        .border(
+                            androidx.compose.foundation.BorderStroke(
+                                ModernistTokens.Component.rule,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                            ),
+                            VervanExtraShapes.composer
+                        ),
+                    // The dedicated composer shape keeps this input distinct from content cards.
                     // One border system instead of (border + lifted container + 22dp shape) — the
                     // previous composer had three competing emphases. Now: the floating surface role
                     // owns its tint, lift, and emphasized edge.
-                    border = SurfaceRole.Floating.border(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = SurfaceRole.Floating.shadowElevation)
                 ) {
                     Column(
                         Modifier
@@ -2222,7 +2363,8 @@ fun ChatScreen(
                                 // long draft gets the width back.
                                 if (draft.length >= 9_600) {
                                     Text(
-                                        if (draft.length > 12_000) "Message is over the 12,000 character limit" else "${draft.length} / 12,000 characters",
+                                        if (draft.length > 12_000) stringResource(R.string.chat_character_limit_exceeded)
+                                        else stringResource(R.string.chat_character_limit, draft.length),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (draft.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier
@@ -2239,7 +2381,7 @@ fun ChatScreen(
                                             Modifier.size(12.dp), strokeWidth = 2.dp
                                         )
                                         Text(
-                                            "Converting audio…",
+                                            stringResource(R.string.chat_converting_audio),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(start = Space.sm)
@@ -2290,7 +2432,8 @@ fun ChatScreen(
                                             ) {
                                                 if (draft.isEmpty()) {
                                                     Text(
-                                                        if (composerEnabled) "Message Vervan…" else "Waiting for a local model",
+                                                        if (composerEnabled) stringResource(R.string.chat_message_placeholder)
+                                                        else stringResource(R.string.chat_waiting_for_model),
                                                         style = MaterialTheme.typography.bodyLarge,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         maxLines = 1,
@@ -2347,11 +2490,16 @@ fun ChatScreen(
                                                     })
                                                 DropdownMenuItem(text = {
                                                     Text(
-                                                        "Voice replies: " + when (voiceReplyMode) {
-                                                            "AUTOMATIC" -> "Automatic"
-                                                            "NEVER" -> "Off"
-                                                            else -> "Manual"
-                                                        }
+                                                        stringResource(
+                                                            R.string.chat_voice_replies_label,
+                                                            stringResource(
+                                                                when (voiceReplyMode) {
+                                                                    "AUTOMATIC" -> R.string.chat_voice_replies_automatic
+                                                                    "NEVER" -> R.string.chat_voice_replies_off
+                                                                    else -> R.string.chat_voice_replies_manual
+                                                                }
+                                                            )
+                                                        )
                                                     )
                                                 }, leadingIcon = {
                                                     Icon(
@@ -2392,13 +2540,13 @@ fun ChatScreen(
                                     val documentReady =
                                         pendingDocument is ChatViewModel.DocumentAttachState.Ready
                                     val canSend =
-                                        (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) && composerEnabled && draft.length <= 12_000
+                                        (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingQrImagePath != null || pendingAudioPath != null || documentReady) && composerEnabled && draft.length <= 12_000
                                     val sendActive = canSend || isGenerating
                                     Box(
                                         Modifier
                                             .padding(start = Space.xs)
                                             .size(48.dp)
-                                            .clip(androidx.compose.foundation.shape.CircleShape)
+                                            .clip(MaterialTheme.shapes.small)
                                             .background(
                                                 if (sendActive) com.vervan.chat.ui.theme.vervanBrandGradient()
                                                 else androidx.compose.ui.graphics.SolidColor(
@@ -2450,6 +2598,7 @@ fun ChatScreen(
             modelRunsOnDevice = modelRunsOnDevice,
             isImportingAudio = isImportingAudio,
             isRunningOcr = isRunningOcr,
+            isRunningQr = isRunningQr,
             onDismiss = { showAttachmentSheet = false },
             onPhoto = {
                 showAttachmentSheet = false
@@ -2466,6 +2615,14 @@ fun ChatScreen(
             onOcrCamera = {
                 showAttachmentSheet = false
                 requestOcrCameraPermission.launch(android.Manifest.permission.CAMERA)
+            },
+            onQrPhoto = {
+                showAttachmentSheet = false
+                pickQrImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onQrCamera = {
+                showAttachmentSheet = false
+                requestQrCameraPermission.launch(android.Manifest.permission.CAMERA)
             },
             onRecordAudio = {
                 showAttachmentSheet = false
@@ -2510,6 +2667,7 @@ fun ChatScreen(
                 elapsedMs = voiceElapsedMs,
                 liveTranscript = voiceLiveTranscript,
                 modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                modelRunsOnDevice = modelRunsOnDevice,
                 sttLabel = voiceSttLabel,
                 ttsLabel = voiceTtsLabel,
                 microphoneMuted = voiceMicrophoneMuted,
@@ -2523,7 +2681,7 @@ fun ChatScreen(
 
                     pendingImagePath != null -> "Photo ready"
                     pendingAudioPath != null -> "Audio file ready"
-                    pendingOcrImagePath != null -> "Scanned text ready"
+                    pendingOcrImagePath != null || pendingQrImagePath != null -> "Scanned text ready"
                     else -> null
                 },
                 errorMessage = voiceModelLoadError ?: if (voiceSttUnavailable) {
@@ -2653,6 +2811,30 @@ fun ChatScreen(
             })
     }
 
+    pendingQrImagePath?.takeIf { showQrPreview }?.let { path ->
+        OcrPreviewDialog(
+            imagePath = path,
+            text = pendingQrText.orEmpty(),
+            onTextChange = { vm.updateQrText(it) },
+            caption = draft,
+            onCaptionChange = {
+                draft = it
+                if (draftLoaded) vm.saveDraft(it)
+            },
+            confirmEnabled = modelLoadState is ChatViewModel.ModelLoadState.Ready && !isWorkspaceArchived && !isGenerating && draft.length <= 12_000,
+            onRemove = {
+                vm.setPendingQr(null, null)
+                showQrPreview = false
+            },
+            onDismiss = { showQrPreview = false },
+            onSend = {
+                if (sendPendingMessage()) showQrPreview = false
+            },
+            title = stringResource(R.string.media_qr_preview),
+            subtitle = stringResource(R.string.media_qr_on_device),
+            removeDescription = stringResource(R.string.media_remove_qr))
+    }
+
     if (showRenameDialog) {
         RenameChatDialog(
             initialTitle = chat?.title.orEmpty(),
@@ -2700,7 +2882,7 @@ fun ChatScreen(
     if (showDeleteConfirm) {
         com.vervan.chat.ui.common.ConfirmDialog(
             title = stringResource(R.string.action_recycle),
-            body = "This chat will be moved to the recycle bin. You can restore it later.",
+            body = stringResource(R.string.ui_chatscreen_2853_this_chat_will_be_moved_to_the_recycle_bin_y),
             confirmLabel = stringResource(R.string.chat_recycle_confirm),
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.moveToTrash(onDone = onBack) },

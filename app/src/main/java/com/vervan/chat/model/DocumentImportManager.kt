@@ -8,6 +8,7 @@ import com.vervan.chat.data.db.dao.ChunkDao
 import com.vervan.chat.data.db.dao.DocumentDao
 import com.vervan.chat.data.db.dao.JobDao
 import com.vervan.chat.data.db.dao.ModelDao
+import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.entities.Chunk
 import com.vervan.chat.data.db.entities.Document
 import com.vervan.chat.data.db.entities.DocumentStatus
@@ -25,9 +26,11 @@ import com.vervan.chat.retrieval.embedBatchWith
 import com.vervan.chat.retrieval.embeddingReady
 import com.vervan.chat.system.NetworkAuditLog
 import com.vervan.chat.system.NotificationHelper
+import com.vervan.chat.system.StorageSpace
 import com.vervan.chat.system.toUserMessage
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -57,7 +60,8 @@ class DocumentImportManager(
     private val embeddingMutex: Mutex,
     private val remoteOpenAiEngine: RemoteOpenAiEngine,
     private val remoteApiKeyStore: RemoteApiKeyStore,
-    private val networkAuditLog: NetworkAuditLog
+    private val networkAuditLog: NetworkAuditLog,
+    private val database: AppDatabase
 ) {
     private val docsDir: File
         get() = File(context.filesDir, "documents").apply { mkdirs() }
@@ -95,7 +99,7 @@ class DocumentImportManager(
                 ).also { documentDao.upsert(it) }
             )
         }
-        val freeBytes = docsDir.usableSpace
+        val freeBytes = StorageSpace.allocatableBytes(context, docsDir)
         if (sourceSize != null && freeBytes < sourceSize + STORAGE_SAFETY_MARGIN_BYTES) {
             return@withContext DocumentImportOutcome.Imported(
                 Document(
@@ -147,8 +151,10 @@ class DocumentImportManager(
             )
         }
 
-        val hash = digest.digest().joinToString("") { "%02x".format(it) }
-        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        val hash = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
+        val mimeType = context.contentResolver.getType(uri)
+            ?.takeIf { it.length <= 255 && SAFE_MIME_TYPE.matches(it) }
+            ?: "application/octet-stream"
 
         if (reuseExistingByHash) {
             documentDao.findActiveByHash(hash)?.let { globalExisting ->
@@ -197,6 +203,7 @@ class DocumentImportManager(
         try {
             dest.writeText(content)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             dest.delete()
             return@withContext Document(
                 knowledgeBaseId = kbId,
@@ -207,7 +214,7 @@ class DocumentImportManager(
                 failureReason = "Couldn't save text: ${t.toUserMessage()}"
             ).also { documentDao.upsert(it) }
         }
-        val hash = MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) }
+        val hash = MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         processLocalFile(kbId, displayName, dest, "text/plain", hash)
     }
 
@@ -216,20 +223,62 @@ class DocumentImportManager(
      * second document with the same display name. */
     suspend fun resolveVersionConflict(existing: Document, tempFilePath: String, mimeType: String, hash: String, replace: Boolean): Document =
         withContext(Dispatchers.IO) {
-            if (replace) {
-                File(existing.filePath).delete()
-                chunkDao.deleteForDocument(existing.id)
-                documentDao.delete(existing)
-            }
             val job = jobDao?.let { dao ->
                 val record = JobRecord(type = JobType.DOCUMENT_INDEXING, label = existing.displayName, state = JobState.RUNNING)
                 dao.upsert(record)
                 record
             }
-            val document = processLocalFile(existing.knowledgeBaseId, existing.displayName, File(tempFilePath), mimeType, hash, job?.id)
+            // Build the replacement under a new id first. The previous implementation deleted
+            // the old file, row, and chunks before extraction/embedding started, so a failed OCR,
+            // embedding request, or process death could destroy the user's last working version.
+            // A successful run is swapped into the stable id only after the entire shadow index
+            // is ready; a failed run is discarded and the old version remains searchable.
+            val document = try {
+                processLocalFile(existing.knowledgeBaseId, existing.displayName, File(tempFilePath), mimeType, hash, job?.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                if (replace) {
+                    documentDao.findByFilePath(tempFilePath)?.let { discardDocument(it) }
+                    File(tempFilePath).delete()
+                }
+                throw cancelled
+            }
+            if (replace) {
+                if (document.status != DocumentStatus.READY) {
+                    discardDocument(document)
+                    throw IllegalStateException(
+                        "Replacement failed; the previous version was kept. ${document.failureReason ?: document.status.name}"
+                    )
+                }
+                val oldFile = File(existing.filePath)
+                val stable = document.copy(
+                    id = existing.id,
+                    displayName = existing.displayName,
+                    importedAt = System.currentTimeMillis()
+                )
+                try {
+                    database.replaceDocumentIndex(document, stable)
+                } catch (t: Throwable) {
+                    com.vervan.chat.system.rethrowCancellation(t)
+                    // The Room transaction rolls back, so the old index remains intact. Clean
+                    // the shadow file/row if the transaction failed before it could remove it.
+                    com.vervan.chat.system.runCatchingPreservingCancellation {
+                        discardDocument(document)
+                    }
+                    throw t
+                }
+                com.vervan.chat.data.SecureDelete.overwriteAndDelete(oldFile)
+                reportJobOutcome(job, stable, existing.displayName)
+                return@withContext stable
+            }
             reportJobOutcome(job, document, existing.displayName)
             document
         }
+
+    private suspend fun discardDocument(document: Document) {
+        chunkDao.deleteForDocument(document.id)
+        documentDao.delete(document)
+        com.vervan.chat.data.SecureDelete.overwriteAndDelete(File(document.filePath))
+    }
 
     private suspend fun reportJobOutcome(job: JobRecord?, result: Document, name: String) {
         if (job == null) return
@@ -284,6 +333,7 @@ class DocumentImportManager(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(t)
                         Log.w(TAG, "OCR failed for $name", t)
                         throw t
                     }
@@ -306,6 +356,7 @@ class DocumentImportManager(
             withContext(NonCancellable) { documentDao.update(failed) }
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             val failed = document.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage())
             documentDao.update(failed)
             failed
@@ -421,47 +472,94 @@ class DocumentImportManager(
         }
         val file = File(doc.filePath)
         if (!file.exists()) {
-            documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "Source file no longer available"))
+            documentDao.update(
+                if (doc.status == DocumentStatus.READY) {
+                    doc.copy(failureReason = "Source file no longer available; the previous index was kept.")
+                } else {
+                    doc.copy(status = DocumentStatus.FAILED, failureReason = "Source file no longer available")
+                }
+            )
             job?.let { jobDao?.upsert(it.copy(state = JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = "Source file no longer available")) }
             return@withContext
         }
-        chunkDao.deleteForDocument(documentId)
+        // Build the new index under a shadow document id. The old chunks stay available until the
+        // new extraction, OCR, and embedding pass has completed successfully.
+        val staged = doc.copy(id = UUID.randomUUID().toString(), status = DocumentStatus.EXTRACTING, failureReason = null)
+        documentDao.upsert(staged)
+        var finalStatus = doc.status
         // Same outer safety net as processLocalFile — without it, a re-index failure (OOM on a
         // large document, a corrupt source file) left the row stuck at CHUNKING/EMBEDDING
         // forever and could crash the app instead of reporting FAILED.
         try {
-            when (val extracted = TextExtractor.extract(file, doc.displayName)) {
-                is ExtractResult.Unsupported -> documentDao.update(doc.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason))
+            val stagedResult = when (val extracted = TextExtractor.extract(file, doc.displayName)) {
+                is ExtractResult.Unsupported -> staged.copy(status = DocumentStatus.UNSUPPORTED, failureReason = extracted.reason)
                 ExtractResult.NeedsOcr -> {
                     val ocrText = try {
                         runOcr(doc.displayName, file)
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(t)
                         Log.w(TAG, "OCR failed for ${doc.displayName}", t)
                         ""
                     }
                     if (ocrText.isBlank()) {
-                        documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text"))
+                        staged.copy(status = DocumentStatus.FAILED, failureReason = "OCR found no readable text")
                     } else {
-                        documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true, jobId = job?.id))
+                        persistChunks(staged, doc.knowledgeBaseId, Chunker.chunk(ocrText, tokenCounter = tokenCounter()), ocrApplied = true, jobId = job?.id)
                     }
                 }
                 else -> {
-                    documentDao.update(persistChunks(doc.copy(failureReason = null), doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false, jobId = job?.id))
+                    persistChunks(staged, doc.knowledgeBaseId, chunksFor(extracted), ocrApplied = false, jobId = job?.id)
                 }
+            }
+            documentDao.update(stagedResult)
+            if (stagedResult.status == DocumentStatus.READY) {
+                val stable = doc.copy(
+                    status = DocumentStatus.READY,
+                    failureReason = stagedResult.failureReason,
+                    ocrApplied = stagedResult.ocrApplied
+                )
+                database.replaceDocumentIndex(stagedResult, stable)
+                finalStatus = DocumentStatus.READY
+            } else {
+                discardDocument(stagedResult)
+                // Keep a working old index usable. A failed rebuild is a warning, not a reason
+                // to make an otherwise searchable document disappear from retrieval.
+                val preserved = if (doc.status == DocumentStatus.READY) {
+                    doc.copy(failureReason = "Re-index failed; the previous index was kept. ${stagedResult.failureReason.orEmpty()}")
+                } else {
+                    doc.copy(status = stagedResult.status, failureReason = stagedResult.failureReason)
+                }
+                documentDao.update(preserved)
+                finalStatus = preserved.status
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             withContext(NonCancellable) {
-                documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped"))
+                com.vervan.chat.system.runCatchingPreservingCancellation { discardDocument(staged) }
+                documentDao.update(
+                    if (doc.status == DocumentStatus.READY) {
+                        doc.copy(failureReason = "Re-index stopped; the previous index was kept.")
+                    } else {
+                        doc.copy(status = DocumentStatus.FAILED, failureReason = "Indexing stopped")
+                    }
+                )
             }
             throw cancelled
         } catch (t: Throwable) {
-            documentDao.update(doc.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage()))
+            com.vervan.chat.system.rethrowCancellation(t)
+            com.vervan.chat.system.runCatchingPreservingCancellation { discardDocument(staged) }
+            val message = t.toUserMessage()
+            val preserved = if (doc.status == DocumentStatus.READY) {
+                doc.copy(failureReason = "Re-index failed; the previous index was kept. $message")
+            } else {
+                doc.copy(status = DocumentStatus.FAILED, failureReason = message)
+            }
+            documentDao.update(preserved)
+            finalStatus = preserved.status
         }
         job?.let {
             if (jobDao?.get(it.id)?.state == JobState.CANCELLED) return@let
-            val finalStatus = documentDao.get(documentId)?.status
             val state = if (finalStatus == DocumentStatus.READY) JobState.COMPLETED else JobState.FAILED
             jobDao?.upsert(it.copy(state = state, updatedAt = System.currentTimeMillis()))
         }
@@ -484,7 +582,9 @@ class DocumentImportManager(
     private fun queryFileSize(uri: Uri): Long? {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (sizeIndex >= 0 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) return cursor.getLong(sizeIndex)
+            if (sizeIndex >= 0 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) {
+                return cursor.getLong(sizeIndex).takeIf { it >= 0 }
+            }
         }
         return null
     }
@@ -493,6 +593,7 @@ class DocumentImportManager(
         value.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[^A-Za-z0-9._ -]"), "_")
             .trim()
+            .take(MAX_DISPLAY_NAME_CHARS)
             .ifBlank { "document" }
 
     /** Recycle-bin delete — marks the row, keeps the file and chunks so restore is cheap. */
@@ -514,7 +615,9 @@ class DocumentImportManager(
 
     companion object {
         private const val TAG = "DocumentImportManager"
+        private const val MAX_DISPLAY_NAME_CHARS = 180
         private const val STORAGE_SAFETY_MARGIN_BYTES = 100L * 1024 * 1024 // 100MB headroom
+        private val SAFE_MIME_TYPE = Regex("[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*")
         // ponytail: a fixed guess, not negotiated with the server. OpenAI's own /embeddings
         // accepts far more per request; a smaller self-hosted OpenAI-compatible server might not
         // — 32 chunks (~12K tokens at TARGET_TOKENS) is comfortably under what any real

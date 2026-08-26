@@ -19,15 +19,16 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -59,6 +60,9 @@ import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanSectionHeader
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.system.toUserMessage
@@ -83,27 +87,30 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             MediumTopAppBar(
                 title = {
                     Column {
-                        Text("Knowledge")
-                        Text("Searchable, cited, on-device", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(com.vervan.chat.R.string.knowledge_title))
+                        Text(stringResource(com.vervan.chat.R.string.knowledge_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New knowledge base") } }
+                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(com.vervan.chat.R.string.knowledge_new_base)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                eyebrow = "Grounded answers",
-                title = "Your private knowledge",
-                body = "Organize documents for private search and cited answers.",
-                trailing = {
-                    SemanticChip(
-                        text = if (indexing.isEmpty()) "On-device" else "Processing",
-                        tone = if (indexing.isEmpty()) ChipTone.Success else ChipTone.Warning
-                    )
-                }
+            ModernistScreenHeader(
+                eyebrow = stringResource(com.vervan.chat.R.string.knowledge_retrieval_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.knowledge_sources_title),
+                body = stringResource(com.vervan.chat.R.string.knowledge_sources_body),
+                trailing = { ModernistTag(if (indexing.isEmpty()) stringResource(com.vervan.chat.R.string.home_on_device) else stringResource(com.vervan.chat.R.string.knowledge_indexing_tag), active = indexing.isNotEmpty()) },
+            )
+            ModernistMetricStrip(
+                listOf(
+                    stringResource(com.vervan.chat.R.string.knowledge_bases_metric) to kbs.size.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_documents_title) to totalDocuments.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_filter_ready) to readyBases.toString(),
+                    stringResource(com.vervan.chat.R.string.knowledge_queue_metric) to indexing.size.toString(),
+                ),
+                modifier = Modifier.padding(top = Space.lg),
             )
             KnowledgeSnapshotCard(
                 knowledgeBaseCount = kbs.size,
@@ -111,7 +118,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 readyBaseCount = readyBases,
                 indexingCount = indexing.size
             )
-            VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
+            VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_bases_section), count = kbs.size, actionLabel = stringResource(com.vervan.chat.R.string.knowledge_new_action), onAction = { showCreate = true })
             if (error != null) {
                 OperationErrorCard(
                     title = stringResource(com.vervan.chat.R.string.knowledge_unavailable),
@@ -128,11 +135,12 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             } else if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Build your first knowledge base",
-                    body = "Group documents so chats can find and cite exact passages.",
-                    actionLabel = "Create knowledge base",
+                    title = stringResource(com.vervan.chat.R.string.knowledge_first_base_title),
+                    body = stringResource(com.vervan.chat.R.string.knowledge_first_base_body),
+                    actionLabel = stringResource(com.vervan.chat.R.string.knowledge_create_base),
                     onAction = { showCreate = true },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
+                    centered = true
                 )
             }
             if (error == null && !kbsLoading) {
@@ -152,8 +160,8 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
                         ActionTile(
                             icon = Icons.Filled.Add,
-                            title = "New knowledge base",
-                            body = "Create a document collection",
+                            title = stringResource(com.vervan.chat.R.string.knowledge_new_base),
+                            body = stringResource(com.vervan.chat.R.string.knowledge_collection_action),
                             onClick = { showCreate = true },
                             modifier = Modifier.fillMaxSize(),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -163,12 +171,12 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (indexing.isNotEmpty()) {
-                VervanSectionHeader("Indexing queue", count = indexing.size)
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = SurfaceRole.Card.cardColors(),
-                    border = SurfaceRole.Card.border()
+                VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_indexing_queue), count = indexing.size)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp
                 ) {
                     Column(Modifier.padding(Space.lg)) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = Space.sm))
@@ -178,12 +186,12 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (recentDocuments.isNotEmpty()) {
-                VervanSectionHeader("Recent documents", count = recentDocuments.size)
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = SurfaceRole.Card.cardColors(),
-                    border = SurfaceRole.Card.border()
+                VervanSectionHeader(stringResource(com.vervan.chat.R.string.knowledge_recent_documents), count = recentDocuments.size)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp
                 ) {
                     Column(Modifier.padding(Space.lg)) {
                         recentDocuments.take(8).forEach { doc -> DocRow(doc) }
@@ -200,10 +208,10 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("New knowledge base") },
+            title = { Text(stringResource(com.vervan.chat.R.string.knowledge_new_base)) },
             text = {
                 com.vervan.chat.ui.common.BoundedTextField(
-                    value = name, onValueChange = { name = it }, placeholder = "Name",
+                    value = name, onValueChange = { name = it }, placeholder = stringResource(com.vervan.chat.R.string.knowledge_name_placeholder),
                     singleLine = true, maxLength = com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
                 )
             },
@@ -211,26 +219,26 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 TextButton(
                     onClick = { if (name.isNotBlank()) { vm.createKnowledgeBase(name.trim()); showCreate = false } },
                     enabled = name.isNotBlank() && name.length <= com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
-                ) { Text("Create") }
+                ) { Text(stringResource(com.vervan.chat.R.string.knowledge_create)) }
             },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(com.vervan.chat.R.string.action_cancel)) } }
         )
     }
 }
 
 @Composable
 private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick: () -> Unit) {
-    Card(
+    Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = SurfaceRole.Card.cardColors(),
-        border = SurfaceRole.Card.border()
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(48.dp).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.secondaryContainer),
+                    Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.secondaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -264,11 +272,11 @@ private fun KnowledgeSnapshotCard(
     readyBaseCount: Int,
     indexingCount: Int,
 ) {
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.md),

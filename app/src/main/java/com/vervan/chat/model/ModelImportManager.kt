@@ -8,8 +8,11 @@ import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.ModelEngine
 import com.vervan.chat.data.db.entities.ModelInfo
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.ThinkingSpec
+import com.vervan.chat.system.StorageSpace
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -97,7 +100,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         if (sourceSize != null && sourceSize > ImportLimits.MAX_PRIMARY_MODEL_BYTES) {
             return@withContext ImportResult.Rejected("This model is too large to import safely (maximum 16 GB)")
         }
-        val freeBytes = modelsDir.usableSpace
+        val freeBytes = StorageSpace.allocatableBytes(context, modelsDir)
         if (sourceSize != null && freeBytes < sourceSize + STORAGE_SAFETY_MARGIN_BYTES) {
             return@withContext ImportResult.Rejected(
                 "Not enough storage — this model needs ~${formatBytes(sourceSize)}, only ${formatBytes(freeBytes)} free"
@@ -152,22 +155,36 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
 
         onProgress("Registering model…")
-        val hash = digest.digest().joinToString("") { "%02x".format(it) }
+        val hash = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         modelDao.findByHash(hash)?.let { existing ->
             dest.delete()
             return@withContext ImportResult.Duplicate(existing)
         }
 
+        val thinkingSpec = if (role == ModelRole.GENERATION) {
+            ThinkingSpec.detectFromTemplate(ModelFileSniffer.ggufChatTemplate(context, uri))
+                ?: ThinkingSpec.detectFromMetadata(ModelFileSniffer.embeddedMetadataJson(context, uri))
+        } else null
         val model = ModelInfo(
             displayName = name.substringBeforeLast('.'),
             filePath = dest.absolutePath,
             fileSizeBytes = bytesCopied,
             sha256 = hash,
             role = role,
-            engine = if (name.endsWith(".gguf", ignoreCase = true)) ModelEngine.LLAMA_CPP else ModelEngine.LITERT_LM
+            engine = if (name.endsWith(".gguf", ignoreCase = true)) ModelEngine.LLAMA_CPP else ModelEngine.LITERT_LM,
+            thinkingSpecJson = thinkingSpec?.toJson(),
+            supportsThinking = thinkingSpec != null
         )
-        modelDao.upsert(model)
-        ImportResult.Success(model)
+        try {
+            modelDao.upsert(model)
+            ImportResult.Success(model)
+        } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
+            // A database/disk failure after the copy must not leave an unregistered model-sized
+            // file in app storage for the next import or GC pass to discover accidentally.
+            dest.delete()
+            ImportResult.Rejected("Couldn't register the model: ${t.message ?: "database error"}")
+        }
     }
 
     /** GGUF vision models need a second file, the mtmd projector — unlike the embedding
@@ -192,6 +209,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             )
         }
         val modelResult = import(modelUri, ModelRole.GENERATION, onProgress = onProgress)
+        val importedFresh = modelResult is ImportResult.Success
         val model = when (modelResult) {
             is ImportResult.Success -> modelResult.model
             is ImportResult.Duplicate -> modelResult.existing
@@ -202,29 +220,37 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
         if (mmprojUri == null) return@withContext ImportResult.Success(model)
 
+        suspend fun rejectAfterPrimaryCopy(reason: String): ImportResult {
+            if (importedFresh) {
+                modelDao.delete(model)
+                File(model.filePath).delete()
+            }
+            return ImportResult.Rejected(reason)
+        }
+
         onProgress("Copying vision projector…")
         val mmprojName = safeFileName(queryDisplayName(mmprojUri) ?: mmprojUri.lastPathSegment ?: "mmproj.gguf")
         if (!mmprojName.endsWith(".gguf", ignoreCase = true)) {
-            return@withContext ImportResult.Rejected("Vision projectors must be GGUF files.")
+            return@withContext rejectAfterPrimaryCopy("Vision projectors must be GGUF files.")
         }
         if (!ModelFileSniffer.looksLikeGguf(context, mmprojUri)) {
-            return@withContext ImportResult.Rejected("This doesn't look like a valid GGUF vision projector (missing GGUF header).")
+            return@withContext rejectAfterPrimaryCopy("This doesn't look like a valid GGUF vision projector (missing GGUF header).")
         }
         val mmprojSize = queryFileSize(mmprojUri)
         if (mmprojSize != null && mmprojSize < 0L) {
-            return@withContext ImportResult.Rejected("The selected projector provider reported an invalid file size")
+            return@withContext rejectAfterPrimaryCopy("The selected projector provider reported an invalid file size")
         }
         if (mmprojSize != null && mmprojSize > com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) {
-            return@withContext ImportResult.Rejected("The vision projector is too large (maximum 4 GB)")
+            return@withContext rejectAfterPrimaryCopy("The vision projector is too large (maximum 4 GB)")
         }
-        if (mmprojSize != null && modelsDir.usableSpace < mmprojSize + STORAGE_SAFETY_MARGIN_BYTES) {
-            return@withContext ImportResult.Rejected("Not enough storage for the vision projector")
+        if (mmprojSize != null && StorageSpace.allocatableBytes(context, modelsDir) < mmprojSize + STORAGE_SAFETY_MARGIN_BYTES) {
+            return@withContext rejectAfterPrimaryCopy("Not enough storage for the vision projector")
         }
         val mmprojDest = File(modelsDir, "${System.currentTimeMillis()}_$mmprojName")
         val mmprojInput = context.contentResolver.openInputStream(mmprojUri)
         if (mmprojInput == null) {
             mmprojDest.delete()
-            return@withContext ImportResult.Rejected("Could not open selected projector file")
+            return@withContext rejectAfterPrimaryCopy("Could not open selected projector file")
         }
         try {
             mmprojInput.use { src ->
@@ -232,17 +258,23 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             }
         } catch (e: InputLimitExceededException) {
             mmprojDest.delete()
-            return@withContext ImportResult.Rejected(e.message ?: "Vision projector is too large")
+            return@withContext rejectAfterPrimaryCopy(e.message ?: "Vision projector is too large")
         } catch (e: java.io.IOException) {
             mmprojDest.delete()
-            return@withContext ImportResult.Rejected("Ran out of storage while copying the projector (${e.message})")
+            return@withContext rejectAfterPrimaryCopy("Ran out of storage while copying the projector (${e.message})")
         }
         if (mmprojDest.length() == 0L) {
             mmprojDest.delete()
-            return@withContext ImportResult.Rejected("Selected projector file is empty")
+            return@withContext rejectAfterPrimaryCopy("Selected projector file is empty")
         }
         val updated = model.copy(mmprojPath = mmprojDest.absolutePath, supportsVision = true)
-        modelDao.upsert(updated)
+        try {
+            modelDao.upsert(updated)
+        } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
+            mmprojDest.delete()
+            return@withContext rejectAfterPrimaryCopy("Couldn't register the vision projector: ${t.message ?: "database error"}")
+        }
         model.mmprojPath?.takeIf { it != updated.mmprojPath }?.let { File(it).delete() }
         ImportResult.Success(updated)
     }
@@ -269,7 +301,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         if (loraSize != null && loraSize > com.vervan.chat.validation.InputLimits.MAX_ADAPTER_BYTES) {
             return@withContext ImportResult.Rejected("The LoRA adapter is too large (maximum 4 GB)")
         }
-        if (loraSize != null && modelsDir.usableSpace < loraSize + STORAGE_SAFETY_MARGIN_BYTES) {
+        if (loraSize != null && StorageSpace.allocatableBytes(context, modelsDir) < loraSize + STORAGE_SAFETY_MARGIN_BYTES) {
             return@withContext ImportResult.Rejected("Not enough storage for the LoRA adapter")
         }
         val loraDest = File(modelsDir, "${System.currentTimeMillis()}_$loraName")
@@ -367,6 +399,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             try {
                 com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer(tokenizerBytes)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 return@withContext ImportResult.Rejected(
                     "\"$tokenizerName\" doesn't look like a valid SentencePiece tokenizer.model file — check the model and tokenizer files weren't swapped. (${t.message})"
                 )
@@ -374,6 +407,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
 
         val modelResult = import(modelUri, ModelRole.EMBEDDING, onProgress = onProgress)
+        val importedFresh = modelResult is ImportResult.Success
         val model = when (modelResult) {
             is ImportResult.Success -> modelResult.model
             is ImportResult.Duplicate -> modelResult.existing
@@ -383,12 +417,20 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             return@withContext ImportResult.Rejected("This file was already imported as a generation model.")
         }
 
+        suspend fun rejectAfterModelCopy(reason: String): ImportResult {
+            if (importedFresh) {
+                modelDao.delete(model)
+                File(model.filePath).delete()
+            }
+            return ImportResult.Rejected(reason)
+        }
+
         onProgress("Copying tokenizer…")
         val tokenizerDest = File(modelsDir, "${System.currentTimeMillis()}_$tokenizerName")
         val tokenizerInput = context.contentResolver.openInputStream(tokenizerUri)
         if (tokenizerInput == null) {
             tokenizerDest.delete()
-            return@withContext ImportResult.Rejected("Could not open selected tokenizer file")
+            return@withContext rejectAfterModelCopy("Could not open selected tokenizer file")
         }
         try {
             tokenizerInput.use { src ->
@@ -396,18 +438,24 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             }
         } catch (e: InputLimitExceededException) {
             tokenizerDest.delete()
-            return@withContext ImportResult.Rejected(e.message ?: "Tokenizer is too large")
+            return@withContext rejectAfterModelCopy(e.message ?: "Tokenizer is too large")
         } catch (e: java.io.IOException) {
             tokenizerDest.delete()
-            return@withContext ImportResult.Rejected("Ran out of storage while copying the tokenizer (${e.message})")
+            return@withContext rejectAfterModelCopy("Ran out of storage while copying the tokenizer (${e.message})")
         }
         if (tokenizerDest.length() == 0L) {
             tokenizerDest.delete()
-            return@withContext ImportResult.Rejected("Selected tokenizer file is empty")
+            return@withContext rejectAfterModelCopy("Selected tokenizer file is empty")
         }
 
         val updated = model.copy(tokenizerPath = tokenizerDest.absolutePath)
-        modelDao.upsert(updated)
+        try {
+            modelDao.upsert(updated)
+        } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
+            tokenizerDest.delete()
+            return@withContext rejectAfterModelCopy("Couldn't register the tokenizer: ${t.message ?: "database error"}")
+        }
         ImportResult.Success(updated)
     }
 
@@ -449,6 +497,6 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
 private fun formatBytes(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    bytes < 1024L * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
-    else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    bytes < 1024L * 1024 * 1024 -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
+    else -> String.format(Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
 }

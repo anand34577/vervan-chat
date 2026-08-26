@@ -9,7 +9,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.animateContentSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,7 +51,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -61,7 +60,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +70,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -129,6 +127,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
@@ -143,6 +142,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -164,6 +165,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -203,9 +205,7 @@ import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.rememberDocumentFirstPagePreview
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
-import com.vervan.chat.ui.theme.VervanAccent
 import com.vervan.chat.ui.theme.VervanMotion
-import com.vervan.chat.ui.theme.vervanAccentFor
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
@@ -261,8 +261,8 @@ internal fun inspectDocument(context: Context, uri: Uri): PendingDocumentSelecti
 internal fun readableFileSize(bytes: Long?): String = when {
     bytes == null || bytes < 0 -> "Size unavailable"
     bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes < 1024 * 1024 -> "%.1f KB".format(java.util.Locale.getDefault(), bytes / 1024.0)
+    else -> "%.1f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024.0))
 }
 
 @Composable
@@ -297,7 +297,7 @@ internal fun DocumentComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
@@ -306,7 +306,7 @@ internal fun DocumentComposerPreviewDialog(
                                 Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 220.dp, max = 480.dp)
-                                    .clip(MaterialTheme.shapes.large)
+                                    .clip(MaterialTheme.shapes.medium)
                                     .background(androidx.compose.ui.graphics.Color.White),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -318,7 +318,7 @@ internal fun DocumentComposerPreviewDialog(
                                         contentScale = ContentScale.Fit
                                     )
                                 } ?: Surface(
-                                    shape = MaterialTheme.shapes.extraLarge,
+                                    shape = MaterialTheme.shapes.medium,
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 ) {
@@ -378,20 +378,98 @@ internal fun ModernChatAttachmentSheet(
     audioAvailable: Boolean?,
     isImportingAudio: Boolean,
     isRunningOcr: Boolean,
+    isRunningQr: Boolean,
     onDismiss: () -> Unit,
     onPhoto: () -> Unit,
     onCamera: () -> Unit,
     onOcrPhoto: () -> Unit,
     onOcrCamera: () -> Unit,
+    onQrPhoto: () -> Unit,
+    onQrCamera: () -> Unit,
     onRecordAudio: () -> Unit,
     onAudioFile: () -> Unit,
     onDocument: () -> Unit,
     modelRunsOnDevice: Boolean = true,
 ) {
+    val actions = listOf(
+        AttachmentSheetAction(
+            icon = Icons.Filled.Image,
+            title = stringResource(R.string.media_gallery),
+            helper = if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos),
+            enabled = visionAvailable != false,
+            onClick = onPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.PhotoCamera,
+            title = stringResource(R.string.media_camera),
+            helper = if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo),
+            enabled = visionAvailable != false,
+            onClick = onCamera
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.Description,
+            title = stringResource(R.string.media_document),
+            helper = stringResource(R.string.media_pdf_file),
+            enabled = true,
+            onClick = onDocument
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.DocumentScanner,
+            title = stringResource(R.string.media_scan_text),
+            helper = if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningOcr,
+            onClick = onOcrPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.Mic,
+            title = stringResource(R.string.media_record),
+            helper = when {
+                isImportingAudio -> stringResource(R.string.media_transcribing)
+                audioAvailable == true -> stringResource(R.string.media_transcribe)
+                else -> stringResource(R.string.media_stt_off)
+            },
+            enabled = audioAvailable == true && !isImportingAudio,
+            onClick = onRecordAudio
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.AudioFile,
+            title = stringResource(R.string.media_audio),
+            helper = when {
+                isImportingAudio -> stringResource(R.string.media_transcribing)
+                audioAvailable == true -> stringResource(R.string.media_transcribe_file)
+                else -> stringResource(R.string.media_stt_off)
+            },
+            enabled = audioAvailable == true && !isImportingAudio,
+            onClick = onAudioFile
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.CameraAlt,
+            title = stringResource(R.string.media_scan_camera),
+            helper = if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningOcr,
+            onClick = onOcrCamera
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.QrCodeScanner,
+            title = stringResource(R.string.media_scan_qr),
+            helper = if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningQr,
+            onClick = onQrPhoto
+        ),
+        AttachmentSheetAction(
+            icon = Icons.Filled.QrCodeScanner,
+            title = stringResource(R.string.media_scan_qr_camera),
+            helper = if (isRunningQr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
+            enabled = !isRunningQr,
+            onClick = onQrCamera
+        )
+    )
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
+                .padding(horizontal = Space.lg).padding(bottom = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -409,53 +487,79 @@ internal fun ModernChatAttachmentSheet(
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.Image, stringResource(R.string.media_gallery), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos), visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.PhotoCamera, stringResource(R.string.media_camera), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo), visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Description, stringResource(R.string.media_document), stringResource(R.string.media_pdf_file), true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.DocumentScanner, stringResource(R.string.media_scan_text), if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo), !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Mic, stringResource(R.string.media_record), if (audioAvailable == true) stringResource(R.string.media_transcribe) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_audio), if (audioAvailable == true) stringResource(R.string.media_transcribe_file) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
-            }
-            TextButton(
-                onClick = onOcrCamera,
-                enabled = !isRunningOcr,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.sm)
-            ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = Space.xs))
-                Text(stringResource(R.string.media_scan_camera))
+            actions.chunked(3).forEach { rowActions ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
+                ) {
+                    rowActions.forEach { action ->
+                        CompactAttachmentAction(action, Modifier.weight(1f))
+                    }
+                    repeat(3 - rowActions.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
 }
 
+private data class AttachmentSheetAction(
+    val icon: ImageVector,
+    val title: String,
+    val helper: String,
+    val enabled: Boolean,
+    val onClick: () -> Unit,
+)
+
 @Composable
-internal fun CompactAttachmentAction(
-    icon: ImageVector,
-    title: String,
-    helper: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    accent: VervanAccent,
+private fun CompactAttachmentAction(
+    action: AttachmentSheetAction,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier.alpha(if (enabled) 1f else 0.45f).clickable(enabled = enabled, onClick = onClick).padding(vertical = Space.sm),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Surface(
+        onClick = action.onClick,
+        enabled = action.enabled,
+        modifier = modifier
+            .heightIn(min = 104.dp)
+            .alpha(if (action.enabled) 1f else 0.45f),
+        shape = MaterialTheme.shapes.large,
+        color = androidx.compose.ui.graphics.Color.Transparent
     ) {
-        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = accent.container, contentColor = accent.onContainer) {
-            Icon(icon, contentDescription = null, modifier = Modifier.padding(14.dp).size(24.dp))
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(action.icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+            }
+            Text(
+                action.title,
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Text(
+                action.helper,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
-        Text(title, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = Space.sm), maxLines = 1)
-        Text(helper, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
 internal fun formatMs(ms: Int): String {
     val totalSec = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(totalSec / 60, totalSec % 60)
+    return "%d:%02d".format(java.util.Locale.getDefault(), totalSec / 60, totalSec % 60)
 }
 
 /** WhatsApp-style voice message row: play/pause, a seekable progress bar, and elapsed/total
@@ -466,8 +570,8 @@ internal fun formatMs(ms: Int): String {
 internal fun VoiceMessageRow(path: String) {
     var isPlaying by remember(path) { mutableStateOf(false) }
     var mediaPlayer by remember(path) { mutableStateOf<android.media.MediaPlayer?>(null) }
-    var durationMs by remember(path) { mutableStateOf(0) }
-    var positionMs by remember(path) { mutableStateOf(0) }
+    var durationMs by remember(path) { mutableIntStateOf(0) }
+    var positionMs by remember(path) { mutableIntStateOf(0) }
     // Surface a real error UI instead of swallowing prepare()/setDataSource() failures —
     // previously a corrupt or missing voice file silently rendered as an unplayable row with
     // a 0:00 duration, looking like a stuck player. Now the user sees the failure and can
@@ -554,7 +658,7 @@ internal fun VoiceMessageRow(path: String) {
             },
             modifier = Modifier
                 .size(48.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clip(MaterialTheme.shapes.small)
                 .background(
                     if (loadFailed) MaterialTheme.colorScheme.errorContainer
                     else MaterialTheme.colorScheme.primaryContainer
@@ -625,7 +729,8 @@ internal fun AttachmentCaptionBar(
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
             if (caption.length >= 9_600) {
                 Text(
-                    if (caption.length > 12_000) "Message is over the 12,000 character limit" else "${caption.length} / 12,000",
+                    if (caption.length > 12_000) stringResource(R.string.chat_character_limit_exceeded)
+                    else stringResource(R.string.chat_character_limit, caption.length),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (caption.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End).padding(horizontal = Space.lg, vertical = Space.xs)
@@ -653,7 +758,7 @@ internal fun AttachmentCaptionBar(
                     )
                 }
                 Box(
-                    Modifier.padding(start = Space.sm).size(52.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    Modifier.padding(start = Space.sm).size(52.dp).clip(MaterialTheme.shapes.small)
                         .background(
                             if (confirmEnabled) com.vervan.chat.ui.theme.vervanBrandGradient()
                             else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceContainerHighest)
@@ -695,7 +800,7 @@ internal fun AudioComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
@@ -761,7 +866,7 @@ internal fun FullScreenImagePreview(
                 // Pinch-to-zoom + pan, plus double-tap to toggle 1x/2.5x — the baseline
                 // "view an image" gesture set users expect from any photo viewer. Pan only
                 // engages while zoomed in; at 1x the image stays centered so it can't drift.
-                var scale by remember(path) { mutableStateOf(1f) }
+                var scale by remember(path) { mutableFloatStateOf(1f) }
                 var pan by remember(path) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                 val transformState = rememberTransformableState { zoomChange, panChange, _ ->
                     scale = (scale * zoomChange).coerceIn(1f, 5f)
@@ -819,7 +924,10 @@ internal fun OcrPreviewDialog(
     confirmEnabled: Boolean,
     onRemove: () -> Unit,
     onDismiss: () -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    title: String = stringResource(R.string.media_ocr_preview),
+    subtitle: String = stringResource(R.string.media_ocr_on_device),
+    removeDescription: String = stringResource(R.string.media_remove_ocr)
 ) {
     var showExtractedText by remember(imagePath) { mutableStateOf(false) }
     Dialog(
@@ -831,11 +939,11 @@ internal fun OcrPreviewDialog(
                 Row(Modifier.fillMaxWidth().padding(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.media_back), tint = androidx.compose.ui.graphics.Color.White) }
                     Column {
-                        Text(stringResource(R.string.media_ocr_preview), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.media_ocr_on_device), color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                        Text(title, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                        Text(subtitle, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, stringResource(R.string.media_remove_ocr), tint = androidx.compose.ui.graphics.Color.White) }
+                    IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, removeDescription, tint = androidx.compose.ui.graphics.Color.White) }
                 }
 
                 val thumbnailPx = with(LocalDensity.current) { 1600.dp.roundToPx() }
@@ -852,7 +960,7 @@ internal fun OcrPreviewDialog(
                     Surface(
                         onClick = { showExtractedText = !showExtractedText },
                         modifier = Modifier.align(Alignment.BottomCenter).padding(Space.md),
-                        shape = com.vervan.chat.ui.theme.VervanExtraShapes.pill,
+                        shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.92f),
                         contentColor = MaterialTheme.colorScheme.inverseOnSurface
                     ) {

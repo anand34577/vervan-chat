@@ -1,3 +1,5 @@
+@file:Suppress("LocalContextGetResourceValueCall")
+
 package com.vervan.chat.ui.tools
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,13 +19,13 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -45,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.KnowledgeBase
@@ -76,6 +80,10 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     var isProcessing by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    val capturedImageInvalid = stringResource(com.vervan.chat.R.string.media_image_capture_invalid)
+    val cameraAccessOff = stringResource(com.vervan.chat.R.string.media_camera_access_off)
+    val selectedImageUnreadable = stringResource(com.vervan.chat.R.string.media_image_unreadable)
+    val imageOpenFailed = stringResource(com.vervan.chat.R.string.media_image_open_failed)
 
     fun runOcr(file: File) {
         managedImagePath.set(file.absolutePath)
@@ -85,7 +93,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { OcrExtractor.extractFromImage(file) } }
             result.onSuccess {
-                if (it.length > InputLimits.OCR_TEXT_CHARS) errorText = "OCR returned too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)."
+                if (it.length > InputLimits.OCR_TEXT_CHARS) errorText = context.getString(com.vervan.chat.R.string.media_ocr_too_much_text, InputLimits.OCR_TEXT_CHARS)
                 else extractedText = it
             }
                 .onFailure { errorText = it.toUserMessage(); extractedText = "" }
@@ -106,7 +114,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         pendingCameraFile = null
         if (success && file != null) {
             if (file.length() > ImportLimits.MAX_IMAGE_SOURCE_BYTES || !ImageUtils.normalizeForModel(file)) {
-                errorText = "The captured image is too large or unreadable. Choose a smaller JPG or PNG."
+                errorText = capturedImageInvalid
                 file.delete()
             } else runOcr(file)
         } else file?.delete()
@@ -116,7 +124,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             val (file, uri) = newImageFile()
             pendingCameraFile = file
             takePicture.launch(uri)
-            } else errorText = "Camera access is off. Choose an image, or allow it in Android Settings → Apps → Vervan → Permissions."
+            } else errorText = cameraAccessOff
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -125,12 +133,12 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                     val (file, _) = newImageFile()
                     runCatching {
                         context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyToLimited(it, ImportLimits.MAX_IMAGE_SOURCE_BYTES) } }
-                        check(ImageUtils.normalizeForModel(file)) { "The selected image is not readable" }
+                        check(ImageUtils.normalizeForModel(file)) { selectedImageUnreadable }
                         file
                     }.getOrElse { file.delete(); null }
                 }
                 if (dest != null) runOcr(dest)
-            else errorText = "Could not open the image. Choose another one."
+            else errorText = imageOpenFailed
             }
         }
     }
@@ -138,8 +146,8 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("OCR scanner") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(com.vervan.chat.R.string.media_ocr_title)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -150,29 +158,29 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         ) {
             ToolIntro(
                 icon = Icons.Filled.DocumentScanner,
-                title = "Turn a photo into editable text",
-                body = "Choose an image, review its text, then copy or save it."
+                title = stringResource(com.vervan.chat.R.string.media_ocr_intro_title),
+                body = stringResource(com.vervan.chat.R.string.media_ocr_intro_body)
             )
             Text(
-                "Extract editable text from an image on-device.",
+                stringResource(com.vervan.chat.R.string.media_ocr_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             ResponsiveActions(Modifier.padding(top = Space.md)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(com.vervan.chat.R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text("From files", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(com.vervan.chat.R.string.media_from_photo), modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
                 val bitmap = rememberThumbnail(path, 800)
                 bitmap?.let {
                     Image(
-                        it, contentDescription = "Scanned image",
+                        it, contentDescription = stringResource(com.vervan.chat.R.string.media_scanned_photo),
                         modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = Space.md),
                         contentScale = ContentScale.Fit
                     )
@@ -180,40 +188,40 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             }
             if (isProcessing) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Recognizing text",
-                    body = "Reading text from the image on this device."
+                    title = stringResource(com.vervan.chat.R.string.media_ocr_recognizing),
+                    body = stringResource(com.vervan.chat.R.string.media_ocr_reading_body)
                 )
             }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Text recognition failed",
+                    title = stringResource(com.vervan.chat.R.string.media_ocr_failed),
                     message = it,
-                    recovery = "Use a clear JPG or PNG image, then try again."
+                    recovery = stringResource(com.vervan.chat.R.string.media_clear_image_recovery)
                 )
             }
             if (!isProcessing && imagePath != null && errorText == null) {
                 ToolResultHeader(
-                    title = if (extractedText.isBlank()) "No text detected" else "Text recognized",
-                    supportingText = if (extractedText.isBlank()) "Try a sharper, evenly lit image." else "Review and correct the result before using it."
+                    title = if (extractedText.isBlank()) stringResource(com.vervan.chat.R.string.media_ocr_no_text) else stringResource(com.vervan.chat.R.string.media_ocr_recognized),
+                    supportingText = if (extractedText.isBlank()) stringResource(com.vervan.chat.R.string.media_sharper_image) else stringResource(com.vervan.chat.R.string.media_ocr_review_hint)
                 )
                 OutlinedTextField(
                     value = extractedText,
                     onValueChange = { extractedText = it.take(InputLimits.OCR_TEXT_CHARS) },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                     minLines = 6,
-                    label = { Text("Recognized text") },
-                    placeholder = { Text("No text found") }
+                    label = { Text(stringResource(com.vervan.chat.R.string.media_ocr_text)) },
+                    placeholder = { Text(stringResource(com.vervan.chat.R.string.media_no_text_found)) }
                 )
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     OutlinedButton(
                         onClick = {
                             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                            clipboard.setSensitiveText(extractedText, scope, "OCR text")
+                            clipboard.setSensitiveText(extractedText, scope, context.getString(com.vervan.chat.R.string.media_ocr_clipboard_label))
                         },
                         enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
-                        Text("Copy", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm))
                     }
                     Button(
                         onClick = {
@@ -222,20 +230,23 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                                     ?: KnowledgeBase(id = KnowledgeBase.SCANS_KNOWLEDGE_BASE_ID, name = "Scans").also {
                                         app.container.db.knowledgeBaseDao().upsert(it)
                                     }
-                                val name = "Scan ${java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
+                                val name = context.getString(
+                                    com.vervan.chat.R.string.media_scan_name,
+                                    java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                                )
                                 val document = app.container.documentImportManager.importRawText(kb.id, name, extractedText)
                                 if (document.status == com.vervan.chat.data.db.entities.DocumentStatus.READY) {
-                                    savedMessage = "Saved to Knowledge"
+                                    savedMessage = context.getString(com.vervan.chat.R.string.media_scan_saved)
                                     onOpenDocument(document.id)
                                 } else {
-                                    errorText = document.failureReason ?: "The scan could not be indexed (${document.status.name.lowercase()})."
+                                    errorText = document.failureReason ?: context.getString(com.vervan.chat.R.string.media_scan_index_failed, document.status.name.lowercase())
                                 }
                             }
                         },
                         enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text("Save as document", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(com.vervan.chat.R.string.media_save_document), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 savedMessage?.let {

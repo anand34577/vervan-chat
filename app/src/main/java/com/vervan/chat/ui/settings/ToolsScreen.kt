@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,14 +15,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -67,8 +69,8 @@ fun ToolsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tools") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.nav_tools)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -88,7 +90,7 @@ fun ToolsScreen(onBack: () -> Unit) {
             ) {
                 Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Always tell the model the date & time", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.ui_toolsscreen_91_always_tell_the_model_the_date_time), style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "Include the current date and time in every prompt.",
                             style = MaterialTheme.typography.labelSmall,
@@ -102,7 +104,7 @@ fun ToolsScreen(onBack: () -> Unit) {
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search model tools",
+                placeholder = stringResource(R.string.ui_toolsscreen_105_search_model_tools),
                 modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
             )
 

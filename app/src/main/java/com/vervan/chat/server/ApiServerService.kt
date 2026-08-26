@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.vervan.chat.MainActivity
 import com.vervan.chat.R
 import com.vervan.chat.VervanApp
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,37 +48,40 @@ class ApiServerService : Service() {
         val restart = intent?.action == ACTION_RESTART
         startJob = scope.launch {
             lifecycleMutex.withLock {
-                val started = runCatching {
+                val started = com.vervan.chat.system.runCatchingPreservingCancellation {
                     // Older installs used an unauthenticated default. Apply the one-time
                     // migration before reading the server flags so a restart can never reopen a
                     // LAN-facing socket with that legacy default.
                     settings.applyApiServerSecurityDefaults()
                     // A sticky service can be recreated after the user disabled it. DataStore is
                     // the source of truth; never reopen a listening socket when its toggle is off.
-                    if (!settings.apiServerEnabled.first()) return@runCatching false
+                    if (!settings.apiServerEnabled.first()) return@runCatchingPreservingCancellation false
+                    // The API is an external data surface. A service recreated while the app is
+                    // locked must stop instead of exposing chats, documents, or inference.
+                    if (settings.appLockEnabled.first() && app.container.appLockManager.isLocked.value) {
+                        return@runCatchingPreservingCancellation false
+                    }
                     if (restart) {
                         server?.stop()
                         server = null
                     }
-                    if (server != null) return@runCatching true
+                    if (server != null) return@runCatchingPreservingCancellation true
 
                     val port = settings.apiServerPort.first()
-                    // Always binds every interface (0.0.0.0) — null is NanoHTTPD's bind-all
-                    // convention — user ask, not gated by the old "Allow other devices on this
-                    // Wi-Fi" toggle anymore (that flag now only affects the exposure copy shown in
-                    // Settings/Privacy Dashboard, not the actual bind address). requireAuth is
-                    // therefore the ONLY thing standing between "on" and "reachable by anyone who
-                    // can route to this device with no key" — it follows the user's own "Require
-                    // an API key" choice directly, with no automatic force-on.
-                    val host: String? = null
+                    val allowLan = settings.apiServerAllowLan.first()
+                    // Bind localhost unless the user explicitly opts into LAN access. NanoHTTPD's
+                    // null host means 0.0.0.0, so it is never used as the default.
+                    val host: String? = if (allowLan) null else "127.0.0.1"
                     val fullMode = settings.apiServerFullMode.first()
-                    // The API key is optional and applies only when the user turns it on — including
-                    // in full web app mode. That mode does expose /api/* (chats, messages,
-                    // attachments, knowledge bases) rather than only inference, so running it
-                    // without a key on an untrusted network is a real exposure; the Settings screen
-                    // and Privacy Dashboard both call that out in red rather than the server
-                    // overriding the choice.
-                    val requireAuth = settings.apiServerRequireAuth.first()
+                    // Only the localhost Basic API may be deliberately used without a key. LAN
+                    // access and the full browser workspace expose user data, so enforce auth at
+                    // this final gate even if preferences briefly present an unsafe combination.
+                    val requireAuth = requiresApiAuth(
+                        configuredAuth = settings.apiServerRequireAuth.first(),
+                        allowLan = allowLan,
+                        fullMode = fullMode,
+                        appToolsEnabled = settings.apiServerAppTools.first(),
+                    )
                     val auth = app.container.apiServerAuth
                     if (requireAuth) auth.tokenOrGenerate()
 
@@ -89,7 +91,6 @@ class ApiServerService : Service() {
                     }
                     true
                 }.getOrElse { failure ->
-                    if (failure is CancellationException) throw failure
                     Log.e(TAG, "API server failed to start", failure)
                     false
                 }

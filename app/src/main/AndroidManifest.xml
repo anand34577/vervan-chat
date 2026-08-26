@@ -29,11 +29,10 @@
 
     <!-- Phase J — the local OpenAI-compatible API server. This is the first and only reason
          this app ever declares INTERNET: opening any socket on Android, including a *server*
-         socket that only listens for inbound connections, requires it. Binds all interfaces
-         (0.0.0.0) whenever it's on — reachable from the local network any time the server is
-         enabled, gated only by the "Require an API key" setting (see ApiServerService/
-         LocalApiServer). Off by default; nothing here runs until the user explicitly turns the
-         server on, and Settings/Privacy Dashboard both surface the exposure plainly. -->
+         socket that only listens for inbound connections, requires it. The service binds only to
+         localhost by default; a separate explicit LAN-access setting opts into 0.0.0.0. Both
+         modes are off until the user enables the server, and Settings/Privacy Dashboard surface
+         the exposure and authentication choice plainly. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Android 11+ package-visibility: without a matching entry here, startActivity() on an
@@ -74,21 +73,21 @@
         </intent>
     </queries>
 
-    <!-- Cleartext is permitted for one reason: a user-added Remote API model pointed at their own
-         machine (llama.cpp/Ollama/vLLM on the LAN) serves plain HTTP and has no certificate to
-         present, so an https-only policy made the most common self-hosted case impossible. It does
-         not downgrade anything else — every built-in endpoint (model catalogue, downloads) is a
-         hardcoded https URL — and the add-model dialog warns whenever the URL the user typed is
-         http://. See RemoteOpenAiEngine.baseUrlError. -->
+    <!-- Cleartext is disabled globally. The network-security config makes the narrow exception
+         needed for loopback/self-hosted development endpoints; network-hosted model providers
+         must use HTTPS. The inbound local API server is HTTP by design, but Android's cleartext
+         policy governs app-originated traffic, not a socket listening for other clients. -->
     <application
         android:name=".VervanApp"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Vervan"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true">
         <!-- Native extraction is controlled by packaging.jniLibs.useLegacyPackaging in the app
              Gradle configuration. This keeps
@@ -136,7 +135,14 @@
         <service
             android:name=".server.ApiServerService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <!-- A user-enabled inbound local server is not a finite data-transfer job. Declaring
+                 it as dataSync makes modern Android apply the dataSync runtime budget and stop an
+                 intentionally persistent server after the time allowance is exhausted. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled local AI inference API server" />
+        </service>
 
         <!-- Model downloader (see com.vervan.chat.modeldownload) — runs only while a catalogue
              model download is active/paused, so background downloads survive leaving the
@@ -179,9 +185,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.Vervan">
+            android:theme="@style/Theme.Vervan.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -224,7 +229,7 @@
             android:exported="true"
             android:theme="@style/Theme.Vervan.Dialog"
             android:excludeFromRecents="true"
-            android:label="Vervan Chat">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,7 +1,7 @@
 package com.vervan.chat.store.catalog
 
 import android.content.Context
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import java.io.File
 import org.json.JSONObject
 
@@ -37,6 +37,7 @@ class CatalogStore(private val root: File) {
             ?.let { JSONObject(it.readText()).optInt("highestAcceptedVersion", 0) }
             ?: 0
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         Log.w(TAG, "Catalogue meta unreadable, treating as never-accepted: ${t.message}")
         0
     }
@@ -45,6 +46,7 @@ class CatalogStore(private val root: File) {
         metaFile.takeIf { it.isFile }
             ?.let { JSONObject(it.readText()).optLong("lastSyncAt", 0L) } ?: 0L
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         0L
     }
 

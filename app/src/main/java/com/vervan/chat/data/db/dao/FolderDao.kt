@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FolderDao : BaseDao<Folder> {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertDefault(folder: Folder)
+
     @Query("SELECT * FROM folders WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<Folder>>
 
@@ -46,4 +49,11 @@ interface FolderDao : BaseDao<Folder> {
 
     @Query("UPDATE folders SET defaultPersonaId = NULL WHERE defaultPersonaId = :personaId")
     suspend fun clearDefaultPersona(personaId: String)
+
+    /** Removes a deleted knowledge base from the denormalized folder defaults list. */
+    @Query(
+        "UPDATE folders SET defaultKnowledgeBaseIds = TRIM(REPLACE(',' || defaultKnowledgeBaseIds || ',', ',' || :knowledgeBaseId || ',', ','), ',') " +
+            "WHERE (',' || defaultKnowledgeBaseIds || ',') LIKE '%,' || :knowledgeBaseId || ',%'"
+    )
+    suspend fun clearKnowledgeBaseReference(knowledgeBaseId: String)
 }

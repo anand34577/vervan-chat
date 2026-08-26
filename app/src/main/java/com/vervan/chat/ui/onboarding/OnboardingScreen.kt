@@ -6,6 +6,7 @@ import android.os.StatFs
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,14 +29,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,7 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,7 @@ import com.vervan.chat.modeldownload.CatalogModel
 import com.vervan.chat.modeldownload.ModelCatalog
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanFilterChip
+import com.vervan.chat.ui.common.ModernistMeter
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanExtraShapes
@@ -73,11 +77,11 @@ import kotlinx.coroutines.launch
  */
 /** What a new user is here for — routes straight to the matching workspace instead of the
  * full 45-tool grid, and seeds it as a favorite so it's still one tap away from All Tools later. */
-enum class OnboardIntent(val label: String, val route: String?) {
-    CHAT("Just chat", null),
-    WRITE("Write", "writing"),
-    STUDY("Study documents", "study"),
-    CODE("Code", "dev")
+enum class OnboardIntent(val labelRes: Int, val route: String?) {
+    CHAT(com.vervan.chat.R.string.onboarding_intent_chat, null),
+    WRITE(com.vervan.chat.R.string.onboarding_intent_write, "writing"),
+    STUDY(com.vervan.chat.R.string.onboarding_intent_study, "study"),
+    CODE(com.vervan.chat.R.string.onboarding_intent_code, "dev")
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -101,9 +105,9 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
     // numbers but never *interpreted* them. A 4-GB-RAM device should hear "expect smaller
     // models"; a 12-GB device should hear "large models will run smoothly."
     val capabilityBlurb = when {
-        memory.totalMem >= 10L * 1024 * 1024 * 1024 -> "Plenty of memory for larger models and long conversations."
-        memory.totalMem >= 6L * 1024 * 1024 * 1024 -> "Comfortable headroom for everyday models."
-        else -> "Smaller models will run best on this device."
+        memory.totalMem >= 10L * 1024 * 1024 * 1024 -> stringResource(com.vervan.chat.R.string.onboarding_capability_plenty)
+        memory.totalMem >= 6L * 1024 * 1024 * 1024 -> stringResource(com.vervan.chat.R.string.onboarding_capability_comfortable)
+        else -> stringResource(com.vervan.chat.R.string.onboarding_capability_smaller)
     }
     // Answer the hardest new-user question ("which model fits my phone?") instead of leaving them
     // to guess in Model Manager. Pure, size/RAM-driven, so it auto-considers any generation model
@@ -113,32 +117,32 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
     val pages = listOf(
         OnboardPage(
             icon = Icons.Filled.AutoAwesome,
-            title = "Your private AI workspace",
-        body = "Chat, write, study, and use documents privately on your device.",
-            note = "AI can make mistakes. Review important answers and actions.",
+            title = stringResource(com.vervan.chat.R.string.onboarding_private_workspace),
+            body = stringResource(com.vervan.chat.R.string.onboarding_private_body),
+            note = stringResource(com.vervan.chat.R.string.onboarding_private_note),
             accentTone = OnboardAccentTone.Primary
         ),
         OnboardPage(
             icon = Icons.Filled.Security,
-            title = "Choose a model for this device",
-            body = "Android ${Build.VERSION.RELEASE}  •  $abi\n$ramGb GB RAM  •  $storageGb GB storage free\n$capabilityBlurb",
-        note = "Vervan checks each package. Find advanced options later in AI models.",
+            title = stringResource(com.vervan.chat.R.string.onboarding_choose_model),
+            body = stringResource(com.vervan.chat.R.string.onboarding_model_device_body, Build.VERSION.RELEASE, abi, ramGb, storageGb, capabilityBlurb),
+            note = stringResource(com.vervan.chat.R.string.onboarding_model_note),
             accentTone = OnboardAccentTone.Tertiary,
             importButton = true
         ),
         OnboardPage(
             icon = Icons.Filled.Tune,
-            title = "Choose your starting balance",
-        body = "Balance speed, answer depth, and battery use.",
-            note = "Balanced suits most devices. You can change this later in Settings.",
+            title = stringResource(com.vervan.chat.R.string.onboarding_starting_balance),
+            body = stringResource(com.vervan.chat.R.string.onboarding_balance_body),
+            note = stringResource(com.vervan.chat.R.string.onboarding_balance_note),
             accentTone = OnboardAccentTone.Primary,
             profilePicker = true
         ),
         OnboardPage(
             icon = Icons.Filled.AutoAwesome,
-            title = "What brings you here?",
-            body = "Jump straight into the workspace you'll use most. You can open any tool from All Tools any time.",
-            note = "This just picks your starting screen — nothing else changes.",
+            title = stringResource(com.vervan.chat.R.string.onboarding_intent_title),
+            body = stringResource(com.vervan.chat.R.string.onboarding_intent_body),
+            note = stringResource(com.vervan.chat.R.string.onboarding_intent_note),
             accentTone = OnboardAccentTone.Secondary,
             intentPicker = true
         )
@@ -154,7 +158,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = VervanExtraShapes.pill,
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
@@ -164,7 +168,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                         horizontalArrangement = Arrangement.spacedBy(Space.xs)
                     ) {
                         Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Vervan", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(com.vervan.chat.R.string.app_name), style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -174,28 +178,19 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                 TextButton(onClick = {
                     scope.launch { app.container.settingsRepository.setDefaultProfile(selectedProfile) }
                     onDone(selectedIntent)
-                }) { Text("Skip") }
+                }) { Text(stringResource(com.vervan.chat.R.string.action_skip)) }
             }
-            Row(
-                Modifier.fillMaxWidth().padding(top = Space.md).semantics {
-                    contentDescription = "Step ${page + 1} of ${pages.size}"
-                },
-                horizontalArrangement = Arrangement.Center
-            ) {
-                pages.indices.forEach { index ->
-                    val isActive = index == page
-                    Box(
-                        Modifier
-                            .padding(horizontal = Space.xs)
-                            .size(if (isActive) 10.dp else 8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isActive) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-                            )
-                    )
-                }
-            }
+            val stepLabel = stringResource(com.vervan.chat.R.string.onboarding_step, page + 1, pages.size)
+            val stepDescription = stringResource(com.vervan.chat.R.string.onboarding_step_description, page + 1, pages.size)
+            ModernistMeter(
+                value = (page + 1).toFloat() / pages.size,
+                segments = pages.size,
+                label = stepLabel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Space.md)
+                    .semantics { contentDescription = stepDescription },
+            )
             androidx.compose.animation.AnimatedContent(
                 targetState = page,
                 transitionSpec = {
@@ -210,7 +205,24 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                                 androidx.compose.animation.fadeOut(VervanMotion.emphasized(200)))
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(page, pages.size) {
+                        var horizontalDistance = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { horizontalDistance = 0f },
+                            onHorizontalDrag = { change, dragAmount ->
+                                horizontalDistance += dragAmount
+                                change.consume()
+                            },
+                            onDragEnd = {
+                                when {
+                                    horizontalDistance <= -48f -> page = (page + 1).coerceAtMost(pages.lastIndex)
+                                    horizontalDistance >= 48f -> page = (page - 1).coerceAtLeast(0)
+                                }
+                            },
+                        )
+                    },
                 label = "onboardingPage"
             ) { targetPage ->
                 val p = pages[targetPage]
@@ -224,13 +236,31 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                 ) {
                     // Hero icon — tinted per-page so each step has its own visual identity instead
                     // of every page looking identical.
+                    Text(
+                        stringResource(com.vervan.chat.R.string.onboarding_getting_started),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    // Same gradient-badge language as Home's status icon and every shared
+                    // Feature-size IconAffordance — this is the one icon per onboarding page the
+                    // user's eye is meant to land on first, so it gets the same visual weight
+                    // rather than a flat tinted square.
                     val (heroBg, heroFg) = accentColors(p.accentTone)
-                    Surface(
-                        shape = VervanExtraShapes.pill,
-                        color = heroBg,
-                        contentColor = heroFg
+                    Box(
+                        Modifier
+                            .clip(MaterialTheme.shapes.small)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.linearGradient(
+                                    listOf(heroBg, androidx.compose.ui.graphics.lerp(heroBg, heroFg, 0.18f))
+                                )
+                            )
                     ) {
-                        Icon(p.icon, contentDescription = null, modifier = Modifier.padding(Space.lg).size(36.dp))
+                        Icon(
+                            p.icon,
+                            contentDescription = null,
+                            tint = heroFg,
+                            modifier = Modifier.padding(Space.lg).size(36.dp)
+                        )
                     }
                     Text(
                         p.title,
@@ -254,11 +284,12 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                         recommendation?.let { OnboardRecommendationCard(it) }
                         Button(
                             onClick = onImportModel,
-                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
+                            shape = MaterialTheme.shapes.small,
                         ) {
                             Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
                             Text(
-                                if (recommendation != null) "Download in Model Manager" else "Browse models to download",
+                                if (recommendation != null) stringResource(com.vervan.chat.R.string.onboarding_download_model) else stringResource(com.vervan.chat.R.string.onboarding_browse_models),
                                 Modifier.padding(start = Space.sm)
                             )
                         }
@@ -288,7 +319,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                                 VervanFilterChip(
                                     selected = selectedIntent == intent,
                                     onClick = { selectedIntent = intent },
-                                    label = { Text(intent.label) }
+                                    label = { Text(stringResource(intent.labelRes)) }
                                 )
                             }
                         }
@@ -299,7 +330,7 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                 Modifier.fillMaxWidth().padding(top = Space.sm),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { page-- }, enabled = page > 0) { Text("Back") }
+                TextButton(onClick = { page-- }, enabled = page > 0) { Text(stringResource(com.vervan.chat.R.string.action_back)) }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = {
                     if (page == pages.lastIndex) {
@@ -308,8 +339,8 @@ fun OnboardingScreen(onDone: (OnboardIntent) -> Unit, onImportModel: () -> Unit 
                     } else {
                         page++
                     }
-                }) {
-                    Text(if (page == pages.lastIndex) "Get started" else "Continue")
+                }, shape = MaterialTheme.shapes.small) {
+                    Text(if (page == pages.lastIndex) stringResource(com.vervan.chat.R.string.onboarding_get_started) else stringResource(com.vervan.chat.R.string.action_continue))
                 }
             }
         }
@@ -339,7 +370,7 @@ private data class OnboardPage(
 )
 
 /** A starting generation model chosen for a device, plus whether it comfortably fits. */
-internal data class ModelRecommendation(val model: CatalogModel, val fits: Boolean, val reason: String)
+internal data class ModelRecommendation(val model: CatalogModel, val fits: Boolean, val reasonRes: Int, val reasonArg: String? = null)
 
 /**
  * Picks a starting generation model for a device with [totalRamBytes] of RAM: the largest catalog
@@ -358,9 +389,9 @@ internal fun recommendModel(
     val bySizeDesc = candidates.sortedByDescending { it.totalExpectedBytes ?: 0L }
     val best = bySizeDesc.firstOrNull { totalRamBytes >= needBytes(it) }
     return if (best != null) {
-        ModelRecommendation(best, fits = true, reason = "Runs comfortably on your ${formatGb(totalRamBytes)} GB of RAM.")
+        ModelRecommendation(best, fits = true, reasonRes = com.vervan.chat.R.string.onboarding_recommendation_comfortable, reasonArg = formatGb(totalRamBytes))
     } else {
-        ModelRecommendation(bySizeDesc.last(), fits = false, reason = "The lightest option — memory may be tight on this device.")
+        ModelRecommendation(bySizeDesc.last(), fits = false, reasonRes = com.vervan.chat.R.string.onboarding_recommendation_lightest)
     }
 }
 
@@ -378,18 +409,18 @@ private fun OnboardRecommendationCard(rec: ModelRecommendation) {
     ) {
         Column(Modifier.padding(Space.lg)) {
             Text(
-                if (rec.fits) "Recommended for your device" else "Best fit for your device",
+                stringResource(if (rec.fits) com.vervan.chat.R.string.onboarding_recommended_for_device else com.vervan.chat.R.string.onboarding_best_fit_for_device),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (rec.fits) onContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                if (sizeGb != null) "${rec.model.displayName}  •  $sizeGb GB download" else rec.model.displayName,
+                if (sizeGb != null) stringResource(com.vervan.chat.R.string.onboarding_download_size, rec.model.displayName, sizeGb) else rec.model.displayName,
                 style = MaterialTheme.typography.titleMedium,
                 color = onContainer,
                 modifier = Modifier.padding(top = Space.xs)
             )
             Text(
-                rec.reason,
+                if (rec.reasonArg != null) stringResource(rec.reasonRes, rec.reasonArg) else stringResource(rec.reasonRes),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (rec.fits) onContainer.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.xs)
@@ -402,5 +433,5 @@ private fun formatGb(bytes: Long): String = if (bytes % (1024L * 1024 * 1024) ==
     // Whole-GB numbers read better without the ".0" — "8 GB" instead of "8.0 GB".
     (bytes / (1024L * 1024 * 1024)).toString()
 } else {
-    String.format("%.1f", bytes / (1024.0 * 1024 * 1024))
+    String.format(java.util.Locale.getDefault(), "%.1f", bytes / (1024.0 * 1024 * 1024))
 }

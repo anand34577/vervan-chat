@@ -13,4 +13,12 @@ class HttpRangeDownloaderTest {
         assertFalse(resumeSourceChanged(null, "yesterday", null, "yesterday"))
         assertTrue(resumeSourceChanged(null, "yesterday", null, "today"))
     }
+
+    @Test
+    fun byteLimitIsEnforcedBeforeWritingAndWithoutOverflow() {
+        assertFalse(exceedsDownloadLimit(90, 10, 100))
+        assertTrue(exceedsDownloadLimit(90, 11, 100))
+        assertTrue(exceedsDownloadLimit(Long.MAX_VALUE, 1, Long.MAX_VALUE))
+        assertFalse(exceedsDownloadLimit(Long.MAX_VALUE, 1, null))
+    }
 }

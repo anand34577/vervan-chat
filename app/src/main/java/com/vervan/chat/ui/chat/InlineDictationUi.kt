@@ -15,16 +15,16 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
+import com.vervan.chat.ui.common.VervanFilledIconButton as FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -165,7 +165,8 @@ internal fun InlineDictationReview(
             Button(
                 onClick = onSend,
                 enabled = transcript.isNotBlank(),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.dictation_send)) }
         }
     }
@@ -175,7 +176,7 @@ internal fun InlineDictationReview(
 internal fun InlineDictationError(message: String, onRetry: () -> Unit, onKeyboard: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(Space.sm),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer
     ) {
@@ -184,7 +185,7 @@ internal fun InlineDictationError(message: String, onRetry: () -> Unit, onKeyboa
             Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs))
             Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 TextButton(onClick = onKeyboard) { Text(stringResource(R.string.dictation_use_keyboard)) }
-                Button(onClick = onRetry) { Text(stringResource(R.string.dictation_record_again)) }
+                Button(onClick = onRetry, shape = MaterialTheme.shapes.small) { Text(stringResource(R.string.dictation_record_again)) }
             }
         }
     }

@@ -102,7 +102,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 _workflow.value = db.workflowDao().get(workflowId)
                 _workflowFound.value = _workflow.value != null
             } catch (t: Throwable) {
-                if (t is CancellationException) throw t
+                com.vervan.chat.system.rethrowCancellation(t)
                 _workflowFound.value = false
                 _loadError.value = t.toUserMessage()
             } finally {
@@ -120,6 +120,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         val tmp = try {
             File.createTempFile("workflow_input", ".tmp", app.cacheDir)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             _error.value = "Couldn't read file: ${t.toUserMessage()}"
             return@withContext null
         }
@@ -162,6 +163,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 }
                 extracted
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _error.value = "Couldn't read file: ${t.toUserMessage()}"
                 null
             }
@@ -257,6 +259,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                     resumeIndex = index + 1
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // Throwable, not just Exception — a multi-step run's accumulated carryText can
                 // grow large enough to OutOfMemoryError on a low-RAM device; unlike ChatViewModel
                 // this runner had no outer Throwable safety net at all.
@@ -314,6 +317,8 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
 
     private val _recordFound = MutableStateFlow(workflowId == null)
     val recordFound: StateFlow<Boolean> = _recordFound
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
 
     init {
         load()
@@ -342,7 +347,7 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
                     _isBuiltIn.value = wf.isBuiltIn
                 }
             } catch (t: Throwable) {
-                if (t is CancellationException) throw t
+                com.vervan.chat.system.rethrowCancellation(t)
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
             } finally {
@@ -351,10 +356,11 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
         }
     }
 
-    fun setName(value: String) { _name.value = value }
-    fun setDescription(value: String) { _description.value = value }
+    fun setName(value: String) { _name.value = value; _saveError.value = null }
+    fun setDescription(value: String) { _description.value = value; _saveError.value = null }
     fun setStep(index: Int, value: String) {
         _steps.value = _steps.value.toMutableList().also { it[index] = value }
+        _saveError.value = null
     }
     fun addStep() {
         if (_steps.value.size >= com.vervan.chat.ui.common.ValidationLimits.WORKFLOW_STEP_COUNT) return
@@ -376,15 +382,28 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
      * fixed reference points, not edited in place. */
     suspend fun save(): Boolean {
         val cleanSteps = _steps.value.map { it.trim() }.filter { it.isNotBlank() }
-        if (_name.value.isBlank() || cleanSteps.isEmpty()) return false
+        if (_name.value.isBlank() || cleanSteps.isEmpty()) {
+            _saveError.value = "Workflow name and at least one step are required."
+            return false
+        }
         if (_name.value.length > ValidationLimits.WORKFLOW_NAME ||
             _description.value.length > ValidationLimits.WORKFLOW_DESCRIPTION ||
             _steps.value.size > ValidationLimits.WORKFLOW_STEP_COUNT ||
             cleanSteps.any { it.length > ValidationLimits.WORKFLOW_STEP }
-        ) return false
+        ) {
+            _saveError.value = "Shorten the highlighted fields before saving."
+            return false
+        }
+        val cleanName = _name.value.trim()
+        val editId = resolveEditId(workflowId, _isBuiltIn.value)
+        val existing = db.workflowDao().findByName(cleanName)
+        if (existing != null && existing.id != editId) {
+            _saveError.value = "A workflow named \"$cleanName\" already exists."
+            return false
+        }
         val workflow = Workflow(
-            id = resolveEditId(workflowId, _isBuiltIn.value),
-            name = _name.value.trim(),
+            id = editId,
+            name = cleanName,
             description = _description.value.trim(),
             stepsJson = Workflow.encodeSteps(cleanSteps),
             isBuiltIn = false

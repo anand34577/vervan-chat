@@ -13,13 +13,10 @@ import androidx.compose.ui.unit.dp
 /**
  * Semantic surface-role system — the missing "elevation" layer.
  *
- * Vervan is a flat + bordered aesthetic (no drop shadows in the base palette): depth is carried
- * by *tinted surface containers* + border prominence, not by shadow. Before this, screens picked
- * `surfaceContainerLow`/`surfaceContainer`/`surfaceContainerHigh` ad hoc and paired each with an
- * arbitrary hardcoded border alpha, so two cards meant to read as "the same kind of thing" often
- * didn't. This maps the five things a surface can *be* to one container tint + one border
- * prominence + an optional shadow elevation, so a card's role is declared once and reads
- * consistently everywhere.
+ * Depth is carried primarily by tonal surfaces, with borders used only where they clarify an
+ * interaction boundary. Before this, screens picked containers and border alphas ad hoc, which
+ * made a page feel like a stack of unrelated boxes. This maps each surface role to a predictable
+ * tonal level, border prominence, and optional elevation.
  *
  * Roles (low → high in the stack):
  *  - [Sunken]   wells the eye sits *into* — input backgrounds, read-only value fields.
@@ -55,19 +52,19 @@ enum class SurfaceRole {
     fun border(): BorderStroke = vervanBorder(
         when (this) {
             Sunken -> VervanBorderProminence.Subtle
-            Card -> VervanBorderProminence.Standard
+            Card -> VervanBorderProminence.Subtle
             Raised -> VervanBorderProminence.Standard
             Floating -> VervanBorderProminence.Emphasized
             Overlay -> VervanBorderProminence.Emphasized
         }
     )
 
-    /** Shadow elevation for the few surfaces that truly float above content. Flat roles are 0dp:
-     *  the border + tint already separate them, and shadows on a warm-dark palette muddy more than
-     *  they help. Only [Floating]/[Overlay] get a whisper of shadow for physical lift. */
+    /** Shadow elevation for surfaces that truly float above content. */
     val shadowElevation: Dp
         get() = when (this) {
-            Sunken, Card, Raised -> 0.dp
+            Sunken -> 0.dp
+            Card -> 1.dp
+            Raised -> 2.dp
             Floating -> 3.dp
             Overlay -> 6.dp
         }

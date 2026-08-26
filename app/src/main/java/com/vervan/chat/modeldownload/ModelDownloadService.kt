@@ -79,6 +79,7 @@ class ModelDownloadService : Service() {
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "watchJob failed", t)
                 stopSelf()
             }
@@ -92,11 +93,13 @@ class ModelDownloadService : Service() {
         if (modelId != null && version != null) {
             when (intent.action) {
                 ACTION_PAUSE -> scope.launch {
-                    runCatching { repository.pauseDownload(modelId, version) }
+                    com.vervan.chat.system.runCatchingPreservingCancellation { repository.pauseDownload(modelId, version) }
                         .onFailure { Log.e(TAG, "pauseDownload($modelId, $version) failed", it) }
                 }
                 ACTION_STOP -> scope.launch {
-                    runCatching { repository.cancelDownload(modelId, version, keepPartial = false) }
+                    com.vervan.chat.system.runCatchingPreservingCancellation {
+                        repository.cancelDownload(modelId, version, keepPartial = false)
+                    }
                         .onFailure { Log.e(TAG, "cancelDownload($modelId, $version) failed", it) }
                 }
             }

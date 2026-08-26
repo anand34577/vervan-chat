@@ -1,10 +1,26 @@
 package com.vervan.chat.llm
 
+import java.io.BufferedReader
+import java.io.StringReader
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RemoteOpenAiEngineTest {
+
+    @Test
+    fun `bounded line reader handles CRLF and EOF`() {
+        val reader = BufferedReader(StringReader("one\r\ntwo"))
+        assertEquals("one", reader.readLineLimited(8))
+        assertEquals("two", reader.readLineLimited(8))
+        assertNull(reader.readLineLimited(8))
+    }
+
+    @Test(expected = RemoteOpenAiApiException::class)
+    fun `bounded line reader rejects oversized provider lines`() {
+        BufferedReader(StringReader("12345\n")).readLineLimited(4)
+    }
 
     @Test
     fun acceptsHttpsEndpoints() {
@@ -17,11 +33,13 @@ class RemoteOpenAiEngineTest {
     }
 
     @Test
-    fun acceptsCleartextHttpForSelfHostedEndpoints() {
-        // A server on the user's own LAN has no certificate to present; the dialog warns about the
-        // key travelling unencrypted rather than refusing the URL outright.
-        assertNull(RemoteOpenAiEngine.baseUrlError("http://192.168.1.10:8080/v1"))
+    fun acceptsCleartextHttpOnlyForLoopbackAndEmulatorHosts() {
+        // Android permits cleartext only for services that stay on the same device or the emulator
+        // host. A LAN provider must expose HTTPS so the API key cannot be sniffed in transit.
         assertNull(RemoteOpenAiEngine.baseUrlError("HTTP://localhost:11434/v1"))
+        assertNull(RemoteOpenAiEngine.baseUrlError("http://127.0.0.1:1234/v1"))
+        assertNull(RemoteOpenAiEngine.baseUrlError("http://10.0.2.2:1234/v1"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("http://192.168.1.10:8080/v1"))
     }
 
     @Test
@@ -37,5 +55,14 @@ class RemoteOpenAiEngineTest {
         // A bare host with no scheme is the most likely user typo.
         assertNotNull(RemoteOpenAiEngine.baseUrlError("api.openai.com/v1"))
         assertNotNull(RemoteOpenAiEngine.baseUrlError("https:///v1"))
+    }
+
+    @Test
+    fun rejectsCredentialQueryFragmentAndParentPathComponents() {
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("https://user:secret@example.com/v1"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("https://example.com/v1?api_key=secret"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("https://example.com/v1#fragment"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("https://example.com/v1/../admin"))
+        assertNotNull(RemoteOpenAiEngine.baseUrlError("https://example.com:70000/v1"))
     }
 }

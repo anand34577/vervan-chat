@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,7 +61,7 @@ fun <T> PickerSheet(
                 VervanSearchField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Search",
+                    placeholder = stringResource(R.string.shortcut_search),
                     modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                 )
             }

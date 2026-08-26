@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -23,17 +21,16 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.NoteAlt
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -55,7 +52,10 @@ import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
-import com.vervan.chat.ui.common.ContextGuideCard
+import com.vervan.chat.ui.common.IconAffordance
+import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -67,7 +67,7 @@ import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanGridMinWidth
+import com.vervan.chat.ui.theme.ModernistTokens
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.SnackbarHost
@@ -165,12 +165,7 @@ fun LibraryScreen(
                 )
             } else {
                 MediumTopAppBar(
-                    title = {
-                        Column {
-                            Text(stringResource(R.string.library_title))
-                            Text(stringResource(R.string.library_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    },
+                    title = { Text(stringResource(R.string.library_title)) },
                     actions = {
                         IconButton(onClick = onOpenNotes) { Icon(Icons.Outlined.NoteAlt, contentDescription = stringResource(R.string.library_open_notes)) }
                         if (tab == 0) IconButton(onClick = onNewPersona) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.library_new_persona)) }
@@ -186,12 +181,11 @@ fun LibraryScreen(
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize()) {
-            ContextGuideCard(
-                icon = Icons.Outlined.BookmarkBorder,
-                title = stringResource(R.string.library_guide_title),
-                body = stringResource(R.string.library_guide_body),
-                modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
-                accentIndex = 4,
+            ModernistScreenHeader(
+                eyebrow = stringResource(R.string.ui_libraryscreen_185_reusable_context),
+                title = stringResource(R.string.ui_libraryscreen_186_your_building_blocks),
+                body = stringResource(R.string.ui_libraryscreen_187_save_the_context_prompts_workflows_and_answe),
+                trailing = { ModernistTag(currentTabLabel.uppercase(), active = true) }
             )
             androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md) {
                 libTabs.forEachIndexed { index, labelRes ->
@@ -267,14 +261,16 @@ private fun PersonasTab(
             if (query.isBlank()) stringResource(R.string.library_personas_empty) else stringResource(R.string.library_personas_no_match),
                     if (query.isBlank()) stringResource(R.string.library_personas_empty_body) else stringResource(R.string.library_try_another_name),
             actionLabel = if (query.isBlank()) stringResource(R.string.library_new_persona) else null,
-            onAction = if (query.isBlank()) onNewPersona else null
+            onAction = if (query.isBlank()) onNewPersona else null,
+            modifier = Modifier.fillMaxSize(),
+            centered = true
         )
         return
     }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(VervanGridMinWidth.compactCard),
+    LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = Space.md),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.md)
     ) {
         items(personas, key = { it.id }) { persona ->
             PersonaCard(
@@ -287,14 +283,27 @@ private fun PersonasTab(
             )
         }
         if (!selectionMode) item {
-            Card(
+            Surface(
                 onClick = onNewPersona,
-                modifier = Modifier.padding(Space.xs).fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                modifier = Modifier.fillMaxWidth().heightIn(min = ModernistTokens.Layout.rowMinHeight),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.small,
             ) {
-                Column(Modifier.padding(Space.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(stringResource(R.string.library_new_persona_card), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.xs))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconAffordance(
+                        icon = Icons.Filled.Add,
+                        size = IconAffordanceSize.Compact,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                    Text(
+                        stringResource(R.string.library_new_persona_card),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = Space.md)
+                    )
                 }
             }
         }
@@ -310,26 +319,29 @@ private fun PersonaCard(
     onToggleSelected: () -> Unit,
     onEnterSelection: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.padding(Space.xs).fillMaxWidth().selectableItem(
+    Surface(
+        modifier = Modifier.fillMaxWidth().heightIn(min = ModernistTokens.Layout.rowMinHeight).selectableItem(
             selectionMode = selectionMode,
             onClick = onClick,
             onToggleSelected = onToggleSelected,
             onEnterSelection = onEnterSelection,
             selectable = !persona.isBuiltIn
         ),
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null,
+        shape = MaterialTheme.shapes.small
     ) {
-        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !persona.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             val avatar = rememberThumbnail(
                 persona.avatarPath?.takeUnless { it.startsWith("emoji:") }, 128
             )
             val emoji = persona.avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
-            val accent = com.vervan.chat.ui.theme.vervanAccentFor((persona.name.hashCode() and Int.MAX_VALUE) % 6)
             Box(
-                Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(accent.container),
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.small).background(
+                    if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primaryContainer
+                ),
                 contentAlignment = Alignment.Center
             ) {
                 if (avatar != null) {
@@ -337,7 +349,7 @@ private fun PersonaCard(
                         bitmap = avatar,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.medium)
+                        modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.small)
                     )
                 } else if (emoji != null) {
                     Text(emoji, style = MaterialTheme.typography.titleMedium)
@@ -345,7 +357,7 @@ private fun PersonaCard(
                     Text(
                         persona.name.trim().firstOrNull()?.uppercase() ?: "P",
                         style = MaterialTheme.typography.titleMedium,
-                        color = accent.onContainer,
+                        color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -354,12 +366,14 @@ private fun PersonaCard(
                     text = persona.name,
                     style = MaterialTheme.typography.labelLarge
                 )
-                if (persona.description.isNotBlank()) {
-                    Text(
-                        persona.description, style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    persona.description.ifBlank { "Personal response style" },
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
             }
         }
     }
@@ -380,11 +394,13 @@ private fun TemplatesTab(
         EmptyState(
             Icons.Outlined.Description,
             if (query.isBlank()) stringResource(R.string.library_templates_empty) else stringResource(R.string.library_templates_no_match),
-            if (query.isBlank()) stringResource(R.string.library_templates_empty_body) else stringResource(R.string.library_try_another_search)
+            if (query.isBlank()) stringResource(R.string.library_templates_empty_body) else stringResource(R.string.library_try_another_search),
+            modifier = Modifier.fillMaxSize(),
+            centered = true
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = Space.md), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.md)) {
         items(templates, key = { it.id }) { template ->
             TemplateCard(template, { onOpenTemplate(template.id) }, template.id in selected, selectionMode, { onToggleSelected(template.id) }, { onEnterSelection(template.id) })
         }
@@ -393,21 +409,29 @@ private fun TemplatesTab(
 
 @Composable
 private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit, selected: Boolean, selectionMode: Boolean, onToggleSelected: () -> Unit, onEnterSelection: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !template.isBuiltIn),
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
+    Surface(
+        modifier = Modifier.fillMaxWidth().heightIn(min = ModernistTokens.Layout.rowMinHeight).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !template.isBuiltIn),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null,
+        shape = MaterialTheme.shapes.small
     ) {
-        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !template.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
-            Column(Modifier.weight(1f)) {
-            Text("/${template.name}", style = MaterialTheme.typography.titleSmall)
-            if (template.description.isNotBlank()) {
-                Text(
-                    template.description, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs)
-                )
-            }
+            IconAffordance(
+                icon = Icons.Outlined.Description,
+                size = IconAffordanceSize.Compact,
+                tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primaryContainer
+            )
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text("/${template.name}", style = MaterialTheme.typography.titleSmall)
+                if (template.description.isNotBlank()) {
+                    Text(
+                        template.description, style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs)
+                    )
+                }
             }
         }
     }
@@ -429,11 +453,13 @@ private fun WorkflowsTab(
         EmptyState(
             Icons.Outlined.AccountTree,
             if (query.isBlank()) stringResource(R.string.library_workflows_empty) else stringResource(R.string.library_workflows_no_match),
-            if (query.isBlank()) stringResource(R.string.library_workflows_empty_body) else stringResource(R.string.library_try_another_search)
+            if (query.isBlank()) stringResource(R.string.library_workflows_empty_body) else stringResource(R.string.library_try_another_search),
+            modifier = Modifier.fillMaxSize(),
+            centered = true
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = Space.md), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.md)) {
         items(workflows, key = { it.id }) { workflow ->
             WorkflowCard(workflow, { onOpenWorkflow(workflow.id) }, { onEditWorkflow(workflow.id) }, workflow.id in selected, selectionMode, { onToggleSelected(workflow.id) }, { onEnterSelection(workflow.id) })
         }
@@ -442,19 +468,29 @@ private fun WorkflowsTab(
 
 @Composable
 private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> Unit, selected: Boolean, selectionMode: Boolean, onToggleSelected: () -> Unit, onEnterSelection: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !workflow.isBuiltIn),
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null
+    Surface(
+        modifier = Modifier.fillMaxWidth().heightIn(min = ModernistTokens.Layout.rowMinHeight).selectableItem(selectionMode, onClick, onToggleSelected, onEnterSelection, selectable = !workflow.isBuiltIn),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary) else null,
+        shape = MaterialTheme.shapes.small
     ) {
-        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !workflow.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
-            Column(Modifier.weight(1f)) {
+            IconAffordance(
+                icon = Icons.Outlined.AccountTree,
+                size = IconAffordanceSize.Compact,
+                tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimaryContainer,
+                containerColor = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primaryContainer
+            )
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
                 Text(workflow.name, style = MaterialTheme.typography.titleSmall)
                 Text(
                     stringResource(R.string.library_workflow_steps, workflow.steps.size) + if (workflow.description.isNotBlank()) " · ${workflow.description}" else "",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    style = MaterialTheme.typography.labelSmall, color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = Space.xs)
                 )
             }
             if (!selectionMode) TextButton(onClick = onEdit) { Text(stringResource(R.string.library_edit)) }
@@ -483,26 +519,31 @@ private fun SavedTab(
         EmptyState(
             Icons.Outlined.BookmarkBorder,
             if (query.isBlank()) stringResource(R.string.library_saved_empty) else stringResource(R.string.library_saved_no_match),
-            if (query.isBlank()) stringResource(R.string.library_saved_empty_body) else stringResource(R.string.library_try_another_search)
+            if (query.isBlank()) stringResource(R.string.library_saved_empty_body) else stringResource(R.string.library_try_another_search),
+            modifier = Modifier.fillMaxSize(),
+            centered = true
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = Space.md), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.md)) {
         items(filtered, key = { it.id }) { output ->
             val isSelected = output.id in selected
             var expanded by remember(output.id) { mutableStateOf(false) }
-            Card(
-                Modifier.fillMaxWidth().padding(vertical = Space.xs)
+            Surface(
+                Modifier.fillMaxWidth()
+                    .heightIn(min = ModernistTokens.Layout.rowMinHeight)
                     .selectableItem(
                         selectionMode = selectionMode,
                         onClick = { expanded = !expanded },
                         onToggleSelected = { onToggleSelected(output.id) },
                         onEnterSelection = { onEnterSelection(output.id) }
                     ),
-                colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
+                color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null,
+                shape = MaterialTheme.shapes.small
             ) {
-                Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
                     if (selectionMode) {
                         Checkbox(
                             checked = isSelected,
@@ -510,7 +551,13 @@ private fun SavedTab(
                             colors = CheckboxDefaults.colors(uncheckedColor = MaterialTheme.colorScheme.outline)
                         )
                     }
-                    Column(Modifier.weight(1f)) {
+                    IconAffordance(
+                        icon = Icons.Outlined.BookmarkBorder,
+                        size = IconAffordanceSize.Compact,
+                        tint = if (isSelected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primaryContainer
+                    )
+                    Column(Modifier.weight(1f).padding(start = Space.md)) {
                         Text(
                             output.label.takeIf { it.isNotBlank() && !it.contains('-') } ?: stringResource(R.string.library_saved_output),
                             style = MaterialTheme.typography.titleSmall,
@@ -521,7 +568,7 @@ private fun SavedTab(
                                 if (output.sourceChatId != null) append(" · ").append(fromChatLabel)
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = Space.xs),
                         )
                         Text(

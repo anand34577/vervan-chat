@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.RepeatMode
@@ -15,6 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,9 +27,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,12 +41,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FrontHand
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -53,17 +60,11 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -75,18 +76,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.vervan.chat.R
@@ -96,6 +108,7 @@ import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.VervanMono
 import com.vervan.chat.voice.VoiceControllerState
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 import java.util.Locale
 
@@ -113,6 +126,7 @@ internal fun IntegratedVoicePanel(
     elapsedMs: Int,
     liveTranscript: String,
     modelName: String?,
+    modelRunsOnDevice: Boolean,
     sttLabel: String,
     ttsLabel: String,
     microphoneMuted: Boolean,
@@ -164,20 +178,27 @@ internal fun IntegratedVoicePanel(
             .animateContentSize(animationSpec = tween(if (reducedMotion) 1 else 320)),
         shape = VervanExtraShapes.hero,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(
-            1.dp,
-            sessionAccent.copy(alpha = if (state == VoiceControllerState.IDLE) 0.42f else 0.68f)
-        )
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val compact = maxWidth < 390.dp
             val horizontalPadding = if (compact) Space.md else Space.lg
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(sessionAccent)
+            )
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = Space.md)
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = horizontalPadding, vertical = Space.md)
             ) {
-                VoicePanelHeader(
+                VoicePanelHeaderV2(
                     state = state,
                     modelName = modelName,
+                    modelRunsOnDevice = modelRunsOnDevice,
+                    sttLabel = sttLabel,
                     microphoneMuted = microphoneMuted,
                     playbackPaused = playbackPaused,
                     onEnd = onEnd
@@ -187,7 +208,6 @@ internal fun IntegratedVoicePanel(
                     ListeningModeToggle(
                         pushToTalkEnabled = pushToTalkEnabled,
                         onToggle = onTogglePushToTalkMode,
-                        compact = compact,
                         modifier = Modifier.padding(top = Space.md)
                     )
                 }
@@ -200,13 +220,16 @@ internal fun IntegratedVoicePanel(
                     VoicePanelError(errorMessage, onRetry)
                 } else {
                     AnimatedContent(
-                        targetState = state,
+                        // Keyed on the mode too (not just state) so switching hands-free/push-to-talk
+                        // while LISTENING crossfades instead of hard-cutting.
+                        targetState = VoiceConsoleKey(state, pushToTalkEnabled),
                         transitionSpec = {
                             if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
                             else fadeIn(tween(180)) togetherWith fadeOut(tween(120))
                         },
                         label = "voice-console-state"
-                    ) { active ->
+                    ) { key ->
+                        val active = key.state
                         VoiceStateBody(
                             state = active,
                             waveform = waveform,
@@ -234,7 +257,6 @@ internal fun IntegratedVoicePanel(
                 }
 
                 VoiceControlDock(
-                    compact = compact,
                     microphoneMuted = microphoneMuted,
                     speechOutputEnabled = speechOutputEnabled,
                     onToggleMute = onToggleMute,
@@ -250,19 +272,36 @@ internal fun IntegratedVoicePanel(
 }
 
 @Composable
-private fun VoicePanelHeader(
+private fun VoicePanelHeaderV2(
     state: VoiceControllerState,
     modelName: String?,
+    modelRunsOnDevice: Boolean,
+    sttLabel: String,
     microphoneMuted: Boolean,
     playbackPaused: Boolean,
     onEnd: () -> Unit
 ) {
-    val voiceEndDescription = stringResource(R.string.voice_end_session)
+    val endDescription = stringResource(R.string.voice_end_session)
+    val stateLabel = voicePanelStateLabel(state, microphoneMuted, playbackPaused)
+    val voiceStatusDescription = stringResource(R.string.voice_status, stateLabel)
+    val resolvedModel = modelName?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.voice_not_selected)
+    val resolvedStt = sttLabel.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.voice_not_available)
+    val privacyLabel = stringResource(
+        if (modelRunsOnDevice) R.string.voice_local_device else R.string.privacy_remote_title
+    )
+    val privacyDescription = if (modelRunsOnDevice) {
+        privacyLabel
+    } else {
+        stringResource(R.string.privacy_remote_icon_description)
+    }
+
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
             Surface(
-                modifier = Modifier.size(38.dp),
-                shape = CircleShape,
+                modifier = Modifier.size(44.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
@@ -276,45 +315,73 @@ private fun VoicePanelHeader(
             )
         }
         Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-            Text(stringResource(R.string.voice_chat), style = MaterialTheme.typography.titleMedium, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val stateLabel = voicePanelStateLabel(state, microphoneMuted, playbackPaused)
-                val voiceStatusDescription = stringResource(R.string.voice_status, stateLabel)
+                Text(
+                    stringResource(R.string.voice_chat),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1
+                )
                 Surface(
-                    shape = VervanExtraShapes.pill,
-                    color = voiceStateColor(state).copy(alpha = 0.13f),
-                    contentColor = voiceStateColor(state),
-                    modifier = Modifier.semantics {
+                    modifier = Modifier.padding(start = Space.sm).semantics {
                         liveRegion = LiveRegionMode.Polite
                         contentDescription = voiceStatusDescription
-                    }
+                    },
+                    shape = MaterialTheme.shapes.small,
+                    color = voiceStateColor(state).copy(alpha = 0.13f),
+                    contentColor = voiceStateColor(state)
                 ) {
                     Text(
                         stateLabel,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs)
-                    )
-                }
-                if (!modelName.isNullOrBlank()) {
-                    Text("  •  ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    Text(
-                        modelName,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.padding(horizontal = Space.sm, vertical = 2.dp)
                     )
                 }
             }
+            Row(
+                modifier = Modifier
+                    .padding(top = 3.dp)
+                    .semantics { contentDescription = privacyDescription },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.Cloud,
+                    contentDescription = null,
+                    tint = if (modelRunsOnDevice) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    privacyLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = Space.xs)
+                )
+            }
+            Text(
+                "$resolvedModel · $resolvedStt",
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = VervanMono),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 1.dp)
+            )
         }
-        OutlinedIconButton(
+        Surface(
             onClick = onEnd,
-            modifier = Modifier.size(40.dp).semantics { contentDescription = voiceEndDescription }
+            modifier = Modifier.size(48.dp).semantics {
+                contentDescription = endDescription
+            },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
         ) {
-            Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.CallEnd, contentDescription = null, modifier = Modifier.size(22.dp))
+            }
         }
     }
 }
@@ -352,11 +419,10 @@ private fun VoiceActivityIndicator(state: VoiceControllerState, modifier: Modifi
 private fun ListeningModeToggle(
     pushToTalkEnabled: Boolean,
     onToggle: () -> Unit,
-    compact: Boolean,
     modifier: Modifier = Modifier
 ) {
-    Surface(modifier.fillMaxWidth(), shape = VervanExtraShapes.pill, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.fillMaxWidth().padding(if (compact) 2.dp else 4.dp)) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.fillMaxWidth().padding(3.dp)) {
             ModeSegment(
                 icon = Icons.Filled.GraphicEq,
                 label = stringResource(R.string.voice_hands_free),
@@ -386,22 +452,25 @@ private fun ModeSegment(
     val selectionSuffix = if (selected) stringResource(R.string.voice_selected_suffix) else ""
     val modeDescription = stringResource(R.string.voice_mode_status, label, selectionSuffix)
     val segmentColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
         animationSpec = tween(220),
         label = "voice-mode-segment"
     )
     val segmentContentColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = tween(220),
         label = "voice-mode-segment-content"
     )
     Surface(
         onClick = onClick,
-        modifier = modifier.height(38.dp).semantics { contentDescription = modeDescription },
-        shape = VervanExtraShapes.pill,
+        modifier = modifier.height(48.dp).semantics {
+            contentDescription = modeDescription
+            this.selected = selected
+            role = Role.RadioButton
+        },
+        shape = MaterialTheme.shapes.small,
         color = segmentColor,
-        contentColor = segmentContentColor,
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
+        contentColor = segmentContentColor
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = Space.sm),
@@ -432,11 +501,24 @@ private fun AttachmentBanner(label: String, modifier: Modifier = Modifier) {
             Icon(Icons.Filled.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
             Column(Modifier.weight(1f).padding(start = Space.sm)) {
                 Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(R.string.voice_added_next_message), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(stringResource(R.string.voice_added_next_message), style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
         }
     }
 }
+
+/** Fixed height of the orb visualization region — identical across every state and both
+ * listening modes, so nothing (hands-free vs push-to-talk, idle vs speaking) resizes the card
+ * by switching what's drawn there. */
+private val VoiceOrbStageHeight = 168.dp
+
+/** Height of the optional status line at the top of a footer (HandsFreeFooter's transcript
+ * preview; PushToTalkFooter reserves the same space with an empty spacer) and the height of the
+ * control row/pill beneath it. Both footers are built from exactly these two pieces so switching
+ * hands-free/push-to-talk mode can never change the card's height. */
+private val VoiceFooterTopLineHeight = 40.dp
+private val VoiceFooterControlHeight = 56.dp
+private val VoiceStageFooterMinHeight = VoiceFooterTopLineHeight + Space.sm + VoiceFooterControlHeight
 
 @Composable
 private fun VoiceStateBody(
@@ -480,503 +562,431 @@ private fun VoiceStateBody(
         animationSpec = tween(if (reducedMotion) 1 else 360),
         label = "voice-stage-surface"
     )
+    val accent = voiceStateColor(state)
+
+    // Hoisted here (not inside the push-to-talk orb) so both the orb region and the footer text
+    // below it can read the same live drag state.
+    var dragUpPx by remember { mutableFloatStateOf(0f) }
+    var pastCancelThreshold by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         color = stageColor,
-        border = BorderStroke(1.dp, voiceStateColor(state).copy(alpha = 0.32f))
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.32f))
     ) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // One centered status pill for every state — the elapsed timer while listening, the
+            // state word otherwise — instead of a stray top-left timestamp.
+            val topLabel = if (state == VoiceControllerState.LISTENING) formatVoiceElapsed(elapsedMs)
+                else voicePanelStateLabel(state, microphoneMuted, playbackPaused)
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = accent.copy(alpha = 0.14f),
+                contentColor = accent
             ) {
-                VoiceActivityIndicator(state, Modifier.size(18.dp))
                 Text(
-                    voicePanelStateLabel(state, microphoneMuted, playbackPaused).uppercase(),
+                    topLabel,
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-                    color = voiceStateColor(state),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = Space.sm).weight(1f)
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = 4.dp)
                 )
-                if (state == VoiceControllerState.LISTENING) {
-                    Text(
-                        formatVoiceElapsed(elapsedMs),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
-            when (state) {
-                VoiceControllerState.IDLE -> IdleState(microphoneMuted, pushToTalkEnabled, onStart)
-                VoiceControllerState.LISTENING -> if (pushToTalkEnabled) {
-                    PushToTalkListeningLayout(
-                        waveform = waveform,
-                        held = pushToTalkHeld,
+
+            Box(Modifier.fillMaxWidth().height(VoiceOrbStageHeight), contentAlignment = Alignment.Center) {
+                VoiceSignalField(
+                    state = state,
+                    waveform = waveform,
+                    muted = microphoneMuted,
+                    paused = playbackPaused,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(116.dp)
+                        .padding(horizontal = if (compact) 0.dp else Space.md)
+                )
+                when (state) {
+                    VoiceControllerState.IDLE -> VoiceOrb(
+                        state = VoiceControllerState.IDLE,
+                        level = 0f,
                         muted = microphoneMuted,
-                        onPress = onPushToTalkPress,
-                        onRelease = onPushToTalkRelease,
-                        onCancelUtterance = onCancelUtterance,
-                        liveTranscript = liveTranscript
+                        size = 82.dp,
+                        icon = if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic
                     )
-                } else {
-                    HandsFreeListeningLayout(
-                        waveform = waveform,
-                        microphoneMuted = microphoneMuted,
-                        liveTranscript = liveTranscript,
-                        onCancelUtterance = onCancelUtterance,
-                        onFinishUtterance = onFinishUtterance
-                    )
-                }
-                VoiceControllerState.TRANSCRIBING -> ProcessingState(
-            title = stringResource(R.string.voice_turning_speech_to_text),
-                    detail = sttLabel,
-                    transcript = liveTranscript,
-                )
-                VoiceControllerState.LOADING_MODEL -> ProcessingState(
-            title = stringResource(R.string.voice_preparing_model),
-                    detail = loadingDetail,
-                    transcript = "",
-                )
-                VoiceControllerState.THINKING -> ProcessingState(
-            title = stringResource(R.string.voice_thinking),
-                    detail = thinkingDetail,
-                    transcript = "",
-                    action = {
-                        TextButton(onClick = onInterrupt) {
-                            Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(17.dp))
-                            Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.xs))
+                    VoiceControllerState.LISTENING -> if (pushToTalkEnabled) {
+                        PushToTalkOrb(
+                            waveform = waveform,
+                            held = pushToTalkHeld,
+                            muted = microphoneMuted,
+                            dragUpPx = dragUpPx,
+                            onDragUpChange = { dragUpPx = it },
+                            pastCancelThreshold = pastCancelThreshold,
+                            onPastCancelChange = { pastCancelThreshold = it },
+                            onPress = onPushToTalkPress,
+                            onRelease = onPushToTalkRelease,
+                            onCancelUtterance = onCancelUtterance
+                        )
+                    } else {
+                        VoiceOrb(
+                            state = VoiceControllerState.LISTENING,
+                            level = waveformLevel(waveform),
+                            muted = microphoneMuted,
+                            size = 82.dp,
+                            icon = if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic
+                        )
+                    }
+                    VoiceControllerState.TRANSCRIBING, VoiceControllerState.LOADING_MODEL, VoiceControllerState.THINKING ->
+                        VoiceOrb(state = state, level = 0f, muted = false, size = 80.dp, icon = null)
+                    VoiceControllerState.SPEAKING -> Box(contentAlignment = Alignment.Center) {
+                        VoiceOrb(
+                            state = VoiceControllerState.SPEAKING,
+                            level = if (playbackPaused) 0f else 1f,
+                            muted = false,
+                            size = 80.dp,
+                            icon = null
+                        )
+                        Surface(
+                            modifier = Modifier.size(28.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (playbackPaused) Icons.Filled.Pause else Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
-                )
-                VoiceControllerState.SPEAKING -> SpeakingState(
-                    playbackPaused = playbackPaused,
-                    hasEchoCancellation = hasEchoCancellation,
-                    onInterrupt = onInterrupt,
-                    onTogglePlayback = onTogglePlayback
-                )
+                }
+            }
+
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = VoiceStageFooterMinHeight),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                when (state) {
+                    VoiceControllerState.IDLE -> IdleFooter(microphoneMuted, pushToTalkEnabled, onStart)
+                    VoiceControllerState.LISTENING -> if (pushToTalkEnabled) {
+                        PushToTalkFooter(
+                            held = pushToTalkHeld,
+                            muted = microphoneMuted,
+                            pastCancelThreshold = pastCancelThreshold,
+                            liveTranscript = liveTranscript
+                        )
+                    } else {
+                        HandsFreeFooter(liveTranscript, onCancelUtterance, onFinishUtterance)
+                    }
+                    VoiceControllerState.TRANSCRIBING -> ProcessingFooter(
+                        title = stringResource(R.string.voice_turning_speech_to_text),
+                        detail = sttLabel,
+                        transcript = liveTranscript
+                    )
+                    VoiceControllerState.LOADING_MODEL -> ProcessingFooter(
+                        title = stringResource(R.string.voice_preparing_model),
+                        detail = loadingDetail,
+                        transcript = ""
+                    )
+                    VoiceControllerState.THINKING -> ProcessingFooter(
+                        title = stringResource(R.string.voice_thinking),
+                        detail = thinkingDetail,
+                        transcript = "",
+                        action = {
+                            TextButton(onClick = onInterrupt) {
+                                Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(17.dp))
+                                Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.xs))
+                            }
+                        }
+                    )
+                    VoiceControllerState.SPEAKING -> SpeakingFooter(
+                        playbackPaused = playbackPaused,
+                        hasEchoCancellation = hasEchoCancellation,
+                        onInterrupt = onInterrupt,
+                        onTogglePlayback = onTogglePlayback
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun IdleState(microphoneMuted: Boolean, pushToTalkEnabled: Boolean, onStart: () -> Unit) {
-    val title = if (microphoneMuted) stringResource(R.string.voice_microphone_muted) else stringResource(R.string.voice_ready)
+private fun IdleFooter(microphoneMuted: Boolean, pushToTalkEnabled: Boolean, onStart: () -> Unit) {
     val detail = when {
         microphoneMuted -> stringResource(R.string.voice_unmute_to_begin)
         pushToTalkEnabled -> stringResource(R.string.voice_start_hold_mic)
         else -> stringResource(R.string.voice_start_speak)
     }
-    Surface(
-        modifier = Modifier.size(58.dp),
-        shape = CircleShape,
-        color = if (microphoneMuted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.primaryContainer,
-        contentColor = if (microphoneMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                contentDescription = null,
-                modifier = Modifier.size(25.dp)
-            )
-        }
-    }
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(top = Space.sm)
-    )
     Text(
         detail,
-        style = MaterialTheme.typography.bodySmall,
+        style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = Space.xs)
+        modifier = Modifier.padding(bottom = Space.sm)
     )
-    FilledIconButton(
+    Surface(
         onClick = onStart,
         enabled = !microphoneMuted,
-        modifier = Modifier.size(56.dp).clip(CircleShape).padding(top = Space.sm),
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        )
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+        shape = MaterialTheme.shapes.small,
+        color = if (microphoneMuted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.primary,
+        contentColor = if (microphoneMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
+        border = if (microphoneMuted) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
     ) {
-        Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.voice_start_session), modifier = Modifier.size(24.dp))
+        Row(
+            Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.voice_start_session), modifier = Modifier.size(20.dp))
+            Text(
+                stringResource(R.string.voice_start_session),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = Space.sm)
+            )
+        }
     }
 }
 
 @Composable
-private fun LegacyHandsFreeListening(
-    waveform: List<Float>,
-    elapsedMs: Int,
-    microphoneMuted: Boolean,
+private fun HandsFreeFooter(
     liveTranscript: String,
     onCancelUtterance: () -> Unit,
     onFinishUtterance: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().height(VoiceListeningContentHeight)) {
-        Text(
-            if (microphoneMuted) stringResource(R.string.voice_muted_caps)
-            else stringResource(R.string.voice_listening_elapsed, formatVoiceElapsed(elapsedMs)),
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-            color = if (microphoneMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            modifier = Modifier.height(20.dp)
+    Text(
+        if (liveTranscript.isBlank()) stringResource(R.string.voice_silence_sends) else liveTranscript,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (liveTranscript.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().height(VoiceFooterTopLineHeight).padding(bottom = Space.sm)
+    )
+    Row(
+        Modifier.fillMaxWidth().height(VoiceFooterControlHeight),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm)
+    ) {
+        VoiceTextAction(
+            icon = Icons.Filled.Close,
+            label = stringResource(R.string.voice_discard_recording),
+            onClick = onCancelUtterance,
+            modifier = Modifier.weight(1f),
+            selected = false
         )
-        Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(top = Space.xs),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-                if (waveform.isNotEmpty()) {
-                    NormalVoiceVisualizer(
-                        waveform = waveform,
-                        muted = microphoneMuted,
-                        modifier = Modifier.fillMaxWidth().height(40.dp)
-                    )
-                } else {
-                    Text(
-                        stringResource(R.string.voice_waiting_speech),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            OutlinedIconButton(onClick = onCancelUtterance, modifier = Modifier.padding(start = Space.sm).size(48.dp).clip(CircleShape)) {
-        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.voice_discard_recording), modifier = Modifier.size(18.dp))
-            }
-            FilledIconButton(onClick = onFinishUtterance, modifier = Modifier.padding(start = Space.xs).size(48.dp).clip(CircleShape)) {
-        Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.voice_use_speech), modifier = Modifier.size(21.dp))
-            }
-        }
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopStart) {
-            VoiceCaption(liveTranscript)
-        }
+        VoiceTextAction(
+            icon = Icons.Filled.Check,
+            label = stringResource(R.string.voice_use_speech),
+            onClick = onFinishUtterance,
+            modifier = Modifier.weight(1f),
+            selected = true
+        )
     }
 }
 
+/** The push-to-talk hold button, drawn over a backdrop [VoiceOrb] with its solid core hidden
+ * ([VoiceOrb.coreVisible] = false) — otherwise the orb's opaque core and the button end up as
+ * two barely-distinguishable same-colored discs stacked on each other. Drag state is hoisted to
+ * the caller so [PushToTalkFooter] can reflect it too. */
 @Composable
-private fun LegacyPushToTalkListening(
+private fun PushToTalkOrb(
     waveform: List<Float>,
     held: Boolean,
     muted: Boolean,
+    dragUpPx: Float,
+    onDragUpChange: (Float) -> Unit,
+    pastCancelThreshold: Boolean,
+    onPastCancelChange: (Boolean) -> Unit,
     onPress: () -> Unit,
     onRelease: () -> Unit,
-    onCancelUtterance: () -> Unit,
-    liveTranscript: String
+    onCancelUtterance: () -> Unit
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
-    var dragUpPx by remember { mutableFloatStateOf(0f) }
-    var pastCancelThreshold by remember { mutableStateOf(false) }
     val cancelThresholdPx = with(density) { CancelDragThresholdDp.dp.toPx() }
+    // The drag can travel arbitrarily far past the cancel threshold, but the on-screen nudge that
+    // hints at it must stay small and fixed regardless — otherwise it can slide the button clear
+    // out of the card and get clipped by the card's own rounded corners.
+    val visualCapPx = with(density) { PushToTalkVisualTravelDp.dp.toPx() }
+    val visualOffset = (dragUpPx / cancelThresholdPx).coerceIn(0f, 1f) * visualCapPx
     val scale by animateFloatAsState(
         if (held) 1.08f else 1f,
         animationSpec = spring(dampingRatio = 0.6f),
         label = "push-to-talk-scale"
     )
-    val visualOffset = dragUpPx.coerceIn(0f, cancelThresholdPx * 1.15f)
     val holdToTalkDescription = stringResource(R.string.voice_hold_cancel)
+    val accessibleAction = stringResource(
+        if (held) R.string.voice_release_send else R.string.voice_hold_to_talk
+    )
 
-    Column(Modifier.fillMaxWidth().height(VoiceListeningContentHeight)) {
-        Text(
-            when {
-                muted -> stringResource(R.string.voice_muted_caps)
-                pastCancelThreshold -> stringResource(R.string.voice_release_discard_caps)
-                held -> stringResource(R.string.voice_listening_caps)
-                else -> stringResource(R.string.voice_push_to_talk_caps)
-            },
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-            color = when {
-                muted || pastCancelThreshold -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.primary
-            },
-            modifier = Modifier.height(20.dp)
-        )
-
-    if (held && waveform.isNotEmpty()) {
-        NormalVoiceVisualizer(
-            waveform = waveform,
-            muted = muted,
-            modifier = Modifier.fillMaxWidth().height(40.dp)
-        )
-    }
+    VoiceOrb(
+        state = if (held) VoiceControllerState.LISTENING else VoiceControllerState.IDLE,
+        level = if (held) waveformLevel(waveform) else 0f,
+        muted = muted,
+        size = 82.dp,
+        icon = null,
+        coreVisible = false,
+        modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(0, -(visualOffset * 0.4f).toInt()) }
+    )
     Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.fillMaxWidth().height(56.dp).padding(top = Space.xs)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .scale(scale)
-                .offset { androidx.compose.ui.unit.IntOffset(0, -visualOffset.toInt()) }
-                .background(
+        modifier = Modifier
+            .size(72.dp)
+            .scale(scale)
+            .offset { androidx.compose.ui.unit.IntOffset(0, -visualOffset.toInt()) }
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
                     when {
-                        pastCancelThreshold -> MaterialTheme.colorScheme.errorContainer
-                        held -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.primaryContainer
-                    },
-                    CircleShape
-                )
-                .pointerInput(muted) {
-                    if (muted) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        onPress()
-                        dragUpPx = 0f
-                        pastCancelThreshold = false
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            dragUpPx = (down.position.y - change.position.y).coerceAtLeast(0f)
-                            pastCancelThreshold = dragUpPx > cancelThresholdPx
-                            if (!change.pressed) {
-                                change.consume()
-                                break
-                            }
+                        pastCancelThreshold -> listOf(
+                            lerp(
+                                MaterialTheme.colorScheme.errorContainer,
+                                MaterialTheme.colorScheme.onErrorContainer,
+                                0.18f
+                            ),
+                            MaterialTheme.colorScheme.errorContainer
+                        )
+                        held -> listOf(
+                            lerp(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.onPrimary,
+                                0.22f
+                            ),
+                            MaterialTheme.colorScheme.primary
+                        )
+                        else -> listOf(
+                            lerp(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.onPrimaryContainer,
+                                0.14f
+                            ),
+                            MaterialTheme.colorScheme.primaryContainer
+                        )
+                    }
+                ),
+                CircleShape
+            )
+            .pointerInput(muted) {
+                if (muted) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    var cancelGesture = false
+                    onPress()
+                    onDragUpChange(0f)
+                    onPastCancelChange(false)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        val drag = (down.position.y - change.position.y).coerceAtLeast(0f)
+                        cancelGesture = drag > cancelThresholdPx
+                        onDragUpChange(drag)
+                        onPastCancelChange(cancelGesture)
+                        if (!change.pressed) {
                             change.consume()
+                            break
                         }
-                        val cancel = pastCancelThreshold
-                        dragUpPx = 0f
-                        pastCancelThreshold = false
-                        onRelease()
-                        if (cancel) onCancelUtterance()
+                        change.consume()
+                    }
+                    onDragUpChange(0f)
+                    onPastCancelChange(false)
+                    if (cancelGesture) onCancelUtterance() else onRelease()
+                }
+            }
+            .semantics {
+                contentDescription = holdToTalkDescription
+                role = Role.Button
+                stateDescription = accessibleAction
+                if (!muted) {
+                    onClick(label = accessibleAction) {
+                        if (held) onRelease() else onPress()
+                        true
                     }
                 }
-        .semantics { contentDescription = holdToTalkDescription },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                if (pastCancelThreshold) Icons.Filled.DeleteOutline else Icons.Filled.Mic,
-                contentDescription = null,
-                tint = when {
-                    pastCancelThreshold -> MaterialTheme.colorScheme.onErrorContainer
-                    held -> MaterialTheme.colorScheme.onPrimary
-                    else -> MaterialTheme.colorScheme.onPrimaryContainer
-                },
-                modifier = Modifier.size(25.dp)
-            )
-        }
-    }
-    Text(
-        when {
-            muted -> stringResource(R.string.voice_microphone_muted_short)
-            pastCancelThreshold -> stringResource(R.string.voice_release_discard)
-            held -> stringResource(R.string.voice_listening_discard)
-            else -> stringResource(R.string.voice_hold_to_talk)
-        },
-        style = MaterialTheme.typography.labelLarge,
-        color = if (pastCancelThreshold) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(top = Space.xs)
-    )
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopStart) {
-            if (held) {
-                VoiceCaption(liveTranscript)
-            } else {
-                Text(
-                    stringResource(R.string.voice_slide_discard),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = Space.sm)
-                )
-            }
-        }
-    }
-}
-
-private val VoiceListeningContentHeight = 132.dp
-
-@Composable
-private fun HandsFreeListeningLayout(
-    waveform: List<Float>,
-    microphoneMuted: Boolean,
-    liveTranscript: String,
-    onCancelUtterance: () -> Unit,
-    onFinishUtterance: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth().height(VoiceListeningContentHeight)) {
-        Box(
-            Modifier.fillMaxWidth().weight(1f).padding(vertical = Space.xs),
-            contentAlignment = Alignment.Center
-        ) {
-            NormalVoiceVisualizer(
-                waveform = waveform,
-                muted = microphoneMuted,
-                modifier = Modifier.fillMaxWidth().height(58.dp)
-            )
-        }
-        Row(
-            Modifier.fillMaxWidth().height(52.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.sm)
-        ) {
-    Text(
-                if (liveTranscript.isBlank()) stringResource(R.string.voice_silence_sends) else liveTranscript,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (liveTranscript.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedIconButton(
-                onClick = onCancelUtterance,
-                modifier = Modifier.size(48.dp).clip(CircleShape)
-            ) {
-        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.voice_discard_recording), modifier = Modifier.size(18.dp))
-            }
-            FilledIconButton(
-                onClick = onFinishUtterance,
-                modifier = Modifier.size(48.dp).clip(CircleShape)
-            ) {
-        Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.voice_use_speech), modifier = Modifier.size(21.dp))
-            }
-        }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            if (pastCancelThreshold) Icons.Filled.DeleteOutline else Icons.Filled.Mic,
+            contentDescription = null,
+            tint = when {
+                pastCancelThreshold -> MaterialTheme.colorScheme.onErrorContainer
+                held -> MaterialTheme.colorScheme.onPrimary
+                else -> MaterialTheme.colorScheme.onPrimaryContainer
+            },
+            modifier = Modifier.size(if (held) 34.dp else 28.dp)
+        )
     }
 }
 
 @Composable
-private fun PushToTalkListeningLayout(
-    waveform: List<Float>,
+private fun PushToTalkFooter(
     held: Boolean,
     muted: Boolean,
-    onPress: () -> Unit,
-    onRelease: () -> Unit,
-    onCancelUtterance: () -> Unit,
+    pastCancelThreshold: Boolean,
     liveTranscript: String
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    var dragUpPx by remember { mutableFloatStateOf(0f) }
-    var pastCancelThreshold by remember { mutableStateOf(false) }
-    val cancelThresholdPx = with(density) { CancelDragThresholdDp.dp.toPx() }
-    val scale by animateFloatAsState(
-        if (held) 1.08f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f),
-        label = "push-to-talk-layout-scale"
-    )
-    val visualOffset = dragUpPx.coerceIn(0f, cancelThresholdPx * 1.15f)
-    val holdToTalkDescription = stringResource(R.string.voice_hold_cancel)
-
-    Column(Modifier.fillMaxWidth().height(VoiceListeningContentHeight)) {
-        Text(
-            when {
-                muted -> stringResource(R.string.voice_muted_caps)
-                pastCancelThreshold -> stringResource(R.string.voice_release_discard_caps)
-                held -> stringResource(R.string.voice_listening_caps)
-                else -> stringResource(R.string.voice_push_to_talk_caps)
-            },
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-            color = when {
-                muted || pastCancelThreshold -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.primary
-            },
-            modifier = Modifier.height(20.dp)
-        )
-        Box(
-            Modifier.fillMaxWidth().weight(1f).padding(vertical = Space.xs),
-            contentAlignment = Alignment.Center
+    val instruction = when {
+        muted -> stringResource(R.string.voice_microphone_muted_short)
+        pastCancelThreshold -> stringResource(R.string.voice_release_discard)
+        held -> stringResource(R.string.voice_release_send)
+        liveTranscript.isBlank() -> stringResource(R.string.voice_hold_to_talk)
+        else -> liveTranscript
+    }
+    val instructionColor = when {
+        pastCancelThreshold -> MaterialTheme.colorScheme.onErrorContainer
+        held -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    // No separate status line above the pill here (the instruction text already carries that
+    // role) — an empty spacer of the same height keeps this footer exactly as tall as
+    // HandsFreeFooter's, instead of the mode toggle nudging the card's height around.
+    Spacer(Modifier.height(VoiceFooterTopLineHeight + Space.sm))
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(VoiceFooterControlHeight),
+        shape = MaterialTheme.shapes.small,
+        color = when {
+            pastCancelThreshold -> MaterialTheme.colorScheme.errorContainer
+            held -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        contentColor = instructionColor
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (held) {
-                NormalVoiceVisualizer(
-                    waveform = waveform,
-                    muted = muted,
-                    modifier = Modifier.fillMaxWidth().height(58.dp)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .scale(scale)
-                    .offset { androidx.compose.ui.unit.IntOffset(0, -visualOffset.toInt()) }
-                    .background(
-                        when {
-                            pastCancelThreshold -> MaterialTheme.colorScheme.errorContainer
-                            held -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.primaryContainer
-                        },
-                        CircleShape
-                    )
-                    .pointerInput(muted) {
-                        if (muted) return@pointerInput
-                        awaitEachGesture {
-                            val down = awaitFirstDown()
-                            onPress()
-                            dragUpPx = 0f
-                            pastCancelThreshold = false
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                dragUpPx = (down.position.y - change.position.y).coerceAtLeast(0f)
-                                pastCancelThreshold = dragUpPx > cancelThresholdPx
-                                if (!change.pressed) {
-                                    change.consume()
-                                    break
-                                }
-                                change.consume()
-                            }
-                            val cancel = pastCancelThreshold
-                            dragUpPx = 0f
-                            pastCancelThreshold = false
-                            onRelease()
-                            if (cancel) onCancelUtterance()
-                        }
-                    }
-        .semantics { contentDescription = holdToTalkDescription },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (pastCancelThreshold) Icons.Filled.DeleteOutline else Icons.Filled.Mic,
-                    contentDescription = null,
-                    tint = when {
-                        pastCancelThreshold -> MaterialTheme.colorScheme.onErrorContainer
-                        held -> MaterialTheme.colorScheme.onPrimary
-                        else -> MaterialTheme.colorScheme.onPrimaryContainer
-                    },
-                    modifier = Modifier.size(27.dp)
-                )
-            }
+            Icon(
+                when {
+                    pastCancelThreshold -> Icons.Filled.DeleteOutline
+                    held -> Icons.Filled.Check
+                    else -> Icons.Filled.Mic
+                },
+                contentDescription = null,
+                modifier = Modifier.size(17.dp)
+            )
+            Text(
+                instruction,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = Space.sm)
+            )
         }
-        Text(
-            if (liveTranscript.isBlank()) stringResource(R.string.voice_hold_speak) else liveTranscript,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (liveTranscript.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().height(36.dp)
-        )
     }
 }
 
 @Composable
-private fun ProcessingState(
+private fun ProcessingFooter(
     title: String,
     detail: String,
     transcript: String,
     action: (@Composable () -> Unit)? = null
 ) {
-    Box(Modifier.fillMaxWidth().height(58.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(42.dp),
-            strokeWidth = 2.dp,
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        )
-        Surface(
-            modifier = Modifier.size(30.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerLowest,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Waves, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
-        }
-    }
-    Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = Space.xs))
+    Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
     Text(
         detail,
         style = MaterialTheme.typography.bodySmall,
@@ -991,145 +1001,271 @@ private fun ProcessingState(
 }
 
 @Composable
-private fun SpeakingState(
+private fun SpeakingFooter(
     playbackPaused: Boolean,
     hasEchoCancellation: Boolean,
     onInterrupt: () -> Unit,
     onTogglePlayback: () -> Unit
 ) {
     Text(
-        if (playbackPaused) stringResource(R.string.voice_response_paused)
-        else stringResource(R.string.voice_assistant_speaking),
-        style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-        color = MaterialTheme.colorScheme.primary
-    )
-    Surface(
-        modifier = Modifier.size(54.dp).padding(top = Space.xs),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                if (playbackPaused) Icons.Filled.Pause else Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-    Text(
         if (hasEchoCancellation) stringResource(R.string.voice_speak_over_reply)
         else stringResource(R.string.voice_interrupt_prompt),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = Space.xs)
+        modifier = Modifier.padding(bottom = Space.sm)
     )
     Row(
-        Modifier.fillMaxWidth().padding(top = Space.sm),
+        Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(Space.xl, Alignment.CenterHorizontally)
     ) {
-        CircularVoiceAction(Icons.Filled.Mic, stringResource(R.string.voice_interrupt), onInterrupt, Modifier.weight(1f))
-        CircularVoiceAction(
+        VoiceTextAction(Icons.Filled.Mic, stringResource(R.string.voice_interrupt), onInterrupt, Modifier.weight(1f), selected = false)
+        VoiceTextAction(
             if (playbackPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
             if (playbackPaused) stringResource(R.string.voice_resume)
             else stringResource(R.string.voice_pause),
             onTogglePlayback,
-            Modifier.weight(1f)
+            Modifier.weight(1f),
+            selected = true
         )
     }
 }
 
 @Composable
-private fun CircularVoiceAction(
+private fun VoiceTextAction(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selected: Boolean
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
-            onClick = onClick,
-            modifier = Modifier.size(48.dp).clip(CircleShape)
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = Space.sm),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = Space.xs)
+            )
         }
-        Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs))
     }
 }
 
-/** Conventional equalizer-style mic visualizer. The fixed-height row keeps its center aligned
- * with the adjacent record controls; bar heights come from the controller's real input levels. */
+/**
+ * A real signal field rather than a decorative equalizer. During capture it renders the newest
+ * microphone samples; during model and playback states it moves with a restrained synthetic rhythm
+ * so the state remains legible without pretending that microphone input is being recorded.
+ */
 @Composable
-private fun NormalVoiceVisualizer(
+private fun VoiceSignalField(
+    state: VoiceControllerState,
     waveform: List<Float>,
     muted: Boolean,
+    paused: Boolean,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val accent = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else voiceStateColor(state)
+    val samples = remember(waveform) { waveform.takeLast(48).map { it.coerceIn(0f, 1f) } }
+    val transition = rememberInfiniteTransition(label = "voice-signal-field")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (reducedMotion) 0f else 2f * PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(1300, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "voice-signal-phase"
+    )
+    val signalDescription = stringResource(R.string.voice_live_levels)
+    val signalModifier = if (state == VoiceControllerState.LISTENING) {
+        modifier.semantics { contentDescription = signalDescription }
+    } else {
+        modifier
+    }
+
+    Canvas(signalModifier) {
+        val barCount = 30
+        val gap = 4.dp.toPx()
+        val barWidth = ((size.width - gap * (barCount - 1)) / barCount)
+            .coerceAtLeast(2.dp.toPx())
+        val minHeight = 5.dp.toPx()
+        val maxHeight = size.height * 0.72f
+        val center = (barCount - 1) / 2f
+
+        repeat(barCount) { index ->
+            val sample = if (samples.isEmpty()) {
+                0f
+            } else {
+                val sourceIndex = ((index.toFloat() / (barCount - 1)) * samples.lastIndex)
+                    .toInt()
+                    .coerceIn(0, samples.lastIndex)
+                samples[sourceIndex]
+            }
+            val synthetic = (sin(phase + index * 0.58f) * 0.5f + 0.5f)
+            val activity = when (state) {
+                VoiceControllerState.IDLE -> 0.04f
+                VoiceControllerState.LISTENING -> if (muted) 0.03f else sample
+                VoiceControllerState.SPEAKING -> if (paused) 0.04f else 0.16f + synthetic * 0.42f
+                VoiceControllerState.TRANSCRIBING,
+                VoiceControllerState.LOADING_MODEL,
+                VoiceControllerState.THINKING -> 0.10f + synthetic * 0.24f
+            }.coerceIn(0f, 1f)
+            val centerFocus = 1f - (abs(index - center) / center)
+            val barHeight = (minHeight + maxHeight * activity * (0.68f + centerFocus * 0.32f))
+                .coerceAtMost(size.height)
+            val x = index * (barWidth + gap)
+            drawRoundRect(
+                color = accent.copy(
+                    alpha = when (state) {
+                        VoiceControllerState.IDLE -> 0.18f
+                        VoiceControllerState.LISTENING -> 0.50f
+                        else -> 0.34f
+                    }
+                ),
+                topLeft = Offset(x, (size.height - barHeight) / 2f),
+                size = Size(barWidth, barHeight),
+                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+            )
+        }
+    }
+}
+
+/** Average recent mic energy into a single 0..1 level for [VoiceOrb] to react to. */
+private fun waveformLevel(waveform: List<Float>): Float {
+    val recent = waveform.takeLast(8)
+    if (recent.isEmpty()) return 0f
+    return recent.map { it.coerceIn(0f, 1f) }.average().toFloat()
+}
+
+/**
+ * The single reactive visual anchor for every voice state: a soft radial-gradient orb with an
+ * ambient glow, breathing or pulsing per [state]. [level] (0..1) drives real-time reactivity
+ * during LISTENING (mic energy); other states animate on their own internal clock so the orb
+ * always reads as "alive" without needing real audio data.
+ */
+@Composable
+private fun VoiceOrb(
+    state: VoiceControllerState,
+    level: Float,
+    muted: Boolean,
+    size: Dp,
+    icon: ImageVector?,
     modifier: Modifier = Modifier,
+    // Set false when the orb is only a backdrop glow behind another pressable control (push-to-talk):
+    // drawing the near-opaque core there reads as a second flat button sitting behind the real one.
+    coreVisible: Boolean = true
 ) {
     val reducedMotion = rememberReducedMotion()
-    val barCount = 32
-    val samples = waveform.takeLast(barCount)
-    val ambientTransition = rememberInfiniteTransition(label = "voice-waveform-ambient")
-    val ambientPhase by ambientTransition.animateFloat(
+    val accent = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else voiceStateColor(state)
+    val accentContent = if (muted) MaterialTheme.colorScheme.surface else voiceStateContentColor(state)
+    val period = when (state) {
+        VoiceControllerState.IDLE -> 3200
+        VoiceControllerState.THINKING -> 1500
+        VoiceControllerState.TRANSCRIBING, VoiceControllerState.LOADING_MODEL -> 1800
+        VoiceControllerState.LISTENING -> 1200
+        VoiceControllerState.SPEAKING -> 900
+    }
+    val transition = rememberInfiniteTransition(label = "voice-orb")
+    val phase by transition.animateFloat(
         initialValue = 0f,
-        targetValue = if (reducedMotion) 0f else (2f * PI.toFloat()),
-        animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Restart),
-        label = "voice-waveform-ambient-phase"
+        targetValue = if (reducedMotion) 0f else 2f * PI.toFloat(),
+        animationSpec = infiniteRepeatable(tween(period, easing = LinearEasing), RepeatMode.Restart),
+        label = "voice-orb-phase"
     )
-    val accent = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
-    val liveLevelsDescription = stringResource(R.string.voice_live_levels)
+    val ringProgress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(period * 2, easing = LinearEasing), RepeatMode.Restart),
+        label = "voice-orb-ring"
+    )
+    val synthEnergy = (sin(phase) * 0.5f + 0.5f) * 0.6f + (sin(phase * 2.3f + 1f) * 0.5f + 0.5f) * 0.4f
+    val rawEnergy = when (state) {
+        VoiceControllerState.IDLE -> 0.12f + synthEnergy * 0.10f
+        VoiceControllerState.LISTENING -> if (muted) 0.08f else level.coerceIn(0f, 1f)
+        VoiceControllerState.SPEAKING -> if (level <= 0f) 0.1f else 0.35f + synthEnergy * 0.5f
+        else -> 0.3f + synthEnergy * 0.35f
+    }
+    val energy by animateFloatAsState(
+        targetValue = rawEnergy,
+        animationSpec = if (reducedMotion) tween(1) else spring(dampingRatio = 0.7f, stiffness = 220f),
+        label = "voice-orb-energy"
+    )
+    val rotation = if (state == VoiceControllerState.THINKING && !reducedMotion) phase * (180f / PI.toFloat()) else 0f
+    val coreScale = 0.82f + energy * 0.34f
+    val glowScale = 1f + energy * 0.55f
+    val glowAlpha = 0.22f + energy * 0.30f
+    // A slow outward-expanding, fading ring reads as a radar ping — cheap extra "alive" motion
+    // that doesn't compete with the core's own breathing. Idle stays still and calm on purpose.
+    val showRing = !reducedMotion && !muted && state != VoiceControllerState.IDLE
 
-    Box(
-        modifier = modifier
-            .clip(VervanExtraShapes.hero)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.48f))
-            .border(1.dp, accent.copy(alpha = if (muted) 0.12f else 0.22f), VervanExtraShapes.hero)
-            .semantics { contentDescription = liveLevelsDescription },
-        contentAlignment = Alignment.Center
-    ) {
-        // A quiet centerline makes low-volume speech legible without making silence look broken.
+    Box(modifier.size(size * 1.9f), contentAlignment = Alignment.Center) {
+        if (showRing) {
+            Box(
+                Modifier
+                    .size(size * 1.1f)
+                    .scale(1f + ringProgress * 0.9f)
+                    .alpha((1f - ringProgress) * 0.45f)
+                    .border(1.dp, accent, CircleShape)
+            )
+        }
         Box(
             Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(accent.copy(alpha = if (muted) 0.10f else 0.18f))
+                .size(size * 1.7f)
+                .scale(glowScale)
+                .background(
+                    Brush.radialGradient(listOf(accent.copy(alpha = glowAlpha), Color.Transparent)),
+                    CircleShape
+                )
         )
-        Row(
-            Modifier.fillMaxSize().padding(horizontal = Space.md),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            repeat(barCount) { index ->
-                val position = index / (barCount - 1f)
-                val envelope = (0.72f + 0.28f * sin(position * PI).toFloat()).coerceIn(0.72f, 1f)
-                val sample = samples.getOrNull(index - (barCount - samples.size))?.coerceIn(0f, 1f)
-                val ambient = 0.12f + 0.10f * ((sin(ambientPhase + index * 0.42f) + 1f) / 2f)
-                val targetLevel = if (sample == null) {
-                    if (muted) 0.06f else ambient * envelope
-                } else {
-                    (0.06f + sample * (0.78f + envelope * 0.22f)).coerceIn(0.06f, 1f)
-                }
-                val animatedLevel by animateFloatAsState(
-                    targetValue = targetLevel,
-                    animationSpec = if (reducedMotion) tween(1) else spring(dampingRatio = 0.72f, stiffness = 850f),
-                    label = "voice-waveform-bar-$index"
-                )
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .height((5 + animatedLevel * 38).dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    accent.copy(alpha = if (muted) 0.24f else 0.52f),
-                                    accent.copy(alpha = if (muted) 0.42f else 0.96f),
-                                    accent.copy(alpha = if (muted) 0.20f else 0.58f)
-                                )
-                            ),
-                            CircleShape
-                        )
-                )
-            }
+        if (coreVisible) {
+            Box(
+                Modifier
+                    .size(size)
+                    .scale(coreScale)
+                    .rotate(rotation)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                lerp(accent, accentContent, 0.22f),
+                                accent,
+                                lerp(accent, MaterialTheme.colorScheme.onSurface, 0.10f)
+                            )
+                        ),
+                        CircleShape
+                    )
+            )
+            Box(
+                Modifier
+                    .size(size * 0.5f)
+                    .offset(x = -size * 0.14f, y = -size * 0.16f)
+                    .alpha(0.22f)
+                    .background(
+                        Brush.radialGradient(listOf(accentContent, Color.Transparent)),
+                        CircleShape
+                    )
+            )
+        }
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = accentContent,
+                modifier = Modifier.size(size * 0.46f)
+            )
         }
     }
 }
@@ -1160,7 +1296,7 @@ private fun VoiceCaption(text: String) {
 private fun VoicePanelError(message: String, onRetry: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer
     ) {
@@ -1176,8 +1312,26 @@ private fun VoicePanelError(message: String, onRetry: () -> Unit) {
                 )
                 Text(message, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = onRetry) {
-            Icon(Icons.Filled.Replay, contentDescription = stringResource(R.string.voice_retry_session))
+            Surface(
+                onClick = onRetry,
+                modifier = Modifier
+                    .padding(start = Space.md)
+                    .heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(
+                        stringResource(R.string.action_retry),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = Space.xs)
+                    )
+                }
             }
         }
     }
@@ -1185,7 +1339,6 @@ private fun VoicePanelError(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun VoiceControlDock(
-    compact: Boolean,
     microphoneMuted: Boolean,
     speechOutputEnabled: Boolean,
     onToggleMute: () -> Unit,
@@ -1195,33 +1348,56 @@ private fun VoiceControlDock(
     onMore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Was VervanExtraShapes.pill (100dp, fully stadium) — nested inside the panel's own
-    // 20dp-radius `hero` Card, a full pill read as visually mismatched against the card
-    // it sits in rather than as one coherent surface.
-    Surface(modifier.fillMaxWidth(), shape = VervanExtraShapes.hero, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
-            verticalAlignment = Alignment.Top
-        ) {
-            VoicePanelAction(
-                icon = if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
-                label = stringResource(if (microphoneMuted) R.string.voice_unmute else R.string.voice_mute),
-                selected = microphoneMuted,
-                showLabel = !compact,
-                onClick = onToggleMute,
-                modifier = Modifier.weight(1f)
-            )
-            VoicePanelAction(Icons.Filled.AttachFile, stringResource(R.string.voice_attach), showLabel = !compact, onClick = onAttach, modifier = Modifier.weight(1f))
-            VoicePanelAction(Icons.Filled.Keyboard, stringResource(R.string.voice_keyboard), showLabel = !compact, onClick = onKeyboard, modifier = Modifier.weight(1f))
-            VoicePanelAction(
-                icon = if (speechOutputEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                label = stringResource(if (speechOutputEnabled) R.string.voice_on else R.string.voice_off),
-                selected = !speechOutputEnabled,
-                showLabel = !compact,
-                onClick = onToggleSpeechOutput,
-                modifier = Modifier.weight(1f)
-            )
-            VoicePanelAction(Icons.Filled.MoreHoriz, stringResource(R.string.voice_options), showLabel = !compact, onClick = onMore, modifier = Modifier.weight(1f))
+    Surface(
+        modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        BoxWithConstraints {
+            val showLabels = maxWidth >= 440.dp
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                VoicePanelAction(
+                    Icons.Filled.AttachFile,
+                    stringResource(R.string.voice_attach),
+                    showLabel = showLabels,
+                    onClick = onAttach,
+                    modifier = Modifier.weight(1f)
+                )
+                VoicePanelAction(
+                    icon = if (speechOutputEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                    label = stringResource(if (speechOutputEnabled) R.string.voice_on else R.string.voice_off),
+                    selected = !speechOutputEnabled,
+                    showLabel = showLabels,
+                    onClick = onToggleSpeechOutput,
+                    modifier = Modifier.weight(1f)
+                )
+                VoicePanelAction(
+                    icon = if (microphoneMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                    label = stringResource(if (microphoneMuted) R.string.voice_unmute else R.string.voice_mute),
+                    selected = microphoneMuted,
+                    prominent = true,
+                    showLabel = showLabels,
+                    onClick = onToggleMute,
+                    modifier = Modifier.weight(1.16f)
+                )
+                VoicePanelAction(
+                    Icons.Filled.Keyboard,
+                    stringResource(R.string.voice_type),
+                    showLabel = showLabels,
+                    onClick = onKeyboard,
+                    modifier = Modifier.weight(1f)
+                )
+                VoicePanelAction(
+                    Icons.Filled.MoreHoriz,
+                    stringResource(R.string.voice_options),
+                    showLabel = showLabels,
+                    onClick = onMore,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
@@ -1230,31 +1406,51 @@ private fun VoiceControlDock(
 private fun VoicePanelAction(
     icon: ImageVector,
     label: String,
-    selected: Boolean = false,
     showLabel: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    prominent: Boolean = false
 ) {
     val actionContainer by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        targetValue = when {
+            prominent && selected -> MaterialTheme.colorScheme.errorContainer
+            prominent -> MaterialTheme.colorScheme.primaryContainer
+            selected -> MaterialTheme.colorScheme.secondaryContainer
+            else -> Color.Transparent
+        },
         animationSpec = tween(220),
         label = "voice-control-container"
     )
     val actionContent by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        targetValue = when {
+            prominent && selected -> MaterialTheme.colorScheme.onErrorContainer
+            prominent -> MaterialTheme.colorScheme.onPrimaryContainer
+            selected -> MaterialTheme.colorScheme.onSecondaryContainer
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
         animationSpec = tween(220),
         label = "voice-control-content"
     )
     Surface(
         onClick = onClick,
-        modifier = modifier.padding(horizontal = 2.dp),
-        shape = MaterialTheme.shapes.medium,
+        modifier = modifier
+            .padding(horizontal = 2.dp)
+            .heightIn(min = if (prominent) 60.dp else 56.dp)
+            .semantics {
+                contentDescription = label
+                role = Role.Button
+            },
+        shape = MaterialTheme.shapes.small,
         color = actionContainer,
         contentColor = actionContent
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, modifier = Modifier.size(19.dp))
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.xs),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(Modifier.size(if (prominent) 44.dp else 40.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(if (prominent) 22.dp else 19.dp))
             }
             if (showLabel) {
                 Text(
@@ -1263,7 +1459,7 @@ private fun VoicePanelAction(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = Space.xs)
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -1279,9 +1475,19 @@ private fun voiceStateColor(state: VoiceControllerState): Color = when (state) {
 }
 
 @Composable
+private fun voiceStateContentColor(state: VoiceControllerState): Color = when (state) {
+    VoiceControllerState.IDLE -> MaterialTheme.colorScheme.surface
+    VoiceControllerState.LISTENING -> MaterialTheme.colorScheme.onPrimary
+    VoiceControllerState.TRANSCRIBING,
+    VoiceControllerState.LOADING_MODEL,
+    VoiceControllerState.THINKING -> MaterialTheme.colorScheme.onTertiary
+    VoiceControllerState.SPEAKING -> MaterialTheme.colorScheme.onSecondary
+}
+
+@Composable
 private fun voicePanelStateLabel(state: VoiceControllerState, muted: Boolean, paused: Boolean): String = when {
     muted -> stringResource(R.string.voice_microphone_muted_short)
-    state == VoiceControllerState.IDLE -> stringResource(R.string.voice_ready_device)
+    state == VoiceControllerState.IDLE -> stringResource(R.string.voice_not_listening)
     state == VoiceControllerState.LOADING_MODEL -> stringResource(R.string.voice_preparing_model)
     state == VoiceControllerState.LISTENING -> stringResource(R.string.voice_listening_status)
     state == VoiceControllerState.TRANSCRIBING -> stringResource(R.string.voice_transcribing_status)
@@ -1296,3 +1502,8 @@ private fun formatVoiceElapsed(ms: Int): String {
 }
 
 private const val CancelDragThresholdDp = 64f
+private const val PushToTalkVisualTravelDp = 20f
+
+/** AnimatedContent key for the voice console: crossfades on either a state change or a
+ * hands-free/push-to-talk mode switch, instead of only reacting to [VoiceControllerState]. */
+private data class VoiceConsoleKey(val state: VoiceControllerState, val pushToTalk: Boolean)

@@ -1,13 +1,22 @@
 package com.vervan.chat.ui.nav
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -31,16 +40,10 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,12 +60,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -107,9 +115,10 @@ import com.vervan.chat.ui.notes.NotesListScreen
 import com.vervan.chat.ui.onboarding.OnboardingScreen
 import com.vervan.chat.ui.common.StatusTone
 import com.vervan.chat.ui.common.SystemStatusStrip
+import com.vervan.chat.ui.common.ActivityStatusPill
 import com.vervan.chat.ui.common.rememberReducedMotion
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanExtraShapes
+import com.vervan.chat.ui.theme.ModernistTokens
 import com.vervan.chat.ui.personas.PersonaEditorScreen
 import com.vervan.chat.ui.personas.PersonaTestBenchScreen
 import com.vervan.chat.ui.profile.UserProfileScreen
@@ -235,7 +244,7 @@ fun VervanNavGraph(
         if (shortcut == null || !onboarded) return@LaunchedEffect
         // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
         if (shortcut.startsWith("open_chat:")) {
-            navController.navigate(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
+            navController.navigateSingleTop(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
             return@LaunchedEffect
         }
         when (shortcut) {
@@ -248,7 +257,7 @@ fun VervanNavGraph(
                 )
             }
             "capture" -> {
-                val note = Note(title = "Quick note")
+                val note = Note(title = app.getString(R.string.ui_navgraph_259_quick_note))
                 app.container.db.noteDao().upsert(note)
                 navController.navigate("note/${note.id}")
             }
@@ -290,6 +299,24 @@ fun VervanNavGraph(
     // phone (adaptive-layout gap) — same destinations, just repositioned.
     val useRail = windowSizeClass?.widthSizeClass != null && windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val useTwoPane = windowSizeClass?.widthSizeClass == WindowWidthSizeClass.Expanded
+    // The compact navigation surface is intentionally painted as an overlay, but the content
+    // viewport still needs to reserve the space it occupies. Include the system gesture inset so
+    // the last list row/action remains visible on phones; the rail path reserves that inset too.
+    val systemBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Navigation labels are part of the accessible text scale. Keep the shell's minimum geometry
+    // intact at normal sizes, but let it grow when large system/in-app text would otherwise clip
+    // the icon + label stack inside the fixed 80dp surface.
+    val navigationScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val bottomNavigationHeight = ModernistTokens.Layout.bottomNavigationHeight * navigationScale
+    val bottomNavigationItemHeight = ModernistTokens.Layout.bottomNavigationItemHeight * navigationScale
+    val navigationRailItemHeight = ModernistTokens.Layout.navigationRailItemHeight * navigationScale
+    val bottomContentReserve = when {
+        !showBottomBar -> 0.dp
+        useRail -> systemBottomInset
+        else -> bottomNavigationHeight + Space.lg + systemBottomInset
+    }
+    val overlayBottomReserve = systemBottomInset +
+        if (!useRail && showBottomBar) bottomNavigationHeight + Space.lg else 0.dp
     val activeJobs by app.container.db.jobDao().observeActive().collectAsStateWithLifecycle(initialValue = emptyList())
     val modelLoadState by app.container.modelLoadCoordinator.state.collectAsStateWithLifecycle()
     val loadingModels = modelLoadState.values.count { it.phase == ModelLoadPhase.LOADING }
@@ -301,23 +328,37 @@ fun VervanNavGraph(
             ModelStatus.PAUSING, ModelStatus.VERIFYING, ModelStatus.IMPORTING,
         )
     }
+    val activityLabel = when {
+        activeJobs.size == 1 && loadingModels == 0 && activeDownloads == 0 -> activeJobs.first().label
+        loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> stringResource(R.string.activity_loading_model)
+        activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> stringResource(R.string.activity_downloading_model)
+        activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0 ->
+            pluralStringResource(
+                R.plurals.activity_count_running,
+                activeJobs.size + loadingModels + activeDownloads,
+                activeJobs.size + loadingModels + activeDownloads,
+            )
+        else -> null
+    }
+    val activityRoute = if (activeJobs.isNotEmpty()) "jobs" else "models"
+    val chatRouteActive = currentRoute?.route == AppRoutes.CHAT || currentRoute?.route == AppRoutes.CHAT_START
     val createLabel = stringResource(R.string.action_create)
     val reducedMotion = rememberReducedMotion()
 
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ) {
                 Surface(
                     modifier = Modifier.padding(top = Space.sm, bottom = Space.md).size(40.dp),
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Vervan", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = stringResource(R.string.role_vervan), modifier = Modifier.size(20.dp))
                     }
                 }
                 FloatingActionButton(
@@ -328,9 +369,9 @@ fun VervanNavGraph(
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = createLabel)
                 }
-                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
+                tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController, navigationRailItemHeight) }
                 Spacer(Modifier.weight(1f))
-                trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
+                trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController, navigationRailItemHeight) }
             }
         }
         Scaffold(
@@ -340,24 +381,16 @@ fun VervanNavGraph(
             // this override, Scaffold's default `contentWindowInsets` (WindowInsets.systemBars)
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                if (!useRail && showBottomBar) {
-                    VervanNavigationBar(
-                        leading = tabs,
-                        trailing = trailingTabs,
-                        currentRoute = currentRoute,
-                        navController = navController,
-                        onCreate = { showCreateSheet = true }
-                    )
-                }
-            }
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            // No bottomBar here on purpose: the nav bar is rendered as a themed overlay at the
+            // bottom of the content Box below. NavHost reserves that overlay's measured height so
+            // scrollable content does not disappear underneath it.
         ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(bottom = bottomContentReserve),
             // Compose Navigation's default transition is a plain crossfade — both the outgoing
             // and incoming screen are partially transparent at the same time mid-animation, which
             // reads as a jumbled "overlay" flash rather than one screen replacing another
@@ -401,12 +434,12 @@ fun VervanNavGraph(
             }
             composable(AppRoutes.HOME) {
                 HomeScreen(
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenModels = { navController.navigate("models") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenModels = { navController.navigateSingleTop("models") },
                     onOpenChats = { navController.navigatePrimaryRoot(AppRoutes.CHATS) },
-                    onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                    onOpenSettings = { navController.navigateSingleTop(AppRoutes.SETTINGS) },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenToolRun = { runId -> navController.navigate("tools/runs?highlightId=$runId") },
                     onOpenKnowledge = { navController.navigate("knowledge") },
                     onOpenSearch = { navController.navigate(AppRoutes.SEARCH) },
@@ -433,6 +466,9 @@ fun VervanNavGraph(
                     onBack = { navController.popBackStack() },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") }
                 )
+            }
+            composable("tools/qr-scanner") {
+                com.vervan.chat.ui.tools.QrScannerScreen(onBack = { navController.popBackStack() })
             }
             composable("tools/voice-chat") {
                 androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -547,8 +583,8 @@ fun VervanNavGraph(
             composable("search") {
                 SearchScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") },
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
@@ -653,7 +689,7 @@ fun VervanNavGraph(
             }
             composable("notes") {
                 NotesListScreen(
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -676,8 +712,8 @@ fun VervanNavGraph(
                 ProjectDashboardScreen(
                     projectId = projectId,
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") }
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") }
                 )
             }
             composable(AppRoutes.CHATS) {
@@ -691,7 +727,7 @@ fun VervanNavGraph(
                         onOpenModels = { navController.navigate("models") }
                     )
                 } else {
-                    ChatListScreen(onOpenChat = { chatId -> navController.navigate("chat/$chatId") })
+                    ChatListScreen(onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") })
                 }
             }
             composable(AppRoutes.CHAT) { backStackEntry2 ->
@@ -717,6 +753,8 @@ fun VervanNavGraph(
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    activityLabel = activityLabel,
+                    onOpenActivity = { navController.navigate(activityRoute) },
                     // Forking replaces this chat in the back stack instead of stacking on top of
                     // it — otherwise forking twice then pressing Back walks back through each
                     // fork instead of leaving the chat entirely (user ask).
@@ -742,6 +780,8 @@ fun VervanNavGraph(
                     onOpenModels = { navController.navigate("models") },
                     onOpenVoiceSettings = { navController.navigate("settings/voice") },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
+                    activityLabel = activityLabel,
+                    onOpenActivity = { navController.navigate(activityRoute) },
                     onForkChat = { forkedChatId ->
                         navController.navigate(AppRoutes.chat(forkedChatId)) {
                             popUpTo(entry.destination.id) { inclusive = true }
@@ -897,15 +937,15 @@ fun VervanNavGraph(
                 FolderDetailScreen(
                     folderId = folderId,
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") }
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") }
                 )
             }
             composable("collections") {
                 SmartCollectionsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenNote = { noteId -> navController.navigate("note/$noteId") },
+                    onOpenChat = { chatId -> navController.navigateSingleTop("chat/$chatId") },
+                    onOpenNote = { noteId -> navController.navigateSingleTop("note/$noteId") },
                     onOpenKnowledge = { kbId -> navController.navigate("knowledge/$kbId") }
                 )
             }
@@ -936,30 +976,26 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.knowledge.PdfPageViewerScreen(documentId = documentId, initialPage = page, onBack = { navController.popBackStack() })
             }
         }
-        if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
-            val count = activeJobs.size + loadingModels + activeDownloads
-            val label = when {
-                activeJobs.size == 1 && loadingModels == 0 -> activeJobs.first().label
-                loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> "Loading model"
-                activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> "Downloading model"
-                else -> "$count activities running"
-            }
-            Surface(
-                onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md),
-                shape = VervanExtraShapes.pill,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shadowElevation = 6.dp,
-            ) {
-                Row(
-                    Modifier.padding(horizontal = Space.md, vertical = Space.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
-                }
-            }
+        if (activityLabel != null && !chatRouteActive) {
+            ActivityStatusPill(
+                label = activityLabel,
+                onClick = { navController.navigateSingleTop(activityRoute) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = Space.md, bottom = overlayBottomReserve + Space.md),
+            )
+        }
+        if (!useRail && showBottomBar) {
+            VervanNavigationBar(
+                leading = tabs,
+                trailing = trailingTabs,
+                currentRoute = currentRoute,
+                navController = navController,
+                onCreate = { showCreateSheet = true },
+                barHeight = bottomNavigationHeight,
+                itemHeight = bottomNavigationItemHeight,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
         }
         }
@@ -990,8 +1026,8 @@ fun VervanNavGraph(
                 // "Import document" were two near-duplicate entries to the same "knowledge" route
                 // (now merged into one), and "New workspace"/"New folder" sat under the generic
                 // "Organize" label instead of the "Space" concept users are actually taught.
-                CreateAction(Icons.AutoMirrored.Filled.Chat, "New chat", "Open an empty composer with keyboard focus", "Start") { newChat() },
-                CreateAction(Icons.Filled.Edit, "New note", "Capture long-form local writing", "Start") {
+                CreateAction(Icons.AutoMirrored.Filled.Chat, R.string.create_new_chat, R.string.create_new_chat_body, R.string.create_group_start, quickStart = true) { newChat() },
+                CreateAction(Icons.Filled.Edit, R.string.create_new_note, R.string.create_new_note_body, R.string.create_group_start, quickStart = true) {
                     showCreateSheet = false
                     scope.launch {
                         val note = Note()
@@ -999,17 +1035,17 @@ fun VervanNavGraph(
                         navController.navigate("note/${note.id}")
                     }
                 },
-                CreateAction(Icons.Filled.Workspaces, "Projects", "Open projects to create or manage grouped work", "Organize") { go("projects") },
-                CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Add source", "Create a source collection or import a document for grounded answers", "Sources") { go("knowledge") },
-                CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Library") { go("persona-new") },
-                CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Library") { go("template-new") },
-                CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Library") { go("workflow-new") },
-                CreateAction(Icons.Filled.Dashboard, "Spaces", "Open spaces to create or manage separate contexts", "Organize") { go("workspaces") },
-                CreateAction(Icons.Filled.Folder, "Folders", "Open folders to create or manage manual filing", "Organize") { go("folders") },
-                CreateAction(Icons.Filled.Collections, "Collections", "Browse saved smart filters over chats, notes, and sources", "Organize") { go("collections") },
-                CreateAction(Icons.Filled.AutoAwesome, "Import model", "Prepare local AI generation", "Import") { go("models") },
-                CreateAction(Icons.Filled.PhotoCamera, "Scan image", "Start a chat with an image attachment", "Capture") { newChat("image") },
-                CreateAction(Icons.Filled.Mic, "Voice note", "Record audio into a new chat", "Capture") { newChat("voice") }
+                CreateAction(Icons.Filled.Workspaces, R.string.create_projects, R.string.create_projects_body, R.string.create_group_organize) { go("projects") },
+                CreateAction(Icons.AutoMirrored.Filled.MenuBook, R.string.create_add_source, R.string.create_add_source_body, R.string.create_group_sources) { go("knowledge") },
+                CreateAction(Icons.Outlined.Person, R.string.create_new_persona, R.string.create_new_persona_body, R.string.create_group_library) { go("persona-new") },
+                CreateAction(Icons.Filled.Extension, R.string.create_prompt_template, R.string.create_prompt_template_body, R.string.create_group_library) { go("template-new") },
+                CreateAction(Icons.Filled.Widgets, R.string.create_new_workflow, R.string.create_new_workflow_body, R.string.create_group_library) { go("workflow-new") },
+                CreateAction(Icons.Filled.Dashboard, R.string.create_spaces, R.string.create_spaces_body, R.string.create_group_organize) { go("workspaces") },
+                CreateAction(Icons.Filled.Folder, R.string.create_folders, R.string.create_folders_body, R.string.create_group_organize) { go("folders") },
+                CreateAction(Icons.Filled.Collections, R.string.create_collections, R.string.create_collections_body, R.string.create_group_organize) { go("collections") },
+                CreateAction(Icons.Filled.AutoAwesome, R.string.create_import_model, R.string.create_import_model_body, R.string.create_group_import) { go("models") },
+                CreateAction(Icons.Filled.PhotoCamera, R.string.create_scan_image, R.string.create_scan_image_body, R.string.create_group_capture, quickStart = true) { newChat("image") },
+                CreateAction(Icons.Filled.Mic, R.string.create_voice_note, R.string.create_voice_note_body, R.string.create_group_capture, quickStart = true) { newChat("voice") }
             ),
             onDismiss = { showCreateSheet = false }
         )
@@ -1022,45 +1058,51 @@ private fun VervanNavigationBar(
     trailing: List<Tab>,
     currentRoute: NavDestination?,
     navController: NavHostController,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    barHeight: androidx.compose.ui.unit.Dp,
+    itemHeight: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
 ) {
     val createLabel = stringResource(R.string.action_create)
-    val itemColors = NavigationBarItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        selectedTextColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 0.dp,
+    BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            // Keep the navigation surface visually connected to the display. The old 24dp
+            // gutters made a five-item bar look undersized on phones and left each label with
+            // too little room; the bar itself already has an inset border and shadow.
+    ) {
+        val horizontalPadding = if (maxWidth < 600.dp) Space.sm else Space.md
+        Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding, vertical = Space.sm)) {
+        // A real painted surface, not the transparent M3 NavigationBar — floating over arbitrary
+        // scrolled content needs its own background to stay legible, or the tabs read as loose
+        // icons with nothing grouping them. Plain Surface (not NavigationBar) also gives us the
+        // shape/border/elevation the app's other floating surfaces use.
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(barHeight),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shadowElevation = 12.dp,
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    // Without this, the first/last tab's own surface touches the card's edge
+                    // directly, right where the rounded corner starts — reads as stuck/clipped.
+                    .padding(horizontal = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
-                NavigationBarItem(
-                    selected = false,
-                    onClick = onCreate,
-                    icon = {
-                        Surface(
-                            modifier = Modifier.size(32.dp),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    },
-                    label = { Text(createLabel) },
-                    alwaysShowLabel = true,
-                    colors = itemColors,
-                )
-                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
+                leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemHeight) }
+                NavigationBarCreateAction(createLabel, onCreate, itemHeight)
+                trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemHeight) }
             }
+        }
         }
     }
 }
@@ -1070,40 +1112,127 @@ private fun androidx.compose.foundation.layout.RowScope.NavigationBarTab(
     tab: Tab,
     currentRoute: NavDestination?,
     navController: NavHostController,
-    colors: androidx.compose.material3.NavigationBarItemColors,
+    itemHeight: androidx.compose.ui.unit.Dp,
 ) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    NavigationBarItem(
-        selected = selected,
+    Surface(
         onClick = { navController.navigatePrimaryRoot(tab.route) },
-        icon = {
+        modifier = Modifier
+            .weight(1f)
+            .height(itemHeight)
+            .semantics { this.selected = selected },
+        shape = MaterialTheme.shapes.small,
+        // Navigation is an active brand state, so keep it on the accent family. The secondary
+        // palette is intentionally blue/amber in several themes and made the selected tab look
+        // unrelated to the current app accent.
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        // Only the selected pill gets lift — an unselected, fully transparent item has nothing
+        // for a shadow to read against, so it would just look like a stray smudge over content.
+        shadowElevation = if (selected) 3.dp else 0.dp,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
             Icon(
                 if (selected) tab.selectedIcon else tab.icon,
-                contentDescription = null
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
             )
-        },
-        label = { Text(stringResource(tab.labelRes)) },
-        alwaysShowLabel = true,
-        colors = colors,
-    )
+            Text(
+                stringResource(tab.labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
-private fun RailTabItem(tab: Tab, currentRoute: NavDestination?, navController: NavHostController) {
+private fun androidx.compose.foundation.layout.RowScope.NavigationBarCreateAction(
+    label: String,
+    onClick: () -> Unit,
+    itemHeight: androidx.compose.ui.unit.Dp,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .height(itemHeight),
+        shape = MaterialTheme.shapes.small,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(top = Space.xs),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Add, contentDescription = label, modifier = Modifier.size(24.dp))
+                }
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.RailTabItem(
+    tab: Tab,
+    currentRoute: NavDestination?,
+    navController: NavHostController,
+    itemHeight: androidx.compose.ui.unit.Dp,
+) {
     val selected = currentRoute?.hierarchy?.any { it.route == tab.route } == true
-    NavigationRailItem(
-        selected = selected,
+    Surface(
         onClick = {
             navController.navigatePrimaryRoot(tab.route)
         },
-        icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
-        label = { Text(stringResource(tab.labelRes)) },
-        colors = NavigationRailItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.primary,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-    )
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(itemHeight)
+            .padding(horizontal = Space.xs)
+            .semantics { this.selected = selected },
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = Space.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterVertically),
+        ) {
+            Icon(
+                if (selected) tab.selectedIcon else tab.icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                stringResource(tab.labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }

@@ -1,6 +1,6 @@
 package com.vervan.chat.store.storage
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.store.model.ArtifactRole
 import com.vervan.chat.store.model.ModelTask
 import com.vervan.chat.store.model.RuntimeId
@@ -63,6 +63,7 @@ class InstalledManifestStore(private val blobStore: BlobStore) {
         return try {
             parse(JSONObject(file.readText()))
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "Unreadable manifest for $variantId: ${t.message}")
             null
         }
@@ -76,6 +77,7 @@ class InstalledManifestStore(private val blobStore: BlobStore) {
             try {
                 parse(JSONObject(file.readText()))
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "Skipping unreadable manifest in ${dir.name}: ${t.message}")
                 null
             }

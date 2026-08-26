@@ -13,7 +13,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -96,6 +96,7 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
                     _document.value = null
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _error.value = t.toUserMessage()
             } finally {
@@ -126,14 +127,14 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Source passage") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.ui_sourcepassagescreen_129_source_passage)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     val page = chunk?.pageNumber
                     val docId = document?.id
                     if (page != null && docId != null) {
                         IconButton(onClick = { onOpenPdfPage(docId, page) }) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "View page $page in PDF")
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = stringResource(R.string.ui_sourcepassagescreen_view_page_pdf, page))
                         }
                     }
                 }
@@ -155,15 +156,19 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
                     icon = Icons.Filled.PictureAsPdf,
                     title = stringResource(R.string.source_passage_not_found),
                     body = stringResource(R.string.source_passage_not_found_body),
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true,
                     actionLabel = stringResource(R.string.action_back),
                     onAction = onBack
                 )
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(Space.sm)) {
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(Space.sm),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
+                ) {
                     items(neighbors, key = { it.id }) { c ->
                         val isTarget = c.id == chunk?.id
-                        Card(
-                            Modifier.fillMaxWidth().padding(vertical = Space.xs)
-                        ) {
+                        Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(Space.md)) {
                                 if (c.sectionPath.isNotBlank()) {
                                     Text(c.sectionPath, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)

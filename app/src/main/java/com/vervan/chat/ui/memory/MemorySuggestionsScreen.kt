@@ -23,14 +23,14 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import com.vervan.chat.ui.common.collectAsState
@@ -84,7 +84,9 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
             EmptyState(
                 icon = Icons.Filled.Check,
                 title = stringResource(R.string.memory_caught_up),
-                body = stringResource(R.string.memory_caught_up_body)
+                body = stringResource(R.string.memory_caught_up_body),
+                modifier = Modifier.fillMaxSize(),
+                centered = true
             )
         } else {
             LazyColumn(
@@ -108,7 +110,7 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                         Modifier.fillMaxWidth(),
                         colors = SurfaceRole.Card.cardColors(),
                         border = SurfaceRole.Card.border(),
-                        shape = MaterialTheme.shapes.extraLarge
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Column(Modifier.padding(Space.lg)) {
                             Text(suggestion.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

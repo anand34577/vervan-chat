@@ -23,15 +23,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -76,7 +76,13 @@ fun SecuritySettingsScreen(
     val method by vm.appLockMethod.collectAsState()
     val timeoutSeconds by vm.autoLockTimeoutSeconds.collectAsState()
     val retentionDays by vm.autoDeleteAfterDays.collectAsState()
+    val biometricAvailable = remember(app) {
+        androidx.biometric.BiometricManager.from(app).canAuthenticate(
+            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+        ) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+    }
     var showPinSetup by remember { mutableStateOf(false) }
+    var pendingLockMethod by remember { mutableStateOf<String?>(null) }
     var confirmWipeStep1 by remember { mutableStateOf(false) }
     var confirmWipeStep2 by remember { mutableStateOf(false) }
     var wiping by remember { mutableStateOf(false) }
@@ -117,8 +123,12 @@ fun SecuritySettingsScreen(
                         Switch(
                             checked = enabled,
                             onCheckedChange = { turnOn ->
-                                if (turnOn && method != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
-                                else vm.setAppLockEnabled(turnOn)
+                                if (turnOn && !vm.hasPin && (method != "BIOMETRIC" || !biometricAvailable)) {
+                                    pendingLockMethod = if (biometricAvailable) method else "PIN"
+                                    showPinSetup = true
+                                } else {
+                                    vm.setAppLockEnabled(turnOn)
+                                }
                             }
                         )
                     }
@@ -130,10 +140,15 @@ fun SecuritySettingsScreen(
                                 VervanFilterChip(
                                     selected = method == value,
                                     onClick = {
-                                        vm.setAppLockMethod(value)
-                                        if (value != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
+                                        if (value != "BIOMETRIC" && !vm.hasPin) {
+                                            pendingLockMethod = value
+                                            showPinSetup = true
+                                        } else {
+                                            vm.setAppLockMethod(value)
+                                        }
                                     },
                                     label = { Text(label) },
+                                    enabled = value != "BIOMETRIC" || biometricAvailable || vm.hasPin,
                                     modifier = Modifier.padding(end = Space.sm)
                                 )
                             }
@@ -264,7 +279,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep1) {
         ConfirmDialog(
             title = stringResource(R.string.security_wipe_title),
-            body = "Permanently erase all local content and models?",
+            body = stringResource(R.string.ui_securitysettingsscreen_267_permanently_erase_all_local_content_and_mode),
             confirmLabel = stringResource(R.string.action_continue),
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
@@ -274,7 +289,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep2) {
         ConfirmDialog(
             title = stringResource(R.string.security_are_you_sure),
-            body = "This cannot be undone. The app will close when the wipe starts.",
+            body = stringResource(R.string.ui_securitysettingsscreen_277_this_cannot_be_undone_the_app_will_close_whe),
             confirmLabel = stringResource(R.string.security_wipe_everything),
             destructive = true,
             onConfirm = {
@@ -288,9 +303,15 @@ fun SecuritySettingsScreen(
 
     if (showPinSetup) {
         PinSetupDialog(
-            onDismiss = { showPinSetup = false; if (!vm.hasPin) vm.setAppLockMethod("BIOMETRIC") },
+            onDismiss = {
+                showPinSetup = false
+                pendingLockMethod = null
+                if (!vm.hasPin) vm.setAppLockMethod("BIOMETRIC")
+            },
             onConfirm = { pin ->
                 vm.setPin(pin)
+                pendingLockMethod?.let(vm::setAppLockMethod)
+                pendingLockMethod = null
                 showPinSetup = false
                 vm.setAppLockEnabled(true)
             }

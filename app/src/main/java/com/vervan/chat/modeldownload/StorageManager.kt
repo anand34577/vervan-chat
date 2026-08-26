@@ -2,7 +2,9 @@ package com.vervan.chat.modeldownload
 
 import android.content.Context
 import com.vervan.chat.data.db.entities.ModelErrorCode
+import com.vervan.chat.system.StorageSpace
 import java.io.File
+import java.util.Locale
 
 /** Staging/installed directory layout and free-space accounting for the model downloader.
  * Staging files are never exposed to a loader — only [StorageManager.finalizeIntoInstalled]
@@ -26,7 +28,7 @@ class StorageManager(context: Context) {
         val required = remainingDownloadBytes +
             (if (requiresImportCopy) remainingDownloadBytes else 0L) +
             SAFETY_MARGIN_BYTES
-        val usable = runCatching { appContext.filesDir.usableSpace }.getOrDefault(-1L)
+        val usable = runCatching { StorageSpace.allocatableBytes(appContext) }.getOrDefault(-1L)
         if (usable < 0) throw ModelDownloadException(ModelErrorCode.STORAGE_UNAVAILABLE, "Could not determine free storage")
         if (usable < required) {
             throw ModelDownloadException(
@@ -45,11 +47,11 @@ class StorageManager(context: Context) {
 
         fun formatBytes(bytes: Long): String {
             val gib = bytes / (1024.0 * 1024 * 1024)
-            if (gib >= 1) return "%.2f GiB".format(gib)
+            if (gib >= 1) return "%.2f GiB".format(Locale.ROOT, gib)
             val mib = bytes / (1024.0 * 1024)
-            if (mib >= 1) return "%.1f MiB".format(mib)
+            if (mib >= 1) return "%.1f MiB".format(Locale.ROOT, mib)
             val kib = bytes / 1024.0
-            return if (kib >= 1) "%.0f KiB".format(kib) else "$bytes B"
+            return if (kib >= 1) "%.0f KiB".format(Locale.ROOT, kib) else "$bytes B"
         }
     }
 }

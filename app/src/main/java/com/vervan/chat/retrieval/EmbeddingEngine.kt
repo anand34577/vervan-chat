@@ -58,6 +58,7 @@ class EmbeddingEngine(private val context: Context) : EmbeddingLoadable {
                 try {
                     rawEmbedder = RawTfliteEmbedder(context, modelPath, tokenizerPath)
                 } catch (t: Throwable) {
+                    com.vervan.chat.system.rethrowCancellation(t)
                     throw IllegalStateException(
                         "'${File(modelPath).name}' doesn't look like a valid embedding model: ${t.message}", t
                     )
@@ -85,6 +86,7 @@ class EmbeddingEngine(private val context: Context) : EmbeddingLoadable {
                 Log.i(TAG, "loadMediaPipe() SUCCESS: ${File(modelPath).name} on $activeBackend")
                 return
             } catch (e: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(e)
                 lastError = e
                 Log.w(TAG, "loadMediaPipe() FAILED on $delegate for ${File(modelPath).name}: ${e.message}", e)
             }
@@ -105,6 +107,7 @@ class EmbeddingEngine(private val context: Context) : EmbeddingLoadable {
                 rawEmbedder?.let { return@withContext it.embed(text, isQuery, title) }
                 null
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // Throwable, not just Exception — a native TFLite inference failure (e.g.
                 // OutOfMemoryError on a huge chunk/query) must still degrade to "no embedding"
                 // rather than crash every semantic search.

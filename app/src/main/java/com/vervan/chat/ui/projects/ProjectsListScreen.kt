@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Workspaces
@@ -19,14 +20,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.theme.vervanBorder
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -56,6 +57,7 @@ import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import androidx.compose.ui.res.stringResource
@@ -64,7 +66,8 @@ import com.vervan.chat.R
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {}) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
     val vm: ProjectsListViewModel = viewModel(factory = viewModelFactory { initializer { ProjectsListViewModel(app) } })
     val projects by vm.projects.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
@@ -103,7 +106,8 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
                 icon = Icons.Filled.Workspaces,
                 title = stringResource(R.string.project_no_items),
                 body = stringResource(R.string.project_no_items_body),
-                modifier = Modifier,
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = stringResource(R.string.project_new),
                 onAction = { showCreate = true }
             )
@@ -117,7 +121,11 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
                 modifier = Modifier.padding(top = Space.sm)
               )
               VervanSectionHeader(stringResource(R.string.project_all), count = projects.size, actionLabel = stringResource(R.string.action_new), onAction = { showCreate = true })
-              LazyColumn(Modifier.fillMaxSize()) {
+              LazyColumn(
+                  Modifier.fillMaxWidth().weight(1f),
+                  contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.md),
+                  verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
+              ) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
@@ -137,8 +145,11 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
         AlertDialog(
             onDismissRequest = { showCreate = false },
             title = { Text(stringResource(R.string.project_new)) },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.createProject(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_create)) } },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, label = stringResource(R.string.workspace_name), required = true, singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
+            confirmButton = { TextButton(onClick = {
+                if (name.isNotBlank()) { vm.createProject(name.trim()); showCreate = false }
+                else android.widget.Toast.makeText(context, "Project name is required.", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.action_create)) } },
             dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
@@ -148,8 +159,11 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text(stringResource(R.string.action_rename) + " " + stringResource(R.string.project_list_title).lowercase().dropLast(1)) },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.rename(project, name.trim()); editing = null } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_save)) } },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, label = stringResource(R.string.workspace_name), required = true, singleLine = true, maxLength = ValidationLimits.PROJECT_NAME) },
+            confirmButton = { TextButton(onClick = {
+                if (name.isNotBlank()) { vm.rename(project, name.trim()); editing = null }
+                else android.widget.Toast.makeText(context, "Project name is required.", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.action_save)) } },
             dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
@@ -169,34 +183,31 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
 @Composable
 private fun ProjectCard(project: Project, onClick: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
     var showMenu by remember { mutableStateOf(false) }
-    Card(
+    ModernistListRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
         onClick = onClick,
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
     ) {
-        Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
-            IconAffordance(icon = Icons.Filled.Workspaces, size = IconAffordanceSize.Default)
-            Column(Modifier.weight(1f).padding(start = Space.md)) {
-                OverflowTooltipText(
-                    text = project.name,
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    project.instructions.takeIf { it.isNotBlank() } ?: stringResource(R.string.project_open_workspace),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Box {
-                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.project_actions)) }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { showMenu = false; onRename() })
-                    DeleteMenuItem(onClick = { showMenu = false; onDelete() })
-                }
+        IconAffordance(icon = Icons.Filled.Workspaces, size = IconAffordanceSize.Default)
+        Column(Modifier.weight(1f).padding(start = Space.md)) {
+            OverflowTooltipText(
+                text = project.name,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                project.instructions.takeIf { it.isNotBlank() } ?: stringResource(R.string.project_open_workspace),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Box {
+            IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.project_actions)) }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { showMenu = false; onRename() })
+                DeleteMenuItem(onClick = { showMenu = false; onDelete() })
             }
         }
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     }
 }

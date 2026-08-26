@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,12 +23,14 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.ui.theme.VervanTheme
+import com.vervan.chat.VervanApp
+import com.vervan.chat.ui.theme.VervanThemeFromPreferences
 import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -67,8 +70,12 @@ class ScreenCaptureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The area-selection UI displays a bitmap captured from another app. Never let that
+        // potentially sensitive frame be captured again or exposed in a task snapshot.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val app = application as VervanApp
         setContent {
-            VervanTheme(darkTheme = isSystemInDarkTheme()) {
+            VervanThemeFromPreferences(app) {
                 val current by state.collectAsState()
                 ScreenExplainScreen(
                     state = current,
@@ -81,26 +88,40 @@ class ScreenCaptureActivity : ComponentActivity() {
             }
         }
         if (savedInstanceState != null) return
-        val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        runCatching {
-            val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val config = if (intent.getBooleanExtra(EXTRA_CAPTURE_APP, false)) {
-                    android.media.projection.MediaProjectionConfig.createConfigForUserChoice()
-                } else {
-                    android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
-                }
-                manager.createScreenCaptureIntent(config)
-            } else {
-                manager.createScreenCaptureIntent()
-            }
-            projectionLauncher.launch(captureIntent)
-        }
-            .onFailure {
-                android.util.Log.w(TAG, "Could not launch screen capture consent", it)
-                moveTaskToBack(true)
-                BubbleService.captureFailed("Screen capture isn't available on this device.")
+        // This translucent capture activity is an external privacy surface. Check the same
+        // lock gate as the main activity before showing the MediaProjection consent sheet; a
+        // locked session must not let a bubble or shortcut turn into an unlocked screen assistant.
+        lifecycleScope.launch {
+            val locked = com.vervan.chat.system.runCatchingPreservingCancellation {
+                app.container.settingsRepository.appLockEnabled.first() &&
+                    app.container.appLockManager.isLocked.value
+            }.getOrDefault(true)
+            if (locked) {
+                BubbleService.captureFailed("Unlock Vervan before using the screen assistant.")
                 finish()
+                return@launch
             }
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            runCatching {
+                val captureIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val config = if (intent.getBooleanExtra(EXTRA_CAPTURE_APP, false)) {
+                        android.media.projection.MediaProjectionConfig.createConfigForUserChoice()
+                    } else {
+                        android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                    }
+                    manager.createScreenCaptureIntent(config)
+                } else {
+                    manager.createScreenCaptureIntent()
+                }
+                projectionLauncher.launch(captureIntent)
+            }
+                .onFailure {
+                    android.util.Log.w(TAG, "Could not launch screen capture consent", it)
+                    moveTaskToBack(true)
+                    BubbleService.captureFailed("Screen capture isn't available on this device.")
+                    finish()
+                }
+        }
     }
 
     override fun onDestroy() {
@@ -175,6 +196,7 @@ class ScreenCaptureActivity : ComponentActivity() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 BubbleService.captureFailed("Couldn't save the screenshot: ${t.toUserMessage()}")
                 finish()
                 return@launch
@@ -200,7 +222,14 @@ class ScreenCaptureActivity : ComponentActivity() {
         val projection = try {
             manager.getMediaProjection(resultCode, data)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             android.util.Log.w(TAG, "Could not create MediaProjection", t)
+            BubbleService.endCapture()
+            return null
+        } ?: run {
+            // API 36 models a rejected/invalid projection result as null. Treat it exactly like
+            // user cancellation and unwind the capture service instead of dereferencing it.
+            android.util.Log.w(TAG, "MediaProjection was unavailable for the capture result")
             BubbleService.endCapture()
             return null
         }
@@ -234,7 +263,8 @@ class ScreenCaptureActivity : ComponentActivity() {
                             raw.copyPixelsFromBuffer(plane.buffer)
                             val frame = if (rowPadding == 0) raw else Bitmap.createBitmap(raw, 0, 0, width, height).also { raw.recycle() }
                             if (continuation.isActive) continuation.resume(frame)
-                        } catch (_: Throwable) {
+                        } catch (failure: Throwable) {
+                            com.vervan.chat.system.rethrowCancellation(failure)
                             if (continuation.isActive) continuation.resume(null)
                         } finally {
                             image.close()
@@ -243,6 +273,7 @@ class ScreenCaptureActivity : ComponentActivity() {
                 }
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             android.util.Log.w(TAG, "Could not create screen-capture display", t)
             null
         } finally {

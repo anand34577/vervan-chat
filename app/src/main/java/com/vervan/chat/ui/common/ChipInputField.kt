@@ -23,8 +23,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 
 /**
@@ -45,6 +47,7 @@ fun ChipInputField(
 ) {
     var draft by remember { mutableStateOf("") }
     val atLimit = items.size >= maxItemCount
+    val limitReachedLabel = stringResource(R.string.ui_chipinputfield_limit_reached)
     fun commit() {
         val value = draft.trim().take(maxItemLength)
         if (value.isNotEmpty() && !atLimit && value !in items) {
@@ -69,9 +72,10 @@ fun ChipInputField(
                     InputChip(
                         selected = false,
                         onClick = { onItemsChange(items - item) },
+                        shape = MaterialTheme.shapes.small,
                         label = { Text(item) },
                         trailingIcon = {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove $item", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.ui_remove_item, item), modifier = Modifier.size(16.dp))
                         }
                     )
                 }
@@ -81,11 +85,11 @@ fun ChipInputField(
             value = draft,
             onValueChange = { if (it.length <= maxItemLength) draft = it },
             enabled = !atLimit,
-            placeholder = { Text(if (atLimit) "Limit reached" else placeholder) },
+            placeholder = { Text(if (atLimit) limitReachedLabel else placeholder) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { commit() }),
-            supportingText = { Text("${draft.length} / $maxItemLength", style = MaterialTheme.typography.labelSmall) },
+            supportingText = { Text(stringResource(R.string.ui_chipinputfield_length_count, draft.length, maxItemLength), style = MaterialTheme.typography.labelSmall) },
             modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
         )
     }

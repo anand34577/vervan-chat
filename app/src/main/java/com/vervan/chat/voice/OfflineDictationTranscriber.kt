@@ -2,6 +2,7 @@ package com.vervan.chat.voice
 
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.PromptPolicy
 import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.modelload.LoadTrigger
@@ -22,7 +23,7 @@ object OfflineDictationTranscriber {
          * [LoadTrigger.API_REQUEST] instead, so a model loaded to serve `/v1/audio/transcriptions`
          * stays TTL-managed rather than becoming permanently resident. */
         loadTrigger: LoadTrigger = LoadTrigger.VOICE_SESSION,
-    ): Result<TranscriptionResult> = runCatching {
+    ): Result<TranscriptionResult> = com.vervan.chat.system.runCatchingPreservingCancellation {
         require(wavFile.isFile) { "Recorded audio file is missing" }
         require(wavFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
         val decoded = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
@@ -51,7 +52,7 @@ object OfflineDictationTranscriber {
                         whisper.transcribe(decoded.samples, decoded.sampleRateHz)
                             ?.trim()
                             ?.takeIf { it.isNotEmpty() }
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                     SttEngineChoice.MODEL_AUDIO -> {
                         model ?: continue
@@ -78,7 +79,7 @@ object OfflineDictationTranscriber {
                             systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
                         ).collect { text.append(it) }
                         ModelAudioTranscriptSanitizer.clean(text.toString(), durationMs)
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                     SttEngineChoice.ANDROID -> {
                         val language = app.container.settingsRepository.voiceInputLanguage.first()
@@ -86,7 +87,7 @@ object OfflineDictationTranscriber {
                         AndroidSystemSttRecognizer.recognizeAudioFile(
                             app, wavFile, language, maxSeconds
                         ).getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                 }
             }
@@ -99,8 +100,6 @@ object OfflineDictationTranscriber {
     private const val MODEL_AUDIO_MAX_MS = 30_000L
     private const val MAX_TRANSCRIPT_TOKENS = 128
     private val TRANSCRIBE_STOP_SEQUENCES = listOf("\n\n", "\nAssistant:", "\nassistant:")
-      private const val TRANSCRIBE_SYSTEM_PROMPT =
-          "STT mode. Output only the exact spoken words in the language spoken. Never translate, answer, or explain."
-      private const val TRANSCRIBE_PROMPT =
-          "Transcribe audio only. Preserve the spoken language; do not translate."
+      private const val TRANSCRIBE_SYSTEM_PROMPT = PromptPolicy.TRANSCRIPTION_SYSTEM
+      private const val TRANSCRIBE_PROMPT = PromptPolicy.TRANSCRIPTION_REQUEST
 }

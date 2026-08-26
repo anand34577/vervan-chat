@@ -40,7 +40,9 @@ object TtsFileGenerator {
         synthesizeOne(sentence, engine, lang)
 
     private suspend fun synthesizeOne(sentence: String, engine: TtsEngine, lang: String): TtsAudio? =
-        runCatching { engine.synthesize(markdownToSpeechText(sentence), lang) }
+        com.vervan.chat.system.runCatchingPreservingCancellation {
+            engine.synthesize(markdownToSpeechText(sentence), lang)
+        }
             .getOrNull()
             ?.takeIf { it.samples.isNotEmpty() }
 

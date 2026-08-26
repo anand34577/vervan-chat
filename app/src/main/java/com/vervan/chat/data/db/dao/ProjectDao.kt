@@ -1,12 +1,17 @@
 package com.vervan.chat.data.db.dao
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.vervan.chat.data.db.entities.Project
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProjectDao : BaseDao<Project> {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertDefault(project: Project)
+
     @Query("SELECT * FROM projects WHERE deletedAt IS NULL ORDER BY name ASC")
     fun observeAll(): Flow<List<Project>>
 

@@ -2,6 +2,7 @@ package com.vervan.chat.modeldownload
 
 import com.vervan.chat.data.db.entities.ModelFileRole
 import com.vervan.chat.data.db.entities.ModelRole
+import com.vervan.chat.llm.ThinkingSpec
 
 /** Model formats the app's loaders (LlmEngine, EmbeddingEngine, sherpa-onnx TTS voices,
  * whisper.cpp ASR) actually know how to open — kept to exactly what's real rather than a
@@ -47,6 +48,9 @@ data class CatalogModel(
     val precision: String? = null,
     val sourceName: String = "Hugging Face",
     val sourceUrl: String,
+    // Optional model-protocol metadata. This is data, not model-specific generation code: a
+    // future catalog entry can declare a new activation token without changing the engine.
+    val thinkingSpecJson: String? = null,
     val requiresAuthToken: Boolean = false,
     val requiresLicenseAcceptance: Boolean = false,
     val licenseName: String? = null,
@@ -93,6 +97,7 @@ object ModelCatalog {
             totalExpectedBytes = 2_588_147_712L,
             capabilities = setOf("Text generation"),
             sourceUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+            thinkingSpecJson = ThinkingSpec.systemToken("<|think|>", ThinkingSpec.Source.CATALOG).toJson(),
             requiresAuthToken = false
         ),
         CatalogModel(

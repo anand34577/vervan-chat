@@ -43,4 +43,11 @@ interface WorkspaceDao : BaseDao<Workspace> {
     // IGNORE so it's a no-op once the row already exists (mirrors PersonaDao.insertAll).
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertDefault(workspace: Workspace)
+
+    /** Removes a deleted knowledge base from the denormalized workspace defaults list. */
+    @Query(
+        "UPDATE workspaces SET defaultKnowledgeBaseIds = TRIM(REPLACE(',' || defaultKnowledgeBaseIds || ',', ',' || :knowledgeBaseId || ',', ','), ',') " +
+            "WHERE (',' || defaultKnowledgeBaseIds || ',') LIKE '%,' || :knowledgeBaseId || ',%'"
+    )
+    suspend fun clearKnowledgeBaseReference(knowledgeBaseId: String)
 }

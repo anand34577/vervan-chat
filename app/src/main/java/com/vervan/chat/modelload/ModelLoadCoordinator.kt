@@ -1,6 +1,6 @@
 package com.vervan.chat.modelload
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.data.db.dao.ModelDao
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.ModelBackend
@@ -105,7 +105,12 @@ class ModelLoadCoordinator(
         val result = EnsureLoadResult(
             role, success = false, loadedModelId = model.id,
             errorCategory = ModelLoadErrorCategory.ENGINE_UNAVAILABLE,
-            errorMessage = "${model.displayName}'s runtime is stuck after a previous load timed out and can't be used again safely — restart the app to continue.",
+            // Swiping the app away from Recents does NOT fix this — a foreground service (chat
+            // generation / API server) commonly keeps the process alive, so the in-memory poison
+            // flag below survives that. Wording points at the "Restart app" action wired to this
+            // category in ModelManagerScreen (which force-kills the process) instead of the
+            // generic, misleading "restart the app" a user would otherwise try and see fail.
+            errorMessage = "${model.displayName}'s runtime is stuck after a previous load timed out and can't be used again safely. Tap \"Restart app\" below — closing the app from Recents alone won't clear this.",
             retryable = false
         )
         publishFailure(role, result)
@@ -211,8 +216,8 @@ class ModelLoadCoordinator(
                 if (coordinatorMutex.withLock { inFlight.containsKey(role) }) continue
                 ttlDeadlines.remove(role)
                 Log.i(TAG, "TTL expired for $role after ${defaults.apiModelTtlSeconds()}s idle — unloading")
-                runCatching { unload(role) }
-                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                com.vervan.chat.system.runCatchingPreservingCancellation { unload(role) }
+                    .onFailure { Log.w(TAG, "TTL unload failed for $role", it) }
             }
         }
     }
@@ -702,10 +707,12 @@ class ModelLoadCoordinator(
         } catch (t: kotlinx.coroutines.CancellationException) {
             // Structured-concurrency contract: CancellationException must propagate so parent-job
             // cancellation works. The previous `catch (t: Throwable)` swallowed it, mapping every
+                com.vervan.chat.system.rethrowCancellation(t)
             // genuine cancellation into a synthetic failure result and leaving the awaiting caller
             // running in a half-cancelled state.
             throw t
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "doLoad() FAILED for ${model.displayName} (role=$role, trigger=$trigger) — ${diagnosticContext(model, trigger)}", t)
             val category = classifyError(t)
             val result = EnsureLoadResult(
@@ -791,6 +798,7 @@ class ModelLoadCoordinator(
         val result = try {
             engine.loadModel(model.filePath, requestedContext, maxNumImages, backendPreference, backendHint, useMtp)
         } catch (first: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(first)
             if (requestedContext <= MIN_CONTEXT_RETRY_TOKENS) throw first
             engine.loadModel(model.filePath, MIN_CONTEXT_RETRY_TOKENS, maxNumImages, backendPreference, backendHint, useMtp)
         }
@@ -927,7 +935,7 @@ class ModelLoadCoordinator(
         val required = estimateRequiredBytes(model, contextTokens) + residentWeightBytes(excludingRole = role)
         val available = resourceMonitor.availableMemoryBytes()
         if (required <= available) return null
-        fun gb(bytes: Long) = "%.1f".format(bytes / 1_073_741_824.0)
+        fun gb(bytes: Long) = "%.1f".format(java.util.Locale.getDefault(), bytes / 1_073_741_824.0)
         return EnsureLoadResult(
             role, success = false, loadedModelId = model.id,
             errorCategory = ModelLoadErrorCategory.INSUFFICIENT_MEMORY,
@@ -951,12 +959,16 @@ class ModelLoadCoordinator(
         private val ROLES = listOf(ModelRole.GENERATION, ModelRole.EMBEDDING)
         private const val MIN_CONTEXT_RETRY_TOKENS = 2048
         private const val TTL_TICK_MS = 15_000L
-        // watchdog — generous on purpose. Observed real loads (worst case: GPU shader
-        // recompilation across a multi-attempt capability probe) taking up to ~30s; this exists
-        // to catch a genuinely stuck native call (corrupted file, wedged delegate), not to
-        // pressure a slow-but-progressing one. A model that legitimately needs longer than this
-        // to load is a product decision to raise, not silently wait on forever.
-        private const val LOAD_WATCHDOG_TIMEOUT_MS = 180_000L
+        // watchdog — generous on purpose, and sized for the *whole* AUTO ladder (NPU, then GPU,
+        // then CPU — see LlmEngine.load()'s backendOrder), not one attempt: all three share this
+        // single budget since a stuck native call can't be interrupted mid-attempt to reclaim time
+        // for the next one (see the poison-on-timeout comment above). Observed real loads (worst
+        // case: GPU shader recompilation across a multi-attempt capability probe) taking up to
+        // ~30s per attempt; three genuinely-slow-but-progressing attempts back to back on a weak
+        // device can legitimately approach this, so it errs high to avoid poisoning the engine for
+        // a load that would have finished on its own. A model that legitimately needs longer than
+        // this to load is a product decision to raise, not silently wait on forever.
+        private const val LOAD_WATCHDOG_TIMEOUT_MS = 300_000L
         // Dedicated, not Dispatchers.Default — withTimeout only stops *waiting* for a blocking
         // JNI call, it can't interrupt one already running underneath (Kotlin coroutines can't
         // preempt native/blocking code). A load that genuinely hangs forever therefore strands

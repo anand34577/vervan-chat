@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -31,7 +32,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.vervanBorder
 
 /**
@@ -44,7 +44,7 @@ import com.vervan.chat.ui.theme.vervanBorder
  * identity cue the previous design entirely lacked. Tap target hits the 44dp minimum even when
  * the model name is short.
  *
- * The "no model" variant is a primary-toned call-to-action pill ("Choose a model") so users
+ * The "no model" variant is a primary-toned call-to-action ("Choose a model") so users
  * landing on a fresh chat know what to do without reading the placeholder.
  */
 @Composable
@@ -63,15 +63,16 @@ fun ModelPill(
 
     Row(
         modifier = modifier
-            .clip(VervanExtraShapes.pill)
-            .background(containerColor)
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(containerColor, MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .border(
                 width = 1.dp,
                 color = if (isCta) Color.Transparent else MaterialTheme.colorScheme.outlineVariant,
-                shape = VervanExtraShapes.pill
+                shape = MaterialTheme.shapes.small
             )
-            .padding(horizontal = Space.md, vertical = 6.dp)
+            .padding(horizontal = Space.md, vertical = Space.sm)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 // mergeDescendants swallows EngineDot's own semantics entirely, and that dot's
@@ -125,7 +126,7 @@ fun EngineDot(kind: ModelEngineKind, modifier: Modifier = Modifier, loaded: Bool
         modifier = modifier
             .size(8.dp)
             .clip(CircleShape)
-            .background(color)
+            .background(color, CircleShape)
             .then(if (loaded) Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape) else Modifier)
     )
 }

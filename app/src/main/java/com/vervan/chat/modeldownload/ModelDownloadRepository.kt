@@ -344,6 +344,7 @@ class ModelDownloadRepository(
             Log.w(TAG, "executePackage($pkgId) failed: ${e.code}", e)
             failPackage(pkgId, e.code, e.message ?: "Download failed")
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "executePackage($pkgId) failed", t)
             failPackage(pkgId, ModelErrorCode.UNKNOWN, t.message ?: t::class.simpleName ?: "Unknown error")
         }
@@ -356,7 +357,7 @@ class ModelDownloadRepository(
         networkAuditLog.record("Downloading model file: ${file.fileName}")
         val token = tokenStore.get()
         val result = try {
-            downloader.download(file.sourceUrl, File(file.tempPath), file.etag, file.lastModified, token) { downloaded, total ->
+            downloader.download(file.sourceUrl, File(file.tempPath), file.etag, file.lastModified, token, maxBytes = file.expectedBytes) { downloaded, total ->
                 fileDao.upsert(fileDao.get(file.id)?.copy(downloadedBytes = downloaded, expectedBytes = total ?: file.expectedBytes) ?: return@download)
                 recordSpeedSample(recomputePackageProgress(pkgId))
             }
@@ -456,7 +457,9 @@ class ModelDownloadRepository(
             modelDao.upsert(
                 installed.copy(
                     origin = ModelOrigin.DOWNLOADED, catalogModelId = catalog.modelId,
-                    catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl
+                    catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl,
+                    thinkingSpecJson = catalog.thinkingSpecJson ?: installed.thinkingSpecJson,
+                    supportsThinking = if (catalog.thinkingSpecJson != null) true else installed.supportsThinking
                 )
             )
         }
@@ -521,7 +524,7 @@ class ModelDownloadRepository(
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
     }
 
     private suspend fun awaitNetworkAndWifi(pkgId: String) {

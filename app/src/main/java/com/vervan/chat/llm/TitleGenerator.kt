@@ -100,7 +100,8 @@ object TitleGenerator {
             OneShotLlm.run(app, prompt, model = model, maxOutputTokensOverride = maxTitleTokens)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (failure: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(failure)
             null
         }
         // Strip reasoning the same way a real reply does — the model may reason regardless of what

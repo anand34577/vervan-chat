@@ -13,12 +13,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -92,10 +93,10 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
             TopAppBar(
                 title = {
                     Column {
-                        Text("Note")
+                        Text(stringResource(com.vervan.chat.R.string.note_title))
                         if (loaded) {
                             Text(
-                                if (saving) "Saving…" else "Saved on this device",
+                                if (saving) stringResource(com.vervan.chat.R.string.note_saving) else stringResource(com.vervan.chat.R.string.note_saved_device),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -104,15 +105,15 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 },
                 navigationIcon = {
                     IconButton(onClick = { vm.save(title, content, tags); onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { previewMode = !previewMode }) {
-                        Icon(Icons.Filled.Preview, contentDescription = if (previewMode) "Edit" else "Preview markdown")
+                        Icon(Icons.Filled.Preview, contentDescription = if (previewMode) stringResource(com.vervan.chat.R.string.note_edit) else stringResource(com.vervan.chat.R.string.note_preview_markdown))
                     }
                     IconButton(onClick = { showActions = true }, enabled = !running) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "AI actions")
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = stringResource(com.vervan.chat.R.string.note_ai_actions))
                     }
                     DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                         NoteAction.entries.forEach { action ->
@@ -126,10 +127,10 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                         }
                     }
                     IconButton(onClick = { vm.save(title, content, tags); showKbPicker = true }) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Add to knowledge base")
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = stringResource(com.vervan.chat.R.string.note_add_to_knowledge))
                     }
                     IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                        Icon(Icons.Filled.Delete, contentDescription = stringResource(com.vervan.chat.R.string.action_delete))
                     }
                 }
             )
@@ -138,19 +139,21 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
         PageContainer(Modifier.padding(padding).imePadding(), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Note unavailable",
+                title = stringResource(com.vervan.chat.R.string.note_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your other notes are safe. Retry the lookup or return to the notes list.",
-                actionLabel = "Retry",
+                recovery = stringResource(com.vervan.chat.R.string.note_recovery),
+                actionLabel = stringResource(com.vervan.chat.R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             !recordFound -> EmptyState(
                 icon = Icons.Filled.Preview,
-                title = "Note not found",
-                body = "This note may have been deleted or moved to the recycle bin.",
-                actionLabel = "Back",
+                title = stringResource(com.vervan.chat.R.string.note_not_found),
+                body = stringResource(com.vervan.chat.R.string.note_not_found_body),
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
+                actionLabel = stringResource(com.vervan.chat.R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
@@ -160,19 +163,19 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 maxLength = ValidationLimits.NOTE_TITLE,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = "Title"
+                placeholder = stringResource(com.vervan.chat.R.string.note_title_placeholder)
             )
             if (running) {
                 Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                    Text("Updating the note on this device…")
+                    Text(stringResource(com.vervan.chat.R.string.note_updating))
                 }
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't complete the note action",
+                    title = stringResource(com.vervan.chat.R.string.note_action_failed),
                     message = it,
-                    recovery = "Your note is safe. Check the model or shorten the selection, then try again.",
+                    recovery = stringResource(com.vervan.chat.R.string.note_action_recovery),
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
@@ -183,7 +186,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     tags = joined
                     vm.scheduleSave(title, content, joined)
                 },
-                label = "Tags",
+                label = stringResource(com.vervan.chat.R.string.note_tags),
                 maxItemLength = ValidationLimits.NOTE_TAG,
                 maxItemCount = ValidationLimits.NOTE_TAG_COUNT,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
@@ -200,7 +203,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     maxLength = ValidationLimits.NOTE_CONTENT,
                     maxLines = Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm).weight(1f),
-                    placeholder = "Write here… Markdown is supported"
+                    placeholder = stringResource(com.vervan.chat.R.string.note_body_placeholder)
                 )
             }
             pendingResult?.let { result ->
@@ -220,11 +223,11 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     if (showKbPicker) {
         AlertDialog(
             onDismissRequest = { showKbPicker = false },
-            title = { Text("Add to knowledge base") },
+            title = { Text(stringResource(com.vervan.chat.R.string.note_add_to_knowledge)) },
             text = {
                 Column {
                     if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet. Create one in Knowledge.")
+                        Text(stringResource(com.vervan.chat.R.string.chat_no_sources_create))
                     }
                     knowledgeBases.forEach { kb ->
                         Text(
@@ -236,15 +239,15 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showKbPicker = false }) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = { showKbPicker = false }) { Text(stringResource(com.vervan.chat.R.string.action_cancel)) } }
         )
     }
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete note?",
-            body = "\"${title.ifBlank { "Untitled note" }}\" will be moved to the recycle bin.",
-            confirmLabel = "Delete",
+            title = stringResource(com.vervan.chat.R.string.note_delete_title),
+            body = stringResource(com.vervan.chat.R.string.note_delete_body, title.ifBlank { stringResource(com.vervan.chat.R.string.note_untitled) }),
+            confirmLabel = stringResource(com.vervan.chat.R.string.action_delete),
             destructive = true,
             onConfirm = { confirmDelete = false; vm.delete(); onDeleted() },
             onDismiss = { confirmDelete = false }

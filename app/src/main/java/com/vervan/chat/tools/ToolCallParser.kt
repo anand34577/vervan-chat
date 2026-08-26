@@ -1,5 +1,6 @@
 package com.vervan.chat.tools
 
+import com.vervan.chat.validation.InputLimits
 import org.json.JSONObject
 
 /**
@@ -44,7 +45,11 @@ object ToolCallParser {
         for (match in COMPLETE.findAll(text)) {
             val body = match.groupValues[1].trim().replace(CODE_FENCE, "").trim()
             val call = parseOne(body, match.value)
-            if (call != null) calls.add(call) else malformed.add(match.value)
+            if (call != null && calls.size < InputLimits.API_MAX_TOOLS) {
+                calls.add(call)
+            } else {
+                malformed.add(match.value)
+            }
         }
         return ParseResult(calls, malformed)
     }
@@ -59,25 +64,36 @@ object ToolCallParser {
      *  - `call:x{...}` / `x{...}` / `x(...)` — Gemma's native bare-call shape
      */
     private fun parseOne(body: String, rawBlock: String): ToolCall? {
-        runCatching {
-            val json = JSONObject(body)
+        val json = runCatching { JSONObject(body) }.getOrNull()
+        if (json != null) {
             val name = json.optString("tool").ifBlank { json.optString("name") }.takeIf { it.isNotBlank() }
             if (name != null) {
                 // `arguments` is a JSON *string* in OpenAI's wire format, an object in most local
                 // models' imitation of it — accept either rather than only the one we emit.
-                val params = json.optJSONObject("params")
-                    ?: json.optJSONObject("arguments")
-                    ?: json.optString("arguments").takeIf { it.isNotBlank() }
-                        ?.let { runCatching { JSONObject(it) }.getOrNull() }
-                    ?: JSONObject()
-                return ToolCall(name, params, rawBlock)
+                val params = when {
+                    json.has("params") -> json.optJSONObject("params") ?: return null
+                    json.has("arguments") -> when (val arguments = json.opt("arguments")) {
+                        is JSONObject -> arguments
+                        is String -> if (arguments.isBlank()) JSONObject()
+                            else runCatching { JSONObject(arguments) }.getOrNull() ?: return null
+                        JSONObject.NULL -> JSONObject()
+                        else -> return null
+                    }
+                    else -> JSONObject()
+                }
+                return validatedCall(name, params, rawBlock)
             }
         }
         val bare = BARE_CALL.find(body.trim()) ?: return null
         val name = bare.groupValues[1]
         val argBlob = bare.groupValues[2].trim()
         val params = if (argBlob.isBlank()) JSONObject() else
-            runCatching { JSONObject(if (argBlob.startsWith("{")) argBlob else "{$argBlob}") }.getOrNull() ?: JSONObject()
+            runCatching { JSONObject(if (argBlob.startsWith("{")) argBlob else "{$argBlob}") }.getOrNull() ?: return null
+        return validatedCall(name, params, rawBlock)
+    }
+
+    private fun validatedCall(name: String, params: JSONObject, rawBlock: String): ToolCall? {
+        if (name.length > 128 || params.toString().length > InputLimits.API_MAX_TOOL_PARAMETER_CHARS) return null
         return ToolCall(name, params, rawBlock)
     }
 

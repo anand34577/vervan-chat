@@ -19,15 +19,15 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import com.vervan.chat.ui.common.collectAsState
@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Memory
@@ -74,21 +75,21 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Memory") },
+                title = { Text(stringResource(com.vervan.chat.R.string.memory_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back)) }
                 },
                 actions = {
                     IconButton(onClick = onOpenSuggestions) {
                         BadgedBox(badge = { if (pendingSuggestions > 0) Badge { Text("$pendingSuggestions") } }) {
-                            Icon(Icons.Filled.Lightbulb, contentDescription = "Suggested memories")
+                            Icon(Icons.Filled.Lightbulb, contentDescription = stringResource(com.vervan.chat.R.string.memory_suggestions_accessibility))
                         }
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = "Add memory") }
+            FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(com.vervan.chat.R.string.memory_add_accessibility)) }
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = VervanContentWidth.standard) {
@@ -100,9 +101,9 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
         ) {
             item {
                 FeatureHero(
-                    eyebrow = "Private and approved",
-                    title = "What the assistant remembers",
-                    body = "Review details saved for future chats. Vervan uses relevant memories when available.",
+                    eyebrow = stringResource(com.vervan.chat.R.string.memory_eyebrow),
+                    title = stringResource(com.vervan.chat.R.string.memory_hero_title),
+                    body = stringResource(com.vervan.chat.R.string.memory_hero_body),
                     icon = Icons.Filled.Lightbulb
                 )
             }
@@ -114,7 +115,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
             }
             item {
                 VervanSectionHeader(
-                    title = "Saved memories",
+                    title = stringResource(com.vervan.chat.R.string.memory_saved_title),
                     count = memories.size,
                     topPadding = 0.dp,
                     bottomPadding = 0.dp
@@ -124,8 +125,8 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 item {
                     EmptyState(
                         icon = Icons.Filled.Lightbulb,
-                        title = "No memories saved",
-                        body = "Save a preference, fact, or instruction for future chats."
+                        title = stringResource(com.vervan.chat.R.string.memory_empty_title),
+                        body = stringResource(com.vervan.chat.R.string.memory_empty_body)
                     )
                 }
             }
@@ -143,19 +144,19 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                     } else {
                         SurfaceRole.Card.border()
                     },
-                    shape = MaterialTheme.shapes.extraLarge
+                    shape = MaterialTheme.shapes.medium
                 ) {
                     Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                             Text(memory.text, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "") +
-                                if (memory.embedding != null) " · Semantic ready" else ""
+                                if (memory.embedding != null) " · ${stringResource(com.vervan.chat.R.string.memory_semantic_ready)}" else ""
                             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         Switch(checked = memory.enabled, onCheckedChange = { checked ->
                             scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
                         })
-                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text("Delete") }
+                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text(stringResource(com.vervan.chat.R.string.action_delete)) }
                     }
                 }
             }
@@ -168,20 +169,20 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
         var key by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAdd = false },
-            title = { Text("New memory") },
+            title = { Text(stringResource(com.vervan.chat.R.string.memory_new_title)) },
             text = {
                 androidx.compose.foundation.layout.Column {
                     BoundedTextField(
                         value = text, onValueChange = { text = it },
-                        placeholder = "e.g. Prefers concise answers",
+                        placeholder = stringResource(com.vervan.chat.R.string.memory_text_placeholder),
                         maxLength = ValidationLimits.MEMORY_TEXT
                     )
                     BoundedTextField(
                         value = key, onValueChange = { key = it },
-                        placeholder = "Key (optional, e.g. \"tone\")",
+                        placeholder = stringResource(com.vervan.chat.R.string.memory_key_placeholder),
                         singleLine = true,
                         maxLength = ValidationLimits.MEMORY_KEY,
-                supportingText = "Using the same key replaces its current value",
+                supportingText = stringResource(com.vervan.chat.R.string.memory_key_supporting),
                         modifier = Modifier.padding(top = Space.sm)
                     )
                 }
@@ -205,17 +206,17 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         }
                     }
                     showAdd = false
-                }) { Text("Save") }
+                }) { Text(stringResource(com.vervan.chat.R.string.action_save)) }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(com.vervan.chat.R.string.action_cancel)) } }
         )
     }
 
     pendingDelete?.let { memory ->
         ConfirmDialog(
-            title = "Delete memory?",
-            body = "\"${memory.text}\" will be permanently deleted.",
-            confirmLabel = "Delete",
+            title = stringResource(com.vervan.chat.R.string.memory_delete_title),
+            body = stringResource(com.vervan.chat.R.string.memory_delete_body, memory.text),
+            confirmLabel = stringResource(com.vervan.chat.R.string.action_delete),
             destructive = true,
             onConfirm = {
                 pendingDelete = null
@@ -232,15 +233,15 @@ private fun MemorySnapshotCard(total: Int, enabled: Int, modifier: Modifier = Mo
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.lg),
             horizontalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
-            MemoryMetric(total.toString(), "Saved", Modifier.weight(1f))
-            MemoryMetric(enabled.toString(), "Enabled", Modifier.weight(1f), MaterialTheme.colorScheme.primary)
-            MemoryMetric((total - enabled).coerceAtLeast(0).toString(), "Paused", Modifier.weight(1f), MaterialTheme.colorScheme.onSurfaceVariant)
+            MemoryMetric(total.toString(), stringResource(com.vervan.chat.R.string.memory_saved_metric), Modifier.weight(1f))
+            MemoryMetric(enabled.toString(), stringResource(com.vervan.chat.R.string.memory_enabled_metric), Modifier.weight(1f), MaterialTheme.colorScheme.primary)
+            MemoryMetric((total - enabled).coerceAtLeast(0).toString(), stringResource(com.vervan.chat.R.string.memory_paused_metric), Modifier.weight(1f), MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

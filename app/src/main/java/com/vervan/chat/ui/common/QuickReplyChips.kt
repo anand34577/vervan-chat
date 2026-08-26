@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -27,9 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.vervanBorder
 
 /**
@@ -63,19 +63,20 @@ fun QuickReplyChips(
     }
 }
 
-/** One suggestion chip. Pill shape, surface-container fill, leading icon for affordance. */
+/** One suggestion chip. Compact rectangular control, surface-container fill, leading icon. */
 @Composable
 private fun QuickReplyChip(suggestion: QuickReply, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(VervanExtraShapes.pill)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant,
-                shape = VervanExtraShapes.pill
+                shape = MaterialTheme.shapes.small
             )
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.md, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.xs)

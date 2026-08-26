@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -20,9 +22,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -87,30 +89,30 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Pronunciation coach") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ui_pronunciationcoachscreen_90_pronunciation_coach)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             ToolIntro(
                 icon = Icons.Filled.Mic,
-                title = "Listen, repeat, improve",
-                body = "Hear a phrase, repeat it, and compare the offline transcript."
+                title = stringResource(R.string.ui_pronunciationcoachscreen_98_listen_repeat_improve),
+                body = stringResource(R.string.ui_pronunciationcoachscreen_99_hear_a_phrase_repeat_it_and_compare_the_offl)
             )
             OutlinedTextField(
                 value = target, onValueChange = { target = it.take(InputLimits.PRONUNCIATION_TEXT_CHARS); heardText = null },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.lg), placeholder = { Text("Word or phrase to practice") }
+                modifier = Modifier.fillMaxWidth().padding(top = Space.lg), placeholder = { Text(stringResource(R.string.ui_pronunciationcoachscreen_103_word_or_phrase_to_practice)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedButton(
                     onClick = { if (ttsReady) tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce") },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text("Hear it", modifier = Modifier.padding(start = Space.sm)) }
+                ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text(stringResource(R.string.ui_pronunciationcoachscreen_109_hear_it), modifier = Modifier.padding(start = Space.sm)) }
                 OutlinedButton(
                     onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
                     enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text("Repeat it", modifier = Modifier.padding(start = Space.sm)) }
+                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text(stringResource(R.string.ui_pronunciationcoachscreen_113_repeat_it), modifier = Modifier.padding(start = Space.sm)) }
             }
             heardText?.let { heard ->
                 Card(
@@ -118,13 +120,13 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     Column(Modifier.padding(Space.md)) {
-                        Text("Heard: \"$heard\"", style = MaterialTheme.typography.bodyMedium)
-                        confidence?.let { Text("Confidence: ${(it * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs)) }
+                        Text(stringResource(R.string.ui_pronunciationcoachscreen_heard, heard), style = MaterialTheme.typography.bodyMedium)
+                        confidence?.let { Text(stringResource(R.string.ui_pronunciationcoachscreen_confidence, (it * 100).toInt()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs)) }
                         if (missedWords.isEmpty()) {
-                            Text("Sounded right!", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
+                            Text(stringResource(R.string.ui_pronunciationcoachscreen_124_sounded_right), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                         } else {
                             Text(
-                                "Possibly mispronounced: ${missedWords.joinToString(", ")}",
+                                stringResource(R.string.ui_pronunciationcoachscreen_mispronounced, missedWords.joinToString(", ")),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(top = Space.sm)
                             )

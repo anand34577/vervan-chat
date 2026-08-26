@@ -74,10 +74,9 @@ class DocumentViewerViewModel(private val app: VervanApp, private val documentId
                     _error.value = "The original file is no longer available. Re-import it to rebuild the index."
                     return@launch
                 }
-                db.chunkDao().deleteForDocument(documentId)
-                db.documentDao().update(doc.copy(status = com.vervan.chat.data.db.entities.DocumentStatus.EXTRACTING))
                 app.container.documentImportManager.reindexLocal(documentId)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _error.value = "Re-indexing failed: ${t.toUserMessage()}"
             } finally {
                 _reindexing.value = false

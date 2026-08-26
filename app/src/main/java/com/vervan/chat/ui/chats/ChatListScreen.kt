@@ -1,11 +1,12 @@
+@file:Suppress("LocalContextGetResourceValueCall")
+
 package com.vervan.chat.ui.chats
 
 import android.content.Intent
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -26,14 +27,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -41,7 +41,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.common.VervanTopAppBar as MediumTopAppBar
 import androidx.compose.material3.Scaffold
@@ -49,8 +49,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -82,24 +83,21 @@ import com.vervan.chat.data.db.entities.Chat
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ArchiveMenuItem
 import com.vervan.chat.ui.common.DeleteMenuItem
-import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.EmptyState
-import com.vervan.chat.ui.common.IconAffordance
-import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
-import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.ModernistMetricStrip
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
-import com.vervan.chat.ui.common.SemanticChip
 import com.vervan.chat.ui.common.VervanFilterChip
-import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.formatRelativeDay
 import com.vervan.chat.ui.common.relativeTime
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.VervanMono
-import com.vervan.chat.ui.theme.vervanBorder
+import com.vervan.chat.ui.theme.ModernistTokens
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
@@ -112,6 +110,7 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
         initializer { ChatListViewModel(app) }
     })
     val chats by vm.chats.collectAsState()
+    val totalChatCount by vm.totalChatCount.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val error by vm.error.collectAsState()
     val filter by vm.filter.collectAsState()
@@ -159,7 +158,11 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                     Column {
                         Text(stringResource(R.string.chat_list_title))
                         Text(
-                            stringResource(R.string.chat_list_summary, chats.size, chats.count { it.pinned }),
+                            stringResource(
+                                R.string.chat_list_summary,
+                                totalChatCount,
+                                chats.count { it.pinned },
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -181,14 +184,28 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                     selectionMode = false
                     scope.launch {
                         if (snackbarHostState.showSnackbar(
-                                "Moved $count chat${if (count == 1) "" else "s"} to the recycle bin",
-                                "Undo"
+                                context.resources.getQuantityString(R.plurals.chat_moved_to_recycle_bin, count, count),
+                                context.getString(R.string.action_undo)
                             ) == SnackbarResult.ActionPerformed
                         ) vm.restoreFromTrash(trashed)
                     }
                 },
-                deleteContentDescription = "Move selected to recycle bin",
+                deleteContentDescription = stringResource(R.string.action_recycle),
                 extraActions = {
+                    IconButton(
+                        enabled = selected.isNotEmpty(),
+                        onClick = {
+                            val ids = selected
+                            val shouldPin = chats.filter { it.id in ids }.any { !it.pinned }
+                            ids.forEach { id ->
+                                chats.firstOrNull { it.id == id }?.let { chat ->
+                                    if (chat.pinned != shouldPin) vm.togglePin(chat)
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Filled.PushPin, contentDescription = stringResource(R.string.chat_pin_selected))
+                    }
                     // Archive/move-to-folder are extras this screen needs beyond the shared
                     // select-all + delete shape — kept exactly as before, just relocated into
                     // SelectionTopBar's extraActions slot instead of a bespoke top bar.
@@ -201,12 +218,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                 selected = emptySet()
                                 selectionMode = false
                                 scope.launch {
-                                    if (snackbarHostState.showSnackbar("Restored $count chat${if (count == 1) "" else "s"} to All", "View") == SnackbarResult.ActionPerformed) {
+                                    if (snackbarHostState.showSnackbar(context.resources.getQuantityString(R.plurals.chat_restored_count, count, count), context.getString(R.string.action_view)) == SnackbarResult.ActionPerformed) {
                                         vm.setFilter(ChatFilter.ALL)
                                     }
                                 }
                             }
-                        ) { Text("Restore") }
+                        ) { Text(stringResource(R.string.action_restore_archive)) }
                     } else {
                         IconButton(
                             enabled = selected.isNotEmpty(),
@@ -218,18 +235,18 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                 selectionMode = false
                                 scope.launch {
                                     if (snackbarHostState.showSnackbar(
-                                            "Archived $count chat${if (count == 1) "" else "s"}",
-                                            "Undo"
+                                            context.resources.getQuantityString(R.plurals.chat_archived_count, count, count),
+                                            context.getString(R.string.action_undo)
                                         ) == SnackbarResult.ActionPerformed
                                     ) vm.unarchive(ids)
                                 }
                             }
-                        ) { Icon(Icons.Filled.Archive, "Archive selected") }
+                        ) { Icon(Icons.Filled.Archive, stringResource(R.string.chat_archive_selected)) }
                     }
                     Box {
-                        IconButton(onClick = { showFolders = true }, enabled = selected.isNotEmpty()) { Icon(Icons.Filled.Folder, "Move to folder") }
+                        IconButton(onClick = { showFolders = true }, enabled = selected.isNotEmpty()) { Icon(Icons.Filled.Folder, stringResource(R.string.chat_move_to_folder)) }
                         DropdownMenu(showFolders, { showFolders = false }) {
-                            DropdownMenuItem(text = { Text("Default folder") }, onClick = { vm.moveToFolder(selected, null); selected = emptySet(); selectionMode = false; showFolders = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_default_folder)) }, onClick = { vm.moveToFolder(selected, null); selected = emptySet(); selectionMode = false; showFolders = false })
                             folders.forEach { folder -> DropdownMenuItem(text = { Text(folder.name) }, onClick = { vm.moveToFolder(selected, folder.id); selected = emptySet(); selectionMode = false; showFolders = false }) }
                         }
                     }
@@ -243,6 +260,21 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
     ) { padding ->
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize()) {
+            ModernistScreenHeader(
+                eyebrow = stringResource(R.string.search_scope_chats).uppercase(),
+                title = stringResource(R.string.chat_find_title),
+                body = stringResource(R.string.chat_find_body),
+                trailing = { ModernistTag(filter.name.replace('_', ' '), active = true) }
+            )
+            ModernistMetricStrip(
+                metrics = listOf(
+                    stringResource(R.string.chat_metric_total) to totalChatCount.toString(),
+                    stringResource(R.string.chat_metric_pinned) to chats.count { it.pinned }.toString(),
+                    stringResource(R.string.chat_metric_folders) to folders.size.toString(),
+                    stringResource(R.string.chat_metric_mode) to stringResource(R.string.chat_metric_local)
+                ),
+                modifier = Modifier.padding(bottom = Space.md)
+            )
             ChatListHeader(
                 query = query,
                 onQueryChange = { query = it },
@@ -276,6 +308,12 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                             ChatBucketHeader(label = bucketLabel, count = bucketChats.size)
                         }
                         items(bucketChats, key = { "$bucketLabel-${it.id}" }) { chat ->
+                            // Wrapping (rather than threading a modifier param into
+                            // ChatListRow's own swipe-gesture Modifier chain) keeps this animation
+                            // opt-in without touching that row's already-intricate drag math.
+                            // animateItem() smooths pin/archive/filter re-sorts and delete/insert
+                            // into a slide instead of the list just snapping to its new order.
+                            Box(Modifier.animateItem()) {
                             ChatListRow(
                                 chat = chat,
                                 projectName = chat.projectId?.let { projectNames[it] },
@@ -295,8 +333,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                     vm.toggleArchive(chat)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
-                                            if (restoring) "Chat restored to All" else "Chat archived",
-                                            actionLabel = if (restoring) "View" else "Undo"
+                                            if (restoring) context.getString(R.string.chat_restored_to_all) else context.getString(R.string.chat_archived),
+                                            actionLabel = if (restoring) context.getString(R.string.action_view) else context.getString(R.string.action_undo)
                                         )
                                         if (restoring && result == SnackbarResult.ActionPerformed) vm.setFilter(ChatFilter.ALL)
                                         if (!restoring && result == SnackbarResult.ActionPerformed) vm.unarchive(setOf(chat.id))
@@ -306,8 +344,8 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                     vm.moveToTrash(chat)
                                     scope.launch {
                                         if (snackbarHostState.showSnackbar(
-                                                "Moved chat to the recycle bin",
-                                                "Undo"
+                                                context.getString(R.string.chat_moved_single_to_recycle_bin),
+                                                context.getString(R.string.action_undo)
                                             ) == SnackbarResult.ActionPerformed
                                         ) vm.restoreFromTrash(listOf(chat))
                                     }
@@ -321,10 +359,11 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                             putExtra(Intent.EXTRA_SUBJECT, chat.title)
                                             putExtra(Intent.EXTRA_TEXT, vm.exportText(chat))
                                         }
-                                        context.startActivity(Intent.createChooser(send, "Export chat"))
+                                        context.startActivity(Intent.createChooser(send, context.getString(R.string.chat_export)))
                                     }
                                 }
                             )
+                            }
                         }
                     }
                     if (buckets.isEmpty()) {
@@ -333,7 +372,11 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
                                 icon = Icons.AutoMirrored.Filled.Chat,
                                 title = if (query.isBlank()) stringResource(R.string.chat_list_empty) else stringResource(R.string.chat_list_no_matches),
                                 body = if (query.isBlank()) stringResource(R.string.chat_list_empty_body) else stringResource(R.string.chat_list_no_matches_body),
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 360.dp)
+                                // Keep empty filtered views visually anchored without relying on
+                                // LazyItemScope's newer fillParentMaxHeight API (not available on
+                                // every Compose version used by the app).
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp),
+                                centered = true,
                             )
                         }
                     }
@@ -347,10 +390,10 @@ fun ChatListScreen(onOpenChat: (String) -> Unit) {
         var title by remember(chat.id) { mutableStateOf(chat.title) }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("Rename chat") },
+            title = { Text(stringResource(R.string.chat_rename)) },
             text = { BoundedTextField(value = title, onValueChange = { title = it }, maxLength = 120, singleLine = true) },
-            confirmButton = { TextButton(onClick = { vm.rename(chat, title); renameTarget = null }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = { vm.rename(chat, title); renameTarget = null }, enabled = title.trim().isNotBlank() && title.length <= 120) { Text(stringResource(R.string.action_save)) } },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 }
@@ -463,8 +506,11 @@ private fun ChatListRow(
     // Swipe right to pin and left to archive. The reveal stays bounded so the row never leaves
     // the viewport, then returns to rest before the list re-sorts or filters the changed chat.
     val density = LocalDensity.current
-    val maxRevealPx = remember(density) { with(density) { 104.dp.toPx() } }
-    val actionThresholdPx = remember(density) { with(density) { 64.dp.toPx() } }
+    // The revealed action is intentionally wide enough for the full localized label. The
+    // previous 104dp reveal clipped "Archive" on compact phones because icon + label + padding
+    // needed more room than the gesture affordance reserved.
+    val maxRevealPx = remember(density) { with(density) { 148.dp.toPx() } }
+    val actionThresholdPx = remember(density) { with(density) { 76.dp.toPx() } }
     var swipeOffsetPx by remember(chat.id) { mutableFloatStateOf(0f) }
     val pinLabel = if (chat.pinned) "Unpin" else "Pin"
     val archiveLabel = if (chat.archived) "Unarchive" else "Archive"
@@ -503,24 +549,28 @@ private fun ChatListRow(
                 CustomAccessibilityAction("$archiveLabel chat") { onToggleArchive(); true }
             )
         }
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) swipeOffsetPx = 0f
+    }
     Box(modifier = Modifier.fillMaxWidth().then(actionModifier)) {
         val revealsPin = swipeOffsetPx >= 0f
         val color = if (revealsPin) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
         val icon = if (revealsPin) Icons.Filled.PushPin else Icons.Filled.Archive
         val label = if (revealsPin) pinLabel else archiveLabel
-        Row(
-            Modifier
-                .matchParentSize()
-                .padding(vertical = 3.dp)
-                .clip(MaterialTheme.shapes.large)
-                .background(color)
-                .padding(horizontal = Space.xxl),
-            horizontalArrangement = if (revealsPin) Arrangement.Start else Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (!revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = Space.sm))
-            Icon(icon, contentDescription = null)
-            if (revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+        if (!selectionMode) {
+            Row(
+                Modifier
+                    .matchParentSize()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(color)
+                    .padding(horizontal = Space.xxl),
+                horizontalArrangement = if (revealsPin) Arrangement.Start else Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(end = Space.sm))
+                Icon(icon, contentDescription = null)
+                if (revealsPin) Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+            }
         }
     // Each conversation is a resting card on the page — container tint + border from the
     // surface-role system, so the history reads as a stack of distinct, tappable conversations
@@ -528,9 +578,9 @@ private fun ChatListRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .heightIn(min = ModernistTokens.Layout.rowMinHeight)
             .graphicsLayer { translationX = swipeOffsetPx },
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         else com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
@@ -556,19 +606,17 @@ private fun ChatListRow(
                 )
             }
             // Colored initial avatar — a stable per-chat accent (hashed from the id) with the
-            // title's first letter, so the list scans by color+letter the way modern chat and
-            // mail apps do, instead of forty identical chat glyphs.
+            // title's first letter, so the list scans by color+letter like a modern chat app.
             run {
                 val accent = com.vervan.chat.ui.theme.vervanAccentFor(chat.id.hashCode())
                 Box(
                     Modifier
                         .size(44.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clip(MaterialTheme.shapes.small)
                         .background(
-                            // Pinned chats carry the brand gradient — the app-wide "important"
-                            // mark — while everything else keeps its stable categorical accent.
                             if (chat.pinned) com.vervan.chat.ui.theme.vervanBrandGradient()
-                            else androidx.compose.ui.graphics.SolidColor(accent.container)
+                            else androidx.compose.ui.graphics.SolidColor(accent.container),
+                            MaterialTheme.shapes.small
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -590,7 +638,7 @@ private fun ChatListRow(
                     )
                     if (chat.pinned) {
                         Icon(
-                            Icons.Filled.PushPin, contentDescription = "Pinned",
+                            Icons.Filled.PushPin, contentDescription = stringResource(R.string.chat_filter_pinned),
                             modifier = Modifier.size(14.dp).padding(end = 2.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -604,46 +652,44 @@ private fun ChatListRow(
                         modifier = Modifier.padding(start = Space.sm),
                     )
                 }
-                // Preview line prefers the last actual message (chat-app convention); falls back
-                // to the draft (a Notes-style preview) only when the chat has no messages yet.
+                // Keep every history row on one stable two-line rhythm: title above, one compact
+                // secondary line below. Optional model/folder/project context joins that same line
+                // instead of making some cards taller than others.
                 val previewText = lastMessage?.let {
                     com.vervan.chat.ui.chat.chatPreviewText(it.content, it.role == com.vervan.chat.data.db.entities.MessageRole.USER)
                 }?.takeIf { it.isNotBlank() }
                     ?: chat.draft.takeIf { it.isNotBlank() }
-                previewText?.let {
-                    val prefix = if (lastMessage != null && lastMessage.role == com.vervan.chat.data.db.entities.MessageRole.USER) "You: " else ""
+                val metadata = listOfNotNull(modelName, folderName, projectName)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+                val secondaryText = listOfNotNull(
+                    previewText?.let {
+                        if (lastMessage != null && lastMessage.role == com.vervan.chat.data.db.entities.MessageRole.USER) stringResource(R.string.chat_you_prefix, it) else it
+                    },
+                    metadata.takeIf { it.isNotBlank() }
+                ).joinToString(" · ")
+                if (secondaryText.isNotBlank()) {
                     Text(
-                        "$prefix$it",
+                        secondaryText,
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = Space.xs),
                     )
-                }
-                ResponsiveActions(Modifier.padding(top = Space.xs)) {
-                    // Model badge — for a multi-engine offline LLM app this is the single most
-                    // useful identity cue (chat-app users immediately want to know "which model
-                    // did I use here?"). Suppressed when no model is set (the global default
-                    // applies, which is true for most chats and would be noisy to show on every row).
-                    modelName?.let { SemanticChip(it, ChipTone.Neutral) }
-                    // Only render folder chip when the chat is in a *named* folder — showing
-                    // "Default" on every un-filed chat was pure clutter.
-                    folderName?.let { SemanticChip(it, ChipTone.Neutral) }
-                    projectName?.let { SemanticChip(it, ChipTone.Neutral) }
                 }
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Chat options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_options), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text(if (chat.pinned) "Unpin" else "Pin") }, onClick = { onTogglePin(); showMenu = false })
-                    DropdownMenuItem(text = { Text(if (selected) "Unselect" else "Select") }, onClick = { onSelect(); showMenu = false })
+                    DropdownMenuItem(text = { Text(if (chat.pinned) stringResource(R.string.chat_unpin) else stringResource(R.string.chat_pin)) }, onClick = { onTogglePin(); showMenu = false })
+                    DropdownMenuItem(text = { Text(if (selected) stringResource(R.string.chat_unselect) else stringResource(R.string.chat_select)) }, onClick = { onSelect(); showMenu = false })
                     ArchiveMenuItem(archived = chat.archived, onClick = { onToggleArchive(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = { onRename(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Duplicate") }, onClick = { onDuplicate(); showMenu = false })
-                    DropdownMenuItem(text = { Text("Export") }, onClick = { onExport(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_rename)) }, onClick = { onRename(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.chat_duplicate)) }, onClick = { onDuplicate(); showMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_export)) }, onClick = { onExport(); showMenu = false })
                     DeleteMenuItem(onClick = { onMoveToTrash(); showMenu = false })
                 }
             }

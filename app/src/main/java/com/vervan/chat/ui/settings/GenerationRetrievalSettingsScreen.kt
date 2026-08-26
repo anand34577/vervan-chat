@@ -14,12 +14,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
@@ -32,11 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.ui.common.VervanFilterChip
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.theme.Space
@@ -77,18 +79,18 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Responses & search") },
+                title = { Text(stringResource(R.string.settings_responses_search)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
-            SectionLabel("Search & context")
+            SectionLabel(stringResource(R.string.ui_generation_search_context))
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Default retrieval mode", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.ui_generationretrievalsettingsscreen_93_default_retrieval_mode), style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.foundation.layout.FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                         horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -112,7 +114,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Rewrite search queries", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_117_rewrite_search_queries), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 "Asks the model for a couple of alternate phrasings before searching, to catch " +
                                     "passages that use different words than your question. Costs an extra response " +
@@ -123,7 +125,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         }
                         Switch(checked = queryExpansionEnabled, onCheckedChange = vm::setQueryExpansionEnabled)
                     }
-                    Text("Context budget", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.lg))
+                    Text(stringResource(R.string.ui_generationretrievalsettingsscreen_128_context_budget), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.lg))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Slider(
                             value = contextLimit.toFloat(), onValueChange = { vm.setContextTokenLimit(it.toInt()) },
@@ -132,10 +134,10 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             // still 4096, set separately in SettingsRepository.
                             valueRange = 1024f..131072f, steps = 126, modifier = Modifier.weight(1f)
                         )
-                        Text("$contextLimit tok", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.ui_generation_context_tokens, contextLimit), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = Space.sm))
                     }
                     Text(
-                        "Sets the target shown in Context inspector.",
+                        stringResource(R.string.ui_generation_context_target_hint),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
@@ -143,7 +145,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Include past thinking in context", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_148_include_past_thinking_in_context), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 "Off by default: a past reply's reasoning is stripped before it's sent back as " +
                                     "history, so it only counts against context once, not on every later turn. " +
@@ -161,7 +163,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Summarize long chats", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_166_summarize_long_chats), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 "Keeps older context in a running summary when a chat gets too long. Uses one extra background response.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -173,14 +175,14 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            SectionLabel("Response style")
+            SectionLabel(stringResource(R.string.ui_generation_response_style))
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(
                         "Sets the default style for new responses.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text("Length", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                    Text(stringResource(R.string.ui_generationretrievalsettingsscreen_185_length), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                     Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         listOf("CONCISE", "BALANCED", "DETAILED").forEach { length ->
                             VervanFilterChip(
@@ -190,7 +192,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             )
                         }
                     }
-                    Text("Tone", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                    Text(stringResource(R.string.persona_tone), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                     Row(Modifier.padding(top = Space.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         listOf("NEUTRAL", "CASUAL", "FORMAL").forEach { tone ->
                             VervanFilterChip(
@@ -204,7 +206,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             if (expertMode) {
-            SectionLabel("Raw generation parameters")
+            SectionLabel(stringResource(R.string.ui_generation_raw_parameters))
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     GenerationSlider("Temperature", temperature, "%.2f", 0f..2f, onChange = vm::setTemperature)
@@ -215,7 +217,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                     GenerationSlider("Max output tokens", maxOutputTokens.toFloat(), "%.0f", 64f..4096f) { vm.setMaxOutputTokens(it.toInt()) }
                     GenerationSlider("Max images/prompt", maxNumImages.toFloat(), "%.0f", 1f..4f) { vm.setMaxNumImages(it.toInt()) }
 
-                    Text("Random seed", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                    Text(stringResource(R.string.ui_generationretrievalsettingsscreen_220_random_seed), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                     Text(
                         "Leave blank for varied output. Set a number for repeatable output.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -231,18 +233,18 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                             singleLine = true,
                             modifier = Modifier.weight(1f).padding(top = Space.sm)
                         )
-                        androidx.compose.material3.TextButton(onClick = {
+                        com.vervan.chat.ui.common.VervanTextButton(onClick = {
                             seedText = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString()
                             vm.setRandomSeed(seedText.toIntOrNull() ?: -1)
-                        }) { Text("Randomize") }
+                        }) { Text(stringResource(R.string.ui_generationretrievalsettingsscreen_239_randomize)) }
                     }
                 }
             }
             } else {
-                SectionLabel("Response behavior")
+                SectionLabel(stringResource(R.string.ui_generation_response_behavior))
                 Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                     Column(Modifier.padding(Space.lg)) {
-                        Text("Creativity", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.ui_generationretrievalsettingsscreen_247_creativity), style = MaterialTheme.typography.titleSmall)
                         Text(
                             "Choose how closely replies should follow the most likely answer.",
                             style = MaterialTheme.typography.bodySmall,
@@ -284,7 +286,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
             }
 
             if (expertMode) {
-                SectionLabel("Advanced (llama.cpp)")
+                SectionLabel(stringResource(R.string.ui_generation_advanced_llama))
                 Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                     Column(Modifier.padding(Space.lg)) {
                         Text(
@@ -298,18 +300,18 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         // CPU backend in this build, so per-device Vulkan selection doesn't apply.
 
                         Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_303_lock_model_in_ram_mlock), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             Switch(checked = useMlock, onCheckedChange = vm::setUseMlock)
                         }
 
-                        Text("Flash attention", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                        Text(stringResource(R.string.ui_generationretrievalsettingsscreen_307_flash_attention), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                         androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             listOf("AUTO" to "Auto", "ON" to "On", "OFF" to "Off").forEach { (value, label) ->
                                 VervanFilterChip(selected = flashAttentionMode == value, onClick = { vm.setFlashAttentionMode(value) }, label = { Text(label) })
                             }
                         }
 
-                        Text("KV cache type", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
+                        Text(stringResource(R.string.ui_generationretrievalsettingsscreen_314_kv_cache_type), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
                         androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                             listOf("f16", "q8_0", "q4_0").forEach { value ->
                                 VervanFilterChip(selected = kvCacheType == value, onClick = { vm.setKvCacheType(value) }, label = { Text(value) })
@@ -319,7 +321,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                 }
             }
 
-            SectionLabel("Model engine")
+                SectionLabel(stringResource(R.string.ui_generation_model_engine))
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
                     Text(
@@ -331,7 +333,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Allow low-memory model loads", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_336_allow_low_memory_model_loads), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 "Load models that may exceed available memory. This can slow or stop the app.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -345,7 +347,7 @@ fun GenerationRetrievalSettingsScreen(onBack: () -> Unit = {}) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Show generation stats", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_generationretrievalsettingsscreen_350_show_generation_stats), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 "Show time and tokens per second below replies.",
                                 style = MaterialTheme.typography.bodySmall,

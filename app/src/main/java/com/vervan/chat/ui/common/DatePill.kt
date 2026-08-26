@@ -46,8 +46,7 @@ fun DatePill(
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .widthIn(max = 180.dp)
-                .clip(VervanExtraShapes.datePill)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, VervanExtraShapes.datePill)
                 .padding(horizontal = Space.md, vertical = Space.xs)
                 .semantics { heading() }
         )

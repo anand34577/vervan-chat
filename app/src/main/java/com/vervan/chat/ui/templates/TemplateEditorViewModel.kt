@@ -37,6 +37,8 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
 
     private val _recordFound = MutableStateFlow(templateId == null)
     val recordFound: StateFlow<Boolean> = _recordFound
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
 
     init {
         load()
@@ -65,6 +67,7 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
                     _isBuiltIn.value = t.isBuiltIn
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
@@ -74,19 +77,32 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
         }
     }
 
-    fun setName(value: String) { _name.value = value.removePrefix("/").trim() }
-    fun setDescription(value: String) { _description.value = value }
-    fun setBody(value: String) { _body.value = value }
+    fun setName(value: String) { _name.value = value.removePrefix("/").trim(); _saveError.value = null }
+    fun setDescription(value: String) { _description.value = value; _saveError.value = null }
+    fun setBody(value: String) { _body.value = value; _saveError.value = null }
 
     suspend fun save(): Boolean {
-        if (_name.value.isBlank() || _body.value.isBlank()) return false
+        if (_name.value.isBlank() || _body.value.isBlank()) {
+            _saveError.value = "Slash-command name and template body are required."
+            return false
+        }
         if (_name.value.length > ValidationLimits.TEMPLATE_TITLE ||
             _description.value.length > ValidationLimits.TEMPLATE_DESCRIPTION ||
             _body.value.length > ValidationLimits.TEMPLATE_BODY
-        ) return false
+        ) {
+            _saveError.value = "Shorten the highlighted fields before saving."
+            return false
+        }
+        val cleanName = _name.value.trim()
+        val editId = resolveEditId(templateId, _isBuiltIn.value)
+        val existing = db.promptTemplateDao().findByName(cleanName)
+        if (existing != null && existing.id != editId) {
+            _saveError.value = "A template named \"$cleanName\" already exists."
+            return false
+        }
         val template = PromptTemplate(
-            id = resolveEditId(templateId, _isBuiltIn.value),
-            name = _name.value.trim(),
+            id = editId,
+            name = cleanName,
             description = _description.value.trim(),
             body = _body.value.trim(),
             isBuiltIn = false

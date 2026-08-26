@@ -52,7 +52,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -61,7 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +71,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -141,6 +140,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -282,6 +282,9 @@ internal fun MessageBubble(
     var showImagePreview by remember(message.id) { mutableStateOf(false) }
     var editing by remember(message.id) { mutableStateOf(false) }
     var editText by remember(message.id) { mutableStateOf(message.content) }
+    val visibleText = remember(message.content, isUser) {
+        visibleMessageText(message.content, isUser)
+    }
     val timeLabel = remember(message.createdAt) {
         java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(message.createdAt))
     }
@@ -289,12 +292,7 @@ internal fun MessageBubble(
     // content — otherwise quoting a reasoning model's reply drags its <think>…</think> block (and
     // any tool-call markup) into the quote, which then renders as literal tags in the composer.
     val quotableText = remember(message.content, isUser) {
-        if (isUser) message.content
-        else {
-            val stripped = com.vervan.chat.tools.ToolCallParser.stripForDisplay(message.content)
-            val answer = com.vervan.chat.llm.ThinkingParser.parse(stripped).answer
-            com.vervan.chat.llm.ClarificationParser.parse(answer).answer.ifBlank { answer }.trim()
-        }
+        visibleMessageText(message.content, isUser)
     }
     // Actions (edit/speak/save/remember/regenerate/more) used to render permanently on every
     // bubble — busy and "congested" with a full conversation on screen. Tap the bubble to
@@ -339,7 +337,7 @@ internal fun MessageBubble(
             // the 82% column and appears floating near the middle of the screen.
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-        Card(
+        Surface(
             modifier = Modifier
                 .offset { androidx.compose.ui.unit.IntOffset(dragOffset.value.roundToInt(), 0) }
                 // Subtle entrance settle on first render — M3 Expressive "fast" spring keeps
@@ -451,13 +449,9 @@ internal fun MessageBubble(
             // its own surfaces, so it still reads grouped without an enclosing card.
             // The gradient is painted behind a transparent Card via Modifier.background so the
             // Card still owns shape clipping and content color.
-            colors = CardDefaults.cardColors(
-                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp, hoveredElevation = 0.dp),
-            border = null
+            color = androidx.compose.ui.graphics.Color.Transparent,
+            contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface
         ) {
             Column(
                 Modifier.padding(
@@ -686,7 +680,7 @@ internal fun MessageBubble(
                         message.state == MessageState.STREAMING &&
                         isGenerating &&
                         parsed.thinkingInProgress
-                    var thinkingNow by remember(message.id) { mutableStateOf(System.currentTimeMillis()) }
+                    var thinkingNow by remember(message.id) { mutableLongStateOf(System.currentTimeMillis()) }
                     val thinkingStartedAt = remember(message.id) {
                         if (message.state == MessageState.STREAMING) message.createdAt else null
                     }
@@ -892,7 +886,7 @@ internal fun MessageBubble(
             val tokens = message.tokenCount ?: 0
             val tps = if (seconds > 0f) tokens / seconds else 0f
             Text(
-                "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
+                "%.1fs · ~%d tokens · %.1f tok/s".format(java.util.Locale.getDefault(), seconds, tokens, tps),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -919,7 +913,7 @@ internal fun MessageBubble(
                         Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.chat_edit_resend), modifier = Modifier.size(18.dp))
                     }
                 }
-                if (!isUser && message.state == MessageState.COMPLETE && message.content.isNotBlank()) {
+                if (!isUser && message.state == MessageState.COMPLETE && visibleText.isNotBlank()) {
                     IconButton(
                         onClick = {
                             onReadAloud(if (isUser) message.content else assistantSpokenText(message.content), message.id)
@@ -933,7 +927,7 @@ internal fun MessageBubble(
                                 if (savedOutput == null) {
                                     app.container.db.savedOutputDao().upsert(
                                         SavedOutput(
-                                            content = message.content,
+                                            content = visibleText,
                                             sourceChatId = message.chatId,
                                             label = message.id
                                         )
@@ -964,11 +958,11 @@ internal fun MessageBubble(
                     }
                 }
                 // Reply stays gesture-only here; copy is the visible gesture alternative.
-                if (message.content.isNotBlank()) {
+                if (visibleText.isNotBlank()) {
                     IconButton(
                         // Clipboard hygiene — auto-clears after 30s if
                         // nothing else has overwritten it since.
-                        onClick = { clipboard.setSensitiveText(message.content, scope) }
+                        onClick = { clipboard.setSensitiveText(visibleText, scope) }
                     ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(18.dp))
                     }
@@ -999,8 +993,8 @@ internal fun MessageBubble(
                                 scope.launch {
                                     app.container.db.noteDao().upsert(
                                         com.vervan.chat.data.db.entities.Note(
-                                            title = message.content.take(60),
-                                            content = message.content
+                                            title = visibleText.take(60),
+                                            content = visibleText
                                         )
                                     )
                                 }
@@ -1015,7 +1009,7 @@ internal fun MessageBubble(
     }
 
     if (showRememberDialog) {
-        var text by remember { mutableStateOf(message.content) }
+        var text by remember { mutableStateOf(visibleText) }
         AlertDialog(
             onDismissRequest = { showRememberDialog = false },
             title = { Text(stringResource(R.string.chat_remember_title)) },
@@ -1044,12 +1038,12 @@ internal fun MessageBubble(
     // chat-level delete lives in the chat overflow and avoids accidental deletes mid-typing).
     if (showActionsSheet) {
         val (primaryActions, secondaryActions) = com.vervan.chat.ui.common.standardMessageActions(
-            onCopy = { clipboard.setSensitiveText(message.content, scope) },
+            onCopy = { clipboard.setSensitiveText(visibleText, scope) },
             onSpeak = { onReadAloud(if (isUser) message.content else assistantSpokenText(message.content), message.id) },
             onBookmark = {
                 scope.launch {
                     if (savedOutput == null) {
-                        app.container.db.savedOutputDao().upsert(SavedOutput(content = message.content, sourceChatId = message.chatId, label = message.id))
+                        app.container.db.savedOutputDao().upsert(SavedOutput(content = visibleText, sourceChatId = message.chatId, label = message.id))
                     } else {
                         app.container.db.savedOutputDao().upsert(savedOutput.copy(deletedAt = System.currentTimeMillis()))
                     }
@@ -1059,7 +1053,7 @@ internal fun MessageBubble(
             onShare = {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, message.content)
+                    putExtra(Intent.EXTRA_TEXT, visibleText)
                 }
                 context.startActivity(Intent.createChooser(send, "Share message"))
             },
@@ -1070,7 +1064,7 @@ internal fun MessageBubble(
             onAddToNote = {
                 scope.launch {
                     app.container.db.noteDao().upsert(
-                        com.vervan.chat.data.db.entities.Note(title = message.content.take(60), content = message.content)
+                        com.vervan.chat.data.db.entities.Note(title = visibleText.take(60), content = visibleText)
                     )
                 }
             }
@@ -1114,7 +1108,7 @@ internal fun MessageBubble(
                     if (slug.isNotBlank()) {
                         scope.launch {
                             app.container.db.promptTemplateDao().upsert(
-                                com.vervan.chat.data.db.entities.PromptTemplate(name = slug, body = message.content)
+                        com.vervan.chat.data.db.entities.PromptTemplate(name = slug, body = visibleText)
                             )
                         }
                         showSaveAsPromptDialog = false

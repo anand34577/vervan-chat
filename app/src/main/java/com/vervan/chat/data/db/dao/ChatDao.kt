@@ -90,6 +90,15 @@ interface ChatDao : BaseDao<Chat> {
     @Query("UPDATE chats SET folderId = NULL WHERE folderId = :folderId")
     suspend fun clearFolder(folderId: String)
 
+    /** Removes a deleted knowledge base from the denormalized per-chat id list. */
+    @Query(
+        "UPDATE chats SET " +
+            "knowledgeBaseIds = TRIM(REPLACE(',' || knowledgeBaseIds || ',', ',' || :knowledgeBaseId || ',', ','), ','), " +
+            "sourceGrounded = CASE WHEN TRIM(REPLACE(',' || knowledgeBaseIds || ',', ',' || :knowledgeBaseId || ',', ','), ',') = '' THEN 0 ELSE sourceGrounded END " +
+            "WHERE (',' || knowledgeBaseIds || ',') LIKE '%,' || :knowledgeBaseId || ',%'"
+    )
+    suspend fun clearKnowledgeBaseReference(knowledgeBaseId: String)
+
     @Query("UPDATE chats SET archived = :archived, updatedAt = :updatedAt WHERE id = :chatId AND deletedAt IS NULL")
     suspend fun setArchived(chatId: String, archived: Boolean, updatedAt: Long = System.currentTimeMillis())
 

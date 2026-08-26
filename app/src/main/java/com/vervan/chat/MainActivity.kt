@@ -6,26 +6,43 @@ import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.vervan.chat.data.settings.ThemeMode
 import com.vervan.chat.security.AppLockMethod
 import com.vervan.chat.ui.lock.LockScreen
@@ -34,6 +51,9 @@ import com.vervan.chat.ui.theme.VervanTheme
 import java.util.UUID
 
 class MainActivity : FragmentActivity() {
+    @Volatile
+    private var startupReady = false
+    private var showReentrySplash by mutableStateOf(false)
     private var intentVersion by mutableIntStateOf(0)
     private var incomingShare by mutableStateOf<IncomingShare?>(null)
     private var hardwareShortcut by mutableStateOf<String?>(null)
@@ -41,23 +61,43 @@ class MainActivity : FragmentActivity() {
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition { !startupReady }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Security settings arrive asynchronously. Start secure and only clear this after the
+        // atomic snapshot confirms that neither lock nor screenshot protection requires it.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         shareIntentConsumed = savedInstanceState?.getBoolean(STATE_SHARE_CONSUMED) == true
-        incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
+        incomingShare = null
+        if (!shareIntentConsumed) loadIncomingShare(intent, intentVersion)
         val app = application as VervanApp
         setContent {
-            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.DARK)
+            val themePreferences by app.container.settingsRepository.themePreferences.collectAsStateWithLifecycle(initialValue = null)
+            val securityPreferences by app.container.settingsRepository.securityPreferences.collectAsStateWithLifecycle(initialValue = null)
+            LaunchedEffect(themePreferences, securityPreferences) {
+                if (themePreferences != null && securityPreferences != null) startupReady = true
+            }
+            // Android's system splash is only shown for a new Activity/process. When the
+            // launcher brings this singleTop Activity back from the task stack, use the same
+            // branded surface briefly so reopening the app has a consistent handoff.
+            LaunchedEffect(showReentrySplash, themePreferences, securityPreferences) {
+                if (showReentrySplash && themePreferences != null && securityPreferences != null) {
+                    delay(REENTRY_SPLASH_DURATION_MS)
+                    showReentrySplash = false
+                }
+            }
+            val themeMode = themePreferences?.themeMode ?: ThemeMode.DARK
             val fontScale by app.container.settingsRepository.fontScale.collectAsStateWithLifecycle(initialValue = 1.0f)
-            val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsStateWithLifecycle(initialValue = false)
-            val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsStateWithLifecycle(initialValue = false)
-            val highContrast by app.container.settingsRepository.highContrast.collectAsStateWithLifecycle(initialValue = false)
+            val oledTrueBlack = themePreferences?.oledTrueBlack ?: false
+            val dynamicColor = themePreferences?.dynamicColor ?: false
+            val highContrast = themePreferences?.highContrast ?: false
             val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
-            val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.GREEN)
-            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
-            val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
+            val accentTheme = themePreferences?.accentTheme ?: com.vervan.chat.data.settings.AccentTheme.GREEN
+            val appLockEnabled = securityPreferences?.appLockEnabled ?: true
+            val appLockMethodName = securityPreferences?.appLockMethod ?: "BIOMETRIC"
             val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
-            val screenshotBlockingEnabled by app.container.settingsRepository.screenshotBlockingEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val screenshotBlockingEnabled = securityPreferences?.screenshotBlockingEnabled ?: true
             // App lock and the app-wide screenshot block each contribute their own reason to the
             // shared set, independently, so neither clears a flag the other still needs.
             LaunchedEffect(appLockEnabled) {
@@ -69,8 +109,8 @@ class MainActivity : FragmentActivity() {
             val secureReasons by app.container.secureWindowReasons.collectAsStateWithLifecycle()
             // FLAG_SECURE blocks screenshots/screen recording, and blanks the recent-apps
             // thumbnail "for free" — Android does that automatically for a FLAG_SECURE window.
-            LaunchedEffect(secureReasons) {
-                if (secureReasons.isNotEmpty()) {
+            LaunchedEffect(secureReasons, securityPreferences) {
+                if (securityPreferences == null || secureReasons.isNotEmpty()) {
                     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -87,16 +127,57 @@ class MainActivity : FragmentActivity() {
                     isAppearanceLightNavigationBars = !darkTheme
                 }
             }
-            val baseDensity = LocalDensity.current
-            val windowSizeClass = calculateWindowSizeClass(this)
-            VervanTheme(
-                darkTheme = darkTheme,
-                oledTrueBlack = oledTrueBlack,
-                dynamicColor = dynamicColor,
-                highContrast = highContrast,
-                accent = accentTheme
-            ) {
-                CompositionLocalProvider(
+            if (themePreferences == null || securityPreferences == null) {
+                // Do not render Home until the complete theme snapshot is available, but give
+                // startup an identity and a readable progress state instead of a blank frame.
+                VervanTheme(darkTheme = true) {
+                    Box(
+                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.padding(24.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                        MaterialTheme.shapes.medium,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "V",
+                                    style = MaterialTheme.typography.displaySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                            Text(
+                                text = stringResource(R.string.startup_loading),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 2.5.dp,
+                            )
+                        }
+                    }
+                }
+            } else {
+                val baseDensity = LocalDensity.current
+                val windowSizeClass = calculateWindowSizeClass(this)
+                VervanTheme(
+                    darkTheme = darkTheme,
+                    oledTrueBlack = oledTrueBlack,
+                    dynamicColor = dynamicColor,
+                    highContrast = highContrast,
+                    accent = accentTheme
+                ) {
+                    CompositionLocalProvider(
                     // App text sizing augments Android's accessibility font scale instead of
                     // replacing it. The previous value silently reset a user's system Large
                     // text setting whenever the in-app slider was left at its 1.0 default.
@@ -105,8 +186,8 @@ class MainActivity : FragmentActivity() {
                         baseDensity.fontScale * fontScale
                     ),
                     LocalMinimumInteractiveComponentSize provides if (largeTouchTargets) 56.dp else 48.dp
-                ) {
-                    Box(Modifier.fillMaxSize()) {
+                    ) {
+                        Box(Modifier.fillMaxSize()) {
                         Box(
                             if (appLockEnabled && isLocked) {
                                 Modifier.fillMaxSize().clearAndSetSemantics { }
@@ -131,6 +212,10 @@ class MainActivity : FragmentActivity() {
                                 method = runCatching { AppLockMethod.valueOf(appLockMethodName) }.getOrDefault(AppLockMethod.BIOMETRIC)
                             )
                         }
+                        if (showReentrySplash) {
+                            VervanStartupSplash()
+                        }
+                        }
                     }
                 }
             }
@@ -140,10 +225,14 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+            showReentrySplash = true
+        }
         hardwareShortcut = null
         shareIntentConsumed = false
-        incomingShare = intent.toIncomingShare(contentResolver)
+        incomingShare = null
         intentVersion++
+        loadIncomingShare(intent, intentVersion)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -204,6 +293,50 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val STATE_SHARE_CONSUMED = "share_intent_consumed"
+        const val REENTRY_SPLASH_DURATION_MS = 320L
         val STATIC_SHORTCUTS = setOf("new_chat", "voice", "capture", "search", "settings")
+    }
+
+    /** Content providers are external processes and may block while resolving MIME/name data.
+     * Never query them on the UI thread during startup. The version guard also prevents a slow
+     * old share from replacing a newer intent that arrived while its provider was responding. */
+    private fun loadIncomingShare(source: Intent, version: Int) {
+        val snapshot = Intent(source)
+        lifecycleScope.launch {
+            val parsed = withContext(Dispatchers.IO) {
+                // Exported activities must treat unparceling/provider failures as bad input, not
+                // as an app crash. Cancellation and fatal VM errors still propagate.
+                com.vervan.chat.system.runCatchingPreservingCancellation {
+                    snapshot.toIncomingShare(contentResolver)
+                }.getOrNull()
+            }
+            if (intentVersion == version && !shareIntentConsumed) incomingShare = parsed
+        }
+    }
+}
+
+@Composable
+private fun VervanStartupSplash() {
+    // This overlay already lives inside the resolved app theme. Re-wrapping it in a forced dark
+    // theme made every light-theme resume flash dark for 320 ms.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.large),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "V",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
     }
 }

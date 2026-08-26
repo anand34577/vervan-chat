@@ -53,6 +53,7 @@ class DevWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 com.vervan.chat.llm.OneShotLlm.stream(app, "${action.instruction}\n\n```\n$code\n```")
                     ?.collect { chunk -> _output.value += chunk }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "run(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }

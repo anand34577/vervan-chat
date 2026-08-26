@@ -1,6 +1,6 @@
 package com.vervan.chat.store.catalog
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.store.model.AcceleratorRequirement
 import com.vervan.chat.store.model.Artifact
 import com.vervan.chat.store.model.ArtifactRole
@@ -53,6 +53,7 @@ class CatalogParser(
         val root = try {
             JSONObject(json)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             throw CatalogRejectedException("Catalogue is not valid JSON", t)
         }
 
@@ -80,6 +81,7 @@ class CatalogParser(
             } catch (e: CatalogRejectedException) {
                 throw e
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // A single malformed entry must not cost the user the whole store.
                 Log.w(TAG, "Dropping malformed model at index $i: ${t.message}")
                 null
@@ -103,6 +105,7 @@ class CatalogParser(
                 Log.i(TAG, "Skipping variant in $modelId: ${t.message}")
                 null
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "Dropping malformed variant in $modelId: ${t.message}")
                 null
             }
@@ -131,7 +134,8 @@ class CatalogParser(
         commercialUseAllowed = obj.optBoolean("commercialUseAllowed", false),
         acceptableUseRestrictions = obj.optJSONArray("acceptableUseRestrictions").toStringList(),
         attributionRequired = obj.optBoolean("attributionRequired", true),
-        usageThresholdClause = obj.optString("usageThresholdClause").ifBlank { null },
+        usageThresholdClause = obj.optString("usageThresholdClause")
+            .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
         acceptanceHash = obj.optString("acceptanceHash", "")
     )
 

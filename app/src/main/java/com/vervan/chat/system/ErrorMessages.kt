@@ -6,6 +6,7 @@ import java.util.concurrent.TimeoutException
 
 /** Converts technical failures into short guidance a non-technical user can act on. */
 fun Throwable.toUserMessage(): String {
+    rethrowCancellation(this)
     val root = rootCause()
     val detail = root.message.orEmpty().lowercase()
     return when {
@@ -32,6 +33,27 @@ fun Throwable.toUserMessage(): String {
         root is IOException -> "Could not read or save the data. Check the file and free storage."
         else -> "Could not finish. Try again or check Settings → Storage & backup → Diagnostics."
     }
+}
+
+/** Preserve structured concurrency and fatal VM failures at broad exception boundaries. This is
+ * intentionally a plain function so low-level packages can call it without another extension. */
+fun rethrowCancellation(failure: Throwable) {
+    var current: Throwable? = failure
+    val seen = mutableSetOf<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is CancellationException) throw current
+        if (current is VirtualMachineError) throw current
+        current = current.cause
+    }
+}
+
+/** Result wrapper for coroutine code. Kotlin's standard runCatching also captures cancellation,
+ * which can leave cancelled jobs continuing as ordinary failures. */
+inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (failure: Throwable) {
+    rethrowCancellation(failure)
+    Result.failure(failure)
 }
 
 private fun Throwable.rootCause(): Throwable {

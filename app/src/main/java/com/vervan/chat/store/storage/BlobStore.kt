@@ -1,6 +1,6 @@
 package com.vervan.chat.store.storage
 
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import java.io.File
 import java.security.MessageDigest
 
@@ -84,6 +84,7 @@ class BlobStore(private val root: File) {
                 }
                 staged.delete()
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 temp.delete()
                 throw t
             }
@@ -181,7 +182,7 @@ class BlobStore(private val root: File) {
                     digest.update(buffer, 0, read)
                 }
             }
-            return digest.digest().joinToString("") { "%02x".format(it) }
+            return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         }
     }
 }

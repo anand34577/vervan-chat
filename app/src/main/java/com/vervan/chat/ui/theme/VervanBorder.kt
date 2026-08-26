@@ -48,13 +48,15 @@ fun vervanBorder(
     // so even `Subtle` reads cleanly there. In default themes these alphas are picked to land
     // just above the WCAG 3:1 decorative minimum on the warm-amber dark palette.
     val alpha = when (prominence) {
-        VervanBorderProminence.Subtle -> 0.65f
+        // Resting modules should be separated by tone and spacing. A visible outline here is
+        // the old UI's most persistent fingerprint, so subtle is deliberately borderless.
+        VervanBorderProminence.Subtle -> 0f
         VervanBorderProminence.Standard -> 1f
         VervanBorderProminence.Emphasized -> 1f
         VervanBorderProminence.Structural -> 1f
     }
     val resolved = when (prominence) {
-        VervanBorderProminence.Subtle -> base.copy(alpha = alpha)
+        VervanBorderProminence.Subtle -> Color.Transparent
         VervanBorderProminence.Standard -> base
         // Emphasized/Structural escalate to the outline token rather than tinting outlineVariant
         // further — M3 explicitly reserves `outline` for important boundaries; this is the only

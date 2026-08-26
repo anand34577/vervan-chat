@@ -19,17 +19,20 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.R
 
 /**
  * Compact attachment chips rendered above the composer when the user has pending attachments
@@ -68,9 +71,9 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
     Row(
         modifier = Modifier
             .clip(chipShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, chipShape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, chipShape)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(start = Space.sm, end = Space.xs)
             .padding(vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
@@ -80,7 +83,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
             modifier = Modifier
                 .size(36.dp)
                 .clip(MaterialTheme.shapes.extraSmall)
-                .background(MaterialTheme.colorScheme.secondaryContainer),
+                .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.extraSmall),
             contentAlignment = Alignment.Center
         ) {
             if (attachment.thumbnail != null) {
@@ -101,7 +104,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
         IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Filled.Close,
-                contentDescription = "Remove ${attachment.label}",
+                contentDescription = stringResource(R.string.ui_remove_attachment, attachment.label),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )

@@ -18,12 +18,12 @@ import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.JobRecord
 import com.vervan.chat.data.db.entities.JobState
 import com.vervan.chat.data.db.entities.JobType
@@ -134,8 +136,8 @@ fun JobQueueScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Background jobs") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.settings_background_jobs)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { confirmClear = true }, enabled = history.isNotEmpty()) {
                         Icon(Icons.Filled.DeleteSweep, "Clear job history")
@@ -148,10 +150,10 @@ fun JobQueueScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(top = Space.sm)) {
                 when {
                     error != null -> OperationErrorCard(
-                        title = "Job queue unavailable",
+                        title = stringResource(R.string.ui_jobqueuescreen_153_job_queue_unavailable),
                         message = error.orEmpty(),
-                        recovery = "Background work is not cancelled by this screen. Retry loading the queue.",
-                        actionLabel = "Retry",
+                        recovery = stringResource(R.string.ui_jobqueue_load_recovery),
+                        actionLabel = stringResource(R.string.action_retry),
                         onAction = vm::retry,
                         modifier = Modifier.padding(Space.md)
                     )
@@ -166,7 +168,7 @@ fun JobQueueScreen(onBack: () -> Unit) {
                                 VervanFilterChip(
                                     selected = view == option,
                                     onClick = { view = option },
-                                    label = { Text("${option.label} (${if (option == JobView.ACTIVE) active.size else if (option == JobView.HISTORY) history.size else jobs.size})") }
+                                    label = { Text(stringResource(R.string.ui_jobqueue_view_count, option.label, if (option == JobView.ACTIVE) active.size else if (option == JobView.HISTORY) history.size else jobs.size)) }
                                 )
                             }
                         }
@@ -175,7 +177,8 @@ fun JobQueueScreen(onBack: () -> Unit) {
                                 icon = if (view == JobView.HISTORY) Icons.Filled.History else Icons.AutoMirrored.Filled.ListAlt,
                                 title = if (view == JobView.HISTORY) "No job history" else "Nothing is running",
                                 body = if (view == JobView.HISTORY) "Completed and stopped jobs appear here." else "Background work will appear here automatically.",
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                centered = true
                             )
                         } else {
                             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -190,9 +193,9 @@ fun JobQueueScreen(onBack: () -> Unit) {
 
     if (confirmClear) {
         ConfirmDialog(
-            title = "Clear job history?",
-            body = "Remove ${history.size} finished job${if (history.size == 1) "" else "s"}? Active work will stay.",
-            confirmLabel = "Clear",
+            title = stringResource(R.string.ui_jobqueuescreen_196_clear_job_history),
+            body = stringResource(R.string.ui_jobqueuescreen_clear_history_body, history.size),
+            confirmLabel = stringResource(R.string.action_clear),
             destructive = true,
             onConfirm = { vm.clearHistory(); confirmClear = false },
             onDismiss = { confirmClear = false }
@@ -240,7 +243,7 @@ private fun JobCard(job: JobRecord, onStop: () -> Unit) {
             if (active) {
                 if (job.progress in 1..99) {
                     LinearProgressIndicator(progress = { job.progress / 100f }, modifier = Modifier.fillMaxWidth().padding(top = Space.xs))
-                    Text("${job.progress}% complete", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.ui_jobqueuescreen_progress_complete, job.progress), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.xs))
                 }
@@ -264,10 +267,10 @@ private fun JobCard(job: JobRecord, onStop: () -> Unit) {
                 if (active && job.type in STOPPABLE_TYPES) {
                     TextButton(onClick = onStop) {
                         Icon(Icons.Filled.StopCircle, null, modifier = Modifier.padding(end = Space.xs))
-                        Text("Stop")
+                        Text(stringResource(R.string.action_stop))
                     }
                 } else if (active) {
-                    Text("Finishing current step", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.ui_jobqueuescreen_273_finishing_current_step), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

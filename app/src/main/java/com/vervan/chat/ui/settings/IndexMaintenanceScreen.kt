@@ -18,14 +18,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -39,8 +39,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.DocumentStatus
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.system.toUserMessage
@@ -113,6 +115,7 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
                 }
                 _status.value = "Re-indexed ${docs.size} documents."
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _status.value = null
                 _error.value = t.toUserMessage()
             } finally {
@@ -133,6 +136,7 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
                 app.container.documentImportManager.reindexLocal(documentId)
                 _status.value = "Done."
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _status.value = null
                 _error.value = t.toUserMessage()
             } finally {
@@ -167,41 +171,41 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Search index") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.settings_search_index)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           Column(Modifier.fillMaxSize().padding(vertical = Space.sm)) {
-            Text("Rebuild after changing the embedding model or when document search is wrong.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
+            Text(stringResource(R.string.ui_indexmaintenancescreen_179_rebuild_after_changing_the_embedding_model_o), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
             Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = Space.sm)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = Space.sm))
-                Text("Re-index all documents")
+                Text(stringResource(R.string.ui_indexmaintenancescreen_182_re_index_all_documents))
             }
             if (busy && busyDocumentId == null) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Rebuilding the search index",
+                    title = stringResource(R.string.ui_indexmaintenancescreen_186_rebuilding_the_search_index),
                     body = status ?: "Preparing documents. Keep this screen open.",
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             loadError?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Documents unavailable",
+                    title = stringResource(R.string.knowledge_documents_unavailable),
                     message = it,
-                    recovery = "Your indexed content is safe. Retry loading the document list.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.ui_indexmaintenance_list_recovery),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retryLoad,
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Index rebuild failed",
+                    title = stringResource(R.string.ui_indexmaintenancescreen_203_index_rebuild_failed),
                     message = it,
-                    recovery = "Documents are safe. Check the model and free storage, then try again.",
-                    actionLabel = "Retry all",
+                    recovery = stringResource(R.string.ui_indexmaintenance_index_recovery),
+                    actionLabel = stringResource(R.string.ui_indexmaintenancescreen_206_retry_all),
                     onAction = vm::reindexAll,
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
@@ -216,14 +220,14 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            Text("Documents (${documents.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = Space.sm))
+            Text(stringResource(R.string.ui_indexmaintenancescreen_documents_count, documents.size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = Space.sm))
             when {
                 loadError != null -> Unit
                 isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.weight(1f))
                 documents.isEmpty() -> EmptyState(
                     icon = Icons.Filled.Description,
-                    title = "No documents to index",
-                    body = "Import a document into a knowledge base before rebuilding search.",
+                    title = stringResource(R.string.ui_indexmaintenancescreen_227_no_documents_to_index),
+                    body = stringResource(R.string.ui_indexmaintenancescreen_228_import_a_document_into_a_knowledge_base_befo),
                     modifier = Modifier.weight(1f)
                 )
                 else -> LazyColumn(Modifier.weight(1f)) {
@@ -251,7 +255,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                                         onClick = { vm.reindexOne(doc.id) },
                                         enabled = !busy,
                                         modifier = Modifier.padding(start = Space.sm),
-                                    ) { Text("Re-index") }
+                                    ) { Text(stringResource(R.string.knowledge_reindex)) }
                                 }
                             }
                         }

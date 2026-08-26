@@ -1,7 +1,10 @@
 package com.vervan.chat.ui.common
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -21,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
@@ -28,22 +32,19 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,12 +61,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.vervan.chat.ui.theme.Space
-import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanBreakpoints
-import com.vervan.chat.ui.theme.VervanBorderProminence
 import com.vervan.chat.ui.theme.VervanContentWidth
-import com.vervan.chat.ui.theme.vervanBorder
-import com.vervan.chat.ui.theme.vervanDividerColor
+import com.vervan.chat.ui.theme.ModernistTokens
 import com.vervan.chat.ui.theme.vervanSuccess
 import com.vervan.chat.ui.theme.vervanWarning
 
@@ -79,7 +77,11 @@ fun PageContainer(
     content: @Composable () -> Unit
 ) {
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        val horizontalPadding = if (maxWidth < VervanBreakpoints.medium) Space.lg else Space.xxl
+        val horizontalPadding = if (maxWidth < VervanBreakpoints.medium) {
+            ModernistTokens.Component.phoneGutter
+        } else {
+            ModernistTokens.Component.tabletGutter
+        }
         Column(
             Modifier
                 .widthIn(max = maxContentWidth)
@@ -110,8 +112,7 @@ fun ScrollablePage(
     }
 }
 
-/** The one app-bar treatment used across the product: compact, tonal when scrolled,
- * and separated from content without spending vertical space on decorative headers. */
+/** The one app-bar treatment used across the product: quiet, layered, and easy to scan. */
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun VervanTopAppBar(
@@ -121,22 +122,23 @@ fun VervanTopAppBar(
     actions: @Composable RowScope.() -> Unit = {},
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = MaterialTheme.colorScheme.surface,
-        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+        containerColor = MaterialTheme.colorScheme.background,
+        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        titleContentColor = MaterialTheme.colorScheme.onBackground,
+        navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ),
     scrollBehavior: TopAppBarScrollBehavior? = null
 ) {
-    Column(modifier) {
-        TopAppBar(
-            title = { Box(Modifier.semantics { heading() }) { title() } },
-            navigationIcon = navigationIcon,
-            actions = actions,
-            windowInsets = windowInsets,
-            colors = colors,
-            scrollBehavior = scrollBehavior
-        )
-        HorizontalDivider(color = vervanDividerColor())
-    }
+    TopAppBar(
+        modifier = modifier,
+        title = { Box(Modifier.semantics { heading() }) { title() } },
+        navigationIcon = navigationIcon,
+        actions = actions,
+        windowInsets = windowInsets,
+        colors = colors,
+        scrollBehavior = scrollBehavior
+    )
 }
 
 /** One search-field treatment for app bars, lists, sheets, and in-content filtering. */
@@ -148,7 +150,7 @@ fun VervanSearchField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    TextField(
+    OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
@@ -168,24 +170,24 @@ fun VervanSearchField(
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = if (value.isNotEmpty()) {
             {
-                androidx.compose.material3.IconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                VervanIconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.ui_vervancomponents_172_clear_search))
                 }
             }
         } else null,
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.small,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            disabledBorderColor = MaterialTheme.colorScheme.outlineVariant
         )
     )
 }
 
-/** Compact destination context. It replaces oversized hero cards on app screens. */
+/** Compact destination context. It is a real task-introduction surface, not a decorative banner. */
 @Composable
 fun FeatureHero(
     icon: ImageVector,
@@ -195,34 +197,73 @@ fun FeatureHero(
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = SurfaceRole.Card.cardColors(),
-        border = SurfaceRole.Card.border()
-    ) {
-        Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
-            IconAffordance(
-                icon = icon,
-                size = IconAffordanceSize.Default,
-                tint = MaterialTheme.colorScheme.primary,
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-            )
-            Column(
-                Modifier.weight(1f).padding(start = Space.md),
-                verticalArrangement = Arrangement.spacedBy(Space.xs)
-            ) {
-                Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val compact = maxWidth < 440.dp
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 1.dp,
+        ) {
+            if (compact) {
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.lg),
+                    verticalArrangement = Arrangement.spacedBy(Space.md),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        IconAffordance(
+                            icon = icon,
+                            size = IconAffordanceSize.Feature,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        )
+                        trailing?.let {
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { it() }
+                        }
+                    }
+                    HeroCopy(eyebrow = eyebrow, title = title, body = body)
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().padding(Space.xl),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconAffordance(
+                        icon = icon,
+                        size = IconAffordanceSize.Feature,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    )
+                    HeroCopy(
+                        eyebrow = eyebrow,
+                        title = title,
+                        body = body,
+                        modifier = Modifier.weight(1f).padding(start = Space.md),
+                    )
+                    trailing?.invoke()
+                }
             }
-            trailing?.invoke()
         }
+    }
+}
+
+@Composable
+private fun HeroCopy(
+    eyebrow: String,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -285,6 +326,58 @@ fun VervanSectionHeader(
     }
 }
 
+/**
+ * A task/list row is the default interaction surface for collections, workspaces, notes, and
+ * other navigable records. It keeps hierarchy in the row itself instead of turning every record
+ * into a floating card. Selection is expressed by a tonal row state; separation comes from a
+ * predictable surface role and generous rhythm rather than a wall of dividers.
+ */
+@Composable
+fun ModernistListRow(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    selected: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val rowModifier = modifier
+        .fillMaxWidth()
+        .heightIn(min = ModernistTokens.Layout.rowMinHeight)
+    val rowColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            modifier = rowModifier,
+            shape = MaterialTheme.shapes.small,
+            color = rowColor,
+            tonalElevation = if (selected) 2.dp else 0.dp,
+            border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)) else null,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
+    } else {
+        Surface(
+            modifier = rowModifier,
+            shape = MaterialTheme.shapes.small,
+            color = rowColor,
+            tonalElevation = 0.dp,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
+    }
+}
+
 @Composable
 fun StatusChip(
     label: String,
@@ -295,6 +388,7 @@ fun StatusChip(
     Row(
         modifier = modifier
             .background(color.copy(alpha = 0.14f), MaterialTheme.shapes.small)
+            .semantics { contentDescription = label }
             .padding(horizontal = Space.sm, vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -308,6 +402,37 @@ fun StatusChip(
     }
 }
 
+/** A compact activity summary that can sit above the shell navigation bar or chat composer. */
+@Composable
+fun ActivityStatusPill(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = Space.sm),
+            )
+        }
+    }
+}
+
 @Composable
 fun SystemStatusStrip(
     title: String,
@@ -318,23 +443,21 @@ fun SystemStatusStrip(
     onAction: (() -> Unit)? = null
 ) {
     val color = tone.color()
-    Card(
-        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.28f))
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.10f), MaterialTheme.shapes.small)
+            .border(BorderStroke(ModernistTokens.Component.rule, color.copy(alpha = 0.42f)), MaterialTheme.shapes.small)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(Space.lg),
+        verticalAlignment = Alignment.Top
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Icon(tone.icon(), contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
-                Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                    Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        Icon(tone.icon(), contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+        Column(Modifier.weight(1f).padding(start = Space.md)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (actionLabel != null && onAction != null) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onAction) { Text(actionLabel) }
-                }
+                TextButton(onClick = onAction) { Text(actionLabel) }
             }
         }
     }
@@ -352,16 +475,17 @@ fun ActionTile(
     iconContainerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
     iconTint: Color = MaterialTheme.colorScheme.onSecondaryContainer
 ) {
-    Card(
+    Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 72.dp),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = vervanBorder(VervanBorderProminence.Standard)
+        modifier = modifier.heightIn(min = 112.dp),
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 1.dp,
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(Space.md),
+            Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconAffordance(
@@ -374,18 +498,26 @@ fun ActionTile(
                 OverflowTooltipText(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
                 )
                 Text(
                     body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
+
 
 @Composable
 fun ErrorCard(
@@ -415,36 +547,35 @@ fun OperationProgressCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f), MaterialTheme.shapes.medium)
+            .border(BorderStroke(ModernistTokens.Component.rule, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)), MaterialTheme.shapes.medium)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(Space.lg)
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text(title, style = MaterialTheme.typography.labelLarge)
-                    Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
+                Text(title, style = MaterialTheme.typography.labelLarge)
+                Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            progress?.let {
-                LinearProgressIndicator(
-                    progress = { it.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                )
-                Text(
-                    "${(it.coerceIn(0f, 1f) * 100).toInt()}% complete",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = Space.xs)
-                )
-            }
-            if (actionLabel != null && onAction != null) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onAction) { Text(actionLabel) }
-                }
-            }
+        }
+        progress?.let {
+            LinearProgressIndicator(
+                progress = { it.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+            )
+            Text(
+                "${(it.coerceIn(0f, 1f) * 100).toInt()}% complete",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs)
+            )
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) { Text(actionLabel) }
         }
     }
 }
@@ -461,7 +592,7 @@ fun OperationErrorCard(
 ) {
     ErrorCard(
         title = title,
-        body = "$message\n$recovery",
+        body = if (recovery.isBlank()) message else "$message\n$recovery",
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
         actionLabel = actionLabel,
         onAction = onAction
@@ -498,7 +629,7 @@ fun ValidationMessage(message: String, modifier: Modifier = Modifier) {
 private fun compactCount(n: Int): String = when {
     n < 1000 -> n.toString()
     n % 1000 == 0 -> "${n / 1000}k"
-    else -> "${"%.1f".format(n / 1000f)}k"
+    else -> "${"%.1f".format(java.util.Locale.getDefault(), n / 1000f)}k"
 }
 
 @Composable
@@ -508,6 +639,7 @@ fun BoundedTextField(
     maxLength: Int,
     modifier: Modifier = Modifier,
     label: String? = null,
+    required: Boolean = false,
     placeholder: String? = null,
     prefix: String? = null,
     singleLine: Boolean = false,
@@ -533,13 +665,28 @@ fun BoundedTextField(
         nearLimit -> MaterialTheme.colorScheme.vervanWarning
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val characterDescription = stringResource(R.string.ui_characters_used, count, maxLength)
     OutlinedTextField(
         value = value,
         onValueChange = { newValue ->
             onValueChange(if (newValue.length > maxLength) newValue.take(maxLength) else newValue)
         },
         modifier = modifier,
-        label = label?.let { { Text(it) } },
+        label = label?.let {
+            {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(it)
+                    if (required) {
+                        Text(
+                            "*",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(start = 2.dp)
+                        )
+                    }
+                }
+            }
+        },
         placeholder = placeholder?.let { { Text(it) } },
         prefix = prefix?.let { { Text(it) } },
         isError = overLimit,
@@ -552,7 +699,7 @@ fun BoundedTextField(
         supportingText = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (atLimit) "Limit reached. Shorten this text before saving or sending." else supportingText.orEmpty(),
+                    if (atLimit) stringResource(R.string.ui_bounded_text_limit_reached) else supportingText.orEmpty(),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (atLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
@@ -563,7 +710,7 @@ fun BoundedTextField(
                     color = counterColor,
                     textAlign = TextAlign.End,
                     modifier = Modifier.padding(start = Space.sm).semantics {
-                        contentDescription = "$count of $maxLength characters used"
+                        contentDescription = characterDescription
                     }
                 )
             }

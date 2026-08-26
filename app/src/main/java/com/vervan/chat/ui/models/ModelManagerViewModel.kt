@@ -222,6 +222,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -257,6 +258,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importEmbeddingPair() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -291,6 +293,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importLlamaCppModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -432,6 +435,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "addRemoteApiModels() threw unexpectedly", t)
                 _status.value = "Could not add models. ${t.toUserMessage()}"
             } finally {
@@ -505,6 +509,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importWhisperCppModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -532,11 +537,22 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             state = com.vervan.chat.data.db.entities.JobState.RUNNING
         )
         db.jobDao().upsert(job)
+        // Progress checkpoints for the Job Queue screen — three real, sequential steps (native
+        // load, a live generation round-trip, a metadata/capability probe), so a coarse fixed
+        // split is honest here unlike a truly unpredictable operation. Native load has no
+        // sub-progress to report (a single blocking call — see ModelLoadCoordinator), so it stays
+        // at the indeterminate spinner (JobCard only shows a percentage for progress in 1..99)
+        // until it returns, then jumps straight to 50.
+        suspend fun updateJob(progress: Int, detail: String) {
+            db.jobDao().upsert(job.copy(progress = progress, detail = detail, updatedAt = System.currentTimeMillis()))
+        }
         try {
             val verified = withContext(Dispatchers.Default) {
+                updateJob(5, "Loading onto NPU/GPU/CPU…")
                 val loadResult = coordinator.loadManually(model)
                 require(loadResult.success) { loadResult.errorMessage ?: "Model could not be loaded" }
                 if (model.role == ModelRole.GENERATION) {
+                    updateJob(50, "Confirming it can generate a reply…")
                     val persisted = db.modelDao().get(model.id) ?: model
                     val params = com.vervan.chat.llm.resolveGenerationParams(persisted, app.container.settingsRepository)
                     val output = StringBuilder()
@@ -551,6 +567,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         output.append(it)
                     }
                     require(output.isNotBlank()) { "Model initialized but produced no output" }
+                    updateJob(85, "Reading model info…")
                     if (persisted.engine == ModelEngine.LLAMA_CPP) {
                         val metadata = app.container.withLlamaCpp { engine ->
                             check(engine.loadedModelPath == persisted.filePath) { "Model changed during validation" }
@@ -574,6 +591,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     // branch's own off-device case above) — validate by actually requesting a
                     // vector from the endpoint, the same round-trip proof "Reply with OK." gives
                     // a remote chat model.
+                    updateJob(50, "Requesting a test embedding…")
                     val persisted = db.modelDao().get(model.id) ?: model
                     val vector = com.vervan.chat.retrieval.embedWith(
                         persisted, "model validation",
@@ -586,6 +604,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     require(vector != null && vector.isNotEmpty()) { "Embedding model returned no vector" }
                     persisted
                 } else {
+                    updateJob(50, "Requesting a test embedding…")
                     app.container.withEmbedding { engine ->
                         check(engine.loadedModelPath == model.filePath) { "Model changed during validation" }
                         require(engine.embed("model validation")?.isNotEmpty() == true) {
@@ -602,6 +621,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             db.modelDao().upsert(verified)
             Log.i(TAG, "validateAndActivate() SUCCESS: ${verified.displayName} verified on ${verified.lastWorkingBackend}")
             _status.value = "Verified ${verified.displayName}"
+            updateJob(100, "Verified")
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis()))
             val previousVersion = db.modelDao().getOthersOfRole(verified.role, verified.id)
                 .firstOrNull { com.vervan.chat.model.ModelFamily.sameFamily(it.displayName, verified.displayName) }
@@ -616,15 +636,28 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 setActive(verified)
             }
         } catch (t: Throwable) {
-            if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
-                _status.value = "Model validation stopped"
-                return
+            com.vervan.chat.system.rethrowCancellation(t)
+            // NonCancellable: this whole function runs on viewModelScope, so navigating away from
+            // Model Manager mid-validation (or the app backgrounding while this ViewModel is torn
+            // down) delivers a CancellationException right here — without NonCancellable, these
+            // suspend DB writes would themselves immediately get cancelled before running, leaving
+            // the job stuck at RUNNING forever with no error, no progress, and no explanation (the
+            // "stuck activity with no visibility" failure mode). The cold-start sweep in
+            // VervanApp/JobDao.failOrphanedActive() is the backstop for the harder case — a real
+            // process death that skips even this catch block — this covers the softer, far more
+            // common one where the process survives but the screen doesn't.
+            withContext(kotlinx.coroutines.NonCancellable) {
+                if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
+                    _status.value = "Model validation stopped"
+                    return@withContext
+                }
+                Log.e(TAG, "validateAndActivate() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
+                db.modelDao().upsert(model.copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
+                db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
+                _status.value = "Model could not be verified. ${t.toUserMessage()} " +
+                        "The file was kept. Retry activation or delete it."
             }
-            Log.e(TAG, "validateAndActivate() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
-            db.modelDao().upsert(model.copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
-            db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
-            _status.value = "Model could not be verified. ${t.toUserMessage()} " +
-                    "The file was kept. Retry activation or delete it."
+            if (t is kotlinx.coroutines.CancellationException) throw t
         } finally {
             _busyModelId.value = null
             _busyLabel.value = null
@@ -713,7 +746,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         // runs doLoadGeneration (see ModelLoadCoordinator's runsOnDevice
                         // short-circuit) — same fix as the chat stats row's own backend label.
                         val backendLabel = if (persisted.traits.runsOnDevice) persisted.lastWorkingBackend.toString() else "Remote"
-                        "${String.format("%.1f", chars / seconds)} characters/sec on $backendLabel" +
+                        "${String.format(java.util.Locale.getDefault(), "%.1f", chars / seconds)} characters/sec on $backendLabel" +
                             (if (persisted.engine == ModelEngine.LITERT_LM && app.container.llmEngine.speculativeDecodingActive) " (MTP active)" else "")
                     } else if (!model.traits.runsOnDevice) {
                         val persisted = db.modelDao().get(model.id) ?: model
@@ -744,6 +777,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 _status.value = "Benchmark: $result"
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis(), detail = result))
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
                     _status.value = "Benchmark stopped"
                     return@launch
@@ -905,6 +939,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }
                 _status.value = "Deleted ${model.displayName}"
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "delete() failed for ${model.displayName}", t)
                 _status.value = "Delete failed. ${t.toUserMessage()}"
             } finally {

@@ -103,7 +103,9 @@ class SupertonicTtsEngine(
         if (attemptedLoad) return@withLock
         attemptedLoad = true
         val row = voiceModelDao.getByEngine("SUPERTONIC", "multi") ?: return@withLock
-        runCatching { loadGraphs(row.filePath) }.onFailure { release() }
+        com.vervan.chat.system.runCatchingPreservingCancellation {
+            loadGraphs(row.filePath)
+        }.onFailure { release() }
     }
 
     /** Loads (or reloads) just the voice-style tensors for whichever voice
@@ -119,7 +121,7 @@ class SupertonicTtsEngine(
         } else {
             voiceModelDao.getByEngine("SUPERTONIC", variant)
         }?.filePath ?: return@withLock
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             val (ttl, dp) = loadVoiceStyle(File(voiceDir, "voice_style_default.json"), ortEnv)
             // inferenceLock (not just loadMutex) around the actual swap: runInference() reads
             // styleTtl/styleDp under inferenceLock.read for the whole multi-step denoising call,

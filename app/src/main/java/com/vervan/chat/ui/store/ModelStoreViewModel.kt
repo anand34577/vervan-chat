@@ -75,15 +75,27 @@ class ModelStoreViewModel(app: VervanApp) : ViewModel() {
     }
 
     fun sync() {
+        if (_syncing.value) return
+        // Set this before launching so two rapid taps cannot queue two sync jobs before the
+        // first coroutine gets scheduled. The UI slot is then either a refresh icon or a bounded
+        // spinner, never both.
+        _syncing.value = true
         viewModelScope.launch {
-            _syncing.value = true
-            _syncMessage.value = when (val result = repo.sync()) {
-                is SyncResult.Updated -> "Updated to catalogue v${result.catalogVersion} (${result.modelCount} models)"
-                SyncResult.AlreadyCurrent -> "Catalogue is up to date"
-                is SyncResult.Failed -> null // surfaced via syncError instead
+            try {
+                _syncMessage.value = when (val result = repo.sync()) {
+                    is SyncResult.Updated -> "Updated to catalogue v${result.catalogVersion} (${result.modelCount} models)"
+                    SyncResult.AlreadyCurrent -> "Catalogue is up to date"
+                    is SyncResult.Failed -> null // surfaced via syncError instead
+                }
+                rebuild()
+            } catch (failure: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(failure)
+                _syncMessage.value = "Catalogue update failed. Try again."
+            } finally {
+                // A thrown network/parser failure must not leave the toolbar permanently in a
+                // loading state. The repository owns the user-facing sync error state.
+                _syncing.value = false
             }
-            _syncing.value = false
-            rebuild()
         }
     }
 

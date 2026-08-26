@@ -14,12 +14,12 @@ import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,14 +52,18 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
     val largeTouchTargets by vm.largeTouchTargets.collectAsState()
     val highContrast by vm.highContrast.collectAsState()
     val reducedMotion = rememberReducedMotion()
+    val textSizeDescription = stringResource(
+        com.vervan.chat.R.string.accessibility_text_size_description,
+        String.format(java.util.Locale.getDefault(), "%.0f", fontScale * 100)
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Accessibility") },
+                title = { Text(stringResource(com.vervan.chat.R.string.accessibility_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(com.vervan.chat.R.string.action_back))
                     }
                 }
             )
@@ -67,16 +72,16 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
         ScrollablePage(padding) {
             FeatureHero(
                 icon = Icons.Filled.TouchApp,
-                eyebrow = "Comfort and clarity",
-                title = "Make every control easier to use",
-                body = "Adjust text, contrast, touch targets, feedback, and motion to match how you use your device."
+                eyebrow = stringResource(com.vervan.chat.R.string.accessibility_eyebrow),
+                title = stringResource(com.vervan.chat.R.string.accessibility_hero_title),
+                body = stringResource(com.vervan.chat.R.string.accessibility_hero_body)
             )
-            SectionLabel("Reading")
+            SectionLabel(stringResource(com.vervan.chat.R.string.accessibility_reading))
             androidx.compose.material3.Card {
                 Column(Modifier.padding(Space.lg)) {
                     ListItem(
-                        headlineContent = { Text("Text size") },
-                        supportingContent = { Text("${String.format("%.0f", fontScale * 100)}% · body content supports scaling") },
+                        headlineContent = { Text(stringResource(com.vervan.chat.R.string.accessibility_text_size)) },
+                        supportingContent = { Text(stringResource(com.vervan.chat.R.string.accessibility_text_size_support, String.format(java.util.Locale.getDefault(), "%.0f", fontScale * 100))) },
                         leadingContent = { Icon(Icons.Filled.TextFields, contentDescription = null) }
                     )
                     Slider(
@@ -85,19 +90,19 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
                         valueRange = 0.85f..1.5f,
                         steps = 12,
                         modifier = Modifier.semantics {
-                            contentDescription = "Text size, ${String.format("%.0f", fontScale * 100)} percent"
+                            contentDescription = textSizeDescription
                         }
                     )
                 }
             }
 
-            SectionLabel("Contrast")
+            SectionLabel(stringResource(com.vervan.chat.R.string.accessibility_contrast))
             SectionCard(
                 items = listOf(
                     {
                         SectionRow(
-                            title = "High contrast",
-                            subtitle = "Makes muted text and borders easier to see.",
+                            title = stringResource(com.vervan.chat.R.string.accessibility_high_contrast),
+                            subtitle = stringResource(com.vervan.chat.R.string.accessibility_high_contrast_body),
                             icon = Icons.Filled.Contrast,
                             trailing = { Switch(checked = highContrast, onCheckedChange = vm::setHighContrast) }
                         )
@@ -105,21 +110,21 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
                 )
             )
 
-            SectionLabel("Interaction")
+            SectionLabel(stringResource(com.vervan.chat.R.string.accessibility_interaction))
             SectionCard(
                 items = listOf(
                     {
                         SectionRow(
-                            title = "Large touch targets",
-                            subtitle = "Use larger controls and roomier rows.",
+                            title = stringResource(com.vervan.chat.R.string.accessibility_large_targets),
+                            subtitle = stringResource(com.vervan.chat.R.string.accessibility_large_targets_body),
                             icon = Icons.Filled.TouchApp,
                             trailing = { Switch(checked = largeTouchTargets, onCheckedChange = vm::setLargeTouchTargets) }
                         )
                     },
                     {
                         SectionRow(
-                            title = "Haptic feedback",
-                            subtitle = "Vibrate briefly for key actions.",
+                            title = stringResource(com.vervan.chat.R.string.accessibility_haptics),
+                            subtitle = stringResource(com.vervan.chat.R.string.accessibility_haptics_body),
                             icon = Icons.Filled.Vibration,
                             trailing = { Switch(checked = hapticsEnabled, onCheckedChange = vm::setHapticsEnabled) }
                         )
@@ -127,20 +132,20 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
                 )
             )
 
-            SectionLabel("Motion")
+            SectionLabel(stringResource(com.vervan.chat.R.string.accessibility_motion))
             SectionCard(
                 items = listOf(
                     {
                         SectionRow(
-                            title = if (reducedMotion) "Reduced motion is on" else "Reduced motion is off",
-                            subtitle = "Uses your Android animation setting and simpler transitions.",
+                            title = if (reducedMotion) stringResource(com.vervan.chat.R.string.accessibility_reduced_motion_on) else stringResource(com.vervan.chat.R.string.accessibility_reduced_motion_off),
+                            subtitle = stringResource(com.vervan.chat.R.string.accessibility_motion_body),
                             icon = Icons.Filled.Animation
                         )
                     }
                 )
             )
             Text(
-                "Vervan uses TalkBack labels, large touch targets, and text-based status cues.",
+                stringResource(com.vervan.chat.R.string.accessibility_footer),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.lg)

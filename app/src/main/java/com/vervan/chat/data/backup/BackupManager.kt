@@ -28,7 +28,6 @@ import com.vervan.chat.model.readBytesLimited
 import com.vervan.chat.system.toUserMessage
 import androidx.room.withTransaction
 import java.io.InputStream
-import java.io.ByteArrayInputStream
 import java.io.OutputStream
 import java.security.SecureRandom
 import java.util.Base64
@@ -57,6 +56,7 @@ object BackupManager {
     private const val FORMAT_VERSION = 2
     private const val MIN_SUPPORTED_FORMAT_VERSION = 1
     private const val MAX_ITEMS_PER_COLLECTION = 100_000
+    private const val MAX_TOTAL_ITEMS = 200_000
     private const val ENCRYPTED_FORMAT = "vervan-encrypted-backup-v1"
     private const val PBKDF2_ITERATIONS = 210_000
     private const val SALT_BYTES = 16
@@ -144,19 +144,21 @@ object BackupManager {
         // the whole parse in one place makes that claim actually true.
         try {
             val encoded = input.readBytesLimited(ImportLimits.MAX_BACKUP_BYTES)
-            val decoded = decodePayload(encoded, password)
-            return importUnchecked(db, ByteArrayInputStream(decoded))
+            try {
+                return importUnchecked(db, decodeRoot(encoded, password))
+            } finally {
+                encoded.fill(0)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             if (t is VirtualMachineError) throw t
             throw IllegalArgumentException("This backup file couldn't be read — it may be corrupted or from an incompatible version. (${t.toUserMessage()})", t)
         }
     }
 
-    private suspend fun importUnchecked(db: AppDatabase, input: InputStream): BackupSummary {
-        val bytes = input.readBytesLimited(ImportLimits.MAX_BACKUP_BYTES)
-        val root = JSONObject(bytes.toString(Charsets.UTF_8))
+    private suspend fun importUnchecked(db: AppDatabase, root: JSONObject): BackupSummary {
         val formatVersion = root.optInt("formatVersion", 0)
         require(formatVersion in MIN_SUPPORTED_FORMAT_VERSION..FORMAT_VERSION) {
             when {
@@ -166,6 +168,13 @@ object BackupManager {
                 else -> "Backup format $formatVersion is no longer supported."
             }
         }
+        val collectionNames = listOf(
+            "workspaces", "chats", "messages", "notes", "personas", "templates", "workflows",
+            "memories", "projects", "folders", "savedOutputs", "flashcardSets", "studyCards",
+            "knowledgeBases", "toolRuns", "expenses", "ttsProjects", "transcriptionProjects",
+        )
+        val totalItems = collectionNames.sumOf { root.optJSONArray(it)?.length()?.toLong() ?: 0L }
+        require(totalItems <= MAX_TOTAL_ITEMS) { "Backup contains too many total records" }
         val workspaces = root.optJSONArray("workspaces")?.toObjectList()?.map { workspaceFromJson(it) } ?: emptyList()
         val chats = root.optJSONArray("chats")?.toObjectList()?.map { chatFromJson(it) } ?: emptyList()
         val messages = root.optJSONArray("messages")?.toObjectList()?.map { messageFromJson(it) } ?: emptyList()
@@ -225,43 +234,54 @@ object BackupManager {
     }
 
     private fun writePayload(payload: ByteArray, out: OutputStream, password: String?) {
-        if (password.isNullOrBlank()) {
-            out.write(payload)
-            return
+        try {
+            if (password.isNullOrBlank()) {
+                out.write(payload)
+                return
+            }
+            require(password.length >= 8) { "Backup password must be at least 8 characters" }
+            val random = SecureRandom()
+            val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
+            val iv = ByteArray(IV_BYTES).also(random::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt), GCMParameterSpec(GCM_TAG_BITS, iv))
+            val ciphertext = cipher.doFinal(payload)
+            val envelope = JSONObject()
+                .put("format", ENCRYPTED_FORMAT)
+                .put("kdf", "PBKDF2WithHmacSHA256")
+                .put("iterations", PBKDF2_ITERATIONS)
+                .put("salt", Base64.getEncoder().encodeToString(salt))
+                .put("iv", Base64.getEncoder().encodeToString(iv))
+                .put("ciphertext", Base64.getEncoder().encodeToString(ciphertext))
+            out.write(envelope.toString(2).toByteArray(Charsets.UTF_8))
+        } finally {
+            payload.fill(0)
         }
-        require(password.length >= 8) { "Backup password must be at least 8 characters" }
-        val random = SecureRandom()
-        val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
-        val iv = ByteArray(IV_BYTES).also(random::nextBytes)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt), GCMParameterSpec(GCM_TAG_BITS, iv))
-        val ciphertext = cipher.doFinal(payload)
-        val envelope = JSONObject()
-            .put("format", ENCRYPTED_FORMAT)
-            .put("kdf", "PBKDF2WithHmacSHA256")
-            .put("iterations", PBKDF2_ITERATIONS)
-            .put("salt", Base64.getEncoder().encodeToString(salt))
-            .put("iv", Base64.getEncoder().encodeToString(iv))
-            .put("ciphertext", Base64.getEncoder().encodeToString(ciphertext))
-        out.write(envelope.toString(2).toByteArray(Charsets.UTF_8))
     }
 
-    private fun decodePayload(encoded: ByteArray, password: String?): ByteArray {
+    private fun decodeRoot(encoded: ByteArray, password: String?): JSONObject {
         val root = JSONObject(encoded.toString(Charsets.UTF_8))
-        if (root.optString("format") != ENCRYPTED_FORMAT) return encoded
+        if (root.optString("format") != ENCRYPTED_FORMAT) return root
         require(!password.isNullOrBlank()) { "This backup is encrypted. Enter its password to restore it." }
         val iterations = root.optInt("iterations", 0)
         require(iterations in 100_000..500_000) { "This backup uses an unsupported encryption setting." }
         val salt = Base64.getDecoder().decode(root.getString("salt"))
         val iv = Base64.getDecoder().decode(root.getString("iv"))
         val ciphertext = Base64.getDecoder().decode(root.getString("ciphertext"))
-        return try {
+        require(salt.size == SALT_BYTES && iv.size == IV_BYTES) { "Encrypted backup parameters are invalid" }
+        require(ciphertext.size <= ImportLimits.MAX_BACKUP_BYTES) { "Encrypted backup payload exceeds the size limit" }
+        val plaintext = try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, deriveKey(password, salt, iterations), GCMParameterSpec(GCM_TAG_BITS, iv))
             cipher.doFinal(ciphertext)
-        } catch (t: Throwable) {
-            if (t is VirtualMachineError) throw t
-            throw IllegalArgumentException("The backup password is incorrect or the file was modified.", t)
+        } catch (failure: Exception) {
+            throw IllegalArgumentException("The backup password is incorrect or the file was modified.", failure)
+        }
+        require(plaintext.size <= ImportLimits.MAX_BACKUP_BYTES) { "Decrypted backup exceeds the size limit" }
+        return try {
+            JSONObject(plaintext.toString(Charsets.UTF_8))
+        } finally {
+            plaintext.fill(0)
         }
     }
 
@@ -356,10 +376,12 @@ object BackupManager {
     private fun messageToJson(m: Message) = JSONObject().apply {
         put("id", m.id); put("chatId", m.chatId); put("parentId", m.parentId ?: JSONObject.NULL)
         put("role", m.role.name); put("content", m.content); put("state", m.state.name)
-        put("imagePath", m.imagePath ?: JSONObject.NULL)
-        put("documentId", m.documentId ?: JSONObject.NULL)
-        put("audioPath", m.audioPath ?: JSONObject.NULL)
-        put("voiceRecordingPath", m.voiceRecordingPath ?: JSONObject.NULL)
+        // Binary assets and imported documents are explicitly outside the backup. Never export a
+        // device-local path that will be invalid—and unsafe to trust—when restored elsewhere.
+        put("imagePath", JSONObject.NULL)
+        put("documentId", JSONObject.NULL)
+        put("audioPath", JSONObject.NULL)
+        put("voiceRecordingPath", JSONObject.NULL)
         put("inputModality", m.inputModality)
         put("transcriptMetadataJson", m.transcriptMetadataJson ?: JSONObject.NULL)
         put("outputModalities", m.outputModalities)
@@ -381,10 +403,10 @@ object BackupManager {
     private fun messageFromJson(o: JSONObject) = Message(
         id = o.getString("id"), chatId = o.getString("chatId"), parentId = o.optStringOrNull("parentId"),
         role = MessageRole.valueOf(o.getString("role")), content = o.getString("content"),
-        state = MessageState.valueOf(o.optString("state", "COMPLETE")), imagePath = o.optStringOrNull("imagePath"),
-        documentId = o.optStringOrNull("documentId"),
-        audioPath = o.optStringOrNull("audioPath"),
-        voiceRecordingPath = o.optStringOrNull("voiceRecordingPath"),
+        state = MessageState.valueOf(o.optString("state", "COMPLETE")), imagePath = null,
+        documentId = null,
+        audioPath = null,
+        voiceRecordingPath = null,
         inputModality = o.optString("inputModality", "TEXT"),
         transcriptMetadataJson = o.optStringOrNull("transcriptMetadataJson"),
         outputModalities = o.optString("outputModalities", "TEXT"),
@@ -420,7 +442,7 @@ object BackupManager {
         put("id", p.id); put("name", p.name); put("description", p.description); put("systemInstruction", p.systemInstruction)
         put("tone", p.tone); put("formality", p.formality); put("conciseness", p.conciseness)
         put("creativity", p.creativity); put("responseLength", p.responseLength); put("language", p.language)
-        put("avatarPath", p.avatarPath ?: JSONObject.NULL)
+        put("avatarPath", JSONObject.NULL)
     }
     private fun personaFromJson(o: JSONObject) = Persona(
         id = o.getString("id"), name = o.getString("name"), description = o.optString("description"),
@@ -431,7 +453,7 @@ object BackupManager {
         creativity = o.optDouble("creativity", 0.5).toFloat(),
         responseLength = o.optString("responseLength", "BALANCED"),
         language = o.optString("language"),
-        avatarPath = o.optStringOrNull("avatarPath")
+        avatarPath = null
     )
 
     private fun templateToJson(t: PromptTemplate) = JSONObject().apply {
@@ -597,7 +619,7 @@ object BackupManager {
     private fun ttsProjectToJson(project: TtsProject) = JSONObject().apply {
         put("id", project.id); put("title", project.title); put("sourceText", project.sourceText)
         put("engine", project.engine); put("voiceVariant", project.voiceVariant)
-        put("language", project.language); put("audioPath", project.audioPath)
+        put("language", project.language); put("audioPath", JSONObject.NULL)
         put("durationMs", project.durationMs); put("createdAt", project.createdAt)
     }
     private fun ttsProjectFromJson(o: JSONObject) = TtsProject(
@@ -607,13 +629,13 @@ object BackupManager {
         engine = o.getString("engine"),
         voiceVariant = o.getString("voiceVariant"),
         language = o.getString("language"),
-        audioPath = o.getString("audioPath"),
+        audioPath = "",
         durationMs = o.getLong("durationMs"),
         createdAt = o.getLong("createdAt")
     )
 
     private fun transcriptionProjectToJson(project: TranscriptionProject) = JSONObject().apply {
-        put("id", project.id); put("fileName", project.fileName); put("audioPath", project.audioPath)
+        put("id", project.id); put("fileName", project.fileName); put("audioPath", JSONObject.NULL)
         put("durationMs", project.durationMs); put("transcript", project.transcript)
         put("engine", project.engine); put("modelVariant", project.modelVariant); put("status", project.status)
         put("errorMessage", project.errorMessage ?: JSONObject.NULL)
@@ -623,16 +645,14 @@ object BackupManager {
     private fun transcriptionProjectFromJson(o: JSONObject) = TranscriptionProject(
         id = o.getString("id"),
         fileName = o.getString("fileName"),
-        audioPath = o.getString("audioPath"),
+        audioPath = "",
         durationMs = o.getLong("durationMs"),
         transcript = o.optString("transcript"),
         engine = o.optString("engine", "WHISPER_CPP"),
         modelVariant = o.getString("modelVariant"),
-        status = o.optString("status", "DONE").let {
-            if (it == "PENDING" || it == "TRANSCRIBING") "CANCELLED" else it
-        },
-        errorMessage = o.optStringOrNull("errorMessage"),
-        segmentsJson = o.optStringOrNull("segmentsJson"),
+        status = "FAILED",
+        errorMessage = "Source audio is not included in content backups.",
+        segmentsJson = null,
         createdAt = o.getLong("createdAt"),
         updatedAt = o.getLong("updatedAt")
     )

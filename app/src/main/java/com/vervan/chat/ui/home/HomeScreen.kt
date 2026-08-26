@@ -1,9 +1,7 @@
 package com.vervan.chat.ui.home
 
-import androidx.compose.foundation.Image
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -11,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,13 +26,18 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Description
@@ -49,15 +53,15 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Workspaces
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -70,11 +74,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,6 +95,7 @@ import com.vervan.chat.data.db.entities.ToolRun
 import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.system.ThermalLevel
 import com.vervan.chat.ui.common.ActionTile
+import com.vervan.chat.ui.common.EnterMotion
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OverflowTooltipText
@@ -106,11 +109,11 @@ import com.vervan.chat.ui.common.SystemStatusStrip
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.validation.InputLimits
-import com.vervan.chat.ui.theme.SurfaceRole
-import com.vervan.chat.ui.theme.VervanExtraShapes
 import com.vervan.chat.ui.theme.VervanBreakpoints
-import com.vervan.chat.ui.theme.vervanAccentFor
+import com.vervan.chat.ui.theme.VervanExtraShapes
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import com.vervan.chat.system.toUserMessage
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -155,10 +158,8 @@ fun HomeScreen(
     // starts the moment the chat opens, rather than landing as an unsent draft the user has to
     // tap Send on a second time (which read as the first tap having failed). Blank text just
     // opens an empty chat, same as "New chat".
-    fun askVervan(text: String) {
-        scope.launch {
-            onOpenChat(if (text.isBlank()) vm.createChat() else vm.createChatAndSend(text))
-        }
+    suspend fun askVervan(text: String) {
+        onOpenChat(if (text.isBlank()) vm.createChat() else vm.createChatAndSend(text))
     }
 
     Scaffold(
@@ -170,32 +171,37 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Keep the full launcher mark visible: the themed surface gives it a
-                        // stable background while the foreground preserves the amber/periwinkle
-                        // V, AI node, and diamond from the app icon. The surface adapts with the
-                        // current light/dark theme without flattening the mark into one tint.
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
-                                .clip(MaterialTheme.shapes.small)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.shapes.small
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Image(
-                                painter = painterResource(R.drawable.ic_launcher_foreground),
-                                contentDescription = "Vervan",
-                                modifier = Modifier.size(40.dp)
+                            // Keep the shell independent from launcher artwork. The mark stays
+                            // legible when the app icon is replaced, the user changes theme, or
+                            // the display uses a large font scale.
+                            Text(
+                                text = "V",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                         // The active workspace name already appears right below in the hero (with
                         // richer privacy context) — repeating it here duplicated the
                         // same fact twice on one screen for no added information.
-                        Text("Vervan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
+                        Text(stringResource(R.string.role_vervan), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search workspace") }
-                    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, "Settings") }
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(Icons.Filled.Search, stringResource(R.string.shortcut_search))
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, stringResource(R.string.shortcut_settings))
+                    }
                 }
             )
         }
@@ -282,24 +288,44 @@ fun HomeScreen(
 @Composable
 private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
     val remote = model?.traits?.runsOnDevice == false
-    Card(
+    val statusIcon = when {
+        remote -> Icons.Filled.Cloud
+        model == null -> Icons.Outlined.Memory
+        else -> Icons.Filled.Lock
+    }
+    val statusIconTint = when {
+        remote -> MaterialTheme.colorScheme.onSecondaryContainer
+        model == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val statusIconContainer = when {
+        remote -> MaterialTheme.colorScheme.secondaryContainer
+        model == null -> MaterialTheme.colorScheme.surfaceContainerHighest
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val statusIconDescription = when {
+        remote -> stringResource(R.string.privacy_remote_icon_description)
+        model == null -> stringResource(R.string.privacy_no_model_icon_description)
+        else -> stringResource(R.string.privacy_local_icon_description)
+    }
+    Surface(
         onClick = onOpenPrivacy,
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(),
-        shape = MaterialTheme.shapes.large,
-        colors = SurfaceRole.Card.cardColors(),
-        border = SurfaceRole.Card.border(),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(Space.lg),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconAffordance(
-                icon = if (remote) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                icon = statusIcon,
                 size = IconAffordanceSize.Compact,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                tint = statusIconTint,
+                containerColor = statusIconContainer,
+                contentDescription = statusIconDescription,
             )
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                 Text(
@@ -347,7 +373,7 @@ private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
                 }
             }
             Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = stringResource(R.string.privacy_review),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
@@ -357,8 +383,8 @@ private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
 }
 
 /**
- * The one hero surface on Home: greeting, privacy badge, and a *working* quick-ask composer on a
- * primary→secondary gradient. Typing here and hitting Send opens a new chat with the text already
+ * The one hero surface on Home: greeting, runtime metrics, privacy state, and a *working* quick-ask
+ * composer on a ruled surface. Typing here and hitting Send opens a new chat with the text already
  * in its composer, so the thought that started on Home finishes in the chat without retyping.
  * With no model installed the composer gives way to the setup CTA — nothing else on the screen
  * pretends chat works before a model exists.
@@ -368,89 +394,147 @@ private fun HomeHero(
     workspaceName: String?,
     model: ModelInfo?,
     compact: Boolean,
-    onAsk: (String) -> Unit,
+    onAsk: suspend (String) -> Unit,
     onOpenModels: () -> Unit,
     onOpenKnowledge: () -> Unit
 ) {
-    val heroFg = MaterialTheme.colorScheme.onPrimary
+    val heroFg = MaterialTheme.colorScheme.onSurface
     val remoteModel = model?.traits?.runsOnDevice == false
     // Not remembered — an app left open across a time boundary should not greet
     // "Good morning" all evening. Recomputing on recomposition is trivially cheap.
     val greeting =
         when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
-            in 0..4 -> "Working late"
-            in 5..11 -> "Good morning"
-            in 12..16 -> "Good afternoon"
-            else -> "Good evening"
-        }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(VervanExtraShapes.hero)
-            .background(com.vervan.chat.ui.theme.vervanBrandGradient())
-            .animateContentSize()
-            .padding(if (compact) Space.md else Space.lg)
-    ) {
-        Column {
+            in 0..4 -> stringResource(R.string.home_greeting_late)
+            in 5..11 -> stringResource(R.string.home_greeting_morning)
+            in 12..16 -> stringResource(R.string.home_greeting_afternoon)
+            else -> stringResource(R.string.home_greeting_evening)
+    }
+    EnterMotion {
+        // The home hero is the product's signature surface. Keep the readable content on a
+        // semantic surface role and reserve the accent gradient for a small visual signal. A
+        // primary/secondary container gradient is not guaranteed to have one safe foreground
+        // color across dynamic, high-contrast, light, and dark schemes.
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = VervanExtraShapes.hero,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 1.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant,
+            ),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().animateContentSize()
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.secondary,
+                                )
+                            )
+                        )
+                )
+                Column(
+                    Modifier.fillMaxWidth().padding(Space.xl)
+                ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
+                        stringResource(R.string.home_local_workspace),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
                         greeting,
-                        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
                         color = heroFg,
                     )
                     Text(
-                        workspaceName?.let {
-                            when {
-                                remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, it)
-                                model == null -> stringResource(R.string.privacy_hero_no_model_suffix, it)
-                                else -> stringResource(R.string.privacy_hero_local_suffix, it)
-                            }
-                        } ?: when {
-                            remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, "Workspace")
-                            model == null -> stringResource(R.string.privacy_hero_no_model_suffix, "Workspace")
-                            else -> stringResource(R.string.privacy_hero_local_suffix, "Workspace")
+                        when {
+                            remoteModel -> stringResource(
+                                R.string.home_hero_remote_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
+                            model == null -> stringResource(
+                                R.string.home_hero_no_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
+                            else -> stringResource(
+                                R.string.home_hero_local_model,
+                                workspaceName ?: stringResource(R.string.home_personal_workspace),
+                            )
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = heroFg.copy(alpha = 0.85f),
+                        color = heroFg.copy(alpha = 0.76f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = Space.xs)
                     )
                 }
-                // Privacy badge — the visual anchor for the app's core promise.
+                // A glyph in a flat circle ("✓"/"—"/"↗") doesn't scale with display font, doesn't
+                // mirror for RTL, and reads as placeholder text rather than a designed status
+                // badge — replaced with real icons on the same soft two-tone gradient the rest of
+                // the app's Feature-size icon badges use (see IconAffordance), so this is the
+                // first thing on screen matching that language rather than a one-off circle.
+                val readyTint = MaterialTheme.colorScheme.primary
                 Box(
-                    Modifier.size(40.dp).background(heroFg.copy(alpha = 0.18f), CircleShape),
+                    Modifier
+                        .size(36.dp)
+                        .shadow(if (model != null) 3.dp else 0.dp, CircleShape, clip = false)
+                        .background(
+                            if (model == null) Brush.linearGradient(
+                                listOf(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.surfaceContainerHighest)
+                            )
+                            else Brush.linearGradient(
+                                listOf(readyTint, lerp(readyTint, MaterialTheme.colorScheme.tertiary, 0.35f))
+                            ),
+                            CircleShape,
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        if (remoteModel) Icons.Filled.LockOpen else Icons.Filled.Lock,
-                        contentDescription = stringResource(
-                            when {
-                                remoteModel -> R.string.privacy_remote_icon_description
-                                model == null -> R.string.privacy_no_model_icon_description
-                                else -> R.string.privacy_local_icon_description
-                            }
-                        ),
-                        tint = heroFg,
-                        modifier = Modifier.size(18.dp)
+                        when {
+                            remoteModel -> Icons.Filled.Cloud
+                            model == null -> Icons.Outlined.RadioButtonUnchecked
+                            else -> Icons.Filled.CheckCircle
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (model == null) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }
-            Spacer(Modifier.height(if (compact) Space.sm else Space.md))
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(top = Space.lg),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            Text(
+                stringResource(R.string.home_start_prompt),
+                style = MaterialTheme.typography.labelMedium,
+                color = heroFg.copy(alpha = 0.78f),
+                modifier = Modifier.padding(top = Space.lg, bottom = Space.sm)
+            )
             if (model != null) {
-                QuickAskField(fg = heroFg, onAsk = onAsk)
+                QuickAskField(onAsk = onAsk)
                 Spacer(Modifier.height(Space.md))
                 ResponsiveActions {
-                    HeroChip(Icons.Outlined.Memory, "Model ready", heroFg, onOpenModels)
-                    HeroChip(Icons.Filled.Description, "Ask documents", heroFg, onOpenKnowledge)
+                    HeroChip(Icons.Outlined.Memory, stringResource(R.string.home_model_ready), onOpenModels)
+                    HeroChip(Icons.Filled.Description, stringResource(R.string.home_ask_documents), onOpenKnowledge)
                 }
             } else {
                 Surface(
                     onClick = onOpenModels,
-                    shape = VervanExtraShapes.pill,
-                    color = heroFg,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
                     Row(
                         Modifier.padding(horizontal = Space.lg, vertical = Space.md),
@@ -468,23 +552,51 @@ private fun HomeHero(
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
+                }
+            }
         }
     }
 }
 
-/** Frosted single-line composer on the hero. Send (button or IME action) opens a new chat and
+/** Ruled single-line composer on the hero. Send (button or IME action) opens a new chat and
  * immediately submits this text — generation is already underway by the time the chat screen
  * appears. Blank send just opens an empty chat. */
 @Composable
-private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String) -> Unit) {
+private fun QuickAskField(onAsk: suspend (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    var submitting by rememberSaveable { mutableStateOf(false) }
+    var submitError by rememberSaveable { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val askContentDescription = stringResource(R.string.home_ask_content_description)
+    val sendContentDescription = stringResource(R.string.home_start_chat_question)
     fun submit() {
+        // The navigation happens asynchronously, so a fast double tap could otherwise create
+        // two chats from one question before the destination replaces Home.
+        if (submitting) return
+        submitting = true
         val t = text
-        text = ""
-        onAsk(t)
+        submitError = null
+        scope.launch {
+            try {
+                onAsk(t)
+                text = ""
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(failure)
+                // Preserve the question so a transient database or navigation failure does not
+                // force the user to type it again, and keep the failure inside the UI scope.
+                submitError = failure.toUserMessage()
+            } finally {
+                submitting = false
+            }
+        }
     }
-    Surface(shape = VervanExtraShapes.pill, color = fg.copy(alpha = 0.16f)) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        tonalElevation = 1.dp
+    ) {
         Row(
             Modifier.padding(start = Space.lg, end = Space.xs).heightIn(min = 56.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -493,37 +605,52 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
                 value = text,
                 onValueChange = { text = it.take(InputLimits.CHAT_TEXT_CHARS) },
                 modifier = Modifier.weight(1f).semantics { contentDescription = askContentDescription },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = fg),
-                cursorBrush = SolidColor(fg),
+                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit() }),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (text.isEmpty()) {
-                            Text(stringResource(R.string.home_ask_hint), style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
+                             Text(stringResource(R.string.home_ask_hint), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         inner()
                     }
                 }
             )
-            Box(
-                Modifier
+            Surface(
+                onClick = ::submit,
+                enabled = !submitting,
+                modifier = Modifier
                     .padding(vertical = Space.xs)
                     .size(48.dp)
-                    .clip(CircleShape)
-                    .background(fg)
-                    .clickable(onClick = ::submit, role = Role.Button),
-                contentAlignment = Alignment.Center
+                    .semantics { contentDescription = sendContentDescription },
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shadowElevation = 3.dp,
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = stringResource(R.string.home_start_chat_question),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    if (submitting) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         }
+    }
+    submitError?.let { error ->
+        com.vervan.chat.ui.common.ValidationMessage(error, modifier = Modifier.padding(top = Space.sm))
     }
 }
 
@@ -531,11 +658,19 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
 private fun HeroChip(
     icon: ImageVector,
     label: String,
-    fg: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(onClick = onClick, shape = VervanExtraShapes.pill, color = fg.copy(alpha = 0.14f), contentColor = fg, modifier = modifier) {
+    Surface(
+        onClick = onClick,
+        // These are compact task controls, not badges. Use the same rectangular control geometry
+        // as the rest of the redesigned app so the first frame cannot flash a legacy pill style.
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.heightIn(min = 48.dp)
+    ) {
         Row(
             Modifier.padding(horizontal = Space.md, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -550,7 +685,9 @@ private fun HeroChip(
 @Composable
 private fun HomeAlert(thermalLevel: ThermalLevel, indexingCount: Int, onOpenKnowledge: () -> Unit) {
     when {
-        thermalLevel != ThermalLevel.NORMAL -> SystemStatusStrip(
+        // A moderate reading is common during launch and short bursts of work. Keep the home
+        // surface quiet until Android reports a sustained, actionable severe state.
+        thermalLevel == ThermalLevel.SEVERE -> SystemStatusStrip(
             title = stringResource(if (thermalLevel == ThermalLevel.SEVERE) R.string.home_thermal_slowdown else R.string.home_device_warming),
             body = if (thermalLevel == ThermalLevel.SEVERE) {
                 stringResource(R.string.home_thermal_severe_body)
@@ -623,7 +760,7 @@ private fun ContinueCarousel(
             }))
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                recentItems.forEachIndexed { index, item ->
+                recentItems.forEach { item ->
                     when (item) {
                         is HomeRecentItem.ChatItem -> ContinueRow(
                             icon = Icons.AutoMirrored.Filled.Chat,
@@ -636,7 +773,6 @@ private fun ContinueCarousel(
                                 )
                             }.orEmpty(),
                             timeLabel = relativeTime(item.timestamp),
-                            accent = vervanAccentFor(index),
                             onClick = { onOpenChat(item.value.id) }
                         )
                         is HomeRecentItem.ProjectItem -> ContinueRow(
@@ -645,7 +781,6 @@ private fun ContinueCarousel(
                             title = item.value.name,
                             preview = item.value.instructions,
                             timeLabel = relativeTime(item.timestamp),
-                            accent = vervanAccentFor(index),
                             onClick = { onOpenProject(item.value.id) }
                         )
                         is HomeRecentItem.NoteItem -> ContinueRow(
@@ -654,7 +789,6 @@ private fun ContinueCarousel(
                             title = item.value.title,
                             preview = item.value.content,
                             timeLabel = relativeTime(item.timestamp),
-                            accent = vervanAccentFor(index),
                             onClick = { onOpenNote(item.value.id) }
                         )
                         is HomeRecentItem.ToolRunItem -> ContinueRow(
@@ -663,7 +797,6 @@ private fun ContinueCarousel(
                             title = item.value.toolName,
                             preview = item.value.output.ifBlank { item.value.input },
                             timeLabel = relativeTime(item.timestamp),
-                            accent = vervanAccentFor(index),
                             onClick = { onOpenToolRun(item.value.id) }
                         )
                     }
@@ -680,7 +813,6 @@ private fun ContinueRow(
     title: String,
     preview: String,
     timeLabel: String,
-    accent: com.vervan.chat.ui.theme.VervanAccent,
     onClick: () -> Unit,
 ) {
     val displayPreview = if (preview.isBlank()) {
@@ -688,15 +820,16 @@ private fun ContinueRow(
     } else {
         preview
     }
-    Card(
+    Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border(),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).background(accent.container, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = accent.onContainer)
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                 Row(
@@ -727,7 +860,7 @@ private fun ContinueRow(
                 )
             }
             Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = stringResource(R.string.home_open_item, title),
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -814,11 +947,12 @@ private fun WorkspaceStatusSection(
     }
 }
 
+@Composable
 private fun statusLabel(tone: StatusTone): String = when (tone) {
-    StatusTone.Ready -> "Selected"
-    StatusTone.Running -> "Working"
-    StatusTone.Warning -> "Setup"
-    else -> "Open"
+    StatusTone.Ready -> stringResource(R.string.home_status_selected)
+    StatusTone.Running -> stringResource(R.string.home_status_working)
+    StatusTone.Warning -> stringResource(R.string.home_status_setup)
+    else -> stringResource(R.string.home_status_open)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -831,22 +965,22 @@ private fun ToolsSection(
     onOpenAllTools: () -> Unit,
 ) {
     val toolGroups = listOf(
-        "Common tasks" to listOf(
-            ModernHomeTool(Icons.Filled.RecordVoiceOver, "Voice chat", "Talk naturally with your local model", onOpenVoiceChat),
-            ModernHomeTool(Icons.Filled.EditNote, "Writing assistant", "Rewrite, refine, or change tone", onOpenWritingAssistant),
-            ModernHomeTool(Icons.Filled.DocumentScanner, "Document scanner", "Capture pages and extract useful text", onOpenDocScanner),
-            ModernHomeTool(Icons.Filled.Translate, "Translate", "Translate text or a photographed page", onOpenTranslate),
+        stringResource(R.string.home_tool_group_common) to listOf(
+            ModernHomeTool(Icons.Filled.RecordVoiceOver, stringResource(R.string.home_tool_voice_title), stringResource(R.string.home_tool_voice_body), onOpenVoiceChat),
+            ModernHomeTool(Icons.Filled.EditNote, stringResource(R.string.home_tool_writing_title), stringResource(R.string.home_tool_writing_body), onOpenWritingAssistant),
+            ModernHomeTool(Icons.Filled.DocumentScanner, stringResource(R.string.home_tool_scanner_title), stringResource(R.string.home_tool_scanner_body), onOpenDocScanner),
+            ModernHomeTool(Icons.Filled.Translate, stringResource(R.string.home_tool_translate_title), stringResource(R.string.home_tool_translate_body), onOpenTranslate),
         ),
     )
     Column {
         VervanSectionHeader(
-            "Quick tools",
-            actionLabel = "See all",
+            stringResource(R.string.home_quick_tools),
+            actionLabel = stringResource(R.string.ui_homescreen_899_see_all),
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )
         Text(
-            "Start a task, or browse all tools.",
+            stringResource(R.string.home_quick_tools_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -863,16 +997,15 @@ private fun ToolsSection(
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
                 maxItemsInEachRow = 2,
             ) {
-                tools.forEachIndexed { index, tool ->
-                    val accent = vervanAccentFor(index + 3)
+                tools.forEach { tool ->
                     ActionTile(
                         icon = tool.icon,
                         title = tool.label,
                         body = tool.body,
                         onClick = tool.onClick,
                         modifier = Modifier.weight(1f),
-                        iconContainerColor = accent.container,
-                        iconTint = accent.onContainer,
+                        iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -887,9 +1020,10 @@ private data class ModernHomeTool(
     val onClick: () -> Unit,
 )
 
+@Composable
 private fun ModelBackend.label(): String = when (this) {
-    ModelBackend.NPU -> "NPU backend"
-    ModelBackend.GPU -> "GPU backend"
-    ModelBackend.CPU -> "CPU backend"
-    ModelBackend.UNVERIFIED -> "Setup not checked"
+    ModelBackend.NPU -> stringResource(R.string.home_backend_npu)
+    ModelBackend.GPU -> stringResource(R.string.home_backend_gpu)
+    ModelBackend.CPU -> stringResource(R.string.home_backend_cpu)
+    ModelBackend.UNVERIFIED -> stringResource(R.string.home_backend_unverified)
 }

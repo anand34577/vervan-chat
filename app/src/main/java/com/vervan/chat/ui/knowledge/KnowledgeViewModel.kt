@@ -74,6 +74,7 @@ class KnowledgeViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch {
             Log.i(TAG, "Deleting knowledge base ${kb.id}")
             db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
+            db.clearKnowledgeBaseReferences(kb.id)
             db.knowledgeBaseDao().delete(kb)
         }
     }
@@ -151,8 +152,6 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
         viewModelScope.launch {
             _error.value = null
             try {
-                db.chunkDao().deleteForDocument(document.id)
-                db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING))
                 docImport.reindexLocal(document.id)
             } catch (e: Exception) {
                 _error.value = "Re-indexing failed. ${e.toUserMessage()}"
@@ -208,7 +207,6 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
             _error.value = null
             documents.value.filter { it.id in ids }.forEach { document ->
                 try {
-                    db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING, failureReason = null))
                     docImport.reindexLocal(document.id)
                 } catch (e: Exception) {
                     _error.value = "Could not re-index ${document.displayName}. ${e.toUserMessage()}"
@@ -222,6 +220,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
             db.knowledgeBaseDao().get(kbId)?.let { kb ->
                 Log.i(TAG, "Deleting knowledge base ${kb.id}")
                 db.documentDao().getForKb(kb.id).forEach { app.container.documentImportManager.delete(it) }
+                db.clearKnowledgeBaseReferences(kb.id)
                 db.knowledgeBaseDao().delete(kb)
             }
             onDone()

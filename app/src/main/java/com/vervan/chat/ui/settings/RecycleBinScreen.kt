@@ -24,13 +24,13 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -82,7 +82,6 @@ import com.vervan.chat.ui.common.SelectionTopBar
 import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.SectionLabel
 import com.vervan.chat.ui.chat.chatPreviewText
-import com.vervan.chat.llm.ThinkingParser
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
@@ -222,7 +221,8 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                 icon = Icons.Filled.Delete,
                 title = stringResource(R.string.recycle_empty),
                 body = stringResource(R.string.recycle_empty_body, RETENTION_DAYS),
-                modifier = Modifier.padding(padding)
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                centered = true
             )
             return@Scaffold
         }
@@ -246,10 +246,11 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                  ) {
                      categories.forEach { category ->
                          val count = if (category == "All") totalCount else binItems.count { it.section == category }
-                         FilterChip(
-                             selected = selectedCategory == category,
-                             onClick = { selectedCategory = category },
-                             label = { Text("$category · $count", maxLines = 1) }
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            shape = MaterialTheme.shapes.extraSmall,
+                            label = { Text(stringResource(R.string.ui_recyclebin_category_count, category, count), maxLines = 1) }
                          )
                      }
                  }
@@ -339,7 +340,7 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
         Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.sm),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -371,11 +372,11 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
                 modifier = Modifier.padding(top = Space.xs)
             )
             ResponsiveActions(Modifier.padding(top = Space.md)) {
-                androidx.compose.material3.FilledTonalButton(onClick = onRestoreAll) {
+                com.vervan.chat.ui.common.VervanFilledTonalButton(onClick = onRestoreAll) {
                     Icon(Icons.Filled.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text(stringResource(R.string.recycle_restore_all), modifier = Modifier.padding(start = Space.sm))
                 }
-                androidx.compose.material3.OutlinedButton(onClick = onEmpty) {
+                com.vervan.chat.ui.common.VervanOutlinedButton(onClick = onEmpty) {
                     Icon(Icons.Filled.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                     Text(stringResource(R.string.recycle_empty_action), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = Space.sm))
                 }
@@ -385,8 +386,7 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
 }
 
 private fun cleanBinTitle(raw: String, fallback: String): String {
-    val visible = ThinkingParser.parse(raw).answer
-    return chatPreviewText(visible, isUser = true)
+    return chatPreviewText(raw, isUser = false)
         .replace(Regex("\\s+"), " ")
         .trim()
         .take(80)
@@ -433,7 +433,7 @@ private fun BinRow(
             containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
         ),
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else SurfaceRole.Card.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Row(
             Modifier

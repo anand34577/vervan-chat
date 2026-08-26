@@ -90,6 +90,7 @@ class LibraryViewModel(app: VervanApp) : ViewModel() {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Result.failure(t)
         }
     }
@@ -101,6 +102,7 @@ class LibraryViewModel(app: VervanApp) : ViewModel() {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Result.failure(t)
         }
     }

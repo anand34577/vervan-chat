@@ -21,10 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Fixed "Aurora" palette — deep indigo-ink neutrals with vivid electric accents in dark mode,
- * cool porcelain neutrals in light mode. Not Material You dynamic color. No bundled display
- * font (offline-first app, nothing is fetched from Google Fonts) — system sans-serif for body,
- * system monospace for metadata/labels carries the technical texture instead.
+ * Aurora palette â€” the product owns color. Modernist contributes type, spacing, rules, and
+ * geometry without replacing the user's chosen theme. No bundled display font (offline-first app, nothing
+ * is fetched from Google Fonts) — system sans-serif is tuned with weight/tracking instead.
  */
 private val DangerRed = Color(0xFFFF6B7A)
 
@@ -83,21 +82,23 @@ private fun darkSchemeFor(accent: AccentPair) = darkColorScheme(
     onTertiary = Color(0xFF04240E),
     tertiaryContainer = Color(0xFF14532D),
     onTertiaryContainer = Color(0xFFA7F3C4),
-    background = Color(0xFF0A0D14),
-    onBackground = Color(0xFFEDF0F7),
-    surface = Color(0xFF0A0D14),
-    onSurface = Color(0xFFEDF0F7),
-    surfaceVariant = Color(0xFF39415A),
-    onSurfaceVariant = Color(0xFFC7CEDE),
-    surfaceContainerLowest = Color(0xFF060810),
-    surfaceContainerLow = Color(0xFF10141F),
-    surfaceContainer = Color(0xFF161B29),
-    surfaceContainerHigh = Color(0xFF1E2434),
-    surfaceContainerHighest = Color(0xFF283042),
-    surfaceDim = Color(0xFF060810),
-    surfaceBright = Color(0xFF303950),
-    outline = Color(0xFF545E78),
-    outlineVariant = Color(0xFF3B4359),
+    // Deep ink instead of pure black keeps OLED mode comfortable while giving the
+    // product enough tonal range for a real surface hierarchy.
+    background = Color(0xFF0B1020),
+    onBackground = Color(0xFFF2F5FF),
+    surface = Color(0xFF0F1628),
+    onSurface = Color(0xFFF2F5FF),
+    surfaceVariant = Color(0xFF394763),
+    onSurfaceVariant = Color(0xFFC3CCDF),
+    surfaceContainerLowest = Color(0xFF080D1A),
+    surfaceContainerLow = Color(0xFF121B2E),
+    surfaceContainer = Color(0xFF17223A),
+    surfaceContainerHigh = Color(0xFF1D2A45),
+    surfaceContainerHighest = Color(0xFF273653),
+    surfaceDim = Color(0xFF080D1A),
+    surfaceBright = Color(0xFF344667),
+    outline = Color(0xFF677796),
+    outlineVariant = Color(0xFF3B4B69),
     inverseSurface = Color(0xFFEDF0F7),
     inverseOnSurface = Color(0xFF171A21),
     inversePrimary = accent.primaryContainer,
@@ -121,21 +122,21 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFBFF2D4),
     onTertiaryContainer = Color(0xFF0B4023),
-    background = Color(0xFFF5F6FA),
-    onBackground = Color(0xFF171A21),
-    surface = Color(0xFFFCFCFE),
-    onSurface = Color(0xFF171A21),
-    surfaceVariant = Color(0xFFE4E6EF),
-    onSurfaceVariant = Color(0xFF474C5B),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF0F2F8),
-    surfaceContainer = Color(0xFFE9ECF4),
-    surfaceContainerHigh = Color(0xFFE2E6F0),
-    surfaceContainerHighest = Color(0xFFDBE0EC),
-    surfaceDim = Color(0xFFD3D8E4),
-    surfaceBright = Color(0xFFFCFCFE),
-    outline = Color(0xFF8A90A5),
-    outlineVariant = Color(0xFFC4C9D9),
+    background = Color(0xFFF3F6FC),
+    onBackground = Color(0xFF111827),
+    surface = Color(0xFFFBFCFF),
+    onSurface = Color(0xFF111827),
+    surfaceVariant = Color(0xFFE1E7F2),
+    onSurfaceVariant = Color(0xFF4B5870),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFEEF2F8),
+    surfaceContainer = Color(0xFFE7EDF6),
+    surfaceContainerHigh = Color(0xFFDFE7F2),
+    surfaceContainerHighest = Color(0xFFD6E0EE),
+    surfaceDim = Color(0xFFCCD7E6),
+    surfaceBright = Color.White,
+    outline = Color(0xFF7D8AA1),
+    outlineVariant = Color(0xFFBBC6D8),
     inverseSurface = Color(0xFF30313A),
     inverseOnSurface = Color(0xFFF4F1F7),
     inversePrimary = accent.primaryContainer,
@@ -146,37 +147,38 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     scrim = Color.Black
 )
 
-// Deliberately tighter than the M3 Expressive scale this app used to carry (10/12/16/24/32):
-// at that size every surface — cards, sheets, dialogs, menus — read as visibly bubbly, and the
-// roundness stopped distinguishing anything because it was on everything. This sits close to
-// Material 3's own defaults: still soft, but corners now read as a finish rather than a feature.
-// Chips/badges stay full pills (see VervanExtraShapes.pill) so they remain distinct from cards.
+// Shapes are intentionally quieter than the prototype's black-and-white canvas. Containers
+// support grouping and touch affordance; they are not the content of the design.
 private val VervanShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp)
+    extraSmall = RoundedCornerShape(ModernistTokens.Component.radiusXs),
+    small = RoundedCornerShape(ModernistTokens.Component.radiusSm),
+    medium = RoundedCornerShape(ModernistTokens.Component.radiusMd),
+    large = RoundedCornerShape(ModernistTokens.Component.radiusLg),
+    extraLarge = RoundedCornerShape(ModernistTokens.Component.radiusXl)
 )
 
-/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions).
- *  - hero/composer surfaces read as one deliberate size, distinct from both cards and dialogs
- *  - message bubbles get an asymmetric "tail" shape instead of every screen hand-rolling one
- *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
- *  - extra-extra-large (48dp) is the M3 Expressive max — used for hero gradients and big FABs. */
+
+/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions). */
 object VervanExtraShapes {
-    val hero = RoundedCornerShape(20.dp)
-    val composer = RoundedCornerShape(20.dp)
-    // The 4dp "tail" corner stays proportionally smaller than the other three so the bubble keeps
-    // its direction cue — it scaled down with the rest (was 20/6) rather than being left behind.
-    val userBubble = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 4.dp)
-    val assistantBubble = RoundedCornerShape(14.dp)
-    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape.
-     *  Intentionally NOT scaled down with the rest: chips/badges staying pill-shaped is what
-     *  keeps them readable as chips now that cards are square-ish. */
-    val pill = RoundedCornerShape(100.dp)
-    val datePill = RoundedCornerShape(100.dp)
-    val extraExtraLarge = RoundedCornerShape(28.dp)
+    val hero = RoundedCornerShape(ModernistTokens.Component.radiusXl)
+    val composer = RoundedCornerShape(ModernistTokens.Component.radiusLg)
+    val userBubble = RoundedCornerShape(
+        topStart = ModernistTokens.Component.radiusLg,
+        topEnd = ModernistTokens.Component.radiusLg,
+        bottomStart = ModernistTokens.Component.radiusLg,
+        bottomEnd = ModernistTokens.Component.radiusSm
+    )
+    val assistantBubble = RoundedCornerShape(
+        topStart = ModernistTokens.Component.radiusLg,
+        topEnd = ModernistTokens.Component.radiusLg,
+        bottomStart = ModernistTokens.Component.radiusSm,
+        bottomEnd = ModernistTokens.Component.radiusLg
+    )
+    // Tags remain compact, but a stadium shape is reserved for genuinely continuous controls.
+    // This keeps chips from making every action look like the previous UI's floating button.
+    val pill = RoundedCornerShape(ModernistTokens.Component.radiusPill)
+    val datePill = RoundedCornerShape(ModernistTokens.Component.radiusPill)
+    val extraExtraLarge = RoundedCornerShape(ModernistTokens.Component.radiusXl)
 }
 
 /** Reserved for technical/metadata text (timestamps, token counts, model backend
@@ -206,15 +208,15 @@ private val VervanTypography = Typography().let { base ->
     // roles keep comfortable spacing for readability. This is what makes screens feel designed
     // rather than default-Material, and it propagates to every `MaterialTheme.typography` call.
     base.copy(
-        displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
-        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
-        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Bold),
-        titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        labelSmall = base.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp)
+        displaySmall = base.displaySmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.0).sp),
+        headlineLarge = base.headlineLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.8).sp),
+        headlineMedium = base.headlineMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.7).sp),
+        headlineSmall = base.headlineSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+        titleLarge = base.titleLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = (-0.25).sp),
+        titleMedium = base.titleMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold),
+        titleSmall = base.titleSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+        labelLarge = base.labelLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp),
+        labelSmall = base.labelSmall.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, letterSpacing = 0.55.sp)
     )
 }
 
@@ -249,11 +251,21 @@ fun VervanTheme(
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if (darkTheme) {
         val scheme = darkSchemeFor(DarkAccents.getValue(accent))
-        // OLED true-black variant — same accent, background/surface pushed
-        // to pure black so OLED panels can actually turn those pixels off.
-        if (oledTrueBlack) scheme.copy(background = Color(0xFF000000), surface = Color(0xFF000000), surfaceVariant = Color(0xFF121212)) else scheme
+        scheme
     } else {
         lightSchemeFor(LightAccents.getValue(accent))
+    }
+    // Apply the OLED preference after resolving the color source so it also works with Material
+    // You dynamic color. Previously the dynamic-color branch returned early from this adjustment,
+    // which made the setting appear to do nothing on Android 12+ when device color was enabled.
+    if (darkTheme && oledTrueBlack) {
+        colorScheme = colorScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceVariant = Color(0xFF121212),
+            surfaceContainerLowest = Color.Black,
+            surfaceDim = Color.Black,
+        )
     }
     if (highContrast) colorScheme = colorScheme.withHighContrast(darkTheme)
     MaterialTheme(

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,7 +22,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,9 +31,9 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -135,7 +137,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             Text(
                                 if (recording) {
                                     val ms = (phase as TranscriptionViewModel.Phase.Recording).elapsedMs
-                                    "Stop (%d:%02d)".format(ms / 60000, (ms / 1000) % 60)
+                                    "Stop (%d:%02d)".format(java.util.Locale.getDefault(), ms / 60000, (ms / 1000) % 60)
                                 } else "Record"
                             )
                         }
@@ -143,7 +145,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                     if (installedWhisperVariants.isEmpty()) {
                         ErrorCard(
                         title = stringResource(R.string.transcription_no_model),
-                            body = "Download one in Model Manager before transcribing.",
+                            body = stringResource(R.string.ui_transcriptionscreen_147_download_one_in_model_manager_before_transcr),
                             modifier = Modifier.padding(top = Space.sm)
                         )
                     }
@@ -160,7 +162,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                         EmptyState(
                             icon = Icons.Filled.Mic,
                     title = stringResource(R.string.transcription_empty),
-                            body = "Import an audio file or record directly to get started."
+                            body = stringResource(R.string.ui_transcriptionscreen_164_import_an_audio_file_or_record_directly_to_g)
                         )
                     } else {
                         LazyColumn(Modifier.weight(1f, fill = false)) {
@@ -289,10 +291,13 @@ private fun TranscriptionDetail(
             when (phase) {
                 is TranscriptionViewModel.Phase.Transcribing -> {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                Text(stringResource(R.string.transcription_running), style = MaterialTheme.typography.bodyMedium)
-                        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(
+                            stringResource(R.string.transcription_running),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f).padding(start = Space.sm, end = Space.sm),
+                        )
+                        OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
                     }
                 }
                 else -> {
@@ -393,7 +398,7 @@ private fun TranscriptionDetail(
             when (val save = saveState) {
                 TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
             title = stringResource(R.string.transcription_saved),
-                    body = "The transcript was saved to your knowledge base.",
+                    body = stringResource(R.string.ui_transcriptionscreen_400_the_transcript_was_saved_to_your_knowledge_b),
                     tone = com.vervan.chat.ui.common.StatusTone.Ready,
                     modifier = Modifier.padding(top = Space.sm)
                 )
@@ -481,7 +486,7 @@ private fun TimestampedPlaybackCard(
 ) {
     var player by remember(audioPath) { mutableStateOf<android.media.MediaPlayer?>(null) }
     var isPlaying by remember(audioPath) { mutableStateOf(false) }
-    var positionMs by remember(audioPath) { mutableStateOf(0L) }
+    var positionMs by remember(audioPath) { mutableLongStateOf(0L) }
 
     androidx.compose.runtime.DisposableEffect(audioPath) {
         val mp = runCatching {
@@ -532,7 +537,7 @@ private fun TimestampedPlaybackCard(
                             .padding(vertical = 6.dp)
                     ) {
                         Text(
-                            "%d:%02d".format(seg.startMs / 60000, (seg.startMs / 1000) % 60),
+                            "%d:%02d".format(java.util.Locale.getDefault(), seg.startMs / 60000, (seg.startMs / 1000) % 60),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = Space.sm)

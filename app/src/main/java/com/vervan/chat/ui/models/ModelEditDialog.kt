@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.vervan.chat.ui.common.VervanButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,16 +38,17 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import com.vervan.chat.ui.theme.vervanBorder
 import com.vervan.chat.ui.theme.vervanSubtleDividerColor
+import com.vervan.chat.llm.ThinkingSpec
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.vervan.chat.ui.common.VervanToggle as Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
@@ -72,6 +73,7 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,6 +85,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -92,6 +95,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
+import com.vervan.chat.R
 import com.vervan.chat.data.db.entities.BackendChoice
 import com.vervan.chat.data.db.entities.FileDownloadStatus
 import com.vervan.chat.data.db.entities.ModelInfo
@@ -106,7 +110,6 @@ import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modeldownload.ModelAction
 import com.vervan.chat.modeldownload.ModelUiState
 import com.vervan.chat.system.toUserMessage
-import com.vervan.chat.model.readTextLimited
 import com.vervan.chat.validation.InputLimits
 import com.vervan.chat.ui.common.ChipTone
 import com.vervan.chat.ui.common.ConfirmDialog
@@ -155,6 +158,14 @@ internal fun ModelEditDialog(
     var audio by remember(model.id) { mutableStateOf(audioSupported && model.supportsAudio != false) }
     var tools by remember(model.id) { mutableStateOf(model.supportsTools != false) }
     var thinking by remember(model.id) { mutableStateOf(model.supportsThinking != false) }
+    val initialThinkingSpec = remember(model.id, model.thinkingSpecJson, model.chatTemplateOverride) {
+        ThinkingSpec.forModel(model)
+    }
+    var thinkingActivation by remember(model.id) { mutableStateOf(initialThinkingSpec.activation) }
+    var thinkingEnableText by remember(model.id) { mutableStateOf(initialThinkingSpec.enableText.orEmpty()) }
+    var remoteThinkingParameter by remember(model.id) {
+        mutableStateOf(initialThinkingSpec.remoteParameter ?: "reasoning_effort")
+    }
     var defaultThinkingMode by remember(model.id) { mutableStateOf(model.defaultThinkingMode ?: "OFF") }
     var mtpEnabled by remember(model.id) { mutableStateOf(model.mtpEnabled) }
     // llama.cpp has no NPU backend — a stale NPU choice persisted by an older build is shown
@@ -181,37 +192,37 @@ internal fun ModelEditDialog(
     // flips its own override switch — that's the default-then-customize-per-model model the
     // user asked for, instead of every field silently pinning to whatever it showed on Save.
     var temperatureOn by remember(model.id) { mutableStateOf(model.temperature != null) }
-    var temperature by remember(model.id) { mutableStateOf(model.temperature ?: defaults.temperature) }
+    var temperature by remember(model.id) { mutableFloatStateOf(model.temperature ?: defaults.temperature) }
     var topPOn by remember(model.id) { mutableStateOf(model.topP != null) }
-    var topP by remember(model.id) { mutableStateOf(model.topP ?: defaults.topP) }
+    var topP by remember(model.id) { mutableFloatStateOf(model.topP ?: defaults.topP) }
     var topKOn by remember(model.id) { mutableStateOf(model.topK != null) }
-    var topK by remember(model.id) { mutableStateOf((model.topK ?: defaults.topK).toFloat()) }
+    var topK by remember(model.id) { mutableFloatStateOf((model.topK ?: defaults.topK).toFloat()) }
     var maxImagesOn by remember(model.id) { mutableStateOf(model.maxNumImages != null) }
-    var maxImages by remember(model.id) { mutableStateOf((model.maxNumImages ?: defaults.maxNumImages).toFloat()) }
+    var maxImages by remember(model.id) { mutableFloatStateOf((model.maxNumImages ?: defaults.maxNumImages).toFloat()) }
     var contextOn by remember(model.id) { mutableStateOf(model.contextTokens != null) }
-    var context by remember(model.id) { mutableStateOf((model.contextTokens ?: defaults.contextTokens).toFloat()) }
+    var context by remember(model.id) { mutableFloatStateOf((model.contextTokens ?: defaults.contextTokens).toFloat()) }
     var seedOn by remember(model.id) { mutableStateOf(model.seed != null) }
     var seed by remember(model.id) { mutableStateOf((model.seed ?: 0).toString()) }
 
     // Common (both engines) — always visible.
     var minPOn by remember(model.id) { mutableStateOf(model.minP != null) }
-    var minP by remember(model.id) { mutableStateOf(model.minP ?: defaults.minP) }
+    var minP by remember(model.id) { mutableFloatStateOf(model.minP ?: defaults.minP) }
     var repetitionPenaltyOn by remember(model.id) { mutableStateOf(model.repetitionPenalty != null) }
-    var repetitionPenalty by remember(model.id) { mutableStateOf(model.repetitionPenalty ?: defaults.repetitionPenalty) }
+    var repetitionPenalty by remember(model.id) { mutableFloatStateOf(model.repetitionPenalty ?: defaults.repetitionPenalty) }
     var maxOutputTokensOn by remember(model.id) { mutableStateOf(model.maxOutputTokens != null) }
-    var maxOutputTokens by remember(model.id) { mutableStateOf((model.maxOutputTokens ?: defaults.maxOutputTokens).toFloat()) }
+    var maxOutputTokens by remember(model.id) { mutableFloatStateOf((model.maxOutputTokens ?: defaults.maxOutputTokens).toFloat()) }
     var stopSequencesOn by remember(model.id) { mutableStateOf(model.stopSequences != null) }
     var stopSequences by remember(model.id) { mutableStateOf(model.stopSequences ?: "") }
 
     // llama.cpp-only, expert-tier.
     var gpuLayerCountOn by remember(model.id) { mutableStateOf(model.gpuLayerCount != null) }
-    var gpuLayerCount by remember(model.id) { mutableStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
+    var gpuLayerCount by remember(model.id) { mutableFloatStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
     var cpuThreadsOn by remember(model.id) { mutableStateOf(model.cpuThreads != null) }
-    var cpuThreads by remember(model.id) { mutableStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
+    var cpuThreads by remember(model.id) { mutableFloatStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
     var nBatchOn by remember(model.id) { mutableStateOf(model.nBatch != null) }
-    var nBatch by remember(model.id) { mutableStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
+    var nBatch by remember(model.id) { mutableFloatStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
     var nUbatchOn by remember(model.id) { mutableStateOf(model.nUbatch != null) }
-    var nUbatch by remember(model.id) { mutableStateOf((model.nUbatch ?: defaults.nUbatch).toFloat()) }
+    var nUbatch by remember(model.id) { mutableFloatStateOf((model.nUbatch ?: defaults.nUbatch).toFloat()) }
     var useMlockOn by remember(model.id) { mutableStateOf(model.useMlock != null) }
     var useMlock by remember(model.id) { mutableStateOf(model.useMlock ?: useMlockDefault) }
     var flashAttentionOn by remember(model.id) { mutableStateOf(model.flashAttention != null) }
@@ -221,7 +232,7 @@ internal fun ModelEditDialog(
     var kvCacheTypeOn by remember(model.id) { mutableStateOf(model.kvCacheType != null) }
     var kvCacheType by remember(model.id) { mutableStateOf(model.kvCacheType ?: kvCacheTypeDefault) }
     var vulkanDeviceIndexOn by remember(model.id) { mutableStateOf(model.vulkanDeviceIndex != null) }
-    var vulkanDeviceIndex by remember(model.id) { mutableStateOf((model.vulkanDeviceIndex ?: 0).toFloat()) }
+    var vulkanDeviceIndex by remember(model.id) { mutableFloatStateOf((model.vulkanDeviceIndex ?: 0).toFloat()) }
     var ropeFreqBaseOn by remember(model.id) { mutableStateOf(model.ropeFreqBase != null) }
     var ropeFreqBase by remember(model.id) { mutableStateOf((model.ropeFreqBase ?: 0f).toString()) }
     var ropeFreqScaleOn by remember(model.id) { mutableStateOf(model.ropeFreqScale != null) }
@@ -230,33 +241,11 @@ internal fun ModelEditDialog(
     var chatTemplateOverride by remember(model.id) { mutableStateOf(model.chatTemplateOverride ?: "") }
     var loraPath by remember(model.id) { mutableStateOf(model.loraPath) }
     var loraScaleOn by remember(model.id) { mutableStateOf(model.loraScale != null) }
-    var loraScale by remember(model.id) { mutableStateOf(model.loraScale ?: 1.0f) }
+    var loraScale by remember(model.id) { mutableFloatStateOf(model.loraScale ?: 1.0f) }
     var loraError by remember(model.id) { mutableStateOf<String?>(null) }
 
     val loraApp = LocalContext.current.applicationContext as VervanApp
     val loraScope = rememberCoroutineScope()
-    // Unlike LoRA/mmproj, a template is plain text stored in the DB — read the content, no import.
-    val pickTemplateFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            loraScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    loraApp.contentResolver.openInputStream(it)?.use { s ->
-                        s.reader(Charsets.UTF_8).use { reader -> reader.readTextLimited(InputLimits.MAX_CHAT_TEMPLATE_CHARS) }
-                    } ?: error("Couldn't open the selected template file")
-                }.onSuccess { text ->
-                    if (text.isBlank()) {
-                        loraError = "The selected template file is empty"
-                    } else {
-                        chatTemplateOverride = text.trim()
-                        chatTemplateOverrideOn = true
-                        loraError = null
-                    }
-                }.onFailure { error ->
-                    loraError = "Couldn't read chat template: ${error.toUserMessage()}"
-                }
-            }
-        }
-    }
     // Copies the picked file into internal storage (same reasoning as the mmproj import flow —
     // a content:// Uri isn't a real filesystem path the native loader can fopen) rather than
     // storing the raw picked Uri.
@@ -278,9 +267,9 @@ internal fun ModelEditDialog(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize()) {
                 TopAppBar(
-                    title = { Text("Configure model", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = { Text(stringResource(R.string.ui_modeleditdialog_283_configure_model), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
+                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_cancel)) }
                     },
                     actions = {
                         TextButton(
@@ -293,6 +282,14 @@ internal fun ModelEditDialog(
                                         supportsAudio = audio,
                                         supportsTools = tools,
                                         supportsThinking = thinking,
+                                        thinkingSpecJson = if (thinking) {
+                                            ThinkingSpec(
+                                                activation = if (isRemote) ThinkingSpec.Activation.PROMPT_ONLY else thinkingActivation,
+                                                enableText = thinkingEnableText.trim().takeIf { !isRemote && thinkingActivation == ThinkingSpec.Activation.SYSTEM_TOKEN && it.isNotBlank() },
+                                                remoteParameter = remoteThinkingParameter.trim().takeIf { isRemote && it.isNotBlank() },
+                                                source = ThinkingSpec.Source.USER
+                                            ).toJson()
+                                        } else model.thinkingSpecJson,
                                         defaultThinkingMode = defaultThinkingMode.takeIf { thinking },
                                         temperature = temperature.takeIf { temperatureOn },
                                         topP = topP.takeIf { topPOn },
@@ -332,12 +329,12 @@ internal fun ModelEditDialog(
                                 }
                                 onSave(finalModel, if (isRemote) remoteApiKey else null)
                             }
-                        ) { Text("Save") }
+                        ) { Text(stringResource(R.string.action_save)) }
                     }
                 )
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     com.vervan.chat.ui.common.BoundedTextField(
-                        value = displayName, onValueChange = { displayName = it }, label = "Display name", singleLine = true,
+                        value = displayName, onValueChange = { displayName = it }, label = stringResource(R.string.ui_modeleditdialog_342_display_name), singleLine = true,
                         maxLength = com.vervan.chat.ui.common.ValidationLimits.MODEL_DISPLAY_NAME,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                     )
@@ -349,23 +346,23 @@ internal fun ModelEditDialog(
                             modifier = Modifier.padding(top = 6.dp)
                         )
                         SectionDivider()
-                        SectionLabel("Connection")
+                        SectionLabel(stringResource(R.string.ui_modeledit_connection))
                         com.vervan.chat.ui.common.BoundedTextField(
-                            value = remoteBaseUrl, onValueChange = { remoteBaseUrl = it }, label = "Base URL", singleLine = true,
+                            value = remoteBaseUrl, onValueChange = { remoteBaseUrl = it }, label = stringResource(R.string.model_base_url), singleLine = true,
                             maxLength = 512,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         )
                         remoteBaseUrlError?.takeIf { remoteBaseUrl.isNotBlank() }?.let { ValidationMessage(it) }
                         com.vervan.chat.ui.common.BoundedTextField(
-                            value = remoteApiModelId, onValueChange = { remoteApiModelId = it }, label = "Model id", singleLine = true,
+                            value = remoteApiModelId, onValueChange = { remoteApiModelId = it }, label = stringResource(R.string.ui_modeleditdialog_362_model_id), singleLine = true,
                             maxLength = 256,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         )
                         OutlinedTextField(
                             value = remoteApiKey,
                             onValueChange = { remoteApiKey = it.take(128) },
-                            label = { Text("API key") },
-                            supportingText = { Text("Leave blank to keep the existing key") },
+                            label = { Text(stringResource(R.string.model_api_key)) },
+                            supportingText = { Text(stringResource(R.string.ui_modeleditdialog_370_leave_blank_to_keep_the_existing_key)) },
                             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                             singleLine = true,
@@ -390,7 +387,7 @@ internal fun ModelEditDialog(
                         // runsOnDevice.
                         if (!isRemote) {
                         SectionDivider()
-                        SectionLabel("Performance mode")
+                        SectionLabel(stringResource(R.string.ui_modeledit_performance_mode))
                         if (expertMode) {
                             // llama.cpp offloads via Vulkan and has no NPU backend, so GGUF
                             // models get Auto/GPU/CPU only.
@@ -421,7 +418,7 @@ internal fun ModelEditDialog(
                             // AUTO/GPU/CPU/NPU chip row — maps straight onto the same
                             // BackendChoice the expert row edits.
                             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Use GPU acceleration", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.ui_modeleditdialog_426_use_gpu_acceleration), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = backend != BackendChoice.CPU,
                                     onCheckedChange = { backend = if (it) BackendChoice.GPU else BackendChoice.CPU }
@@ -443,7 +440,7 @@ internal fun ModelEditDialog(
                         }
 
                         SectionDivider()
-                        SectionLabel("Capabilities")
+                        SectionLabel(stringResource(R.string.ui_modeledit_capabilities))
                         CapabilityToggle(
                             "Vision", vision, enabled = visionSupported,
                             disabledHint = if (!visionSupported)
@@ -458,6 +455,59 @@ internal fun ModelEditDialog(
                         ) { audio = it }
                         CapabilityToggle("Tools", tools) { tools = it }
                         CapabilityToggle("Thinking", thinking) { thinking = it }
+                        if (thinking && isRemote) {
+                            OutlinedTextField(
+                                value = remoteThinkingParameter,
+                                onValueChange = { remoteThinkingParameter = it.take(64) },
+                                label = { Text("Thinking API parameter") },
+                                supportingText = {
+                                    Text("Default: reasoning_effort. Use enable_thinking for providers that expose a boolean switch.")
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            )
+                        }
+                        if (thinking && !isRemote) {
+                            Text(
+                                "Thinking activation",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    ThinkingSpec.Activation.PROMPT_ONLY to "Prompt only",
+                                    ThinkingSpec.Activation.SYSTEM_TOKEN to "System token"
+                                ).forEach { (activation, label) ->
+                                    VervanFilterChip(
+                                        selected = thinkingActivation == activation,
+                                        onClick = {
+                                            thinkingActivation = activation
+                                            if (activation == ThinkingSpec.Activation.SYSTEM_TOKEN && thinkingEnableText.isBlank()) {
+                                                thinkingEnableText = "<|think|>"
+                                            }
+                                        },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            if (thinkingActivation == ThinkingSpec.Activation.SYSTEM_TOKEN) {
+                                OutlinedTextField(
+                                    value = thinkingEnableText,
+                                    onValueChange = { thinkingEnableText = it.take(128) },
+                                    label = { Text("Enable token") },
+                                    supportingText = { Text("Read from the model template when available; change only if needed.") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                )
+                            } else {
+                                Text(
+                                    "The app will ask the model to expose reasoning using its prompt format.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                        }
                         if (thinking) {
                             Text(
                                 "Default thinking mode",
@@ -492,7 +542,7 @@ internal fun ModelEditDialog(
 
                         if (tools) {
                             SectionDivider()
-                            SectionLabel("Tool approval")
+                            SectionLabel(stringResource(R.string.ui_modeledit_tool_approval))
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(
                                     ToolApprovalMode.ALWAYS_ASK to "Always ask",
@@ -508,7 +558,7 @@ internal fun ModelEditDialog(
                         // remote model — speculative decoding is an on-device inference trick.
                         if (!isLlamaCpp && !isRemote) {
                             SectionDivider()
-                            SectionLabel("Speculative decoding (MTP)")
+                            SectionLabel(stringResource(R.string.ui_modeledit_speculative_decoding))
                             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     when (model.mtpSupported) {
@@ -525,7 +575,7 @@ internal fun ModelEditDialog(
                         }
 
                         SectionDivider()
-                        SectionLabel("Generation defaults")
+                        SectionLabel(stringResource(R.string.ui_modeledit_generation_defaults))
                         if (expertMode) {
                         Text(
                             "Raw per-model overrides. Disabled values use the app default.",
@@ -549,12 +599,12 @@ internal fun ModelEditDialog(
                         // (see its param list), so showing them here would be a slider that quietly
                         // does nothing, exactly the kind of "feature" that reads as broken.
                         if (!isRemote) {
-                        OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
-                        OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
+                            OverrideSlider("Min-p", minPOn, { minPOn = it }, minP, { minP = it }, defaults.minP, "%.2f", 0f..1f)
+                            OverrideSlider("Repetition penalty", repetitionPenaltyOn, { repetitionPenaltyOn = it }, repetitionPenalty, { repetitionPenalty = it }, defaults.repetitionPenalty, "%.2f", 1f..2f)
                         }
                         OverrideSlider("Max output tokens", maxOutputTokensOn, { maxOutputTokensOn = it }, maxOutputTokens, { maxOutputTokens = it }, defaults.maxOutputTokens.toFloat(), "%.0f", 64f..4096f, steps = 20)
                         if (!isRemote) {
-                        OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
+                            OverrideSlider("Max images", maxImagesOn, { maxImagesOn = it }, maxImages, { maxImages = it }, defaults.maxNumImages.toFloat(), "%.0f", 1f..4f)
                         }
                         OverrideSlider(
                             "Context length", contextOn, { contextOn = it }, context, { context = it }, defaults.contextTokens.toFloat(),
@@ -567,7 +617,7 @@ internal fun ModelEditDialog(
                         if (!isRemote) {
                         OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
                         if (seedOn) {
-                            TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                            TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text(stringResource(R.string.ui_modeleditdialog_572_randomize)) }
                         }
                         }
                         } else {
@@ -577,7 +627,7 @@ internal fun ModelEditDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
-                            Text("Response style", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.ui_modeleditdialog_582_response_style), style = MaterialTheme.typography.titleSmall)
                             val styleChoice = when {
                                 !temperatureOn -> "DEFAULT"
                                 temperature <= 0.45f -> "FOCUSED"
@@ -601,7 +651,7 @@ internal fun ModelEditDialog(
                                 }
                             }
 
-                            Text("Response size", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(stringResource(R.string.ui_modeleditdialog_606_response_size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
                             val sizeChoice = when {
                                 !maxOutputTokensOn -> "DEFAULT"
                                 maxOutputTokens <= 320f -> "SHORT"
@@ -617,7 +667,7 @@ internal fun ModelEditDialog(
                                 }
                             }
 
-                            Text("Conversation memory", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(stringResource(R.string.ui_modeleditdialog_622_conversation_memory), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
                             val memoryChoice = if (!contextOn) 0 else context.toInt()
                             // "Default" literally means the app-wide Settings value, which happens
                             // to be 4096 out of the box — the same number "Standard" sets. Spelling
@@ -643,7 +693,7 @@ internal fun ModelEditDialog(
 
                         if (isLlamaCpp && expertMode) {
                             SectionDivider()
-                            SectionLabel("Advanced (llama.cpp)")
+                            SectionLabel(stringResource(R.string.ui_modeledit_advanced_llama))
                             // GPU layers: default (override off) = offload the whole model on
                             // GPU/Auto; 0 keeps this model on CPU even under Auto.
                             run {
@@ -665,7 +715,7 @@ internal fun ModelEditDialog(
                             OverrideSlider("Batch size (n_batch)", nBatchOn, { nBatchOn = it }, nBatch, { nBatch = it }, defaults.nBatch.toFloat(), "%.0f", 128f..4096f, steps = 30)
                             OverrideSlider("Physical batch size (n_ubatch)", nUbatchOn, { nUbatchOn = it }, nUbatch, { nUbatch = it }, defaults.nUbatch.toFloat(), "%.0f", 32f..2048f, steps = 30)
                             Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.ui_modeleditdialog_670_lock_model_in_ram_mlock), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                 Text(
                                     if (useMlockOn) (if (useMlock) "On" else "Off") else "Default (${if (useMlockDefault) "On" else "Off"})",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -675,7 +725,7 @@ internal fun ModelEditDialog(
                             }
                             if (useMlockOn) {
                                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Enabled", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text(stringResource(R.string.privacy_enabled), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                     Switch(checked = useMlock, onCheckedChange = { useMlock = it })
                                 }
                             }
@@ -698,16 +748,15 @@ internal fun ModelEditDialog(
                             if (chatTemplateOverrideOn) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "Tap a preset, paste Jinja text above, or load a template file.",
+                                        "Choose a supported llama.cpp preset. Raw Jinja text is not executable in this build.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f).padding(top = 2.dp)
                                     )
-                                    TextButton(onClick = { pickTemplateFile.launch(arrayOf("*/*")) }) { Text("From file") }
                                 }
                                 Row(
-                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.xs),
+                                    horizontalArrangement = Arrangement.spacedBy(Space.xs)
                                 ) {
                                     com.vervan.chat.llm.LlamaCppEngine.builtinChatTemplates.forEach { name ->
                                         VervanFilterChip(
@@ -720,7 +769,7 @@ internal fun ModelEditDialog(
                             }
 
                             SectionDivider()
-                            SectionLabel("LoRA adapter")
+                            SectionLabel(stringResource(R.string.ui_modeledit_lora_adapter))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     loraPath?.let { File(it).name } ?: "None attached",
@@ -730,7 +779,7 @@ internal fun ModelEditDialog(
                                 )
                                 TextButton(onClick = { pickLoraFile.launch(arrayOf("*/*")) }) { Text(if (loraPath != null) "Replace" else "Attach") }
                                 if (loraPath != null) {
-                                    TextButton(onClick = { loraPath = null }) { Text("Remove") }
+                                    TextButton(onClick = { loraPath = null }) { Text(stringResource(R.string.action_remove)) }
                                 }
                             }
                             loraError?.let {
@@ -741,14 +790,14 @@ internal fun ModelEditDialog(
                             }
                         }
                     } else {
-                        Text(
+                            Text(
                             "Embedding models power semantic search and have no generation settings.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp)
+                            modifier = Modifier.padding(top = Space.md)
                         )
                     }
-                    androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(Space.xxl))
                 }
             }
         }
@@ -757,7 +806,7 @@ internal fun ModelEditDialog(
 
 @Composable
 internal fun SectionDivider() {
-    HorizontalDivider(Modifier.padding(top = 10.dp), color = vervanSubtleDividerColor())
+    HorizontalDivider(Modifier.padding(top = Space.sm), color = vervanSubtleDividerColor())
 }
 
 @Composable
@@ -768,7 +817,7 @@ internal fun CapabilityToggle(
     disabledHint: String? = null,
     onChange: (Boolean) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 label,
@@ -808,7 +857,7 @@ internal fun OverrideSlider(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
-                if (override) String.format(format, value) else "Default (${String.format(format, defaultValue)})",
+                if (override) String.format(java.util.Locale.getDefault(), format, value) else stringResource(R.string.ui_modeledit_default_value, String.format(java.util.Locale.getDefault(), format, defaultValue)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 10.dp)
@@ -816,6 +865,7 @@ internal fun OverrideSlider(
             Switch(checked = override, onCheckedChange = onOverrideChange)
         }
         val effectiveValue = if (override) value else defaultValue
+        val sliderDescription = stringResource(R.string.ui_modeledit_slider_value, label, String.format(java.util.Locale.getDefault(), format, effectiveValue))
         Slider(
             value = effectiveValue,
             onValueChange = onValueChange,
@@ -823,7 +873,7 @@ internal fun OverrideSlider(
             steps = steps,
             enabled = override,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp).semantics {
-                contentDescription = "$label, ${String.format(format, effectiveValue)}"
+                contentDescription = sliderDescription
             }
         )
     }
@@ -900,9 +950,9 @@ internal fun OverrideDropdown(
 }
 
 internal fun formatModelSize(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GiB", bytes / (1024.0 * 1024 * 1024))
-    bytes >= 1024 * 1024 -> String.format("%.1f MiB", bytes / (1024.0 * 1024))
-    bytes >= 1024 -> String.format("%.0f KiB", bytes / 1024.0)
+    bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.2f GiB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.1f MiB", bytes / (1024.0 * 1024))
+    bytes >= 1024 -> String.format(java.util.Locale.getDefault(), "%.0f KiB", bytes / 1024.0)
     else -> "$bytes B"
 }
 

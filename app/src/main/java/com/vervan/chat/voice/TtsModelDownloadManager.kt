@@ -70,7 +70,12 @@ class TtsModelDownloadManager(
         archiveUrl: String
     ): TtsDownloadResult = withContext(Dispatchers.IO) {
         voiceModelDao.getByEngine(engine, language)?.let { existing ->
-            if (File(existing.filePath).isDirectory) return@withContext TtsDownloadResult.Success(existing)
+            val existingDir = File(existing.filePath)
+            if (isUsableVoiceDir(engine, existingDir)) return@withContext TtsDownloadResult.Success(existing)
+            // A previous interrupted/old install can leave a row pointing at a directory that
+            // lacks files the runtime requires. Remove the stale record so it can be repaired.
+            existingDir.deleteRecursively()
+            voiceModelDao.delete(existing)
         }
 
         val job = JobRecord(type = JobType.TTS_MODEL_DOWNLOAD, label = displayLabel, state = JobState.RUNNING)
@@ -88,7 +93,10 @@ class TtsModelDownloadManager(
         val archiveFile = File(context.cacheDir, "tts_download_${engine.lowercase()}_$language.tar.bz2")
         try {
             var totalBytes: Long? = null
-            HttpRangeDownloader().download(archiveUrl, archiveFile, knownEtag = null, knownLastModified = null, authToken = null) { downloaded, total ->
+            HttpRangeDownloader().download(
+                archiveUrl, archiveFile, knownEtag = null, knownLastModified = null, authToken = null,
+                maxBytes = InputLimits.MAX_TTS_ARCHIVE_BYTES,
+            ) { downloaded, total ->
                 if (jobDao.get(job.id)?.state == JobState.CANCELLED) throw CancellationException("Stopped by user")
                 if (downloaded > InputLimits.MAX_TTS_ARCHIVE_BYTES) throw IOException("TTS archive exceeds the 1 GB limit")
                 totalBytes = total
@@ -99,8 +107,8 @@ class TtsModelDownloadManager(
             require(archiveFile.length() <= InputLimits.MAX_TTS_ARCHIVE_BYTES) { "TTS archive exceeds the 1 GB limit" }
             jobDao.upsert(job.copy(progress = 90, detail = "Extracting…", updatedAt = System.currentTimeMillis()))
             extractTarBz2(archiveFile, voiceDir)
-            if (!File(voiceDir, "model.onnx").isFile) {
-                throw IOException("Archive did not contain model.onnx")
+            if (!isUsableVoiceDir(engine, voiceDir)) {
+                throw IOException("Archive is missing one or more required voice-model files")
             }
 
             val hash = sha256Of(archiveFile)
@@ -128,6 +136,7 @@ class TtsModelDownloadManager(
             jobDao.upsert(job.copy(state = JobState.FAILED, detail = e.message ?: "Download failed", updatedAt = System.currentTimeMillis()))
             TtsDownloadResult.Failed(e.message ?: "Download failed")
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // Extraction/validation failed on a *complete* download — the archive bytes
             // themselves are the problem, so discard it; resuming a known-bad file would just
             // fail the same way again.
@@ -148,7 +157,18 @@ class TtsModelDownloadManager(
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
+    }
+
+    private fun isUsableVoiceDir(engine: String, dir: File): Boolean {
+        if (!dir.isDirectory) return false
+        val requiredFiles = buildList {
+            add(File(dir, "model.onnx"))
+            add(File(dir, "tokens.txt"))
+            if (engine.equals("KOKORO", ignoreCase = true)) add(File(dir, "voices.bin"))
+        }
+        if (requiredFiles.any { !it.isFile || it.length() == 0L }) return false
+        return !engine.equals("KOKORO", ignoreCase = true) || File(dir, "espeak-ng-data").isDirectory
     }
 
     /** Removes a downloaded voice's files and its [TtsVoiceModel] row. */
@@ -230,7 +250,7 @@ class TtsModelDownloadManager(
             // that the new one has copied successfully, so WhisperCppSttEngine's "largest file in
             // the directory" lookup can't pick up a stale leftover.
             voiceDir.listFiles()?.forEach { if (it != dest) it.delete() }
-            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            val hash = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
             // Reuse the existing (engine, language) row's id, if one exists (a prior catalog
             // download or import at this same slot), instead of always minting a fresh UUID —
             // TtsVoiceModel.id-keyed upsert() only replaces an exact id match, so a new id here
@@ -254,6 +274,7 @@ class TtsModelDownloadManager(
             jobDao.upsert(job.copy(state = JobState.CANCELLED, detail = "Stopped", updatedAt = System.currentTimeMillis()))
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             dest.delete()
             jobDao.upsert(job.copy(state = JobState.FAILED, detail = t.message ?: "Import failed", updatedAt = System.currentTimeMillis()))
             TtsDownloadResult.Failed(t.message ?: "Import failed")
@@ -272,6 +293,7 @@ class TtsModelDownloadManager(
      * component (e.g. `vits-piper-en_US-lessac-medium/model.onnx` -> `model.onnx`) so nested
      * voice files land flat where [PiperTtsEngine]/[KokoroTtsEngine] expect them. */
     private fun extractTarBz2(archiveFile: File, destDir: File) {
+        val canonicalDest = destDir.canonicalFile
         BZip2CompressorInputStream(archiveFile.inputStream().buffered()).use { bz2 ->
             TarArchiveInputStream(bz2).use { tar ->
                 var entryCount = 0
@@ -279,19 +301,22 @@ class TtsModelDownloadManager(
                 var entry = tar.nextEntry
                 while (entry != null) {
                     if (++entryCount > InputLimits.MAX_TTS_ARCHIVE_ENTRIES) throw IOException("TTS archive contains too many files")
-                    val relative = entry.name.substringAfter('/', missingDelimiterValue = "")
+                    val relative = entry.name.substringAfter('/', missingDelimiterValue = entry.name)
                     if (relative.isNotBlank() && !entry.isDirectory) {
-                        val outFile = File(destDir, relative)
-                        outFile.parentFile?.mkdirs()
-                        // Guard against a malicious archive escaping destDir via "../" segments.
-                        if (outFile.canonicalPath.startsWith(destDir.canonicalPath + File.separator)) {
-                            if (entry.size > InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes) {
-                                throw IOException("Extracted TTS files exceed the 2 GB limit")
-                            }
-                            val remaining = InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes
-                            val copied = outFile.outputStream().use { out -> tar.copyToLimited(out, remaining) }
-                            extractedBytes += copied
+                        // Resolve and validate before mkdirs: creating the parent first let a
+                        // traversal entry create directories outside the voice root even though
+                        // the subsequent file write was skipped.
+                        val outFile = File(canonicalDest, relative).canonicalFile
+                        if (!outFile.path.startsWith(canonicalDest.path + File.separator)) {
+                            throw IOException("TTS archive contains an unsafe path")
                         }
+                        outFile.parentFile?.mkdirs()
+                        if (entry.size > InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes) {
+                            throw IOException("Extracted TTS files exceed the 2 GB limit")
+                        }
+                        val remaining = InputLimits.MAX_TTS_EXTRACTED_BYTES - extractedBytes
+                        val copied = outFile.outputStream().use { out -> tar.copyToLimited(out, remaining) }
+                        extractedBytes += copied
                     }
                     entry = tar.nextEntry
                 }

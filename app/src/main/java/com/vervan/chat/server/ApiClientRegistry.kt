@@ -70,9 +70,13 @@ class ApiClientRegistry {
                     // machine) should show what it is *now*, not what it was first seen as.
                     userAgent = userAgent.ifBlank { existing.userAgent }.take(MAX_USER_AGENT_CHARS),
                     lastSeenAt = now,
-                    requestCount = existing.requestCount + 1,
+                    requestCount = if (existing.requestCount == Int.MAX_VALUE) Int.MAX_VALUE else existing.requestCount + 1,
                     lastPath = path.take(MAX_PATH_CHARS),
-                    unauthorizedCount = existing.unauthorizedCount + if (authChecked && !authorized) 1 else 0,
+                    unauthorizedCount = if (authChecked && !authorized && existing.unauthorizedCount < Int.MAX_VALUE) {
+                        existing.unauthorizedCount + 1
+                    } else {
+                        existing.unauthorizedCount
+                    },
                     // Sticky: one authenticated request proves this client holds the key, and a
                     // later unauthenticated probe from the same address doesn't unprove it.
                     authenticated = existing.authenticated || (authChecked && authorized)

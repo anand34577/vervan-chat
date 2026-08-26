@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.repo.resolveEditId
+import com.vervan.chat.data.repo.nextNumberedCopyName
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.ui.common.ValidationLimits
@@ -50,6 +51,8 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     val avatarPath: StateFlow<String?> = _avatarPath
     private val _importError = MutableStateFlow<String?>(null)
     val importError: StateFlow<String?> = _importError
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError
 
     private val _isLoading = MutableStateFlow(personaId != null)
     val isLoading: StateFlow<Boolean> = _isLoading
@@ -103,6 +106,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
                     _avatarPath.value = it.avatarPath
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
@@ -112,9 +116,9 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         }
     }
 
-    fun setName(value: String) { _name.value = value }
-    fun setDescription(value: String) { _description.value = value }
-    fun setSystemInstruction(value: String) { _systemInstruction.value = value }
+    fun setName(value: String) { _name.value = value; _saveError.value = null }
+    fun setDescription(value: String) { _description.value = value; _saveError.value = null }
+    fun setSystemInstruction(value: String) { _systemInstruction.value = value; _saveError.value = null }
     fun setTone(value: String) { _tone.value = value }
     fun setFormality(value: String) { _formality.value = value }
     fun setConciseness(value: String) { _conciseness.value = value }
@@ -138,6 +142,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
                 _importError.value = e.message
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 android.util.Log.e(TAG, "importCharacterCard failed for $uri", t)
                 _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
             }
@@ -179,7 +184,10 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     fun clearAvatar() { discardPendingScratchAvatar(); _avatarPath.value = null }
 
     suspend fun save(): Boolean {
-        if (_name.value.isBlank() || _systemInstruction.value.isBlank()) return false
+        if (_name.value.isBlank() || _systemInstruction.value.isBlank()) {
+            _saveError.value = "Name and system instruction are required."
+            return false
+        }
         if (_name.value.length > ValidationLimits.PERSONA_NAME ||
             _description.value.length > ValidationLimits.PERSONA_ROLE ||
             _systemInstruction.value.length > ValidationLimits.PERSONA_SYSTEM_INSTRUCTION ||
@@ -189,10 +197,20 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             _formality.value !in setOf("CASUAL", "NEUTRAL", "FORMAL") ||
             _conciseness.value !in setOf("NORMAL", "TERSE", "ELABORATE") ||
             _responseLength.value !in setOf("BALANCED", "SHORT", "LONG")
-        ) return false
+        ) {
+            _saveError.value = "Shorten the highlighted fields before saving."
+            return false
+        }
+        val cleanName = _name.value.trim()
+        val editId = resolveEditId(personaId, _isBuiltIn.value)
+        val existing = db.personaDao().findByName(cleanName)
+        if (existing != null && existing.id != editId) {
+            _saveError.value = "A persona named \"$cleanName\" already exists."
+            return false
+        }
         val persona = Persona(
-            id = resolveEditId(personaId, _isBuiltIn.value),
-            name = _name.value.trim(),
+            id = editId,
+            name = cleanName,
             description = _description.value.trim(),
             systemInstruction = _systemInstruction.value.trim(),
             isBuiltIn = false,
@@ -226,8 +244,11 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
     }
 
     suspend fun duplicate(): String {
+        val duplicateName = nextNumberedCopyName(_name.value) { candidate ->
+            db.personaDao().findByName(candidate) != null
+        }
         val copy = Persona(
-            name = "${_name.value.trim()} copy",
+            name = duplicateName,
             description = _description.value.trim(),
             systemInstruction = _systemInstruction.value.trim(),
             isBuiltIn = false,

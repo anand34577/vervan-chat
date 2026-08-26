@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.ui.res.stringResource
+import com.vervan.chat.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -42,7 +44,7 @@ internal fun ToolIntro(
         trailing = {
             Icon(
                 Icons.Filled.Info,
-                contentDescription = "Privacy depends on the active model",
+                contentDescription = stringResource(R.string.ui_toolworkspacecomponents_45_privacy_depends_on_the_active_model),
                 tint = MaterialTheme.colorScheme.primary
             )
         }
@@ -61,7 +63,7 @@ internal fun ToolSection(
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -92,7 +94,7 @@ internal fun ToolResultHeader(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
         border = SurfaceRole.Raised.border(),
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer

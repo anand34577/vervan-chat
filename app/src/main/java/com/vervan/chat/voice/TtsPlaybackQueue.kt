@@ -201,7 +201,9 @@ class TtsPlaybackQueue(context: Context, private val engineSelector: TtsEngineSe
 
     private fun CoroutineScope.asyncSynthesize(text: String): Deferred<TtsAudio?> = async(Dispatchers.Default) {
         synthSemaphore.withPermit {
-            runCatching { engineSelector.resolve()?.synthesize(text, currentLang) }
+            com.vervan.chat.system.runCatchingPreservingCancellation {
+                engineSelector.resolve()?.synthesize(text, currentLang)
+            }
                 .onFailure {
                     Log.w(TAG, "Sentence synthesis failed", it)
                     errorSink?.invoke("Couldn't synthesize part of the voice reply: ${it.message ?: "unknown error"}")

@@ -141,6 +141,7 @@ class VariantEligibilityChecker(private val device: DeviceProfile) {
 
     private fun formatBytes(bytes: Long): String {
         val gib = bytes / (1024.0 * 1024 * 1024)
-        return if (gib >= 1) "%.1f GB".format(gib) else "%.0f MB".format(bytes / (1024.0 * 1024))
+        return if (gib >= 1) "%.1f GB".format(java.util.Locale.getDefault(), gib)
+        else "%.0f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024))
     }
 }

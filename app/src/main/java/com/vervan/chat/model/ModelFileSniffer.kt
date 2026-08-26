@@ -3,6 +3,8 @@ package com.vervan.chat.model
 import android.content.Context
 import android.net.Uri
 import java.io.InputStream
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipInputStream
 
 /**
  * Best-effort content sniffing for model files picked via SAF, layered on top of the extension
@@ -70,10 +72,39 @@ object ModelFileSniffer {
      * this parser's understanding of the format — never throws.
      */
     fun ggufArchitecture(context: Context, uri: Uri): String? = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { parseGgufArchitecture(it) }
+        context.contentResolver.openInputStream(uri)?.use { parseGgufMetadataString(it, "general.architecture") }
     }.getOrNull()
 
-    private fun parseGgufArchitecture(raw: InputStream): String? {
+    /** Reads the embedded Hugging Face-compatible chat template from GGUF metadata, when present.
+     * This is the model's own declared prompt protocol; it is more reliable than guessing from a
+     * filename and lets the importer populate ThinkingSpec without a per-model code change. */
+    fun ggufChatTemplate(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { parseGgufMetadataString(it, "tokenizer.chat_template") }
+    }.getOrNull()
+
+    /** Reads small JSON protocol manifests embedded in ZIP-based model packages such as Task
+     * bundles. A `.litertlm` package is not guaranteed to be ZIP, so failure simply returns an
+     * empty list and the normal user/catalog metadata path remains available. */
+    fun embeddedMetadataJson(context: Context, uri: Uri): List<String> = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { raw ->
+            ZipInputStream(raw).use { zip ->
+                val found = mutableListOf<String>()
+                var entry = zip.nextEntry
+                while (entry != null && found.size < 8) {
+                    val name = entry.name.lowercase()
+                    if (!entry.isDirectory && (name.endsWith("config.json") || name.endsWith("tokenizer_config.json") || name.endsWith("chat_template.jinja"))) {
+                        val bytes = zip.readBytesLimited(MAX_METADATA_JSON_BYTES)
+                        if (bytes.isNotEmpty()) found += String(bytes, StandardCharsets.UTF_8)
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+                found
+            }
+        }.orEmpty()
+    }.getOrDefault(emptyList())
+
+    private fun parseGgufMetadataString(raw: InputStream, targetKey: String): String? {
         val input = LimitedLeReader(raw, MAX_METADATA_SCAN_BYTES)
         if (!input.readExact(4).contentEquals(GGUF_MAGIC)) return null
         input.readU32() // version, unused
@@ -83,7 +114,7 @@ object ModelFileSniffer {
         repeat(kvCount.toInt()) {
             val key = input.readGgufString()
             val type = input.readU32()
-            if (key == "general.architecture" && type == GGUF_TYPE_STRING.toLong()) {
+            if (key == targetKey && type == GGUF_TYPE_STRING.toLong()) {
                 return input.readGgufString()
             }
             input.skipValue(type)
@@ -94,6 +125,7 @@ object ModelFileSniffer {
     private const val MAX_METADATA_SCAN_BYTES = 16L * 1024 * 1024
     private const val MAX_KV_ENTRIES = 100_000L
     private const val MAX_STRING_BYTES = 16L * 1024 * 1024
+    private const val MAX_METADATA_JSON_BYTES = 2L * 1024 * 1024
     private const val GGUF_TYPE_UINT8 = 0
     private const val GGUF_TYPE_INT8 = 1
     private const val GGUF_TYPE_UINT16 = 2

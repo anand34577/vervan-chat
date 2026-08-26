@@ -12,22 +12,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -47,6 +49,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.BoundedTextField
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
@@ -55,6 +58,7 @@ import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import androidx.compose.ui.res.stringResource
@@ -64,7 +68,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
     val vm: FoldersViewModel = viewModel(factory = viewModelFactory { initializer { FoldersViewModel(app) } })
     val folders by vm.folders.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
@@ -102,6 +107,14 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
+          Column(Modifier.fillMaxSize()) {
+            FeatureHero(
+                icon = Icons.Filled.Folder,
+                eyebrow = stringResource(R.string.folder_hero_eyebrow),
+                title = stringResource(R.string.folder_list_title),
+                body = stringResource(R.string.folder_hero_body),
+                modifier = Modifier.padding(top = Space.sm)
+            )
           if (error != null) {
             OperationErrorCard(
                 title = stringResource(R.string.folders_unavailable),
@@ -118,25 +131,65 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                 icon = Icons.Filled.Folder,
                 title = stringResource(R.string.folder_no_items),
                 body = stringResource(R.string.folder_no_items_body),
+                modifier = Modifier.fillMaxSize(),
+                centered = true,
                 actionLabel = stringResource(R.string.folder_create),
                 onAction = { showCreate = true }
             )
           } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
+            ) {
                 items(folders, key = { it.id }) { folder ->
                     val isSelected = folder.id in selected
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
+                    ModernistListRow(
+                        modifier = Modifier.fillMaxWidth()
                             .selectableItem(
                                 selectionMode = selectionMode,
                                 onClick = { onOpenFolder(folder.id) },
                                 onToggleSelected = { selected = if (isSelected) selected - folder.id else selected + folder.id },
                                 onEnterSelection = { selectionMode = true; selected = selected + folder.id }
                             ),
-                        colors = if (isSelected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else SurfaceRole.Card.cardColors(),
-                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else SurfaceRole.Card.border()
+                        selected = isSelected
                     ) {
-                        Row(Modifier.padding(Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        if (selectionMode) {
+                            Checkbox(checked = isSelected, onCheckedChange = { selected = if (isSelected) selected - folder.id else selected + folder.id })
+                        } else {
+                            IconAffordance(Icons.Filled.Folder, size = IconAffordanceSize.Default)
+                            androidx.compose.foundation.layout.Spacer(Modifier.width(Space.md))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(folder.name, style = MaterialTheme.typography.titleMedium)
+                            val personaDefaultLabel = stringResource(R.string.folder_default_persona)
+                            val modelDefaultLabel = stringResource(R.string.folder_default_model)
+                            val sourceDefaultLabel = stringResource(R.string.folder_default_sources).lowercase()
+                            val defaults = buildList {
+                                if (folder.defaultPersonaId != null) add(personaDefaultLabel)
+                                if (folder.defaultModelId != null) add(modelDefaultLabel)
+                                if (folder.kbIdList().isNotEmpty()) add("${folder.kbIdList().size} $sourceDefaultLabel")
+                            }
+                            if (defaults.isNotEmpty()) {
+                                Text(
+                                    defaults.joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = Space.xs),
+                                )
+                            }
+                        }
+                        if (!selectionMode) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        /*
+                         * The row is intentionally a single action surface. Selection controls
+                         * remain inline, while navigation is represented by the trailing arrow.
+                         */
+                        /* legacy inner Card content removed */
+                        /*
                             if (selectionMode) {
                                 Checkbox(checked = isSelected, onCheckedChange = { selected = if (isSelected) selected - folder.id else selected + folder.id })
                             } else {
@@ -154,13 +207,22 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                                     if (folder.kbIdList().isNotEmpty()) add("${folder.kbIdList().size} $sourceDefaultLabel")
                                 }
                                 if (defaults.isNotEmpty()) {
-                                    Text(defaults.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs))
+                                    Text(
+                                        defaults.joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = Space.xs),
+                                    )
                                 }
                             }
                         }
+                        */
                     }
                 }
             }
+          }
           }
         }
     }
@@ -170,8 +232,11 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
         AlertDialog(
             onDismissRequest = { showCreate = false },
             title = { Text(stringResource(R.string.folder_new)) },
-            text = { BoundedTextField(value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name), singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) { vm.create(name.trim()); showCreate = false } }, enabled = name.isNotBlank()) { Text(stringResource(R.string.action_create)) } },
+            text = { BoundedTextField(value = name, onValueChange = { name = it }, label = stringResource(R.string.workspace_name), required = true, singleLine = true, maxLength = ValidationLimits.FOLDER_NAME) },
+            confirmButton = { TextButton(onClick = {
+                if (name.isNotBlank()) { vm.create(name.trim()); showCreate = false }
+                else android.widget.Toast.makeText(context, "Folder name is required.", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.action_create)) } },
             dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }

@@ -20,7 +20,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,6 +28,8 @@ import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
+import com.vervan.chat.ui.common.ModernistScreenHeader
+import com.vervan.chat.ui.common.ModernistTag
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.VervanSectionHeader
 import com.vervan.chat.ui.theme.Space
@@ -66,8 +68,8 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document preview", maxLines = 1) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.media_document_preview), maxLines = 1) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     // "Open externally" lives on the document card below (tap the whole card) —
                     // this used to also have its own copy of the same action in the top bar,
@@ -85,14 +87,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                 }
                                 context.startActivity(android.content.Intent.createChooser(send, "Export extracted text"))
                             }
-                        }) { Icon(Icons.Filled.Share, contentDescription = "Export extracted text") }
+                        }) { Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.ui_documentviewerscreen_90_export_extracted_text)) }
                     }
                     if (reindexing) {
                         androidx.compose.foundation.layout.Box(Modifier.size(48.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else {
-                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.knowledge_reindex)) }
                     }
                 }
             )
@@ -115,20 +117,30 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 body = stringResource(R.string.document_not_found_body),
                 actionLabel = stringResource(R.string.action_back),
                 onAction = onBack,
-                modifier = Modifier.padding(top = Space.sm)
+                modifier = Modifier.fillMaxSize().padding(top = Space.sm),
+                centered = true
             )
             else -> Column(Modifier.fillMaxSize()) {
             document?.let { doc ->
+                val openOriginalDescription = stringResource(R.string.ui_documentviewerscreen_open_original, doc.displayName)
+                val sectionsLabel = stringResource(R.string.ui_documentviewerscreen_sections, chunks.size)
+                ModernistScreenHeader(
+                    eyebrow = stringResource(R.string.ui_documentviewerscreen_126_source_file),
+                    title = doc.displayName,
+                    body = stringResource(R.string.ui_documentviewerscreen_128_citation_target_searchable_text_and_source_p),
+                    modifier = Modifier.padding(start = Space.md, end = Space.md, top = Space.sm),
+                    trailing = { ModernistTag("STORED ON DEVICE", active = true) },
+                )
                 val fileExists = java.io.File(doc.filePath).exists()
                 Card(
                     onClick = { if (fileExists) com.vervan.chat.ui.common.openWithExternalApp(context, java.io.File(doc.filePath), doc.mimeType) },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)
-                        .semantics { contentDescription = "${doc.displayName}. Open original document." },
+                        .semantics { contentDescription = openOriginalDescription },
                     colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         androidx.compose.material3.Surface(
-                            shape = MaterialTheme.shapes.large,
+                            shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         ) {
@@ -139,17 +151,18 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             val file = java.io.File(doc.filePath)
                             val size = if (file.exists()) {
                                 val bytes = file.length()
-                                if (bytes < 1024 * 1024) "%.1f KB".format(bytes / 1024.0) else "%.1f MB".format(bytes / (1024.0 * 1024.0))
-                            } else "Original unavailable"
+                                if (bytes < 1024 * 1024) "%.1f KB".format(java.util.Locale.getDefault(), bytes / 1024.0)
+                                else "%.1f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024.0))
+                            } else stringResource(R.string.ui_documentviewerscreen_original_unavailable)
                             Text(
-                                "${doc.mimeType.substringAfterLast('/').uppercase()} · $size · ${chunks.size} sections",
+                                stringResource(R.string.ui_documentviewerscreen_file_summary, doc.mimeType.substringAfterLast('/').uppercase(), size, chunks.size),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.xs)
                             )
                             Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text("Stored on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.ui_documentviewerscreen_162_stored_on_this_device), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                         Icon(
@@ -161,21 +174,21 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
                     Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("${chunks.size} sections", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(sectionsLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             error?.let {
                 OperationErrorCard(
-                    title = "Couldn't rebuild this index",
+                    title = stringResource(R.string.ui_documentviewerscreen_179_couldn_t_rebuild_this_index),
                     message = it,
-                    recovery = "Check the original file, then try again.",
+                    recovery = stringResource(R.string.ui_documentviewerscreen_reindex_recovery),
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
-                    actionLabel = "Retry",
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::reindex
                 )
             }
             VervanSectionHeader(
-                title = "Searchable text",
+                title = stringResource(R.string.ui_documentviewerscreen_188_searchable_text),
                 count = chunks.size,
                 modifier = Modifier.padding(horizontal = Space.md)
             )
@@ -192,14 +205,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "~${chunk.tokenCount} tokens",
+                                    stringResource(R.string.ui_documentviewerscreen_tokens, chunk.tokenCount),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = VervanMono,
                                     modifier = Modifier.weight(1f)
                                 )
                                 chunk.pageNumber?.let { page ->
-                                    androidx.compose.material3.TextButton(onClick = { onOpenPdfPage(documentId, page) }) {
-                                        Text("Page $page")
+                                    com.vervan.chat.ui.common.VervanTextButton(onClick = { onOpenPdfPage(documentId, page) }) {
+                                        Text(stringResource(R.string.ui_documentviewerscreen_page, page))
                                     }
                                 }
                             }
@@ -208,7 +221,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 }
                 if (chunks.isEmpty()) {
                     item {
-                        Text("No searchable text. Re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
+                        Text(stringResource(R.string.ui_documentviewerscreen_221_no_searchable_text_re_index_if_the_source_fi), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
                     }
                 }
             }

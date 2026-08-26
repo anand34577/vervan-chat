@@ -125,6 +125,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                 _note.value = db.noteDao().get(noteId)
                 _recordFound.value = _note.value != null
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
@@ -193,6 +194,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { result += it }
                 onResult(result)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "runAction(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }

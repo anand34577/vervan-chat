@@ -12,8 +12,8 @@ import androidx.compose.ui.graphics.Color
  * `IconAffordance`, etc. unified, but `FilterChip` was still using default M3 styling on every
  * call site (ChatListScreen, OnboardingScreen). This single wrapper standardizes the look so
  * FilterChips read as part of the same Vervan design language:
- *  - selected state uses `secondaryContainer` (the app's standard "selected" tint, matching
- *    NavigationBar items and cards), not M3's default `primaryContainer`-with-low-elevation.
+ *  - selected state uses the app's secondary container tint for filtering controls, while
+ *    navigation uses the primary container so active destinations follow the brand accent.
  *  - unselected state uses `surfaceContainerHigh` so chips visually echo the search field and
  *    status chips used elsewhere, instead of `surfaceVariant`'s cooler gray.
  *
@@ -36,6 +36,7 @@ fun VervanFilterChip(
         label = label,
         modifier = modifier,
         enabled = enabled,
+        shape = MaterialTheme.shapes.extraSmall,
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         colors = FilterChipDefaults.filterChipColors(

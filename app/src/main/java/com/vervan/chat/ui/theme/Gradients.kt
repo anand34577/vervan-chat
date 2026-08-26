@@ -8,35 +8,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 
 /**
- * A categorical accent palette for icon tiles so a grid of tools/actions reads as a colorful,
- * scannable set instead of a wall of identical amber chips. Each pair is (container, on-container),
- * tuned to sit on the dark Nomad surface and to stay legible in light mode. Pick by stable index
- * ([vervanAccentFor]) so the same item always gets the same color.
+ * A theme-derived categorical palette for icon tiles. The prototype uses multiple accent roles to
+ * make task families scannable; Android derives those roles from the active Material color scheme
+ * instead of shipping a second hardcoded palette that could ignore light/dark/dynamic themes.
  */
 data class VervanAccent(val container: Color, val onContainer: Color)
 
-private val AccentPalette = listOf(
-    VervanAccent(Color(0xFF4A3A20), Color(0xFFF3C27B)), // amber
-    VervanAccent(Color(0xFF1A2440), Color(0xFF9DBBFF)), // blue
-    VervanAccent(Color(0xFF1C4A2C), Color(0xFF8CE6AC)), // green
-    VervanAccent(Color(0xFF3A2A66), Color(0xFFC9B3FF)), // violet
-    VervanAccent(Color(0xFF632233), Color(0xFFFFAABB)), // rose
-    VervanAccent(Color(0xFF0E3F45), Color(0xFF87DCE6)), // teal
-    VervanAccent(Color(0xFF553017), Color(0xFFFFB48A))  // orange
-)
-
-/** Stable categorical accent for [index] (wraps around the palette). */
-fun vervanAccentFor(index: Int): VervanAccent = AccentPalette[((index % AccentPalette.size) + AccentPalette.size) % AccentPalette.size]
+/** Stable categorical accent for [index] (wraps around semantic roles in the active theme). */
+@Composable
+@ReadOnlyComposable
+fun vervanAccentFor(index: Int): VervanAccent {
+    val scheme = MaterialTheme.colorScheme
+    val palette = listOf(
+        VervanAccent(scheme.primaryContainer, scheme.onPrimaryContainer),
+        VervanAccent(scheme.secondaryContainer, scheme.onSecondaryContainer),
+        VervanAccent(scheme.tertiaryContainer, scheme.onTertiaryContainer),
+        VervanAccent(scheme.surfaceContainerHigh, scheme.onSurface),
+        VervanAccent(scheme.surfaceContainerHighest, scheme.onSurface),
+        VervanAccent(scheme.surfaceVariant, scheme.onSurfaceVariant)
+    )
+    return palette[((index % palette.size) + palette.size) % palette.size]
+}
 
 /** Number of distinct categorical accents available. */
-val vervanAccentCount: Int get() = AccentPalette.size
+const val vervanAccentCount: Int = 6
 
 /**
- * The Aurora brand gradient — the one gradient in the app. Runs from the active accent's primary
- * into a hue-shifted companion (primary blended toward secondary), so it always harmonizes with
- * whatever accent theme the user picked instead of being a fixed two-color stamp. Used sparingly:
- * the Create button in the nav dock, the user's chat bubbles, and the assistant avatar — the three
- * places that carry the product's identity.
+ * The brand fill — the one gradient retained for identity-bearing surfaces. In the Modernist
+ * system it follows the active primary/secondary theme roles, so it changes with the selected theme
+ * without making layout, contrast, or interaction state depend on a copied prototype color.
  */
 @Composable
 @ReadOnlyComposable

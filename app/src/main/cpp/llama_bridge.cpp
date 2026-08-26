@@ -542,6 +542,16 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     const std::string assistantPrefill = jstring_to_std(env, jAssistantPrefill);
     const std::string systemPrompt = jstring_to_std(env, jSystemPrompt);
 
+    // llama_chat_apply_template() matches known built-in names; it does not execute arbitrary
+    // HuggingFace/Jinja source. Rejecting it here prevents a user-provided Jinja blob from being
+    // silently treated as ChatML and producing a structurally invalid prompt.
+    if (chatTemplateOverride.find("{{") != std::string::npos ||
+        chatTemplateOverride.find("{%") != std::string::npos) {
+        const std::string error = "Raw Jinja chat templates are not supported by this llama.cpp build; choose a built-in preset or use the embedded template";
+        set_last_error(error);
+        return std_to_jstring(env, error);
+    }
+
     // Optional full conversation, as a flat [role0, content0, role1, content1, ...] String[].
     // When present it REPLACES the systemPrompt/prompt pair below: an OpenAI-compatible caller
     // (see LocalApiServer) has a real multi-turn message list, and folding it into one "user" turn

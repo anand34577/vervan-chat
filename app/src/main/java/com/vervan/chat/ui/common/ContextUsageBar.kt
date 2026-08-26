@@ -10,13 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vervan.chat.R
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.vervanWarning
 
@@ -43,13 +44,13 @@ fun ContextUsageBar(
         Row(Modifier.fillMaxWidth().height(8.dp)) {
             if (slices.isEmpty()) {
                 Box(
-                    Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(4.dp))
+                    Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.extraSmall)
                 ) {
                     Box(
                         Modifier
                             .fillMaxWidth(fraction)
                             .height(8.dp)
-                            .background(if (nearLimit) MaterialTheme.colorScheme.vervanWarning else MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            .background(if (nearLimit) MaterialTheme.colorScheme.vervanWarning else MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall)
                     )
                 }
             } else {
@@ -60,7 +61,7 @@ fun ContextUsageBar(
                         Modifier
                             .weight(weight)
                             .height(8.dp)
-                            .background(slice.color, RoundedCornerShape(2.dp))
+                            .background(slice.color, MaterialTheme.shapes.extraSmall)
                     )
                 }
             }
@@ -85,7 +86,7 @@ fun ContextUsageBar(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f).padding(start = Space.xs)
                         )
-                        Text("~${slice.tokens}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.ui_contextusage_tokens, slice.tokens), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

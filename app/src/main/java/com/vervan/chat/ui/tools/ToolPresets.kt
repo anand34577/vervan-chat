@@ -8,7 +8,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import com.vervan.chat.model.OcrExtractor
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +77,10 @@ private val screenshotActions = listOf(
 )
 
 @Composable fun WritingAssistantScreen(onBack: () -> Unit) =
-    TextActionScreen("Writing assistant", writingActions, onBack, hint = "Paste text to rewrite, shorten, expand…", allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_writing_assistant), writingActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_writing_assistant_hint), allowSaveAsNote = true)
 
 @Composable fun SmartNotesScreen(onBack: () -> Unit) =
-    TextActionScreen("Smart notes", smartNotesActions, onBack, hint = "Type, dictate, or scan rough notes…", allowVoice = true, allowImageOcr = true, allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_smart_notes), smartNotesActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_smart_notes_hint), allowVoice = true, allowImageOcr = true, allowSaveAsNote = true)
 
 @Composable
 fun ClipboardAssistantScreen(onBack: () -> Unit) {
@@ -90,11 +91,11 @@ fun ClipboardAssistantScreen(onBack: () -> Unit) {
         clip = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString().orEmpty()
     }
     val text = clip ?: return
-    TextActionScreen("Clipboard assistant", clipboardActions, onBack, initialText = text, hint = "Clipboard is empty — paste or type text", allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_clipboard_assistant), clipboardActions, onBack, initialText = text, hint = stringResource(com.vervan.chat.R.string.tool_clipboard_assistant_hint), allowSaveAsNote = true)
 }
 
 @Composable fun ExplainLikeImScreen(onBack: () -> Unit) =
-    TextActionScreen("Explain like I'm…", explainLevelActions, onBack, hint = "Paste or scan the material to explain…", allowImageOcr = true, allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_explain_like_me), explainLevelActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_explain_like_me_hint), allowImageOcr = true, allowSaveAsNote = true)
 
 /** [imagePath] comes from a shared screenshot/image (see [com.vervan.chat.ui.nav.VervanNavGraph]'s
  * ACTION_SEND image handling) — OCR runs once here before [TextActionScreen] composes with the
@@ -113,8 +114,8 @@ fun ScreenshotIntelligenceScreen(onBack: () -> Unit, imagePath: String) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Screenshot intelligence") },
-                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                    title = { Text(stringResource(com.vervan.chat.R.string.tool_screenshot_intelligence)) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_back)) } }
                 )
             }
         ) { padding ->
@@ -124,7 +125,7 @@ fun ScreenshotIntelligenceScreen(onBack: () -> Unit, imagePath: String) {
         }
         return
     }
-    TextActionScreen("Screenshot intelligence", screenshotActions, onBack, initialText = text, hint = "Extracted screen text", allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_screenshot_intelligence), screenshotActions, onBack, initialText = text, hint = stringResource(com.vervan.chat.R.string.tool_extracted_screen_text), allowSaveAsNote = true)
 }
 
 // --- Developer tools ---
@@ -154,13 +155,13 @@ private val jsonLogActions = listOf(
 )
 
 @Composable fun CodeExplainerScreen(onBack: () -> Unit) =
-    TextActionScreen("Code explainer", codeExplainerActions, onBack, hint = "Paste a short code sample")
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_code_explainer), codeExplainerActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_code_explainer_hint))
 
 @Composable fun RegexSqlHelperScreen(onBack: () -> Unit) =
-    TextActionScreen("Regex & SQL helper", regexSqlActions, onBack, hint = "Describe what you want, or paste a regex/SQL query to explain")
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_regex_sql_helper), regexSqlActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_regex_sql_helper_hint))
 
 @Composable fun JsonLogAnalyzerScreen(onBack: () -> Unit) =
-    TextActionScreen("JSON & log analyzer", jsonLogActions, onBack, hint = "Paste JSON or log output")
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_json_log_analyzer), jsonLogActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_json_log_analyzer_hint))
 
 // --- Personal organization tools ---
 
@@ -187,16 +188,16 @@ private val decisionActions = listOf(
 )
 
 @Composable fun SmartChecklistScreen(onBack: () -> Unit) =
-    TextActionScreen("Smart checklist generator", checklistActions, onBack, hint = "Optional: add details (destination, dates, etc.)", requireInput = false)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_smart_checklist), checklistActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_smart_checklist_hint), requireInput = false)
 
 @Composable fun DailyPlannerScreen(onBack: () -> Unit) =
-    TextActionScreen("Daily planner", plannerActions, onBack, hint = "List today's tasks and priorities", allowVoice = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_daily_planner), plannerActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_daily_planner_hint), allowVoice = true)
 
 @Composable fun GoalBreakdownScreen(onBack: () -> Unit) =
-    TextActionScreen("Goal breakdown", goalBreakdownActions, onBack, hint = "Describe the goal", allowVoice = true, allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_goal_breakdown), goalBreakdownActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_goal_breakdown_hint), allowVoice = true, allowSaveAsNote = true)
 
 @Composable fun DecisionAssistantScreen(onBack: () -> Unit) =
-    TextActionScreen("Decision assistant", decisionActions, onBack, hint = "List your options and what matters to you")
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_decision_assistant), decisionActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_decision_assistant_hint))
 
 // --- Study tools (beyond the existing Quiz Generator / Explain Like I'm…) ---
 
@@ -217,13 +218,13 @@ private val presentationActions = listOf(
 )
 
 @Composable fun HomeworkCheckerScreen(onBack: () -> Unit) =
-    TextActionScreen("Homework checker", homeworkCheckerActions, onBack, hint = "Paste the question and your answer/attempt", allowImageOcr = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_homework_checker), homeworkCheckerActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_homework_checker_hint), allowImageOcr = true)
 
 @Composable fun ExamPreparationScreen(onBack: () -> Unit) =
-    TextActionScreen("Exam preparation", examPrepActions, onBack, hint = "Paste or scan a syllabus or chapter", allowImageOcr = true, allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_exam_preparation), examPrepActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_exam_preparation_hint), allowImageOcr = true, allowSaveAsNote = true)
 
 @Composable fun PresentationPracticeScreen(onBack: () -> Unit) =
-    TextActionScreen("Presentation practice", presentationActions, onBack, hint = "Dictate your presentation, or paste a transcript", allowVoice = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_presentation_practice), presentationActions, onBack, hint = stringResource(com.vervan.chat.R.string.tool_presentation_practice_hint), allowVoice = true)
 
 /** OCR'd multi-page text (whiteboard photos or scanned textbook pages, see
  * [DocumentScannerScreen]'s "Process as study material" export) turned into notes, tasks, a
@@ -239,27 +240,27 @@ private val studyMaterialActions = listOf(
 
 @Composable
 fun StudyMaterialScreen(onBack: () -> Unit, scannedText: String) =
-    TextActionScreen("Study material", studyMaterialActions, onBack, initialText = scannedText, hint = "Scanned text", allowSaveAsNote = true)
+    TextActionScreen(stringResource(com.vervan.chat.R.string.tool_study_material), studyMaterialActions, onBack, initialText = scannedText, hint = stringResource(com.vervan.chat.R.string.tool_scanned_text), allowSaveAsNote = true)
 
 // --- Multi-turn interactive tools (see TurnBasedChatScreen) ---
 
 @Composable fun SocraticTutorScreen(onBack: () -> Unit) = TurnBasedChatScreen(
-    title = "Socratic tutor",
+    title = stringResource(com.vervan.chat.R.string.tool_socratic_tutor),
     systemInstruction = "You are a Socratic tutor. Never give the final answer directly — instead ask a guiding question or give a small hint that leads the user to figure it out themselves. Only confirm the answer once the user has clearly reached it.",
-    setupHint = "What topic or question do you want to work through?",
+    setupHint = stringResource(com.vervan.chat.R.string.tool_socratic_tutor_hint),
     onBack = onBack
 )
 
 @Composable fun InterviewPracticeScreen(onBack: () -> Unit) = TurnBasedChatScreen(
-    title = "Interview practice",
+    title = stringResource(com.vervan.chat.R.string.tool_interview_practice),
     systemInstruction = "You are a job interviewer. Ask one interview question at a time. After each answer, give brief feedback on clarity, relevance, confidence, and completeness, then ask the next question.",
-    setupHint = "What role/job are you interviewing for?",
+    setupHint = stringResource(com.vervan.chat.R.string.tool_interview_practice_hint),
     onBack = onBack
 )
 
 @Composable fun LanguagePracticeScreen(onBack: () -> Unit) = TurnBasedChatScreen(
-    title = "Language practice",
+    title = stringResource(com.vervan.chat.R.string.tool_language_practice),
     systemInstruction = "You are role-playing a real-life conversation scenario with the user to help them practice a language. Stay in character for the scenario. After each of the user's replies, gently correct any grammar mistakes and suggest better phrasing or vocabulary in brackets, then continue the roleplay.",
-        setupHint = "Choose a language and scenario, such as a restaurant or interview",
+        setupHint = stringResource(com.vervan.chat.R.string.tool_language_practice_hint),
     onBack = onBack
 )

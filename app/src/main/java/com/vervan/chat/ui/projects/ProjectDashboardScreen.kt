@@ -1,17 +1,18 @@
 package com.vervan.chat.ui.projects
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.vervan.chat.ui.common.VervanOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.vervan.chat.ui.common.VervanTextButton as TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -112,6 +113,8 @@ fun ProjectDashboardScreen(
                     icon = Icons.Filled.Workspaces,
                     title = stringResource(R.string.project_not_found),
                     body = stringResource(R.string.project_not_found_body),
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true,
                     actionLabel = stringResource(R.string.action_back),
                     onAction = onBack
                 )

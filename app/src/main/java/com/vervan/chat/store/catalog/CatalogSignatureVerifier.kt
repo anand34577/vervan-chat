@@ -1,7 +1,7 @@
 package com.vervan.chat.store.catalog
 
 import android.util.Base64
-import android.util.Log
+import com.vervan.chat.system.SafeLog as Log
 import com.vervan.chat.BuildConfig
 import java.security.KeyFactory
 import java.security.PublicKey
@@ -50,6 +50,7 @@ class CatalogSignatureVerifier(private val trustedKeys: List<PublicKey>) {
                     verify(signature)
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // A malformed signature throws rather than returning false; that is still just a
                 // failed verification against this key, so try the next one.
                 Log.w(TAG, "Verification attempt failed: ${t.message}")
@@ -89,6 +90,7 @@ class CatalogSignatureVerifier(private val trustedKeys: List<PublicKey>) {
                         X509EncodedKeySpec(Base64.decode(encoded, Base64.DEFAULT))
                     )
                 } catch (t: Throwable) {
+                    com.vervan.chat.system.rethrowCancellation(t)
                     Log.e(TAG, "Embedded catalogue key is unusable: ${t.message}")
                     null
                 }

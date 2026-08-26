@@ -13,12 +13,27 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "vervan_settings")
+private val ALLOWED_APP_LOCK_METHODS = setOf("BIOMETRIC", "PIN", "BOTH")
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /** Selectable accent color palette (spec ask: "add more themes") — layered on top of the
  * existing light/dark/OLED axis, not a replacement for it. */
 enum class AccentTheme { AMBER, BLUE, GREEN, VIOLET, ROSE }
+
+data class ThemePreferences(
+    val themeMode: ThemeMode,
+    val accentTheme: AccentTheme,
+    val oledTrueBlack: Boolean,
+    val dynamicColor: Boolean,
+    val highContrast: Boolean,
+)
+
+data class SecurityPreferences(
+    val appLockEnabled: Boolean,
+    val appLockMethod: String,
+    val screenshotBlockingEnabled: Boolean,
+)
 
 /**
  * Real user-facing settings, DataStore-backed. one flat preferences
@@ -140,6 +155,7 @@ class SettingsRepository(context: Context) {
         // see ApiServerAuth's EncryptedSharedPreferences, same reasoning as the app-lock PIN.
         val API_SERVER_ENABLED = booleanPreferencesKey("api_server_enabled")
         val API_SERVER_PORT = intPreferencesKey("api_server_port")
+        val API_SERVER_ALLOW_LAN = booleanPreferencesKey("api_server_allow_lan")
         val API_SERVER_REQUIRE_AUTH = booleanPreferencesKey("api_server_require_auth")
         val API_SERVER_SECURITY_DEFAULTS_APPLIED = booleanPreferencesKey("api_server_security_defaults_applied")
         val API_SERVER_FULL_MODE = booleanPreferencesKey("api_server_full_mode")
@@ -168,10 +184,24 @@ class SettingsRepository(context: Context) {
         store.edit { it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] = (it[Keys.BLOCKED_MEMORY_SUGGESTION_KEYS] ?: emptySet()) + key }
     }
 
-    // Default is dark + green, not system/amber — the app's own "green dark theme" is the
-    // intended out-of-the-box look; a user who never opens Settings should already see it.
+    // New installs keep Vervan's dark/green identity; existing users keep their persisted choice.
     val themeMode: Flow<ThemeMode> = store.data.map { prefs ->
         prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK
+    }
+    /** One atomic theme snapshot prevents a first frame rendered with fallback colors from
+     * repainting when the individual DataStore preference flows emit a moment later. */
+    val themePreferences: Flow<ThemePreferences?> = store.data.map { prefs ->
+        ThemePreferences(
+            themeMode = prefs[Keys.THEME_MODE]
+                ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+                ?: ThemeMode.DARK,
+            accentTheme = prefs[Keys.ACCENT_THEME]
+                ?.let { runCatching { AccentTheme.valueOf(it) }.getOrNull() }
+                ?: AccentTheme.GREEN,
+            oledTrueBlack = prefs[Keys.OLED_TRUE_BLACK] ?: false,
+            dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: false,
+            highContrast = prefs[Keys.HIGH_CONTRAST] ?: false,
+        )
     }
     suspend fun setThemeMode(mode: ThemeMode) { store.edit { it[Keys.THEME_MODE] = mode.name } }
 
@@ -389,9 +419,9 @@ class SettingsRepository(context: Context) {
     val autoContextSummarization: Flow<Boolean> = store.data.map { it[Keys.AUTO_CONTEXT_SUMMARIZATION] ?: true }
     suspend fun setAutoContextSummarization(v: Boolean) { store.edit { it[Keys.AUTO_CONTEXT_SUMMARIZATION] = v } }
 
-    /** UI text scale multiplier, 0.85x-1.3x — font-scale accessibility setting. */
-    val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.3f) }
-    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.3f) } }
+    /** UI text scale multiplier, 0.85x-1.5x — font-scale accessibility setting. */
+    val fontScale: Flow<Float> = store.data.map { (it[Keys.FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.5f) }
+    suspend fun setFontScale(scale: Float) { store.edit { it[Keys.FONT_SCALE] = scale.coerceIn(0.85f, 1.5f) } }
 
     // Default stays 4096 (unchanged) — only the ceiling moved, to 128K, for models that can
     // actually use a longer context.
@@ -521,11 +551,20 @@ class SettingsRepository(context: Context) {
     suspend fun setAppLockEnabled(enabled: Boolean) { store.edit { it[Keys.APP_LOCK_ENABLED] = enabled } }
 
     /** One of AppLockMethod's names ("BIOMETRIC"/"PIN"/"BOTH"). */
-    val appLockMethod: Flow<String> = store.data.map { it[Keys.APP_LOCK_METHOD] ?: "BIOMETRIC" }
-    suspend fun setAppLockMethod(value: String) { store.edit { it[Keys.APP_LOCK_METHOD] = value } }
+    val appLockMethod: Flow<String> = store.data.map {
+        it[Keys.APP_LOCK_METHOD]?.takeIf(ALLOWED_APP_LOCK_METHODS::contains) ?: "BIOMETRIC"
+    }
+    suspend fun setAppLockMethod(value: String) {
+        require(value in ALLOWED_APP_LOCK_METHODS) { "Unknown app-lock method" }
+        store.edit { it[Keys.APP_LOCK_METHOD] = value }
+    }
 
-    val autoLockTimeoutSeconds: Flow<Int> = store.data.map { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] ?: 60 }
-    suspend fun setAutoLockTimeoutSeconds(value: Int) { store.edit { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] = value } }
+    val autoLockTimeoutSeconds: Flow<Int> = store.data.map {
+        (it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] ?: 60).coerceIn(0, 600)
+    }
+    suspend fun setAutoLockTimeoutSeconds(value: Int) {
+        store.edit { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] = value.coerceIn(0, 600) }
+    }
 
     val quickActionBubbleEnabled: Flow<Boolean> = store.data.map { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] ?: false }
     suspend fun setQuickActionBubbleEnabled(v: Boolean) { store.edit { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] = v } }
@@ -542,10 +581,21 @@ class SettingsRepository(context: Context) {
     suspend fun setApiServerAutoStart(v: Boolean) { store.edit { it[Keys.API_SERVER_AUTO_START] = v } }
     val apiServerPort: Flow<Int> = store.data.map { it[Keys.API_SERVER_PORT] ?: 8080 }
     suspend fun setApiServerPort(v: Int) { store.edit { it[Keys.API_SERVER_PORT] = v.coerceIn(1024, 65535) } }
-    // Authentication is secure by default because the server binds to the LAN when enabled.
-    // The local API server binds to the LAN when enabled and can expose inference, data, and
-    // optional app tools. Authentication is therefore secure-by-default; users can still
-    // deliberately disable it for a trusted-network workflow.
+    // Localhost-only by default. LAN exposure is a separate, explicit trust decision rather than
+    // an accidental side effect of enabling the API server. LAN access also turns authentication
+    // on in the same transaction so the UI cannot persist an unsafe combination.
+    val apiServerAllowLan: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ALLOW_LAN] ?: false }
+    suspend fun setApiServerAllowLan(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_ALLOW_LAN] = v
+            if (v) {
+                it[Keys.API_SERVER_REQUIRE_AUTH] = true
+                it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+            }
+        }
+    }
+    // Authentication is secure by default. Only localhost Basic mode may deliberately disable
+    // it; LAN and full web mode enforce it again at the service boundary.
     val apiServerRequireAuth: Flow<Boolean> = store.data.map { prefs ->
         // Older builds persisted false by default. Until the one-time hardening marker is
         // written, expose the secure value immediately so the UI never briefly claims that a
@@ -578,7 +628,15 @@ class SettingsRepository(context: Context) {
     // something the user opts into, with the same secure-by-default reasoning as API auth. See
     // LocalApiServer's fullMode branch.
     val apiServerFullMode: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_FULL_MODE] ?: false }
-    suspend fun setApiServerFullMode(v: Boolean) { store.edit { it[Keys.API_SERVER_FULL_MODE] = v } }
+    suspend fun setApiServerFullMode(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_FULL_MODE] = v
+            if (v) {
+                it[Keys.API_SERVER_REQUIRE_AUTH] = true
+                it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+            }
+        }
+    }
     // How long a model auto-loaded to serve an API request stays resident once requests stop —
     // the same "JIT model TTL" LM Studio exposes, and the reason an idle phone doesn't sit there
     // holding several GB of weights. Only ever applies to loads the API server itself triggered
@@ -593,12 +651,23 @@ class SettingsRepository(context: Context) {
     // request has no such moment, so running the phone's tools for a remote caller has to be a
     // deliberate choice.
     val apiServerAppTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_APP_TOOLS] ?: false }
-    suspend fun setApiServerAppTools(v: Boolean) { store.edit { it[Keys.API_SERVER_APP_TOOLS] = v } }
+    suspend fun setApiServerAppTools(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_APP_TOOLS] = v
+            if (!v) it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = false
+        }
+    }
     // Second gate, on top of apiServerAppTools: without it only ToolRisk.READ_ONLY tools run.
     // Writes (create a note, log an expense) and external actions (open another app) are exactly
     // what the native tool card asks the user to confirm per call, so they stay opt-in here too.
-    val apiServerAllowWriteTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] ?: false }
-    suspend fun setApiServerAllowWriteTools(v: Boolean) { store.edit { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = v } }
+    val apiServerAllowWriteTools: Flow<Boolean> = store.data.map {
+        (it[Keys.API_SERVER_APP_TOOLS] ?: false) && (it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] ?: false)
+    }
+    suspend fun setApiServerAllowWriteTools(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = v && (it[Keys.API_SERVER_APP_TOOLS] ?: false)
+        }
+    }
 
     // ---- Retention policy ----
     val autoDeleteAfterDays: Flow<Int> = store.data.map { it[Keys.AUTO_DELETE_AFTER_DAYS] ?: 0 }
@@ -645,6 +714,16 @@ class SettingsRepository(context: Context) {
 
     val screenshotBlockingEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREENSHOT_BLOCKING_ENABLED] ?: false }
     suspend fun setScreenshotBlockingEnabled(v: Boolean) { store.edit { it[Keys.SCREENSHOT_BLOCKING_ENABLED] = v } }
+
+    /** Atomic fail-closed startup snapshot for settings that guard visible user data. */
+    val securityPreferences: Flow<SecurityPreferences> = store.data.map { prefs ->
+        SecurityPreferences(
+            appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false,
+            appLockMethod = prefs[Keys.APP_LOCK_METHOD]
+                ?.takeIf(ALLOWED_APP_LOCK_METHODS::contains) ?: "BIOMETRIC",
+            screenshotBlockingEnabled = prefs[Keys.SCREENSHOT_BLOCKING_ENABLED] ?: false,
+        )
+    }
 
     /** Panic wipe — clears every preference back to defaults. Does not touch the
      * Room database, model/document files, or the app-lock PIN store; those are separate

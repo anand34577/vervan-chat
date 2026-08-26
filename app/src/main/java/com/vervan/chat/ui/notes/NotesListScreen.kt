@@ -22,9 +22,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.vervan.chat.ui.common.VervanFloatingActionButton as FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vervan.chat.ui.common.VervanIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -53,6 +53,7 @@ import com.vervan.chat.ui.common.EmptyState
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
+import com.vervan.chat.ui.common.ModernistListRow
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.PageContainer
@@ -95,19 +96,19 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                         selectionMode = false
                         scope.launch {
                             if (snackbarHostState.showSnackbar(
-                                    "Moved $count note${if (count == 1) "" else "s"} to the recycle bin",
-                                    "Undo"
+                                    app.resources.getQuantityString(R.plurals.notes_moved_to_recycle_bin, count, count),
+                                    app.getString(R.string.action_undo)
                                 ) == SnackbarResult.ActionPerformed
                             ) vm.restoreAll(trashed)
                         }
                     },
-                    deleteContentDescription = "Move selected to recycle bin"
+                    deleteContentDescription = app.getString(R.string.action_recycle)
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Notes") },
+                    title = { Text(stringResource(R.string.folder_notes)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                     }
                     // Long-press a row to enter selection mode — no separate top-bar entry
                     // point, matching every other list screen in the app.
@@ -116,7 +117,7 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) {
-                Icon(Icons.Filled.Add, contentDescription = "New note")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.widget_new_note))
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -136,9 +137,11 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
             } else if (notes.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Note,
-                    title = "No notes yet",
-                    body = "Capture ideas, meeting notes, and anything worth keeping.",
-                    actionLabel = "Write a note",
+                    title = stringResource(R.string.notes_empty_title),
+                    body = stringResource(R.string.notes_empty_body),
+                    modifier = Modifier.fillMaxSize(),
+                    centered = true,
+                    actionLabel = stringResource(R.string.notes_write_action),
                     onAction = { scope.launch { onOpenNote(vm.createNote()) } }
                 )
             } else {
@@ -171,7 +174,7 @@ private fun NoteRow(
     onToggleSelected: () -> Unit,
     onEnterSelection: () -> Unit
 ) {
-    Card(
+    ModernistListRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)
             .selectableItem(
                 selectionMode = selectionMode,
@@ -179,10 +182,69 @@ private fun NoteRow(
                 onToggleSelected = onToggleSelected,
                 onEnterSelection = onEnterSelection
             ),
-        colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else SurfaceRole.Card.cardColors(),
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else SurfaceRole.Card.border()
+        selected = selected
     ) {
-        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+        if (selectionMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggleSelected() },
+                colors = CheckboxDefaults.colors(uncheckedColor = MaterialTheme.colorScheme.outline)
+            )
+        } else {
+            IconAffordance(Icons.AutoMirrored.Filled.Note, size = IconAffordanceSize.Default)
+            Spacer(Modifier.width(Space.md))
+        }
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OverflowTooltipText(
+                    text = note.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (note.pinned) {
+                    Icon(
+                        Icons.Filled.PushPin,
+                        contentDescription = stringResource(R.string.chat_filter_pinned),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = Space.sm).size(14.dp)
+                    )
+                }
+            }
+            if (note.content.isNotBlank()) {
+                Text(
+                    note.content.take(120),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Space.xs)) {
+                Text(
+                    relativeTime(note.updatedAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                note.tags.split(',').map { it.trim() }.filter { it.isNotEmpty() }.take(3).forEach { tag ->
+                    Text(
+                        tag,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(start = Space.sm)
+                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), MaterialTheme.shapes.small)
+                            .padding(horizontal = Space.sm, vertical = 1.dp)
+                    )
+                }
+            }
+        }
+        /* legacy card body intentionally replaced by a selected list row */
+        /*
             if (selectionMode) {
                 Checkbox(
                     checked = selected,
@@ -203,7 +265,7 @@ private fun NoteRow(
                     if (note.pinned) {
                         Icon(
                             Icons.Filled.PushPin,
-                            contentDescription = "Pinned",
+                            contentDescription = stringResource(R.string.chat_filter_pinned),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = Space.sm).size(14.dp)
                         )
@@ -213,7 +275,7 @@ private fun NoteRow(
                     Text(
                         note.content.take(120),
                         style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 2.dp)
@@ -236,12 +298,13 @@ private fun NoteRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .padding(start = Space.sm)
-                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), VervanExtraShapes.pill)
+                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), MaterialTheme.shapes.small)
                                 .padding(horizontal = Space.sm, vertical = 1.dp)
                         )
                     }
                 }
             }
         }
+        */
     }
 }

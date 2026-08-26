@@ -222,6 +222,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 dao.upsert(project.copy(status = "CANCELLED", updatedAt = System.currentTimeMillis()))
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 dao.upsert(
                     project.copy(
                         status = "FAILED", errorMessage = t.message ?: "Transcription failed.",
@@ -278,7 +279,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
             val project = dao.get(id) ?: return@launch
             if (project.transcript.isBlank()) return@launch
             _aiActionState.value = AiActionState.Running(label)
-            val result = runCatching {
+            val result = com.vervan.chat.system.runCatchingPreservingCancellation {
                 OneShotLlm.run(
                     app, promptTemplate(project.transcript),
                     runContext = ToolRunContext("tools/transcribe", label, project.transcript)
@@ -334,6 +335,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                     )
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "saveToKnowledgeBase failed for project=$id", t)
                 _saveState.value = SaveState.Failed(t.message ?: "Could not save to Knowledge Base.")
             }
