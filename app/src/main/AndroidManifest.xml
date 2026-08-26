@@ -135,7 +135,14 @@
         <service
             android:name=".server.ApiServerService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <!-- A user-enabled inbound local server is not a finite data-transfer job. Declaring
+                 it as dataSync makes modern Android apply the dataSync runtime budget and stop an
+                 intentionally persistent server after the time allowance is exhausted. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled local AI inference API server" />
+        </service>
 
         <!-- Model downloader (see com.vervan.chat.modeldownload) — runs only while a catalogue
              model download is active/paused, so background downloads survive leaving the

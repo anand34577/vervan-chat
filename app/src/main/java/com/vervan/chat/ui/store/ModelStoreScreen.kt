@@ -415,7 +415,7 @@ private fun LicenseDialog(
 
 private fun formatBytes(bytes: Long): String {
     val gib = bytes / (1024.0 * 1024 * 1024)
-    if (gib >= 1) return "%.2f GB".format(gib)
+    if (gib >= 1) return "%.2f GB".format(java.util.Locale.getDefault(), gib)
     val mib = bytes / (1024.0 * 1024)
-    return if (mib >= 1) "%.0f MB".format(mib) else "$bytes B"
+    return if (mib >= 1) "%.0f MB".format(java.util.Locale.getDefault(), mib) else "$bytes B"
 }

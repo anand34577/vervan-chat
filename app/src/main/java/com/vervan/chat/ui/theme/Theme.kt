@@ -176,8 +176,8 @@ object VervanExtraShapes {
     )
     // Tags remain compact, but a stadium shape is reserved for genuinely continuous controls.
     // This keeps chips from making every action look like the previous UI's floating button.
-    val pill = RoundedCornerShape(ModernistTokens.Component.radiusSm)
-    val datePill = RoundedCornerShape(ModernistTokens.Component.radiusSm)
+    val pill = RoundedCornerShape(ModernistTokens.Component.radiusPill)
+    val datePill = RoundedCornerShape(ModernistTokens.Component.radiusPill)
     val extraExtraLarge = RoundedCornerShape(ModernistTokens.Component.radiusXl)
 }
 

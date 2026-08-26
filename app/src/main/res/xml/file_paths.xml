@@ -2,12 +2,19 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Matches VervanApp's filesDir/images used for both picked and camera-captured images. -->
     <files-path name="images" path="images/" />
-    <!-- Imported documents stay private until a user explicitly taps Open with; the Intent
-         grants read access to that one content URI only. -->
-    <files-path name="shared_files" path="." />
+    <!-- Keep FileProvider's namespace limited to user-created/shareable content. A root path of
+         "." also made model weights, encrypted exports, crash logs, store metadata and every
+         future private file addressable if any caller ever supplied the wrong path. -->
+    <files-path name="documents" path="documents/" />
+    <files-path name="message_attachments" path="message-attachments/" />
+    <files-path name="audio" path="audio/" />
+    <files-path name="exports" path="exports/" />
+    <files-path name="scans" path="scans/" />
+    <files-path name="tts_output" path="tts_output/" />
+    <files-path name="transcriptions" path="transcriptions/" />
     <!-- PDF/export output (DocumentScannerScreen.exportPdf, StructuredScanScreen) is written to
          cacheDir/exports, not filesDir — files-path above doesn't cover it, so sharing one of
          those PDFs via openWithExternalApp crashed FileProvider.getUriForFile with
          "Failed to find configured root that contains ...". -->
-    <cache-path name="exports" path="exports/" />
+    <cache-path name="cache_exports" path="exports/" />
 </paths>

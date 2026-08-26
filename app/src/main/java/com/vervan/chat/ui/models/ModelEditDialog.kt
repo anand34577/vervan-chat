@@ -73,6 +73,7 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -191,37 +192,37 @@ internal fun ModelEditDialog(
     // flips its own override switch — that's the default-then-customize-per-model model the
     // user asked for, instead of every field silently pinning to whatever it showed on Save.
     var temperatureOn by remember(model.id) { mutableStateOf(model.temperature != null) }
-    var temperature by remember(model.id) { mutableStateOf(model.temperature ?: defaults.temperature) }
+    var temperature by remember(model.id) { mutableFloatStateOf(model.temperature ?: defaults.temperature) }
     var topPOn by remember(model.id) { mutableStateOf(model.topP != null) }
-    var topP by remember(model.id) { mutableStateOf(model.topP ?: defaults.topP) }
+    var topP by remember(model.id) { mutableFloatStateOf(model.topP ?: defaults.topP) }
     var topKOn by remember(model.id) { mutableStateOf(model.topK != null) }
-    var topK by remember(model.id) { mutableStateOf((model.topK ?: defaults.topK).toFloat()) }
+    var topK by remember(model.id) { mutableFloatStateOf((model.topK ?: defaults.topK).toFloat()) }
     var maxImagesOn by remember(model.id) { mutableStateOf(model.maxNumImages != null) }
-    var maxImages by remember(model.id) { mutableStateOf((model.maxNumImages ?: defaults.maxNumImages).toFloat()) }
+    var maxImages by remember(model.id) { mutableFloatStateOf((model.maxNumImages ?: defaults.maxNumImages).toFloat()) }
     var contextOn by remember(model.id) { mutableStateOf(model.contextTokens != null) }
-    var context by remember(model.id) { mutableStateOf((model.contextTokens ?: defaults.contextTokens).toFloat()) }
+    var context by remember(model.id) { mutableFloatStateOf((model.contextTokens ?: defaults.contextTokens).toFloat()) }
     var seedOn by remember(model.id) { mutableStateOf(model.seed != null) }
     var seed by remember(model.id) { mutableStateOf((model.seed ?: 0).toString()) }
 
     // Common (both engines) — always visible.
     var minPOn by remember(model.id) { mutableStateOf(model.minP != null) }
-    var minP by remember(model.id) { mutableStateOf(model.minP ?: defaults.minP) }
+    var minP by remember(model.id) { mutableFloatStateOf(model.minP ?: defaults.minP) }
     var repetitionPenaltyOn by remember(model.id) { mutableStateOf(model.repetitionPenalty != null) }
-    var repetitionPenalty by remember(model.id) { mutableStateOf(model.repetitionPenalty ?: defaults.repetitionPenalty) }
+    var repetitionPenalty by remember(model.id) { mutableFloatStateOf(model.repetitionPenalty ?: defaults.repetitionPenalty) }
     var maxOutputTokensOn by remember(model.id) { mutableStateOf(model.maxOutputTokens != null) }
-    var maxOutputTokens by remember(model.id) { mutableStateOf((model.maxOutputTokens ?: defaults.maxOutputTokens).toFloat()) }
+    var maxOutputTokens by remember(model.id) { mutableFloatStateOf((model.maxOutputTokens ?: defaults.maxOutputTokens).toFloat()) }
     var stopSequencesOn by remember(model.id) { mutableStateOf(model.stopSequences != null) }
     var stopSequences by remember(model.id) { mutableStateOf(model.stopSequences ?: "") }
 
     // llama.cpp-only, expert-tier.
     var gpuLayerCountOn by remember(model.id) { mutableStateOf(model.gpuLayerCount != null) }
-    var gpuLayerCount by remember(model.id) { mutableStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
+    var gpuLayerCount by remember(model.id) { mutableFloatStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
     var cpuThreadsOn by remember(model.id) { mutableStateOf(model.cpuThreads != null) }
-    var cpuThreads by remember(model.id) { mutableStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
+    var cpuThreads by remember(model.id) { mutableFloatStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
     var nBatchOn by remember(model.id) { mutableStateOf(model.nBatch != null) }
-    var nBatch by remember(model.id) { mutableStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
+    var nBatch by remember(model.id) { mutableFloatStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
     var nUbatchOn by remember(model.id) { mutableStateOf(model.nUbatch != null) }
-    var nUbatch by remember(model.id) { mutableStateOf((model.nUbatch ?: defaults.nUbatch).toFloat()) }
+    var nUbatch by remember(model.id) { mutableFloatStateOf((model.nUbatch ?: defaults.nUbatch).toFloat()) }
     var useMlockOn by remember(model.id) { mutableStateOf(model.useMlock != null) }
     var useMlock by remember(model.id) { mutableStateOf(model.useMlock ?: useMlockDefault) }
     var flashAttentionOn by remember(model.id) { mutableStateOf(model.flashAttention != null) }
@@ -231,7 +232,7 @@ internal fun ModelEditDialog(
     var kvCacheTypeOn by remember(model.id) { mutableStateOf(model.kvCacheType != null) }
     var kvCacheType by remember(model.id) { mutableStateOf(model.kvCacheType ?: kvCacheTypeDefault) }
     var vulkanDeviceIndexOn by remember(model.id) { mutableStateOf(model.vulkanDeviceIndex != null) }
-    var vulkanDeviceIndex by remember(model.id) { mutableStateOf((model.vulkanDeviceIndex ?: 0).toFloat()) }
+    var vulkanDeviceIndex by remember(model.id) { mutableFloatStateOf((model.vulkanDeviceIndex ?: 0).toFloat()) }
     var ropeFreqBaseOn by remember(model.id) { mutableStateOf(model.ropeFreqBase != null) }
     var ropeFreqBase by remember(model.id) { mutableStateOf((model.ropeFreqBase ?: 0f).toString()) }
     var ropeFreqScaleOn by remember(model.id) { mutableStateOf(model.ropeFreqScale != null) }
@@ -240,7 +241,7 @@ internal fun ModelEditDialog(
     var chatTemplateOverride by remember(model.id) { mutableStateOf(model.chatTemplateOverride ?: "") }
     var loraPath by remember(model.id) { mutableStateOf(model.loraPath) }
     var loraScaleOn by remember(model.id) { mutableStateOf(model.loraScale != null) }
-    var loraScale by remember(model.id) { mutableStateOf(model.loraScale ?: 1.0f) }
+    var loraScale by remember(model.id) { mutableFloatStateOf(model.loraScale ?: 1.0f) }
     var loraError by remember(model.id) { mutableStateOf<String?>(null) }
 
     val loraApp = LocalContext.current.applicationContext as VervanApp
@@ -856,7 +857,7 @@ internal fun OverrideSlider(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
-                if (override) String.format(format, value) else stringResource(R.string.ui_modeledit_default_value, String.format(format, defaultValue)),
+                if (override) String.format(java.util.Locale.getDefault(), format, value) else stringResource(R.string.ui_modeledit_default_value, String.format(java.util.Locale.getDefault(), format, defaultValue)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 10.dp)
@@ -864,7 +865,7 @@ internal fun OverrideSlider(
             Switch(checked = override, onCheckedChange = onOverrideChange)
         }
         val effectiveValue = if (override) value else defaultValue
-        val sliderDescription = stringResource(R.string.ui_modeledit_slider_value, label, String.format(format, effectiveValue))
+        val sliderDescription = stringResource(R.string.ui_modeledit_slider_value, label, String.format(java.util.Locale.getDefault(), format, effectiveValue))
         Slider(
             value = effectiveValue,
             onValueChange = onValueChange,
@@ -949,9 +950,9 @@ internal fun OverrideDropdown(
 }
 
 internal fun formatModelSize(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GiB", bytes / (1024.0 * 1024 * 1024))
-    bytes >= 1024 * 1024 -> String.format("%.1f MiB", bytes / (1024.0 * 1024))
-    bytes >= 1024 -> String.format("%.0f KiB", bytes / 1024.0)
+    bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.2f GiB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.1f MiB", bytes / (1024.0 * 1024))
+    bytes >= 1024 -> String.format(java.util.Locale.getDefault(), "%.0f KiB", bytes / 1024.0)
     else -> "$bytes B"
 }
 

@@ -9,6 +9,7 @@ import androidx.room.Room
 import com.vervan.chat.security.AppLockManager
 import com.vervan.chat.system.ThermalMonitor
 import com.vervan.chat.system.StorageSpace
+import com.vervan.chat.system.runCatchingPreservingCancellation as safeRunCatching
 import com.vervan.chat.data.db.AppDatabase
 import com.vervan.chat.data.db.MIGRATIONS
 import com.vervan.chat.data.db.entities.MessageState
@@ -37,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -182,7 +184,7 @@ class AppContainer(app: Application) {
         recorder = com.vervan.chat.store.install.RoomInstallSessionRecorder(
             db.storeInstallSessionDao(), db.storeInstallArtifactDao()
         ),
-        usableSpaceProvider = { runCatching { StorageSpace.allocatableBytes(app) }.getOrDefault(-1L) }
+        usableSpaceProvider = { safeRunCatching { StorageSpace.allocatableBytes(app) }.getOrDefault(-1L) }
     )
 
     val storeInstallRecovery = com.vervan.chat.store.install.StoreInstallRecovery(
@@ -387,6 +389,8 @@ class VervanApp : Application() {
         private set
     lateinit var crashLogManager: com.vervan.chat.system.CrashLogManager
         private set
+    @Volatile private var appLockEnabledSnapshot = true
+    @Volatile private var autoLockTimeoutSnapshot = 60
 
     /**
      * Brings the local API server back up when the app is opened, if the user asked for that.
@@ -413,7 +417,7 @@ class VervanApp : Application() {
             // A foreground-service start can still be refused (battery restrictions, an edge case
             // in the foregrounding race). That is not worth crashing the app over — the user can
             // start it from Settings, where the toggle still reflects the stored preference.
-            runCatching { com.vervan.chat.server.ApiServerService.start(this@VervanApp) }
+            safeRunCatching { com.vervan.chat.server.ApiServerService.start(this@VervanApp) }
                 .onFailure { Log.w(TAG, "auto-start of the local API server was refused", it) }
         }
     }
@@ -427,6 +431,19 @@ class VervanApp : Application() {
         crashLogManager.install()
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
         container = AppContainer(this)
+        // Keep the two values needed at the foreground security boundary in memory. Reading
+        // DataStore from an IO coroutine after ON_START left a frame where timed-out private
+        // content could render before the lock state was updated.
+        applicationScope.launch(Dispatchers.IO) {
+            container.settingsRepository.securityPreferences.collect {
+                appLockEnabledSnapshot = it.appLockEnabled
+            }
+        }
+        applicationScope.launch(Dispatchers.IO) {
+            container.settingsRepository.autoLockTimeoutSeconds.collect {
+                autoLockTimeoutSnapshot = it
+            }
+        }
         // App-wide backgrounded/foregrounded detection for auto-lock — observes the
         // whole process's lifecycle, not one Activity's, so in-app navigation (which pauses/
         // resumes the single Activity) never trips it, only actually leaving the app does.
@@ -434,7 +451,7 @@ class VervanApp : Application() {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
                 applicationScope.launch(Dispatchers.IO) {
-                    runCatching {
+                    safeRunCatching {
                         val appLockEnabled = container.settingsRepository.appLockEnabled.first()
                         // External surfaces must not remain available while an app-lock-enabled
                         // session is backgrounded. The lock timeout is evaluated on the next
@@ -455,8 +472,11 @@ class VervanApp : Application() {
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
+                if (appLockEnabledSnapshot) {
+                    container.appLockManager.onAppForegrounded(autoLockTimeoutSnapshot)
+                }
                 applicationScope.launch(Dispatchers.IO) {
-                    runCatching {
+                    safeRunCatching {
                         val appLockEnabled = container.settingsRepository.appLockEnabled.first()
                         if (appLockEnabled) {
                             container.appLockManager.onAppForegrounded(
@@ -501,7 +521,7 @@ class VervanApp : Application() {
             // ApplicationExitInfo on the next launch is the only way to learn about them. Bundled
             // with interrupted-message marking since both are the same "recover from process
             // death" concern.
-            runCatching {
+            safeRunCatching {
                 crashLogManager.recordSystemExits()
                 container.db.messageDao().getUnfinished().forEach {
                     container.db.messageDao().update(it.copy(state = MessageState.INTERRUPTED))
@@ -512,7 +532,7 @@ class VervanApp : Application() {
             // still WAITING/PREPARING/RUNNING/PAUSED at cold start can't actually still be running
             // (its coroutine died with the previous process), so it's stuck showing "In progress"
             // forever with no visibility into what happened unless swept here.
-            runCatching {
+            safeRunCatching {
                 container.db.jobDao().failOrphanedActive()
             }.onFailure { Log.e(TAG, "Cold-start housekeeping: orphaned-job recovery failed", it) }
 
@@ -520,7 +540,7 @@ class VervanApp : Application() {
             // close (see ChatViewModel.purgeTemporaryChat); this is the fallback for a process
             // that died before that ran. Any chat still marked isTemporary at cold start is one
             // nothing ever cleaned up.
-            runCatching {
+            safeRunCatching {
                 container.db.chatDao().observeAllChats().first().filter { it.isTemporary }.forEach { chat ->
                     chat.kbIdList().forEach { kbId ->
                         container.db.documentDao().getForKb(kbId).forEach { container.documentImportManager.delete(it) }
@@ -539,7 +559,7 @@ class VervanApp : Application() {
             // them. Pinned chats are exempt — a retention timer silently eating something the
             // user deliberately pinned would be a surprise, not a privacy win. 0 (default) means
             // off entirely.
-            runCatching {
+            safeRunCatching {
                 val retentionDays = container.settingsRepository.autoDeleteAfterDays.first()
                 if (retentionDays > 0) {
                     val retentionCutoff = System.currentTimeMillis() - retentionDays * 24L * 60 * 60 * 1000
@@ -551,7 +571,7 @@ class VervanApp : Application() {
 
             // Built-in seeding — fresh-install seed plus refresh of immutable built-in
             // definitions on existing installs.
-            runCatching {
+            safeRunCatching {
                 container.db.personaDao().insertAll(BuiltInPersonas.defaults)
                 // Built-ins are immutable in the editor, so refresh the default definition on
                 // existing installs as well as seeding it on fresh installs.
@@ -591,7 +611,7 @@ class VervanApp : Application() {
 
             // Recycle bin auto-purge — anything soft-deleted more than 30 days ago is gone
             // for good. Runs once per cold start, cheap enough not to need WorkManager.
-            runCatching {
+            safeRunCatching {
                 val cutoff = System.currentTimeMillis() - RECYCLE_BIN_RETENTION_MS
                 container.db.chatDao().observeDeleted().first().forEach { chat ->
                     if (chat.deletedAt != null && chat.deletedAt < cutoff) {
@@ -649,7 +669,7 @@ class VervanApp : Application() {
             // A download package left active/paused by a process death needs the
             // foreground service back up to reconcile and (if settings allow) auto-resume it —
             // ModelDownloadService.onCreate() is what actually calls recoverOnStartup().
-            runCatching {
+            safeRunCatching {
                 if (container.db.downloadPackageDao().getUnfinished().isNotEmpty()) {
                     com.vervan.chat.modeldownload.ModelDownloadService.start(this@VervanApp)
                 }
@@ -659,7 +679,7 @@ class VervanApp : Application() {
             // process death is reconciled against the real .part files on disk and parked as
             // PAUSED, never as FAILED. No service is started here — the store has no auto-resume
             // policy yet, so recovery only makes the session resumable when the user returns.
-            runCatching {
+            safeRunCatching {
                 container.storeInstallRecovery.recoverOnStartup()
                 // Catalogue refresh, blob GC and the integrity spot-check, each on its own throttle.
                 // Skipped entirely on a device that has never opened the store, so a feature the user
@@ -719,7 +739,7 @@ class VervanApp : Application() {
 
     private fun notifyModelUnloadedBySystem(filePath: String) {
         applicationScope.launch(Dispatchers.IO) {
-            val name = runCatching {
+            val name = safeRunCatching {
                 container.db.modelDao().observeModels().first().find { it.filePath == filePath }?.displayName
             }.getOrNull() ?: java.io.File(filePath).nameWithoutExtension
             withContext(Dispatchers.Main) {

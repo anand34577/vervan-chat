@@ -175,7 +175,9 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
                         continue
                     }
                     _batchProgress.value = TitleBatchProgress(chatIds.size, completed, chatRow.title, failed, skipped, false)
-                    val result = runCatching { TitleGenerator.generate(app, id) }.getOrNull()
+                    val result = com.vervan.chat.system.runCatchingPreservingCancellation {
+                        TitleGenerator.generate(app, id)
+                    }.getOrNull()
                     if (result != null) {
                         db.chatDao().update(chatRow.copy(title = result.title, previousTitle = chatRow.title, titleIsCustom = false, updatedAt = System.currentTimeMillis()))
                         completed++

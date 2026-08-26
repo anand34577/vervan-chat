@@ -13,6 +13,7 @@ import com.vervan.chat.data.db.entities.Project
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.SavedOutput
 import com.vervan.chat.data.db.entities.Workspace
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.modelload.ModelLoadPhase
 import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.tools.ToolRegistry
@@ -138,6 +139,7 @@ internal class WebAppApi(private val app: VervanApp) {
                 else -> null
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             if (t is VirtualMachineError) throw t
             Log.e(TAG, "handler failed for ${session.method} ${session.uri}", t)
             if (t is ClientInputException) error(Response.Status.BAD_REQUEST, t.message ?: "Invalid input")
@@ -598,9 +600,10 @@ internal class WebAppApi(private val app: VervanApp) {
                         )
                 )
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is VirtualMachineError) throw t
                 Log.e(TAG, "document attach failed for chat ${chat.id}", t)
-                runCatching {
+                com.vervan.chat.system.runCatchingPreservingCancellation {
                     db.knowledgeBaseDao().get(kb.id)?.let {
                         db.clearKnowledgeBaseReferences(kb.id)
                         db.knowledgeBaseDao().delete(it)
@@ -1011,13 +1014,14 @@ internal class WebAppApi(private val app: VervanApp) {
             if (params.toString().length > InputLimits.GENERAL_TOOL_INPUT_CHARS) {
                 return@runBlocking error(Response.Status.PAYLOAD_TOO_LARGE, "Tool parameters are too large")
             }
-            val result = runCatching { definition.execute(app, params) }.getOrElse { t ->
-                if (t is VirtualMachineError) throw t
+            val result = com.vervan.chat.system.runCatchingPreservingCancellation {
+                definition.execute(app, params)
+            }.getOrElse { t ->
                 com.vervan.chat.tools.ToolResult(success = false, summary = t.toUserMessage())
             }
             // Same audit row the in-chat path writes: a tool run started from the browser has to be
             // as visible in the app's tool history as one the model asked for.
-            runCatching {
+            com.vervan.chat.system.runCatchingPreservingCancellation {
                 app.container.db.toolAuditDao().insert(
                     com.vervan.chat.data.db.entities.ToolAudit(
                         toolName = name,
@@ -1112,6 +1116,9 @@ internal class WebAppApi(private val app: VervanApp) {
                             .put("name", model.displayName)
                             .put("role", model.role.name)
                             .put("engine", model.engine.name)
+                            .put("engine_label", model.traits.label)
+                            .put("runs_on_device", model.traits.runsOnDevice)
+                            .put("privacy_boundary", if (model.traits.runsOnDevice) "on_device" else "remote")
                             .put("size_bytes", model.fileSizeBytes)
                             .put("is_default", model.isActive)
                             .put("context_tokens", model.contextTokens ?: JSONObject.NULL)

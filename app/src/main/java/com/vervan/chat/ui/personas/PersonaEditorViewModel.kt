@@ -106,6 +106,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
                     _avatarPath.value = it.avatarPath
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
@@ -141,6 +142,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             } catch (e: com.vervan.chat.model.CharacterCardImporter.NotACharacterCardException) {
                 _importError.value = e.message
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 android.util.Log.e(TAG, "importCharacterCard failed for $uri", t)
                 _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
             }

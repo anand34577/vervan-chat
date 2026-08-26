@@ -114,6 +114,7 @@ class CrashLogManager(private val context: Context) {
             })
             prune()
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "Failed to write crash log", t)
         }
     }

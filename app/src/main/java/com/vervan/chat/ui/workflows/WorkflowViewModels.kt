@@ -102,7 +102,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 _workflow.value = db.workflowDao().get(workflowId)
                 _workflowFound.value = _workflow.value != null
             } catch (t: Throwable) {
-                if (t is CancellationException) throw t
+                com.vervan.chat.system.rethrowCancellation(t)
                 _workflowFound.value = false
                 _loadError.value = t.toUserMessage()
             } finally {
@@ -120,6 +120,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         val tmp = try {
             File.createTempFile("workflow_input", ".tmp", app.cacheDir)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             _error.value = "Couldn't read file: ${t.toUserMessage()}"
             return@withContext null
         }
@@ -162,6 +163,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 }
                 extracted
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _error.value = "Couldn't read file: ${t.toUserMessage()}"
                 null
             }
@@ -257,6 +259,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                     resumeIndex = index + 1
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // Throwable, not just Exception — a multi-step run's accumulated carryText can
                 // grow large enough to OutOfMemoryError on a low-RAM device; unlike ChatViewModel
                 // this runner had no outer Throwable safety net at all.
@@ -344,7 +347,7 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
                     _isBuiltIn.value = wf.isBuiltIn
                 }
             } catch (t: Throwable) {
-                if (t is CancellationException) throw t
+                com.vervan.chat.system.rethrowCancellation(t)
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()
             } finally {

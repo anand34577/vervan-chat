@@ -151,8 +151,10 @@ class DocumentImportManager(
             )
         }
 
-        val hash = digest.digest().joinToString("") { "%02x".format(it) }
-        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        val hash = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
+        val mimeType = context.contentResolver.getType(uri)
+            ?.takeIf { it.length <= 255 && SAFE_MIME_TYPE.matches(it) }
+            ?: "application/octet-stream"
 
         if (reuseExistingByHash) {
             documentDao.findActiveByHash(hash)?.let { globalExisting ->
@@ -201,6 +203,7 @@ class DocumentImportManager(
         try {
             dest.writeText(content)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             dest.delete()
             return@withContext Document(
                 knowledgeBaseId = kbId,
@@ -211,7 +214,7 @@ class DocumentImportManager(
                 failureReason = "Couldn't save text: ${t.toUserMessage()}"
             ).also { documentDao.upsert(it) }
         }
-        val hash = MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) }
+        val hash = MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         processLocalFile(kbId, displayName, dest, "text/plain", hash)
     }
 
@@ -255,9 +258,12 @@ class DocumentImportManager(
                 try {
                     database.replaceDocumentIndex(document, stable)
                 } catch (t: Throwable) {
+                    com.vervan.chat.system.rethrowCancellation(t)
                     // The Room transaction rolls back, so the old index remains intact. Clean
                     // the shadow file/row if the transaction failed before it could remove it.
-                    runCatching { discardDocument(document) }
+                    com.vervan.chat.system.runCatchingPreservingCancellation {
+                        discardDocument(document)
+                    }
                     throw t
                 }
                 com.vervan.chat.data.SecureDelete.overwriteAndDelete(oldFile)
@@ -327,6 +333,7 @@ class DocumentImportManager(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(t)
                         Log.w(TAG, "OCR failed for $name", t)
                         throw t
                     }
@@ -349,6 +356,7 @@ class DocumentImportManager(
             withContext(NonCancellable) { documentDao.update(failed) }
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             val failed = document.copy(status = DocumentStatus.FAILED, failureReason = t.toUserMessage())
             documentDao.update(failed)
             failed
@@ -491,6 +499,7 @@ class DocumentImportManager(
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (t: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(t)
                         Log.w(TAG, "OCR failed for ${doc.displayName}", t)
                         ""
                     }
@@ -527,7 +536,7 @@ class DocumentImportManager(
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             withContext(NonCancellable) {
-                runCatching { discardDocument(staged) }
+                com.vervan.chat.system.runCatchingPreservingCancellation { discardDocument(staged) }
                 documentDao.update(
                     if (doc.status == DocumentStatus.READY) {
                         doc.copy(failureReason = "Re-index stopped; the previous index was kept.")
@@ -538,7 +547,8 @@ class DocumentImportManager(
             }
             throw cancelled
         } catch (t: Throwable) {
-            runCatching { discardDocument(staged) }
+            com.vervan.chat.system.rethrowCancellation(t)
+            com.vervan.chat.system.runCatchingPreservingCancellation { discardDocument(staged) }
             val message = t.toUserMessage()
             val preserved = if (doc.status == DocumentStatus.READY) {
                 doc.copy(failureReason = "Re-index failed; the previous index was kept. $message")
@@ -572,7 +582,9 @@ class DocumentImportManager(
     private fun queryFileSize(uri: Uri): Long? {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (sizeIndex >= 0 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) return cursor.getLong(sizeIndex)
+            if (sizeIndex >= 0 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) {
+                return cursor.getLong(sizeIndex).takeIf { it >= 0 }
+            }
         }
         return null
     }
@@ -581,6 +593,7 @@ class DocumentImportManager(
         value.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[^A-Za-z0-9._ -]"), "_")
             .trim()
+            .take(MAX_DISPLAY_NAME_CHARS)
             .ifBlank { "document" }
 
     /** Recycle-bin delete — marks the row, keeps the file and chunks so restore is cheap. */
@@ -602,7 +615,9 @@ class DocumentImportManager(
 
     companion object {
         private const val TAG = "DocumentImportManager"
+        private const val MAX_DISPLAY_NAME_CHARS = 180
         private const val STORAGE_SAFETY_MARGIN_BYTES = 100L * 1024 * 1024 // 100MB headroom
+        private val SAFE_MIME_TYPE = Regex("[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+\\-]*")
         // ponytail: a fixed guess, not negotiated with the server. OpenAI's own /embeddings
         // accepts far more per request; a smaller self-hosted OpenAI-compatible server might not
         // — 32 chunks (~12K tokens at TARGET_TOKENS) is comfortably under what any real

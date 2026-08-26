@@ -122,6 +122,7 @@ class WhisperCppSttEngine(
                 applyPendingReleaseLocked()
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "whisper.cpp decode failed; falling through to next STT tier", t)
                 null
             }
@@ -151,6 +152,7 @@ class WhisperCppSttEngine(
                 applyPendingReleaseLocked()
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "whisper.cpp segment decode failed", t)
                 null
             }
@@ -208,6 +210,7 @@ class WhisperCppSttEngine(
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (useGpu) prefs.edit().putBoolean(KEY_GPU_INIT_PENDING, false).commit()
                 Log.w(TAG, "whisper.cpp model load failed (${modelFile.absolutePath})", t)
                 0L

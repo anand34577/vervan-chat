@@ -29,6 +29,9 @@ internal fun resumeSourceChanged(
 ): Boolean = (knownEtag != null && receivedEtag != knownEtag) ||
     (knownEtag == null && knownLastModified != null && receivedLastModified != knownLastModified)
 
+internal fun exceedsDownloadLimit(downloadedBytes: Long, incomingBytes: Int, maxBytes: Long?): Boolean =
+    maxBytes != null && (downloadedBytes > maxBytes || incomingBytes.toLong() > maxBytes - downloadedBytes)
+
 /**
  * Streams one file to disk over HTTP(S) with real Range-request resume — never loads a file
  * into memory. Redirects are followed manually (rather than via
@@ -49,16 +52,29 @@ class HttpRangeDownloader {
         knownEtag: String?,
         knownLastModified: String?,
         authToken: String?,
+        maxBytes: Long? = null,
         onProgress: suspend (downloadedBytes: Long, totalBytes: Long?) -> Unit
     ): ResumeMetadata = withContext(Dispatchers.IO) {
         var startOffset = if (dest.isFile) dest.length() else 0L
+        if (maxBytes != null && startOffset > maxBytes) {
+            dest.delete()
+            throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "Partial file exceeds the expected size")
+        }
         var currentUrl = sourceUrl
         var redirects = 0
         var restartedFromZero = false
 
         while (true) {
+            val parsedUrl = try {
+                URL(currentUrl)
+            } catch (e: java.net.MalformedURLException) {
+                throw ModelDownloadException(ModelErrorCode.REDIRECT_FAILED, "Download URL is invalid", e)
+            }
+            if (parsedUrl.protocol.lowercase(java.util.Locale.ROOT) !in setOf("http", "https")) {
+                throw ModelDownloadException(ModelErrorCode.REDIRECT_FAILED, "Download URL must use HTTP or HTTPS")
+            }
             val forwardAuth = authToken != null && isTrustedHost(currentUrl)
-            val connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+            val connection = (parsedUrl.openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = false
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
@@ -67,6 +83,10 @@ class HttpRangeDownloader {
                 if (startOffset > 0 && (knownEtag != null || knownLastModified != null)) {
                     setRequestProperty("If-Range", knownEtag ?: knownLastModified)
                 }
+                // Byte offsets are defined over the stored representation. Transparent content
+                // encoding makes Range resume ambiguous and can append decompressed bytes at a
+                // compressed offset, corrupting the file without an obvious transport error.
+                setRequestProperty("Accept-Encoding", "identity")
                 if (forwardAuth) setRequestProperty("Authorization", "Bearer $authToken")
                 setRequestProperty("User-Agent", "VervanChat-ModelDownloader/1.0")
             }
@@ -83,7 +103,7 @@ class HttpRangeDownloader {
                 if (location.isNullOrBlank() || redirects >= MAX_REDIRECTS) {
                     throw ModelDownloadException(ModelErrorCode.REDIRECT_FAILED, "Too many redirects or missing Location header")
                 }
-                currentUrl = URL(URL(currentUrl), location).toString()
+                currentUrl = URL(parsedUrl, location).toString()
                 redirects++
                 continue
             }
@@ -91,7 +111,7 @@ class HttpRangeDownloader {
             try {
                 return@withContext handleResponse(
                     connection, dest, startOffset, currentUrl,
-                    knownEtag, knownLastModified, onProgress
+                    knownEtag, knownLastModified, maxBytes, onProgress
                 )
             } catch (e: ModelDownloadException) {
                 // A stale/invalid partial is recoverable: discard it once and retry the same
@@ -122,6 +142,7 @@ class HttpRangeDownloader {
         resolvedUrl: String,
         knownEtag: String?,
         knownLastModified: String?,
+        maxBytes: Long?,
         onProgress: suspend (Long, Long?) -> Unit
     ): ResumeMetadata {
         val code = connection.responseCode
@@ -131,16 +152,35 @@ class HttpRangeDownloader {
 
         return when (code) {
             HttpURLConnection.HTTP_PARTIAL -> {
-                val contentRange = connection.getHeaderField("Content-Range")
-                val rangeStart = contentRange?.substringAfter("bytes ")?.substringBefore("-")?.toLongOrNull()
-                if (contentRange == null || rangeStart != startOffset) {
+                val contentRange = parseContentRange(connection.getHeaderField("Content-Range"))
+                if (contentRange == null || contentRange.start != startOffset) {
                     throw ModelDownloadException(ModelErrorCode.RANGE_NOT_SUPPORTED, "Server ignored the requested byte range")
+                }
+                if (contentRange.end < contentRange.start || contentRange.end == Long.MAX_VALUE ||
+                    (contentRange.total != null && contentRange.end >= contentRange.total)
+                ) {
+                    throw ModelDownloadException(ModelErrorCode.RANGE_NOT_SUPPORTED, "Server returned an invalid Content-Range")
+                }
+                val responseBytes = contentRange.end - contentRange.start + 1
+                val declaredResponseBytes = connection.contentLengthLong.takeIf { it >= 0 }
+                if (declaredResponseBytes != null && declaredResponseBytes != responseBytes) {
+                    throw ModelDownloadException(ModelErrorCode.RANGE_NOT_SUPPORTED, "Server returned an inconsistent byte range")
                 }
                 if (resumeSourceChanged(knownEtag, knownLastModified, etag, lastModified)) {
                     throw ModelDownloadException(ModelErrorCode.SOURCE_CHANGED, "The source file changed; restarting safely")
                 }
-                val totalBytes = contentRange.substringAfter("/", "").toLongOrNull()
-                val downloaded = streamToFile(connection, dest, append = true, startOffset = startOffset, totalBytes = totalBytes, onProgress = onProgress)
+                val totalBytes = contentRange.total
+                rejectOversizedResponse(totalBytes, maxBytes)
+                val downloaded = streamToFile(
+                    connection, dest, append = true, startOffset = startOffset,
+                    totalBytes = totalBytes, maxBytes = tighterLimit(maxBytes, totalBytes),
+                    onProgress = onProgress
+                )
+                if (downloaded != startOffset + responseBytes ||
+                    (totalBytes != null && downloaded != totalBytes)
+                ) {
+                    throw ModelDownloadException(ModelErrorCode.NO_NETWORK, "Download ended before the complete file was received")
+                }
                 ResumeMetadata(downloaded, totalBytes, etag, lastModified, true, resolvedUrl)
             }
             HttpURLConnection.HTTP_OK -> {
@@ -148,11 +188,22 @@ class HttpRangeDownloader {
                 // whole file from byte 0, so any partial content on disk is now invalid.
                 if (dest.isFile) dest.delete()
                 val totalBytes = connection.contentLengthLong.takeIf { it >= 0 }
-                val downloaded = streamToFile(connection, dest, append = false, startOffset = 0, totalBytes = totalBytes, onProgress = onProgress)
+                rejectOversizedResponse(totalBytes, maxBytes)
+                val downloaded = streamToFile(
+                    connection, dest, append = false, startOffset = 0, totalBytes = totalBytes,
+                    maxBytes = tighterLimit(maxBytes, totalBytes), onProgress = onProgress
+                )
+                if (totalBytes != null && downloaded != totalBytes) {
+                    throw ModelDownloadException(ModelErrorCode.NO_NETWORK, "Download ended before the complete file was received")
+                }
                 ResumeMetadata(downloaded, totalBytes, etag, lastModified, acceptRanges, resolvedUrl)
             }
             416 -> { // HTTP Range Not Satisfiable — no named constant on HttpURLConnection
-                val expectedFromHeader = connection.getHeaderField("Content-Range")?.substringAfter("/", "")?.toLongOrNull()
+                val expectedFromHeader = parseUnsatisfiedContentRange(connection.getHeaderField("Content-Range"))
+                if (resumeSourceChanged(knownEtag, knownLastModified, etag, lastModified)) {
+                    throw ModelDownloadException(ModelErrorCode.SOURCE_CHANGED, "The source file changed; restarting safely")
+                }
+                rejectOversizedResponse(expectedFromHeader, maxBytes)
                 if (expectedFromHeader != null && dest.isFile && dest.length() == expectedFromHeader) {
                     ResumeMetadata(dest.length(), expectedFromHeader, etag, lastModified, acceptRanges, resolvedUrl)
                 } else {
@@ -179,6 +230,7 @@ class HttpRangeDownloader {
         append: Boolean,
         startOffset: Long,
         totalBytes: Long?,
+        maxBytes: Long?,
         onProgress: suspend (Long, Long?) -> Unit
     ): Long {
         dest.parentFile?.mkdirs()
@@ -210,6 +262,10 @@ class HttpRangeDownloader {
                         throw ModelDownloadException(ModelErrorCode.NO_NETWORK, e.message ?: "Download connection interrupted", e)
                     }
                     if (read == -1) break
+                    if (exceedsDownloadLimit(downloaded, read, maxBytes)) {
+                        raf.setLength(downloaded)
+                        throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "Download exceeds the expected size")
+                    }
                     try {
                         raf.write(buffer, 0, read)
                     } catch (e: java.io.IOException) {
@@ -228,9 +284,39 @@ class HttpRangeDownloader {
         return downloaded
     }
 
+    private fun rejectOversizedResponse(totalBytes: Long?, maxBytes: Long?) {
+        if (totalBytes != null && maxBytes != null && totalBytes > maxBytes) {
+            throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "Remote file exceeds the expected size")
+        }
+    }
+
+    private fun tighterLimit(configured: Long?, advertised: Long?): Long? = when {
+        configured == null -> advertised
+        advertised == null -> configured
+        else -> minOf(configured, advertised)
+    }
+
+    private data class ContentRange(val start: Long, val end: Long, val total: Long?)
+
+    private fun parseContentRange(value: String?): ContentRange? {
+        val match = value?.trim()?.let(CONTENT_RANGE::matchEntire) ?: return null
+        val start = match.groupValues[1].toLongOrNull() ?: return null
+        val end = match.groupValues[2].toLongOrNull() ?: return null
+        val total = match.groupValues[3].takeUnless { it == "*" }?.toLongOrNull()
+        return ContentRange(start, end, total)
+    }
+
+    private fun parseUnsatisfiedContentRange(value: String?): Long? =
+        value?.trim()?.let(UNSATISFIED_CONTENT_RANGE::matchEntire)
+            ?.groupValues?.get(1)?.toLongOrNull()
+
     private fun isTrustedHost(url: String): Boolean {
-        val host = runCatching { URL(url).host }.getOrNull()?.lowercase() ?: return false
-        return TRUSTED_HOST_SUFFIXES.any { host == it || host.endsWith(".$it") }
+        val parsed = runCatching { URL(url) }.getOrNull() ?: return false
+        // Host allowlisting alone is insufficient: forwarding a bearer token to an HTTP URL on
+        // an otherwise trusted host would expose it to the network in plaintext after a downgrade.
+        if (!parsed.protocol.equals("https", ignoreCase = true)) return false
+        val host = parsed.host.lowercase(java.util.Locale.ROOT)
+        return host in TRUSTED_AUTH_HOSTS
     }
 
     companion object {
@@ -238,6 +324,8 @@ class HttpRangeDownloader {
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_REDIRECTS = 5
         private const val PROGRESS_THROTTLE_MS = 750L
-        private val TRUSTED_HOST_SUFFIXES = setOf("huggingface.co", "hf.co")
+        private val CONTENT_RANGE = Regex("bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)", RegexOption.IGNORE_CASE)
+        private val UNSATISFIED_CONTENT_RANGE = Regex("bytes\\s+\\*/(\\d+)", RegexOption.IGNORE_CASE)
+        private val TRUSTED_AUTH_HOSTS = setOf("huggingface.co", "hf.co")
     }
 }

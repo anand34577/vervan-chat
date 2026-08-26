@@ -87,16 +87,20 @@ jobs:
 
       - name: Build, lint, and test signed release artifacts
         env:
-          # Release verification is intentionally fail-closed. Configure these as masked
-          # repository secrets (CATALOG_PUBLIC_KEYS and CATALOG_ENDPOINTS) rather than copying
-          # trust material into the workflow or the checkout.
-          VERVAN_CATALOG_PUBLIC_KEYS: ${{ secrets.CATALOG_PUBLIC_KEYS }}
-          VERVAN_CATALOG_ENDPOINTS: ${{ secrets.CATALOG_ENDPOINTS }}
           VERVAN_RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
           VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Verify APK alignment, signature, and checksums
+        run: |
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$BUILD_TOOLS_DIR/zipalign" -c -P 16 -v 4 "$apk"
+            "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$apk"
+          done
+          sha256sum app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab > SHA256SUMS
 
       - name: Remove keystore
         if: always()
@@ -108,4 +112,5 @@ jobs:
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
+            SHA256SUMS
           generate_release_notes: true

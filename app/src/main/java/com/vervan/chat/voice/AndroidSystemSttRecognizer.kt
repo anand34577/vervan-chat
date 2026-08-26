@@ -56,7 +56,7 @@ object AndroidSystemSttRecognizer {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return Result.failure(IllegalStateException("Android file transcription requires Android 13 or newer"))
         }
-        return runCatching {
+        return com.vervan.chat.system.runCatchingPreservingCancellation {
             require(wavFile.isFile) { "Recorded audio file is missing" }
             require(wavFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
             val decoded = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
@@ -85,7 +85,7 @@ object AndroidSystemSttRecognizer {
         languageSetting: String,
         maxSeconds: Int,
         audioSource: AudioSource?,
-    ): Result<String> = runCatching {
+    ): Result<String> = com.vervan.chat.system.runCatchingPreservingCancellation {
         withTimeout((maxSeconds.coerceIn(10, 180) + 8) * 1_000L) {
             withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine { continuation ->

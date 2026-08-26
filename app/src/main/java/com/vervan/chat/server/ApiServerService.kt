@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.vervan.chat.MainActivity
 import com.vervan.chat.R
 import com.vervan.chat.VervanApp
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,24 +48,24 @@ class ApiServerService : Service() {
         val restart = intent?.action == ACTION_RESTART
         startJob = scope.launch {
             lifecycleMutex.withLock {
-                val started = runCatching {
+                val started = com.vervan.chat.system.runCatchingPreservingCancellation {
                     // Older installs used an unauthenticated default. Apply the one-time
                     // migration before reading the server flags so a restart can never reopen a
                     // LAN-facing socket with that legacy default.
                     settings.applyApiServerSecurityDefaults()
                     // A sticky service can be recreated after the user disabled it. DataStore is
                     // the source of truth; never reopen a listening socket when its toggle is off.
-                    if (!settings.apiServerEnabled.first()) return@runCatching false
+                    if (!settings.apiServerEnabled.first()) return@runCatchingPreservingCancellation false
                     // The API is an external data surface. A service recreated while the app is
                     // locked must stop instead of exposing chats, documents, or inference.
                     if (settings.appLockEnabled.first() && app.container.appLockManager.isLocked.value) {
-                        return@runCatching false
+                        return@runCatchingPreservingCancellation false
                     }
                     if (restart) {
                         server?.stop()
                         server = null
                     }
-                    if (server != null) return@runCatching true
+                    if (server != null) return@runCatchingPreservingCancellation true
 
                     val port = settings.apiServerPort.first()
                     val allowLan = settings.apiServerAllowLan.first()
@@ -74,11 +73,15 @@ class ApiServerService : Service() {
                     // null host means 0.0.0.0, so it is never used as the default.
                     val host: String? = if (allowLan) null else "127.0.0.1"
                     val fullMode = settings.apiServerFullMode.first()
-                    // A localhost-only server may be used without a key, but LAN access is an
-                    // externally reachable data surface. Enforce authentication here as the
-                    // final gate even if a legacy preference or concurrent settings update
-                    // briefly presents an unsafe combination to the service.
-                    val requireAuth = settings.apiServerRequireAuth.first() || allowLan
+                    // Only the localhost Basic API may be deliberately used without a key. LAN
+                    // access and the full browser workspace expose user data, so enforce auth at
+                    // this final gate even if preferences briefly present an unsafe combination.
+                    val requireAuth = requiresApiAuth(
+                        configuredAuth = settings.apiServerRequireAuth.first(),
+                        allowLan = allowLan,
+                        fullMode = fullMode,
+                        appToolsEnabled = settings.apiServerAppTools.first(),
+                    )
                     val auth = app.container.apiServerAuth
                     if (requireAuth) auth.tokenOrGenerate()
 
@@ -88,7 +91,6 @@ class ApiServerService : Service() {
                     }
                     true
                 }.getOrElse { failure ->
-                    if (failure is CancellationException) throw failure
                     Log.e(TAG, "API server failed to start", failure)
                     false
                 }

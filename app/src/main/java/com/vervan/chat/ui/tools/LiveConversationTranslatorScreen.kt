@@ -126,6 +126,7 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                 turns = turns + TranslatedTurn(fromA, text, translated)
                 speak(translated, targetLang)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 snackbarHostState.showSnackbar(t.toUserMessage())
             } finally {
                 isBusy = false

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +35,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.db.entities.traits
+import com.vervan.chat.server.requiresApiAuth
 import com.vervan.chat.ui.common.ModernistMetricStrip
 import com.vervan.chat.ui.common.ModernistScreenHeader
 import com.vervan.chat.ui.common.ModernistTag
@@ -83,10 +83,10 @@ fun PrivacyDashboardScreen(
     val apiServerOn by vm.apiServerEnabled.collectAsState()
     val apiServerLanOn by vm.apiServerAllowLan.collectAsState()
     val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
+    val apiServerFullMode by vm.apiServerFullMode.collectAsState()
+    val apiServerAppTools by vm.apiServerAppTools.collectAsState()
 
-    // Localhost-only mode is not a LAN exposure. LAN mode is explicit and authentication is
-    // enforced for it by both settings persistence and ApiServerService.
-    val lanRisk = apiServerOn && apiServerLanOn && !apiServerAuthOn
+    val apiServerAuthRequired = requiresApiAuth(apiServerAuthOn, apiServerLanOn, apiServerFullMode, apiServerAppTools)
     val remoteModelActive = activeModel?.traits?.runsOnDevice == false
     val remoteHost = activeModel?.remoteBaseUrl?.let { runCatching { it.toUri().host }.getOrNull() }
 
@@ -194,31 +194,30 @@ fun PrivacyDashboardScreen(
 
             Card(
                 Modifier.fillMaxWidth().padding(bottom = Space.sm),
-                colors = if (lanRisk) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                else CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            if (lanRisk) Icons.Filled.Warning else Icons.Filled.CheckCircle,
+                            Icons.Filled.CheckCircle,
                             contentDescription = null,
-                            tint = if (lanRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(end = Space.sm)
                         )
                         Text(
                             stringResource(R.string.privacy_local_api_server),
                             style = MaterialTheme.typography.titleSmall,
-                            color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Text(
                         when {
                             !apiServerOn -> stringResource(R.string.privacy_api_server_off)
-                            lanRisk -> stringResource(R.string.privacy_api_server_no_key)
-                            else -> stringResource(R.string.privacy_api_server_key_required)
+                            apiServerAuthRequired -> stringResource(R.string.privacy_api_server_key_required)
+                            else -> stringResource(R.string.privacy_api_server_no_key)
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs)
                     )
                     OutlinedButton(onClick = onOpenApiServer, modifier = Modifier.padding(top = Space.sm)) {

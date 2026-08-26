@@ -536,7 +536,7 @@ private class OfflineMermaidView(
 }
 
 private fun androidx.compose.ui.graphics.Color.cssHex(): String =
-    String.format("#%06X", 0xFFFFFF and toArgb())
+    String.format(java.util.Locale.ROOT, "#%06X", 0xFFFFFF and toArgb())
 
 @Composable
 private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: Boolean = false, onExpand: (() -> Unit)? = null) {

@@ -583,6 +583,7 @@ private fun QuickAskField(onAsk: suspend (String) -> Unit) {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(failure)
                 // Preserve the question so a transient database or navigation failure does not
                 // force the user to type it again, and keep the failure inside the UI scope.
                 submitError = failure.toUserMessage()

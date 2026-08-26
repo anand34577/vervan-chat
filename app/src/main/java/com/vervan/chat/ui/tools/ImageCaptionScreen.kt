@@ -125,6 +125,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 errorText = t.toUserMessage()
             } finally {
                 isRunning = false

@@ -120,6 +120,7 @@ fun TranslationScreen(onBack: () -> Unit) {
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 errorText = t.toUserMessage()
             } finally {
                 isTranslating = false
@@ -184,6 +185,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                 } catch (c: CancellationException) {
                     throw c
                 } catch (t: Throwable) {
+                    com.vervan.chat.system.rethrowCancellation(t)
                     errorText = t.toUserMessage()
                 } finally {
                     file.delete()

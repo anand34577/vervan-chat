@@ -72,6 +72,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -375,7 +377,7 @@ fun ChatScreen(
 
     var showModeSettings by remember { mutableStateOf(false) }
     var handsFreeActive by rememberSaveable(chatId) { mutableStateOf(false) }
-    var voiceSessionKey by rememberSaveable(chatId) { mutableStateOf(0) }
+    var voiceSessionKey by rememberSaveable(chatId) { mutableIntStateOf(0) }
     var showVoiceOptions by remember { mutableStateOf(false) }
     var showComposerVoiceMenu by remember { mutableStateOf(false) }
     var immersiveVoiceActive by rememberSaveable(chatId) { mutableStateOf(false) }
@@ -406,8 +408,8 @@ fun ChatScreen(
     var draftSttLabel by rememberSaveable(chatId) { mutableStateOf<String?>(null) }
     var dictationError by remember { mutableStateOf<String?>(null) }
     var dictationLevels by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var dictationStartedAt by remember { mutableStateOf(0L) }
-    var dictationElapsedMs by remember { mutableStateOf(0L) }
+    var dictationStartedAt by remember { mutableLongStateOf(0L) }
+    var dictationElapsedMs by remember { mutableLongStateOf(0L) }
     var dictationRecorder by remember { mutableStateOf<WavRecorder?>(null) }
     var dictationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var dictationBaseText by remember { mutableStateOf("") }
@@ -2098,6 +2100,7 @@ fun ChatScreen(
                     elapsedMs = voiceElapsedMs,
                     liveTranscript = voiceLiveTranscript,
                     modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                    modelRunsOnDevice = modelRunsOnDevice,
                     sttLabel = voiceSttLabel,
                     ttsLabel = voiceTtsLabel,
                     microphoneMuted = voiceMicrophoneMuted,
@@ -2664,6 +2667,7 @@ fun ChatScreen(
                 elapsedMs = voiceElapsedMs,
                 liveTranscript = voiceLiveTranscript,
                 modelName = activeModelName?.substringBefore(" · ") ?: voiceLoadingModelName,
+                modelRunsOnDevice = modelRunsOnDevice,
                 sttLabel = voiceSttLabel,
                 ttsLabel = voiceTtsLabel,
                 microphoneMuted = voiceMicrophoneMuted,

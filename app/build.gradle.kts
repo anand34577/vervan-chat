@@ -129,13 +129,13 @@ val llamaCpp32Available = llamaCppAvailable && llamaCppAbis.contains("armeabi-v7
 
 android {
     namespace = "com.vervan.chat"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "28.1.13356709"
 
     defaultConfig {
         applicationId = "com.vervan.chat"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 2
         versionName = "1.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -239,6 +239,10 @@ android {
     }
 
     packaging {
+        resources {
+            // Bouncy Castle's provider/PKIX/utility jars carry identical project metadata.
+            pickFirsts += setOf("META-INF/LICENSE.md", "META-INF/NOTICE.md")
+        }
         jniLibs {
             // llama.cpp discovers backend plugins through nativeLibraryDir, so these libraries
             // must be extracted at install time. Legacy packaging also compresses them in direct
@@ -280,12 +284,12 @@ val verifyLlamaCppRelease by tasks.registering {
                 "Gradle builds it for Android/Vulkan automatically."
         }
         // Guards against a stale or partial native build silently shipping in a release APK.
-        // Vulkan is only expected on 64-bit — see the ABI table in the build script.
+        // The tagged Linux workflow intentionally ships a CPU-only build; Vulkan is an optional
+        // arm64 acceleration plugin and is validated by the Windows native-build path instead.
         llamaCppAbis.forEach { abi ->
             val libs = llamaCppLibsDirFor(abi)
             val required = buildList {
                 add("libllama.so")
-                if (abi == "arm64-v8a") add("libggml-vulkan.so")
             }
             required.forEach { lib ->
                 check(libs != null && File(libs, lib).isFile) {
@@ -438,7 +442,16 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
 
     // PDF text extraction for document import
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        // The fork still requests the retired 1.72 jdk15to18 line. Use the maintained Java-8+
+        // artifacts instead; they expose the same org.bouncycastle APIs consumed by PDFBox.
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcpkix-jdk15to18")
+        exclude(group = "org.bouncycastle", module = "bcutil-jdk15to18")
+    }
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+    implementation("org.bouncycastle:bcutil-jdk18on:1.85")
     // On-device OCR for scanned PDFs (spec §13.3/40.27) — the (non play-services) "text-recognition"
     // artifact bundles its model in the APK, so it works with no network at all, unlike
     // com.google.android.gms:play-services-mlkit-text-recognition which fetches the model on first use.
@@ -451,7 +464,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     // HTML extraction with heading/list structure preserved — pure Java, no AWT/StAX, safe on
     // Android (unlike Apache POI's OOXML modules, see below).
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("org.jsoup:jsoup:1.23.1")
     // Legacy binary Office formats (.doc/.xls, pre-2007 OLE2 Compound File format) ONLY —
     // deliberately NOT poi-ooxml (.docx/.xlsx/.pptx): poi-ooxml needs javax.xml.stream (StAX),
     // which Android's core library doesn't ship, and commonly needs java.awt classes Android
@@ -487,7 +500,7 @@ dependencies {
     // EncryptedSharedPreferences (Android Keystore-backed) for the PIN hash+salt. Standard
     // AndroidX libraries for this exact job, not custom crypto.
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
     // ProcessLifecycleOwner — detects the whole app going to background/foreground, for
     // auto-lock-on-background instead of a per-Activity onPause (which also fires during
     // in-app navigation, not just when the user actually leaves the app).
@@ -498,6 +511,14 @@ dependencies {
     // record in exactly this embedded-server role. Not Ktor's server engine, which pulls in a
     // much larger dependency graph for what's a handful of endpoints here.
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // Security floors for transitive libraries whose upstream parents are stale. Keep these
+    // explicit until pdfbox-android/POI/LiteRT publish dependency graphs above the advisory ranges.
+    constraints {
+        implementation("com.google.protobuf:protobuf-javalite:4.28.2")
+        implementation("org.apache.commons:commons-lang3:3.18.0")
+        implementation("org.apache.logging.log4j:log4j-api:2.26.1")
+    }
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

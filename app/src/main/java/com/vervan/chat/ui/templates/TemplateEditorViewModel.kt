@@ -67,6 +67,7 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
                     _isBuiltIn.value = t.isBuiltIn
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _recordFound.value = false
                 _loadError.value = t.toUserMessage()

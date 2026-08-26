@@ -39,6 +39,7 @@ class PdfPageViewerViewModel(private val app: VervanApp, private val documentId:
             try {
                 _document.value = db.documentDao().get(documentId)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _error.value = t.toUserMessage()
             } finally {

@@ -255,6 +255,37 @@ class VariantInstallerTest {
     }
 
     @Test
+    fun `transient primary partial is cleared before mirror`() = runBlocking {
+        val weights = ggufBytes(64)
+        val primary = source("model.gguf")
+        val mirror = source("model.gguf", SourceProvider.MIRROR)
+        val a = artifact("w", ArtifactRole.WEIGHTS, weights, listOf(primary, mirror))
+        val v = variant(listOf(a), mapOf(ArtifactRole.WEIGHTS to "w"))
+        val fetcher = object : ArtifactFetcher {
+            override suspend fun fetch(
+                source: ArtifactSource,
+                dest: File,
+                expectedBytes: Long,
+                onProgress: suspend (Long) -> Unit,
+                knownEtag: String?,
+                knownLastModified: String?,
+            ): FetchMetadata {
+                if (source.provider == SourceProvider.HUGGING_FACE) {
+                    dest.writeBytes(weights.copyOfRange(0, 20))
+                    throw java.io.IOException("connection reset")
+                }
+                assertEquals("mirror must start from a clean destination", 0L, dest.length())
+                assertNull(knownEtag)
+                assertNull(knownLastModified)
+                dest.writeBytes(weights)
+                return FetchMetadata(null, null)
+            }
+        }
+
+        assertTrue(installer(fetcher).install(model, v, 42, "lh") is InstallOutcome.Success)
+    }
+
+    @Test
     fun `a mirror serving different content is still rejected`() = runBlocking {
         // Failover is only safe because of the hash gate — prove the gate actually holds.
         val declared = ggufBytes(64)

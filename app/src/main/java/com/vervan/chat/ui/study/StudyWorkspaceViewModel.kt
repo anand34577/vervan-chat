@@ -91,6 +91,7 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 _generationStage.value = "Creating $cardCount focused cards"
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { raw += it }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "generateSet($setName) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
                 _generating.value = false

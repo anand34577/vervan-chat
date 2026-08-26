@@ -54,7 +54,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
     val reducedMotion = rememberReducedMotion()
     val textSizeDescription = stringResource(
         com.vervan.chat.R.string.accessibility_text_size_description,
-        String.format("%.0f", fontScale * 100)
+        String.format(java.util.Locale.getDefault(), "%.0f", fontScale * 100)
     )
 
     Scaffold(
@@ -81,7 +81,7 @@ fun AccessibilitySettingsScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(Space.lg)) {
                     ListItem(
                         headlineContent = { Text(stringResource(com.vervan.chat.R.string.accessibility_text_size)) },
-                        supportingContent = { Text(stringResource(com.vervan.chat.R.string.accessibility_text_size_support, String.format("%.0f", fontScale * 100))) },
+                        supportingContent = { Text(stringResource(com.vervan.chat.R.string.accessibility_text_size_support, String.format(java.util.Locale.getDefault(), "%.0f", fontScale * 100))) },
                         leadingContent = { Icon(Icons.Filled.TextFields, contentDescription = null) }
                     )
                     Slider(

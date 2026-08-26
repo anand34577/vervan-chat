@@ -222,7 +222,7 @@ private fun DeviceCard(totalBytes: Long, availableBytes: Long, budgetGb: Float) 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 MiniStat(formatBytes(totalBytes), stringResource(R.string.ui_modelcalculatorscreen_total_ram), Modifier.weight(1f))
                 MiniStat(formatBytes(availableBytes), stringResource(R.string.ui_modelcalculatorscreen_available_now), Modifier.weight(1f))
-                MiniStat(String.format("%.1f GB", budgetGb), stringResource(R.string.ui_modelcalculatorscreen_safe_model_budget), Modifier.weight(1f))
+                MiniStat(String.format(java.util.Locale.getDefault(), "%.1f GB", budgetGb), stringResource(R.string.ui_modelcalculatorscreen_safe_model_budget), Modifier.weight(1f))
             }
         }
     }
@@ -245,7 +245,7 @@ private fun BestMeasuredModelCard(model: ModelInfo, stat: ModelSpeedStat, onSetD
                     modifier = Modifier.padding(top = Space.xs)
                 )
                 Text(
-                    stringResource(R.string.ui_modelcalculatorscreen_speed_summary, String.format("%.1f", stat.tokensPerSecond), stat.samples, if (stat.samples == 1) stringResource(R.string.ui_modelcalculatorscreen_reply) else stringResource(R.string.ui_modelcalculatorscreen_replies)),
+                    stringResource(R.string.ui_modelcalculatorscreen_speed_summary, String.format(java.util.Locale.getDefault(), "%.1f", stat.tokensPerSecond), stat.samples, if (stat.samples == 1) stringResource(R.string.ui_modelcalculatorscreen_reply) else stringResource(R.string.ui_modelcalculatorscreen_replies)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = Space.xs)
@@ -285,7 +285,7 @@ private fun FitCard(fit: FitLevel, ratio: Float, requiredGb: Float, budgetGb: Fl
                             }
                         }
                         Text(
-                            String.format("%.1f GB", requiredGb),
+                            String.format(java.util.Locale.getDefault(), "%.1f GB", requiredGb),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.align(Alignment.End),
@@ -298,7 +298,7 @@ private fun FitCard(fit: FitLevel, ratio: Float, requiredGb: Float, budgetGb: Fl
                             Text(stringResource(fit.titleRes), style = MaterialTheme.typography.titleMedium, color = color)
                             Text(stringResource(fit.bodyRes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(String.format("%.1f GB", requiredGb), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(String.format(java.util.Locale.getDefault(), "%.1f GB", requiredGb), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -307,7 +307,7 @@ private fun FitCard(fit: FitLevel, ratio: Float, requiredGb: Float, budgetGb: Fl
                 drawRoundRect(track, size = size, cornerRadius = CornerRadius(size.height / 2))
                 drawRoundRect(color, size = Size(size.width * ratio.coerceIn(0f, 1f), size.height), cornerRadius = CornerRadius(size.height / 2))
             }
-            Text(stringResource(R.string.ui_modelcalculatorscreen_estimated_memory, String.format("%.1f GB", budgetGb)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.ui_modelcalculatorscreen_estimated_memory, String.format(java.util.Locale.getDefault(), "%.1f GB", budgetGb)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -354,7 +354,7 @@ private fun MemoryBreakdown(estimate: ModelMemoryEstimate) {
 private fun MemoryPart(label: String, value: Float, color: Color, modifier: Modifier) {
     Column(modifier) {
         Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(10.dp)) { drawCircle(color) } }
-        Text(String.format("%.1f GB", value), style = MaterialTheme.typography.titleSmall)
+        Text(String.format(java.util.Locale.getDefault(), "%.1f GB", value), style = MaterialTheme.typography.titleSmall)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -405,5 +405,5 @@ private fun suggestedParameters(budgetGb: Float, bits: Int, context: Int): Float
     listOf(0.5f, 1f, 1.5f, 2f, 3f, 4f, 7f, 8f, 13f, 14f, 20f, 27f, 32f)
         .lastOrNull { estimateModelMemory(it, bits, context).totalGb <= budgetGb * 0.85f } ?: 0.5f
 
-private fun formatParameterCount(value: Float): String = if (value % 1f == 0f) "${value.toInt()}B" else String.format("%.1fB", value)
+private fun formatParameterCount(value: Float): String = if (value % 1f == 0f) "${value.toInt()}B" else String.format(java.util.Locale.getDefault(), "%.1fB", value)
 private fun formatContext(tokens: Int): String = if (tokens >= 1024) "${tokens / 1024}K tokens" else "$tokens tokens"

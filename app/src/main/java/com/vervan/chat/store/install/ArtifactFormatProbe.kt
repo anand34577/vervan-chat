@@ -67,6 +67,7 @@ class ArtifactFormatProbe {
             buffer.takeIf { it.size >= 4 }
         }
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         null
     }
 

@@ -142,6 +142,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -259,8 +261,8 @@ internal fun inspectDocument(context: Context, uri: Uri): PendingDocumentSelecti
 internal fun readableFileSize(bytes: Long?): String = when {
     bytes == null || bytes < 0 -> "Size unavailable"
     bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes < 1024 * 1024 -> "%.1f KB".format(java.util.Locale.getDefault(), bytes / 1024.0)
+    else -> "%.1f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024.0))
 }
 
 @Composable
@@ -557,7 +559,7 @@ private fun CompactAttachmentAction(
 
 internal fun formatMs(ms: Int): String {
     val totalSec = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(totalSec / 60, totalSec % 60)
+    return "%d:%02d".format(java.util.Locale.getDefault(), totalSec / 60, totalSec % 60)
 }
 
 /** WhatsApp-style voice message row: play/pause, a seekable progress bar, and elapsed/total
@@ -568,8 +570,8 @@ internal fun formatMs(ms: Int): String {
 internal fun VoiceMessageRow(path: String) {
     var isPlaying by remember(path) { mutableStateOf(false) }
     var mediaPlayer by remember(path) { mutableStateOf<android.media.MediaPlayer?>(null) }
-    var durationMs by remember(path) { mutableStateOf(0) }
-    var positionMs by remember(path) { mutableStateOf(0) }
+    var durationMs by remember(path) { mutableIntStateOf(0) }
+    var positionMs by remember(path) { mutableIntStateOf(0) }
     // Surface a real error UI instead of swallowing prepare()/setDataSource() failures —
     // previously a corrupt or missing voice file silently rendered as an unplayable row with
     // a 0:00 duration, looking like a stuck player. Now the user sees the failure and can
@@ -864,7 +866,7 @@ internal fun FullScreenImagePreview(
                 // Pinch-to-zoom + pan, plus double-tap to toggle 1x/2.5x — the baseline
                 // "view an image" gesture set users expect from any photo viewer. Pan only
                 // engages while zoomed in; at 1x the image stays centered so it can't drift.
-                var scale by remember(path) { mutableStateOf(1f) }
+                var scale by remember(path) { mutableFloatStateOf(1f) }
                 var pan by remember(path) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                 val transformState = rememberTransformableState { zoomChange, panChange, _ ->
                     scale = (scale * zoomChange).coerceIn(1f, 5f)

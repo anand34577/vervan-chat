@@ -222,6 +222,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -257,6 +258,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importEmbeddingPair() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -291,6 +293,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importLlamaCppModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -432,6 +435,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "addRemoteApiModels() threw unexpectedly", t)
                 _status.value = "Could not add models. ${t.toUserMessage()}"
             } finally {
@@ -505,6 +509,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "importWhisperCppModel() threw unexpectedly", t)
                 _status.value = "Import failed. ${t.toUserMessage()}"
             } finally {
@@ -631,6 +636,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 setActive(verified)
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // NonCancellable: this whole function runs on viewModelScope, so navigating away from
             // Model Manager mid-validation (or the app backgrounding while this ViewModel is torn
             // down) delivers a CancellationException right here — without NonCancellable, these
@@ -740,7 +746,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         // runs doLoadGeneration (see ModelLoadCoordinator's runsOnDevice
                         // short-circuit) — same fix as the chat stats row's own backend label.
                         val backendLabel = if (persisted.traits.runsOnDevice) persisted.lastWorkingBackend.toString() else "Remote"
-                        "${String.format("%.1f", chars / seconds)} characters/sec on $backendLabel" +
+                        "${String.format(java.util.Locale.getDefault(), "%.1f", chars / seconds)} characters/sec on $backendLabel" +
                             (if (persisted.engine == ModelEngine.LITERT_LM && app.container.llmEngine.speculativeDecodingActive) " (MTP active)" else "")
                     } else if (!model.traits.runsOnDevice) {
                         val persisted = db.modelDao().get(model.id) ?: model
@@ -771,6 +777,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 _status.value = "Benchmark: $result"
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis(), detail = result))
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
                     _status.value = "Benchmark stopped"
                     return@launch
@@ -932,6 +939,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }
                 _status.value = "Deleted ${model.displayName}"
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "delete() failed for ${model.displayName}", t)
                 _status.value = "Delete failed. ${t.toUserMessage()}"
             } finally {

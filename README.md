@@ -28,7 +28,7 @@ The privacy promise is intentionally specific rather than absolute:
 - On-device models process prompts locally.
 - Model and voice downloads happen only when you request them.
 - Remote OpenAI-compatible models are optional. If you add one, prompts sent to it leave the device and are handled by that provider.
-- The local API server is optional and off by default. It binds to localhost by default; enabling the explicit LAN-access option exposes it to the network, so use an API key—especially in full web-app mode.
+- The local API server is optional and off by default. It binds to localhost by default. LAN access and the full web workspace always require an API key; only localhost Basic API mode may be deliberately configured without one.
 - Network activity is recorded in Vervan’s in-app audit log.
 
 ## What you can do
@@ -130,7 +130,7 @@ Microphone, camera, calendar, notifications, overlay, and screen capture are opt
 
 Turn on **Settings → Local API server → Full web app mode** to serve a browser interface from the phone. It is a live view of the same local workspace, not a separate cloud copy: chats, notes, documents, knowledge bases, tools, and models remain on the device.
 
-Basic API mode exposes only the OpenAI-compatible inference endpoints. Full web-app mode exposes much more of the workspace, so an API key is required whenever LAN access is enabled. The server is off until you enable it, binds to `127.0.0.1` unless LAN access is explicitly enabled, and passes the browser token in a URL fragment so it is not sent as an HTTP query parameter. Browser credentials are kept in session storage rather than persistent local storage. Remote model endpoints must use HTTPS unless they are loopback/emulator-host services; the app disables cleartext traffic globally.
+Basic API mode exposes only the OpenAI-compatible inference endpoints. Full web-app mode exposes chats, documents, attachments, and other workspace data, so it always requires an API key—even on localhost. LAN access also always requires a key. The server is off until you enable it, binds to `127.0.0.1` unless LAN access is explicitly enabled, and passes the browser token in a URL fragment so it is not sent as an HTTP query parameter. Browser credentials are kept in session storage rather than persistent local storage. Remote model endpoints must use HTTPS unless they are loopback/emulator-host services; the app disables cleartext traffic globally.
 
 ## Technical overview
 

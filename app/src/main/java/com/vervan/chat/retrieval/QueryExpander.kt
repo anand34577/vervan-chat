@@ -24,7 +24,7 @@ object QueryExpander {
         val prompt = "Rewrite the following search query as up to $MAX_VARIANTS short alternate " +
             "phrasings that describe the same information need using different words. One per " +
             "line, no numbering, no explanation, no quotes.\n\nQuery: $query"
-        val raw = runCatching {
+        val raw = com.vervan.chat.system.runCatchingPreservingCancellation {
             OneShotLlm.run(app, prompt, model = model, maxOutputTokensOverride = MAX_OUTPUT_TOKENS)
         }.getOrNull() ?: return listOf(query)
 

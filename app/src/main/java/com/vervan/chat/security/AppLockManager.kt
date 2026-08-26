@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.SystemClock
 import android.util.Base64
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
@@ -39,16 +37,29 @@ class AppLockManager(context: Context) {
     val isLocked: StateFlow<Boolean> = _isLocked
 
     @Volatile private var backgroundedAt: Long? = null
-    fun hasPin(): Boolean = prefs.contains(KEY_HASH)
+    fun hasPin(): Boolean = readPinMaterial()?.let { material ->
+        material.salt.fill(0)
+        material.hash.fill(0)
+        true
+    } ?: false
 
     fun setPin(pin: String) {
+        require(pin.length in MIN_PIN_LENGTH..MAX_PIN_LENGTH && pin.all(Char::isDigit)) {
+            "PIN must contain $MIN_PIN_LENGTH to $MAX_PIN_LENGTH digits"
+        }
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        prefs.edit()
-            .putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
-            .putString(KEY_HASH, Base64.encodeToString(hash(pin, salt), Base64.NO_WRAP))
-            .remove(KEY_FAILED_ATTEMPTS)
-            .remove(KEY_LOCKED_UNTIL)
-            .apply()
+        val derivedHash = hash(pin, salt)
+        try {
+            prefs.edit()
+                .putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
+                .putString(KEY_HASH, Base64.encodeToString(derivedHash, Base64.NO_WRAP))
+                .remove(KEY_FAILED_ATTEMPTS)
+                .remove(KEY_LOCKED_UNTIL)
+                .apply()
+        } finally {
+            salt.fill(0)
+            derivedHash.fill(0)
+        }
     }
 
     fun clearPin() {
@@ -62,15 +73,23 @@ class AppLockManager(context: Context) {
 
     fun verifyPin(pin: String): Boolean {
         if (pinLockoutRemainingMs() > 0) return false
-        val saltB64 = prefs.getString(KEY_SALT, null) ?: return false
-        val hashB64 = prefs.getString(KEY_HASH, null) ?: return false
-        val salt = Base64.decode(saltB64, Base64.NO_WRAP)
-        val expected = Base64.decode(hashB64, Base64.NO_WRAP)
-        val correct = MessageDigest.isEqual(hash(pin, salt), expected)
+        val material = readPinMaterial() ?: return false
+        val actual = hash(pin, material.salt)
+        val correct = try {
+            MessageDigest.isEqual(actual, material.hash)
+        } finally {
+            actual.fill(0)
+            material.salt.fill(0)
+            material.hash.fill(0)
+        }
         if (correct) {
             prefs.edit().remove(KEY_FAILED_ATTEMPTS).remove(KEY_LOCKED_UNTIL).apply()
         } else {
-            val failedAttempts = prefs.getInt(KEY_FAILED_ATTEMPTS, 0) + 1
+            val failedAttempts = try {
+                prefs.getInt(KEY_FAILED_ATTEMPTS, 0).coerceIn(0, MAX_PIN_ATTEMPTS) + 1
+            } catch (_: Exception) {
+                1
+            }
             if (failedAttempts >= MAX_PIN_ATTEMPTS) {
                 prefs.edit()
                     .remove(KEY_FAILED_ATTEMPTS)
@@ -83,6 +102,29 @@ class AppLockManager(context: Context) {
         return correct
     }
 
+    /** Treat incomplete or corrupted encrypted preference data as no PIN. This keeps the lock
+     * screen on its system-credential recovery path instead of permanently trapping the user. */
+    private fun readPinMaterial(): PinMaterial? {
+        val salt = decodePinField(KEY_SALT, PIN_SALT_BYTES) ?: return null
+        val hash = decodePinField(KEY_HASH, PIN_HASH_BYTES)
+        if (hash == null) {
+            salt.fill(0)
+            return null
+        }
+        return PinMaterial(salt, hash)
+    }
+
+    private fun decodePinField(key: String, expectedBytes: Int): ByteArray? {
+        val decoded = try {
+            Base64.decode(prefs.getString(key, null) ?: return null, Base64.NO_WRAP)
+        } catch (_: Exception) {
+            return null
+        }
+        if (decoded.size == expectedBytes) return decoded
+        decoded.fill(0)
+        return null
+    }
+
     /** [SystemClock.elapsedRealtime], not [System.currentTimeMillis] — the lockout used to be
      * measured against the wall clock, which anyone with the device unlocked can wind backward
      * from Settings to erase the wait and keep brute-forcing the PIN with no lockout at all.
@@ -93,8 +135,14 @@ class AppLockManager(context: Context) {
      * had been up when the lockout was set) instead of clearing. Capping at [PIN_LOCKOUT_MS]
      * bounds the worst case to the intended lockout length regardless of what elapsedRealtime did
      * across a reboot. */
-    fun pinLockoutRemainingMs(): Long =
-        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - SystemClock.elapsedRealtime()).coerceIn(0, PIN_LOCKOUT_MS)
+    fun pinLockoutRemainingMs(): Long {
+        val lockedUntil = try {
+            prefs.getLong(KEY_LOCKED_UNTIL, 0)
+        } catch (_: Exception) {
+            0L
+        }
+        return (lockedUntil - SystemClock.elapsedRealtime()).coerceIn(0, PIN_LOCKOUT_MS)
+    }
 
     /** Locks immediately — cold start with lock enabled, or a manual "Lock now" action. */
     fun lockNow() { _isLocked.value = true }
@@ -117,9 +165,17 @@ class AppLockManager(context: Context) {
     }
 
     private fun hash(pin: String, salt: ByteArray): ByteArray {
-        val spec = PBEKeySpec(pin.toCharArray(), salt, PBKDF2_ITERATIONS, 256)
-        return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+        val chars = pin.toCharArray()
+        val spec = PBEKeySpec(chars, salt, PBKDF2_ITERATIONS, 256)
+        return try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+        } finally {
+            spec.clearPassword()
+            chars.fill('\u0000')
+        }
     }
+
+    private data class PinMaterial(val salt: ByteArray, val hash: ByteArray)
 
     companion object {
         private const val KEY_SALT = "pin_salt"
@@ -127,6 +183,10 @@ class AppLockManager(context: Context) {
         private const val KEY_FAILED_ATTEMPTS = "pin_failed_attempts"
         private const val KEY_LOCKED_UNTIL = "pin_locked_until"
         private const val PBKDF2_ITERATIONS = 120_000
+        private const val PIN_SALT_BYTES = 16
+        private const val PIN_HASH_BYTES = 32
+        private const val MIN_PIN_LENGTH = 4
+        private const val MAX_PIN_LENGTH = 12
         private const val MAX_PIN_ATTEMPTS = 5
         private const val PIN_LOCKOUT_MS = 30_000L
     }

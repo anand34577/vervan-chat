@@ -23,7 +23,7 @@ object OfflineDictationTranscriber {
          * [LoadTrigger.API_REQUEST] instead, so a model loaded to serve `/v1/audio/transcriptions`
          * stays TTL-managed rather than becoming permanently resident. */
         loadTrigger: LoadTrigger = LoadTrigger.VOICE_SESSION,
-    ): Result<TranscriptionResult> = runCatching {
+    ): Result<TranscriptionResult> = com.vervan.chat.system.runCatchingPreservingCancellation {
         require(wavFile.isFile) { "Recorded audio file is missing" }
         require(wavFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
         val decoded = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
@@ -52,7 +52,7 @@ object OfflineDictationTranscriber {
                         whisper.transcribe(decoded.samples, decoded.sampleRateHz)
                             ?.trim()
                             ?.takeIf { it.isNotEmpty() }
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                     SttEngineChoice.MODEL_AUDIO -> {
                         model ?: continue
@@ -79,7 +79,7 @@ object OfflineDictationTranscriber {
                             systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
                         ).collect { text.append(it) }
                         ModelAudioTranscriptSanitizer.clean(text.toString(), durationMs)
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                     SttEngineChoice.ANDROID -> {
                         val language = app.container.settingsRepository.voiceInputLanguage.first()
@@ -87,7 +87,7 @@ object OfflineDictationTranscriber {
                         AndroidSystemSttRecognizer.recognizeAudioFile(
                             app, wavFile, language, maxSeconds
                         ).getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                            ?.let { return@runCatchingPreservingCancellation TranscriptionResult(it, candidate.label) }
                     }
                 }
             }

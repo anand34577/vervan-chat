@@ -184,6 +184,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
                 val result = load(modelPath, mmprojPath, maxTokens, layers, nThreads, options)
                 return result.copy(fellBackToCpu = layers == 0 && attempts.first() > 0)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 lastError = t
                 if (layers != attempts.last()) {
                     Log.w(TAG, "loadModel() failed with $layers GPU layers; trying the next AUTO level", t)
@@ -266,6 +267,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
                 if (error != null) throw IllegalStateException(error)
                 this@flow.close()
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "generate() FAILED", t)
                 this@flow.close(t)
             }

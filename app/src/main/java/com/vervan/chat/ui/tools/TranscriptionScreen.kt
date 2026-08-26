@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -136,7 +137,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             Text(
                                 if (recording) {
                                     val ms = (phase as TranscriptionViewModel.Phase.Recording).elapsedMs
-                                    "Stop (%d:%02d)".format(ms / 60000, (ms / 1000) % 60)
+                                    "Stop (%d:%02d)".format(java.util.Locale.getDefault(), ms / 60000, (ms / 1000) % 60)
                                 } else "Record"
                             )
                         }
@@ -485,7 +486,7 @@ private fun TimestampedPlaybackCard(
 ) {
     var player by remember(audioPath) { mutableStateOf<android.media.MediaPlayer?>(null) }
     var isPlaying by remember(audioPath) { mutableStateOf(false) }
-    var positionMs by remember(audioPath) { mutableStateOf(0L) }
+    var positionMs by remember(audioPath) { mutableLongStateOf(0L) }
 
     androidx.compose.runtime.DisposableEffect(audioPath) {
         val mp = runCatching {
@@ -536,7 +537,7 @@ private fun TimestampedPlaybackCard(
                             .padding(vertical = 6.dp)
                     ) {
                         Text(
-                            "%d:%02d".format(seg.startMs / 60000, (seg.startMs / 1000) % 60),
+                            "%d:%02d".format(java.util.Locale.getDefault(), seg.startMs / 60000, (seg.startMs / 1000) % 60),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = Space.sm)

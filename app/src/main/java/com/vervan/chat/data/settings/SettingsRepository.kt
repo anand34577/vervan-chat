@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "vervan_settings")
+private val ALLOWED_APP_LOCK_METHODS = setOf("BIOMETRIC", "PIN", "BOTH")
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -26,6 +27,12 @@ data class ThemePreferences(
     val oledTrueBlack: Boolean,
     val dynamicColor: Boolean,
     val highContrast: Boolean,
+)
+
+data class SecurityPreferences(
+    val appLockEnabled: Boolean,
+    val appLockMethod: String,
+    val screenshotBlockingEnabled: Boolean,
 )
 
 /**
@@ -544,11 +551,20 @@ class SettingsRepository(context: Context) {
     suspend fun setAppLockEnabled(enabled: Boolean) { store.edit { it[Keys.APP_LOCK_ENABLED] = enabled } }
 
     /** One of AppLockMethod's names ("BIOMETRIC"/"PIN"/"BOTH"). */
-    val appLockMethod: Flow<String> = store.data.map { it[Keys.APP_LOCK_METHOD] ?: "BIOMETRIC" }
-    suspend fun setAppLockMethod(value: String) { store.edit { it[Keys.APP_LOCK_METHOD] = value } }
+    val appLockMethod: Flow<String> = store.data.map {
+        it[Keys.APP_LOCK_METHOD]?.takeIf(ALLOWED_APP_LOCK_METHODS::contains) ?: "BIOMETRIC"
+    }
+    suspend fun setAppLockMethod(value: String) {
+        require(value in ALLOWED_APP_LOCK_METHODS) { "Unknown app-lock method" }
+        store.edit { it[Keys.APP_LOCK_METHOD] = value }
+    }
 
-    val autoLockTimeoutSeconds: Flow<Int> = store.data.map { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] ?: 60 }
-    suspend fun setAutoLockTimeoutSeconds(value: Int) { store.edit { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] = value } }
+    val autoLockTimeoutSeconds: Flow<Int> = store.data.map {
+        (it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] ?: 60).coerceIn(0, 600)
+    }
+    suspend fun setAutoLockTimeoutSeconds(value: Int) {
+        store.edit { it[Keys.AUTO_LOCK_TIMEOUT_SECONDS] = value.coerceIn(0, 600) }
+    }
 
     val quickActionBubbleEnabled: Flow<Boolean> = store.data.map { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] ?: false }
     suspend fun setQuickActionBubbleEnabled(v: Boolean) { store.edit { it[Keys.QUICK_ACTION_BUBBLE_ENABLED] = v } }
@@ -578,8 +594,8 @@ class SettingsRepository(context: Context) {
             }
         }
     }
-    // Authentication is secure by default and mandatory whenever the socket is LAN-facing.
-    // On localhost only, a user may deliberately disable it for a trusted local workflow.
+    // Authentication is secure by default. Only localhost Basic mode may deliberately disable
+    // it; LAN and full web mode enforce it again at the service boundary.
     val apiServerRequireAuth: Flow<Boolean> = store.data.map { prefs ->
         // Older builds persisted false by default. Until the one-time hardening marker is
         // written, expose the secure value immediately so the UI never briefly claims that a
@@ -612,7 +628,15 @@ class SettingsRepository(context: Context) {
     // something the user opts into, with the same secure-by-default reasoning as API auth. See
     // LocalApiServer's fullMode branch.
     val apiServerFullMode: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_FULL_MODE] ?: false }
-    suspend fun setApiServerFullMode(v: Boolean) { store.edit { it[Keys.API_SERVER_FULL_MODE] = v } }
+    suspend fun setApiServerFullMode(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_FULL_MODE] = v
+            if (v) {
+                it[Keys.API_SERVER_REQUIRE_AUTH] = true
+                it[Keys.API_SERVER_SECURITY_DEFAULTS_APPLIED] = true
+            }
+        }
+    }
     // How long a model auto-loaded to serve an API request stays resident once requests stop —
     // the same "JIT model TTL" LM Studio exposes, and the reason an idle phone doesn't sit there
     // holding several GB of weights. Only ever applies to loads the API server itself triggered
@@ -627,12 +651,23 @@ class SettingsRepository(context: Context) {
     // request has no such moment, so running the phone's tools for a remote caller has to be a
     // deliberate choice.
     val apiServerAppTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_APP_TOOLS] ?: false }
-    suspend fun setApiServerAppTools(v: Boolean) { store.edit { it[Keys.API_SERVER_APP_TOOLS] = v } }
+    suspend fun setApiServerAppTools(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_APP_TOOLS] = v
+            if (!v) it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = false
+        }
+    }
     // Second gate, on top of apiServerAppTools: without it only ToolRisk.READ_ONLY tools run.
     // Writes (create a note, log an expense) and external actions (open another app) are exactly
     // what the native tool card asks the user to confirm per call, so they stay opt-in here too.
-    val apiServerAllowWriteTools: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] ?: false }
-    suspend fun setApiServerAllowWriteTools(v: Boolean) { store.edit { it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = v } }
+    val apiServerAllowWriteTools: Flow<Boolean> = store.data.map {
+        (it[Keys.API_SERVER_APP_TOOLS] ?: false) && (it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] ?: false)
+    }
+    suspend fun setApiServerAllowWriteTools(v: Boolean) {
+        store.edit {
+            it[Keys.API_SERVER_ALLOW_WRITE_TOOLS] = v && (it[Keys.API_SERVER_APP_TOOLS] ?: false)
+        }
+    }
 
     // ---- Retention policy ----
     val autoDeleteAfterDays: Flow<Int> = store.data.map { it[Keys.AUTO_DELETE_AFTER_DAYS] ?: 0 }
@@ -679,6 +714,16 @@ class SettingsRepository(context: Context) {
 
     val screenshotBlockingEnabled: Flow<Boolean> = store.data.map { it[Keys.SCREENSHOT_BLOCKING_ENABLED] ?: false }
     suspend fun setScreenshotBlockingEnabled(v: Boolean) { store.edit { it[Keys.SCREENSHOT_BLOCKING_ENABLED] = v } }
+
+    /** Atomic fail-closed startup snapshot for settings that guard visible user data. */
+    val securityPreferences: Flow<SecurityPreferences> = store.data.map { prefs ->
+        SecurityPreferences(
+            appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false,
+            appLockMethod = prefs[Keys.APP_LOCK_METHOD]
+                ?.takeIf(ALLOWED_APP_LOCK_METHODS::contains) ?: "BIOMETRIC",
+            screenshotBlockingEnabled = prefs[Keys.SCREENSHOT_BLOCKING_ENABLED] ?: false,
+        )
+    }
 
     /** Panic wipe — clears every preference back to defaults. Does not touch the
      * Room database, model/document files, or the app-lock PIN store; those are separate

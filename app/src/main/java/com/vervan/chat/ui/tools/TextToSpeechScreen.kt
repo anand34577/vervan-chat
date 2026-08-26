@@ -266,8 +266,8 @@ private fun shareAudio(context: android.content.Context, file: java.io.File, mim
 private fun AudioPlaybackCard(file: java.io.File, onShare: (java.io.File, String) -> Unit, onExportM4a: () -> Unit) {
     var player by remember(file) { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember(file) { mutableStateOf(false) }
-    var positionMs by remember(file) { mutableStateOf(0) }
-    var durationMs by remember(file) { mutableStateOf(0) }
+    var positionMs by remember(file) { mutableIntStateOf(0) }
+    var durationMs by remember(file) { mutableIntStateOf(0) }
     var speed by remember(file) { mutableFloatStateOf(1f) }
 
     DisposableEffect(file) {
@@ -308,11 +308,11 @@ private fun AudioPlaybackCard(file: java.io.File, onShare: (java.io.File, String
             IconButton(onClick = { onShare(file, "audio/wav") }) { Icon(Icons.Filled.Share, contentDescription = stringResource(com.vervan.chat.R.string.tts_share_wav)) }
         }
         Text(
-            "%d:%02d / %d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60, durationMs / 60000, (durationMs / 1000) % 60),
+            "%d:%02d / %d:%02d".format(java.util.Locale.getDefault(), positionMs / 60000, (positionMs / 1000) % 60, durationMs / 60000, (durationMs / 1000) % 60),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text(stringResource(com.vervan.chat.R.string.tts_speed, "%.1f".format(speed)), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = Space.sm))
+            Text(stringResource(com.vervan.chat.R.string.tts_speed, "%.1f".format(java.util.Locale.getDefault(), speed)), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = Space.sm))
             Slider(
                 value = speed, onValueChange = { newSpeed ->
                     speed = newSpeed

@@ -76,7 +76,13 @@ fun SecuritySettingsScreen(
     val method by vm.appLockMethod.collectAsState()
     val timeoutSeconds by vm.autoLockTimeoutSeconds.collectAsState()
     val retentionDays by vm.autoDeleteAfterDays.collectAsState()
+    val biometricAvailable = remember(app) {
+        androidx.biometric.BiometricManager.from(app).canAuthenticate(
+            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+        ) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+    }
     var showPinSetup by remember { mutableStateOf(false) }
+    var pendingLockMethod by remember { mutableStateOf<String?>(null) }
     var confirmWipeStep1 by remember { mutableStateOf(false) }
     var confirmWipeStep2 by remember { mutableStateOf(false) }
     var wiping by remember { mutableStateOf(false) }
@@ -117,8 +123,12 @@ fun SecuritySettingsScreen(
                         Switch(
                             checked = enabled,
                             onCheckedChange = { turnOn ->
-                                if (turnOn && method != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
-                                else vm.setAppLockEnabled(turnOn)
+                                if (turnOn && !vm.hasPin && (method != "BIOMETRIC" || !biometricAvailable)) {
+                                    pendingLockMethod = if (biometricAvailable) method else "PIN"
+                                    showPinSetup = true
+                                } else {
+                                    vm.setAppLockEnabled(turnOn)
+                                }
                             }
                         )
                     }
@@ -130,10 +140,15 @@ fun SecuritySettingsScreen(
                                 VervanFilterChip(
                                     selected = method == value,
                                     onClick = {
-                                        vm.setAppLockMethod(value)
-                                        if (value != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
+                                        if (value != "BIOMETRIC" && !vm.hasPin) {
+                                            pendingLockMethod = value
+                                            showPinSetup = true
+                                        } else {
+                                            vm.setAppLockMethod(value)
+                                        }
                                     },
                                     label = { Text(label) },
+                                    enabled = value != "BIOMETRIC" || biometricAvailable || vm.hasPin,
                                     modifier = Modifier.padding(end = Space.sm)
                                 )
                             }
@@ -288,9 +303,15 @@ fun SecuritySettingsScreen(
 
     if (showPinSetup) {
         PinSetupDialog(
-            onDismiss = { showPinSetup = false; if (!vm.hasPin) vm.setAppLockMethod("BIOMETRIC") },
+            onDismiss = {
+                showPinSetup = false
+                pendingLockMethod = null
+                if (!vm.hasPin) vm.setAppLockMethod("BIOMETRIC")
+            },
             onConfirm = { pin ->
                 vm.setPin(pin)
+                pendingLockMethod?.let(vm::setAppLockMethod)
+                pendingLockMethod = null
                 showPinSetup = false
                 vm.setAppLockEnabled(true)
             }

@@ -43,6 +43,7 @@ class ModelValidator {
         try {
             Capabilities(file.absolutePath).use { }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "validateLitertlm() failed for ${file.name}: ${t.message}")
             throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "${file.name} could not be opened as a LiteRT model", t)
         }
@@ -62,6 +63,7 @@ class ModelValidator {
         } catch (e: ModelDownloadException) {
             throw e
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "validateTflite() failed for ${file.name}: ${t.message}")
             throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "${file.name} could not be opened as a TFLite model", t)
         }
@@ -74,6 +76,7 @@ class ModelValidator {
         try {
             SentencePieceTokenizer(file.inputStream().use { it.readBytesLimited(64L * 1024 * 1024) })
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "validateSentencePieceTokenizer() failed for ${file.name}: ${t.message}")
             throw ModelDownloadException(ModelErrorCode.TOKENIZER_MISSING, "${file.name} could not be parsed as a SentencePiece tokenizer", t)
         }
@@ -89,7 +92,7 @@ class ModelValidator {
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
     }
 
     companion object {

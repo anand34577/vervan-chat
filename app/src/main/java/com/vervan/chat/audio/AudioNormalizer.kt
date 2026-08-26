@@ -32,6 +32,7 @@ object AudioNormalizer {
             require(destination.length() > 44L) { "The audio file did not contain any playable sound" }
             return destination
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             destination.delete()
             throw t
         } finally {

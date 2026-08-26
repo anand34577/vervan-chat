@@ -216,8 +216,8 @@ class ModelLoadCoordinator(
                 if (coordinatorMutex.withLock { inFlight.containsKey(role) }) continue
                 ttlDeadlines.remove(role)
                 Log.i(TAG, "TTL expired for $role after ${defaults.apiModelTtlSeconds()}s idle — unloading")
-                runCatching { unload(role) }
-                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                com.vervan.chat.system.runCatchingPreservingCancellation { unload(role) }
+                    .onFailure { Log.w(TAG, "TTL unload failed for $role", it) }
             }
         }
     }
@@ -707,10 +707,12 @@ class ModelLoadCoordinator(
         } catch (t: kotlinx.coroutines.CancellationException) {
             // Structured-concurrency contract: CancellationException must propagate so parent-job
             // cancellation works. The previous `catch (t: Throwable)` swallowed it, mapping every
+                com.vervan.chat.system.rethrowCancellation(t)
             // genuine cancellation into a synthetic failure result and leaving the awaiting caller
             // running in a half-cancelled state.
             throw t
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "doLoad() FAILED for ${model.displayName} (role=$role, trigger=$trigger) — ${diagnosticContext(model, trigger)}", t)
             val category = classifyError(t)
             val result = EnsureLoadResult(
@@ -796,6 +798,7 @@ class ModelLoadCoordinator(
         val result = try {
             engine.loadModel(model.filePath, requestedContext, maxNumImages, backendPreference, backendHint, useMtp)
         } catch (first: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(first)
             if (requestedContext <= MIN_CONTEXT_RETRY_TOKENS) throw first
             engine.loadModel(model.filePath, MIN_CONTEXT_RETRY_TOKENS, maxNumImages, backendPreference, backendHint, useMtp)
         }
@@ -932,7 +935,7 @@ class ModelLoadCoordinator(
         val required = estimateRequiredBytes(model, contextTokens) + residentWeightBytes(excludingRole = role)
         val available = resourceMonitor.availableMemoryBytes()
         if (required <= available) return null
-        fun gb(bytes: Long) = "%.1f".format(bytes / 1_073_741_824.0)
+        fun gb(bytes: Long) = "%.1f".format(java.util.Locale.getDefault(), bytes / 1_073_741_824.0)
         return EnsureLoadResult(
             role, success = false, loadedModelId = model.id,
             errorCategory = ModelLoadErrorCategory.INSUFFICIENT_MEMORY,

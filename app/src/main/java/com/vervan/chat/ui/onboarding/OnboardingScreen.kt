@@ -433,5 +433,5 @@ private fun formatGb(bytes: Long): String = if (bytes % (1024L * 1024 * 1024) ==
     // Whole-GB numbers read better without the ".0" — "8 GB" instead of "8.0 GB".
     (bytes / (1024L * 1024 * 1024)).toString()
 } else {
-    String.format("%.1f", bytes / (1024.0 * 1024 * 1024))
+    String.format(java.util.Locale.getDefault(), "%.1f", bytes / (1024.0 * 1024 * 1024))
 }

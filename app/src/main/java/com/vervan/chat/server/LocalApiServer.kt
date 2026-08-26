@@ -9,6 +9,7 @@ import com.vervan.chat.data.db.entities.KnowledgeBase
 import com.vervan.chat.data.db.entities.ModelRole
 import com.vervan.chat.data.db.entities.canSupportAudio
 import com.vervan.chat.data.db.entities.canSupportVision
+import com.vervan.chat.data.db.entities.traits
 import com.vervan.chat.model.DocumentImportOutcome
 import com.vervan.chat.model.ImageUtils
 import com.vervan.chat.model.copyToLimited
@@ -130,6 +131,7 @@ class LocalApiServer(
          * live, slow enough that it stays a rounding error next to the token deltas themselves. */
         private const val LIVE_STATS_INTERVAL_MS = 700L
         private val ROLE_LIST = listOf(ModelRole.GENERATION, ModelRole.EMBEDDING)
+        private val LOOPBACK_BROWSER_HOSTS = setOf("localhost", "127.0.0.1", "::1")
 
         /** Request name → (asset path, MIME type) for everything the web app's own markup pulls in.
          * The Mermaid bundle is the same one the native app's in-chat diagram WebView uses; the
@@ -176,26 +178,49 @@ class LocalApiServer(
 
     override fun serve(session: IHTTPSession): Response = withCors(serveInner(session))
 
-    /** Every response carries permissive CORS headers, and a preflight `OPTIONS` is answered
+    /** Authenticated responses carry permissive CORS headers, and a preflight `OPTIONS` is answered
      * without reaching the auth gate or any handler. Without this, a browser-based OpenAI client
      * (Open WebUI, LibreChat, a local dev page) cannot call this server *at all* — the browser
      * blocks the request before it is ever sent, so "compatible with OpenAI clients" is only true
      * for non-browser ones. `*` is the right origin policy here specifically because the bearer
      * token is the access control: `Access-Control-Allow-Credentials` is deliberately NOT set, so
      * `*` stays legal and no browser will attach ambient cookies to a cross-origin call — a
-     * caller must present the API key explicitly, exactly as a non-browser client does. */
+     * caller must present the API key explicitly, exactly as a non-browser client does.
+     *
+     * The intentionally token-free loopback/basic mode does not emit CORS headers. Its browser
+     * requests are separately restricted to same-origin in [serveInner]; otherwise any website
+     * could read local model data or trigger a generation through the visitor's loopback socket. */
     private fun withCors(response: Response): Response = response.apply {
-        addHeader("Access-Control-Allow-Origin", "*")
-        addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type")
-        // Lets a browser client read the RAG provenance header on a streaming response; without an
-        // explicit expose-list, fetch() hides every non-safelisted response header.
-        addHeader("Access-Control-Expose-Headers", "X-Vervan-Sources")
-        addHeader("Access-Control-Max-Age", "86400")
+        if (requireAuth) {
+            addHeader("Access-Control-Allow-Origin", "*")
+            addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            // Lets a browser client read the RAG provenance header on a streaming response; without an
+            // explicit expose-list, fetch() hides every non-safelisted response header.
+            addHeader("Access-Control-Expose-Headers", "X-Vervan-Sources")
+            addHeader("Access-Control-Max-Age", "86400")
+        }
+        addHeader("X-Content-Type-Options", "nosniff")
+        addHeader("Referrer-Policy", "no-referrer")
+        addHeader("X-Frame-Options", "DENY")
+        addHeader(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; " +
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+                "media-src 'self' data: blob:; connect-src 'self'; object-src 'none'; " +
+                "base-uri 'none'; frame-ancestors 'none'",
+        )
     }
 
     private fun serveInner(session: IHTTPSession): Response {
         app.container.networkAuditLog.record("Local API request: ${session.method} ${session.uri}")
+
+        // Loopback by itself is not a browser trust boundary: a page from evil.example can issue
+        // requests to 127.0.0.1. In token-free basic mode, accept browser-originated traffic only
+        // from the exact origin serving this API. Requests without Origin are native/CLI clients.
+        if (!requireAuth && !isSameOriginOrNonBrowser(session)) {
+            return errorResponse(Response.Status.FORBIDDEN, "Cross-origin browser access requires API authentication")
+        }
 
         // Preflight carries no credentials by design — answering it before the auth gate is what
         // the CORS spec requires, and it discloses nothing beyond the headers set in withCors().
@@ -217,7 +242,7 @@ class LocalApiServer(
         // same reasoning a public login page is reachable before authentication. The UI's own
         // JS is what subsequently calls /v1/models and /v1/chat/completions *with* a token
         // (entered by the user, or carried in from Settings' "Open web UI" via a one-time
-        // ?token= query param — see webui/index.html), which the auth gate still enforces
+        // URL fragment), which the auth gate still enforces
         // exactly as for any other client.
         if (session.method == Method.GET && session.uri in setOf("/", "/index.html")) {
             return serveWebUi()
@@ -328,14 +353,33 @@ class LocalApiServer(
                 )
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             if (t is VirtualMachineError) throw t
-            // Throwable, not just Exception — NanoHTTPD buffers request bodies with no size cap
-            // enforced here, so an oversized Content-Length can OutOfMemoryError; that must not
-            // crash the app just because a LAN client sent a bad request. The raw exception
-            // message also used to go straight into the client-visible JSON error body.
+            // Catch non-VM failures so malformed client input becomes a sanitized 500 response.
+            // Fatal VM errors (including OutOfMemoryError) are deliberately rethrown because the
+            // process cannot safely continue; request body limits are enforced before parsing.
             Log.e(TAG, "serve() failed for ${session.method} ${session.uri}", t)
             errorResponse(Response.Status.INTERNAL_ERROR, t.toUserMessage())
         }
+    }
+
+    private fun isSameOriginOrNonBrowser(session: IHTTPSession): Boolean {
+        val origin = session.headers["origin"] ?: session.headers["Origin"] ?: return true
+        val hostHeader = session.headers["host"] ?: session.headers["Host"] ?: return false
+        return com.vervan.chat.system.runCatchingPreservingCancellation {
+            val originUri = java.net.URI(origin)
+            val requestUri = java.net.URI("http://$hostHeader")
+            fun normalizedHost(uri: java.net.URI): String? =
+                uri.host?.trim('[', ']')?.lowercase(java.util.Locale.ROOT)
+            fun effectiveHttpPort(uri: java.net.URI): Int = if (uri.port == -1) 80 else uri.port
+            val originHost = normalizedHost(originUri)
+            val requestHost = normalizedHost(requestUri)
+            originUri.scheme.equals("http", ignoreCase = true) &&
+                originUri.userInfo == null && originUri.query == null && originUri.fragment == null &&
+                requestHost in LOOPBACK_BROWSER_HOSTS &&
+                originHost == requestHost &&
+                effectiveHttpPort(originUri) == effectiveHttpPort(requestUri)
+        }.getOrDefault(false)
     }
 
     /** Serves the bundled web UI — `webui/full.html` (chat/RAG/documents/vision/audio) when
@@ -352,7 +396,9 @@ class LocalApiServer(
         val html = app.assets.open(assetName).use { it.readBytes() }.toString(Charsets.UTF_8)
         val injected = html.replaceFirst("<head>", "<head>\n" + themeInjectionScript())
         val bytes = injected.toByteArray(Charsets.UTF_8)
-        newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", java.io.ByteArrayInputStream(bytes), bytes.size.toLong())
+        newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", java.io.ByteArrayInputStream(bytes), bytes.size.toLong()).apply {
+            addHeader("Cache-Control", "no-store")
+        }
     } catch (e: java.io.IOException) {
         Log.e(TAG, "serveWebUi() could not read the bundled asset", e)
         errorResponse(Response.Status.INTERNAL_ERROR, "Web UI asset missing")
@@ -366,7 +412,11 @@ class LocalApiServer(
         if (assetPath.contains("..")) return errorResponse(Response.Status.FORBIDDEN, "Invalid asset path")
         return try {
             val bytes = app.assets.open(assetPath).use { it.readBytes() }
-            newFixedLengthResponse(Response.Status.OK, mimeType, java.io.ByteArrayInputStream(bytes), bytes.size.toLong())
+            newFixedLengthResponse(Response.Status.OK, mimeType, java.io.ByteArrayInputStream(bytes), bytes.size.toLong()).apply {
+                // Assets are tiny and APK-local. Revalidation avoids a browser keeping the old
+                // shell after an app update while the HTML and JS contract have changed.
+                addHeader("Cache-Control", "no-store")
+            }
         } catch (e: java.io.IOException) {
             Log.e(TAG, "serveStaticAsset() could not read $assetPath", e)
             errorResponse(Response.Status.NOT_FOUND, "Asset not found")
@@ -452,9 +502,12 @@ class LocalApiServer(
                     // Part of the spec's model object and required by a few strict clients.
                     // Import time is the only creation timestamp this app has for a model.
                     .put("created", m.importedAt / 1000)
-                    .put("owned_by", "local")
+                    .put("owned_by", if (m.traits.runsOnDevice) "local" else "remote")
                     .put("role", m.role.name.lowercase())
                     .put("engine", m.engine.name)
+                    .put("engine_label", m.traits.label)
+                    .put("runs_on_device", m.traits.runsOnDevice)
+                    .put("privacy_boundary", if (m.traits.runsOnDevice) "on_device" else "remote")
                     .put("context_length", m.contextTokens ?: JSONObject.NULL)
                     .put("backend", m.lastWorkingBackend.name)
                     .put("active", m.id == activeId)
@@ -690,6 +743,7 @@ class LocalApiServer(
                     ?: return errorResponse(Response.Status.BAD_REQUEST, "Could not decode the audio attachment")
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             imageFile?.delete(); audioFile?.delete()
             return errorResponse(Response.Status.INTERNAL_ERROR, "Could not process attachment: ${t.toUserMessage()}", ErrorType.SERVER, ErrorCode.SERVER_ERROR, null)
         }
@@ -828,6 +882,7 @@ class LocalApiServer(
                 }
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             imageFile?.delete(); audioFile?.delete()
             if (t is VirtualMachineError) throw t
             if (t is TimeoutCancellationException) {
@@ -961,7 +1016,7 @@ class LocalApiServer(
                 if (request.chatId != null) {
                     val persistedImagePath = imageFile?.let { persistAttachment(it) }
                     val persistedAudioPath = audioFile?.let { persistAttachment(it) }
-                    runCatching {
+                    com.vervan.chat.system.runCatchingPreservingCancellation {
                         persistTurn(
                             request.chatId, request.lastUserText, persistedImagePath, persistedAudioPath,
                             answer.toString(), generationMs, request.model, sourcesJson
@@ -969,6 +1024,7 @@ class LocalApiServer(
                     }.onFailure { Log.e(TAG, "persistTurn() failed for chat ${request.chatId}", it) }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is VirtualMachineError) throw t
                 // A client that hung up (or a cancelled server scope) is not an error to report —
                 // and writing to a pipe nobody is draining would block for the full write timeout
@@ -985,8 +1041,10 @@ class LocalApiServer(
                     } else {
                         t.toUserMessage()
                     }
-                    runCatching { write(errorFrame(message, ErrorType.SERVER, ErrorCode.SERVER_ERROR)) }
-                    runCatching { write("data: [DONE]\n\n") }
+                    com.vervan.chat.system.runCatchingPreservingCancellation {
+                        write(errorFrame(message, ErrorType.SERVER, ErrorCode.SERVER_ERROR))
+                    }
+                    com.vervan.chat.system.runCatchingPreservingCancellation { write("data: [DONE]\n\n") }
                 }
             } finally {
                 runCatching { pipedOut.close() }
@@ -1158,7 +1216,9 @@ class LocalApiServer(
                     if (arguments.length > InputLimits.API_MAX_TOOL_PARAMETER_CHARS) {
                         badRequest("Tool arguments are too large", ErrorCode.INVALID_VALUE, "messages")
                     }
-                    val params = runCatching { JSONObject(arguments) }.getOrElse { JSONObject() }
+                    val params = runCatching { JSONObject(arguments) }.getOrElse {
+                        badRequest("Tool arguments must be valid JSON", ErrorCode.INVALID_VALUE, "messages")
+                    }
                     if (text.isNotEmpty()) text.append('\n')
                     text.append("<tool_call>${JSONObject().put("tool", name).put("params", params)}</tool_call>")
                 }
@@ -1289,8 +1349,11 @@ class LocalApiServer(
         // (`app_tools`, defaulting to the setting). A client that wants only its own tools can turn
         // them off per request without touching the phone.
         val appToolsSetting = runBlocking { settings.apiServerAppTools.first() }
-        val appToolsEnabled = (if (json.has("app_tools")) json.optBoolean("app_tools", appToolsSetting) else appToolsSetting) &&
-            toolChoice != ApiChatRunner.ToolChoice.None
+        val appToolsEnabled = effectiveAppToolsEnabled(
+            settingEnabled = appToolsSetting,
+            requestEnabled = if (json.has("app_tools")) json.optBoolean("app_tools", false) else true,
+            toolChoiceEnabled = toolChoice != ApiChatRunner.ToolChoice.None,
+        )
         val enabledAppToolIds = if (!appToolsEnabled) emptySet() else runBlocking {
             val disabled = settings.disabledToolIds.first()
             val allowed = ToolRegistry.tools.map { it.name }.filter { it !in disabled }.toSet()
@@ -1319,7 +1382,7 @@ class LocalApiServer(
             clientTools = clientTools,
             toolChoice = toolChoice,
             appToolsEnabled = appToolsEnabled,
-            allowWriteTools = runBlocking { settings.apiServerAllowWriteTools.first() },
+            allowWriteTools = appToolsEnabled && runBlocking { settings.apiServerAllowWriteTools.first() },
             enabledAppToolIds = enabledAppToolIds,
             knowledgeBaseIds = json.optJSONArray("knowledge_base_ids")
                 ?.also { if (it.length() > InputLimits.API_MAX_TOOL_IDS) badRequest("Too many knowledge base ids", ErrorCode.INVALID_VALUE, "knowledge_base_ids") }
@@ -1559,12 +1622,22 @@ class LocalApiServer(
     private suspend fun chatContext(chatId: String, requestedKbIds: List<String>): ChatContext? {
         val db = app.container.db
         val chat = db.chatDao().getChat(chatId) ?: return null
-        val folder = chat.folderId?.let { runCatching { db.folderDao().get(it) }.getOrNull() }
-        val workspace = runCatching { db.workspaceDao().get(chat.workspaceId) }.getOrNull()
+        val folder = chat.folderId?.let {
+            com.vervan.chat.system.runCatchingPreservingCancellation { db.folderDao().get(it) }.getOrNull()
+        }
+        val workspace = com.vervan.chat.system.runCatchingPreservingCancellation {
+            db.workspaceDao().get(chat.workspaceId)
+        }.getOrNull()
 
         val personaId = com.vervan.chat.model.ChatDefaults.personaId(chat, folder, workspace)
-        val persona = runCatching { db.personaDao().getPersona(personaId) }.getOrNull()
-        val projectInstructions = chat.projectId?.let { runCatching { db.projectDao().get(it)?.instructions }.getOrNull() }
+        val persona = com.vervan.chat.system.runCatchingPreservingCancellation {
+            db.personaDao().getPersona(personaId)
+        }.getOrNull()
+        val projectInstructions = chat.projectId?.let {
+            com.vervan.chat.system.runCatchingPreservingCancellation {
+                db.projectDao().get(it)?.instructions
+            }.getOrNull()
+        }
 
         val systemPrefix = buildString {
             persona?.systemInstruction?.takeIf { it.isNotBlank() }?.let { instruction ->
@@ -1585,8 +1658,10 @@ class LocalApiServer(
                     it.content.isNotBlank() &&
                     it.state == com.vervan.chat.data.db.entities.MessageState.COMPLETE
             }
-        val contextLimit = runCatching { app.container.settingsRepository.contextTokenLimit.first() }.getOrDefault(4096)
-        val includePastThinking = runCatching {
+        val contextLimit = com.vervan.chat.system.runCatchingPreservingCancellation {
+            app.container.settingsRepository.contextTokenLimit.first()
+        }.getOrDefault(4096)
+        val includePastThinking = com.vervan.chat.system.runCatchingPreservingCancellation {
             app.container.settingsRepository.includePastThinkingInContext.first()
         }.getOrDefault(false)
         val priorTurns = ChatFormatting.trimHistoryToBudget(
@@ -1615,7 +1690,7 @@ class LocalApiServer(
     private suspend fun performRetrieval(kbIds: List<String>, query: String): List<com.vervan.chat.retrieval.SourcePassage> {
         val loaded = app.container.modelLoadCoordinator.ensureLoaded(ModelRole.EMBEDDING, LoadTrigger.API_REQUEST)
         if (!loaded.success) return emptyList()
-        val mode = runCatching {
+        val mode = com.vervan.chat.system.runCatchingPreservingCancellation {
             RetrievalMode.valueOf(app.container.settingsRepository.defaultRetrievalMode.first())
         }.getOrDefault(RetrievalMode.HYBRID)
         // No app.container.withEmbedding{} wrap — see ChatViewModel.retrieveSourcesInner's comment.
@@ -1641,6 +1716,7 @@ class LocalApiServer(
             file.writeBytes(bytes)
             if (ImageUtils.normalizeForModel(file)) file else { file.delete(); null }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             file.delete()
             null
         }
@@ -1662,6 +1738,7 @@ class LocalApiServer(
             rawFile.writeBytes(bytes)
             AudioNormalizer.normalize(app, Uri.fromFile(rawFile), wavFile)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "decodeAudioAttachment(): normalize failed", t)
             wavFile.delete()
             null
@@ -1722,6 +1799,7 @@ class LocalApiServer(
 
     private fun handleListDocuments(session: IHTTPSession): Response {
         val kbId = session.parameters["kb"]?.firstOrNull()
+            ?: session.parameters["knowledge_base_id"]?.firstOrNull()
             ?: return errorResponse(Response.Status.BAD_REQUEST, "kb query parameter is required")
         return runBlocking {
             val docs = app.container.db.documentDao().getForKb(kbId)
@@ -2032,11 +2110,22 @@ class LocalApiServer(
                 else -> return@runBlocking errorResponse(Response.Status.BAD_REQUEST, "kind must be image, audio or voice")
             } ?: return@runBlocking errorResponse(Response.Status.NOT_FOUND, "This message has no $kind attachment", ErrorType.NOT_FOUND, null, "kind")
             val file = File(path)
-            val allowedRoots = listOf(File(app.filesDir, "message-attachments"), app.cacheDir, app.filesDir)
-            val canonical = runCatching { file.canonicalFile }.getOrNull()
+            val allowedRoots = buildList {
+                add(File(app.filesDir, "message-attachments"))
+                if (kind == "image") {
+                    add(File(app.filesDir, "images"))
+                    add(File(app.filesDir, "scans"))
+                } else {
+                    add(File(app.filesDir, "audio"))
+                    add(File(app.filesDir, "transcriptions"))
+                }
+            }
+            val canonical = com.vervan.chat.system.runCatchingPreservingCancellation { file.canonicalFile }.getOrNull()
                 ?: return@runBlocking errorResponse(Response.Status.NOT_FOUND, "Attachment file is missing", ErrorType.NOT_FOUND, null, null)
             val insideAppStorage = allowedRoots.any { root ->
-                runCatching { canonical.path.startsWith(root.canonicalFile.path + File.separator) }.getOrDefault(false)
+                com.vervan.chat.system.runCatchingPreservingCancellation {
+                    canonical.path.startsWith(root.canonicalFile.path + File.separator)
+                }.getOrDefault(false)
             }
             if (!insideAppStorage || !canonical.isFile) {
                 return@runBlocking errorResponse(Response.Status.NOT_FOUND, "Attachment file is missing", ErrorType.NOT_FOUND, null, null)
@@ -2183,7 +2272,7 @@ class LocalApiServer(
             // what the app does for a chat started on the phone. Without this, web-created chats
             // silently landed in the default workspace with no persona, which is why they behaved
             // differently from ones started on the device.
-            val workspace = runCatching {
+            val workspace = com.vervan.chat.system.runCatchingPreservingCancellation {
                 val activeId = app.container.settingsRepository.activeWorkspaceId.first()
                 app.container.db.workspaceDao().get(activeId) ?: app.container.db.workspaceDao().getDefault()
             }.getOrNull()
@@ -2314,6 +2403,7 @@ class LocalApiServer(
         }
         dest.absolutePath
     } catch (t: Throwable) {
+        com.vervan.chat.system.rethrowCancellation(t)
         Log.w(TAG, "persistAttachment() failed for ${tempFile.name}", t)
         null
     }
@@ -2463,15 +2553,13 @@ class LocalApiServer(
                 // NanoHTTPD spools each uploaded part to its own temp file and hands back the path.
                 val tempPath = files["file"]
                     ?: return errorResponse(Response.Status.BAD_REQUEST, "A file part is required", ErrorType.INVALID_REQUEST, ErrorCode.INVALID_VALUE, "file")
-                val uploadedName = session.parameters["file"]?.firstOrNull().orEmpty()
                 sourceFile = File(tempPath).takeIf { it.isFile && it.length() > 0 }
                     ?: return errorResponse(Response.Status.BAD_REQUEST, "The uploaded file is empty")
                 if (sourceFile.length() > MAX_AUDIO_UPLOAD_BYTES) {
                     return errorResponse(Response.Status.PAYLOAD_TOO_LARGE, "Audio file is too large (max ${MAX_AUDIO_UPLOAD_BYTES / (1024 * 1024)} MB)")
                 }
-                // AudioNormalizer decodes by content, not by extension, so the original name is
-                // only used to keep a recognizable suffix for logging.
-                Log.i(TAG, "transcription upload: ${uploadedName.take(80)} (${sourceFile.length()} bytes)")
+                // Do not log the original file name: it can contain private meeting/person names.
+                Log.i(TAG, "transcription upload received (${sourceFile.length()} bytes)")
             } else {
                 val json = when (val result = readJsonBody(session, MAX_AUDIO_UPLOAD_BYTES)) {
                     is BodyReadResult.Error -> return result.response

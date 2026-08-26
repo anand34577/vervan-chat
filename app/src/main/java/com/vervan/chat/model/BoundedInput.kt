@@ -10,6 +10,22 @@ import java.util.zip.ZipFile
 
 class InputLimitExceededException(message: String) : IOException(message)
 
+/** Accounts for several individually-bounded parts that share one extraction budget. */
+internal class AggregateTextLimit(
+    private val maxChars: Int,
+    private val label: String
+) {
+    private var consumed = 0L
+
+    fun account(text: String): String {
+        consumed += text.length.toLong()
+        if (consumed > maxChars.toLong()) {
+            throw InputLimitExceededException("$label parts exceed the extraction limit")
+        }
+        return text
+    }
+}
+
 object ImportLimits {
     const val MAX_DOCUMENT_SOURCE_BYTES = 256L * 1024 * 1024
     const val MAX_EXTRACTED_CHARS = 16 * 1024 * 1024

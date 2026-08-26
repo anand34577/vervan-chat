@@ -12,9 +12,16 @@ fun openWithExternalApp(context: Context, file: File, mimeType: String) {
         android.widget.Toast.makeText(context, "The original file is no longer available on this device.", android.widget.Toast.LENGTH_LONG).show()
         return
     }
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val uri = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    } catch (_: Exception) {
+        android.widget.Toast.makeText(context, "This private file cannot be shared.", android.widget.Toast.LENGTH_LONG).show()
+        return
+    }
     val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    runCatching { context.startActivity(Intent.createChooser(intent, "Open with…")) }
+    com.vervan.chat.system.runCatchingPreservingCancellation {
+        context.startActivity(Intent.createChooser(intent, "Open with…"))
+    }
         .onFailure {
             android.widget.Toast.makeText(context, "No installed app can open this file type.", android.widget.Toast.LENGTH_LONG).show()
         }
@@ -27,8 +34,13 @@ fun shareWithExternalApps(context: Context, files: List<File>, mimeType: String)
         android.widget.Toast.makeText(context, "The exported file is no longer available on this device.", android.widget.Toast.LENGTH_LONG).show()
         return
     }
-    val uris = existing.map { file ->
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val uris = try {
+        existing.map { file ->
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }
+    } catch (_: Exception) {
+        android.widget.Toast.makeText(context, "One or more private files cannot be shared.", android.widget.Toast.LENGTH_LONG).show()
+        return
     }
     val intent = if (uris.size == 1) {
         Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris.first())
@@ -41,7 +53,9 @@ fun shareWithExternalApps(context: Context, files: List<File>, mimeType: String)
             clipData = ClipData.newRawUri("Vervan export", uris.first())
             uris.drop(1).forEach { clipData?.addItem(ClipData.Item(it)) }
         }
-    runCatching { context.startActivity(Intent.createChooser(intent, "Share with…")) }
+    com.vervan.chat.system.runCatchingPreservingCancellation {
+        context.startActivity(Intent.createChooser(intent, "Share with…"))
+    }
         .onFailure {
             android.widget.Toast.makeText(context, "No installed app can share this file type.", android.widget.Toast.LENGTH_LONG).show()
         }

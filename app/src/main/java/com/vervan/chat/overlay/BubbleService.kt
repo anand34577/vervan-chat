@@ -465,6 +465,7 @@ class BubbleService : Service() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 val message = getString(R.string.screen_assist_error_with_reason, t.toUserMessage())
                 showResult(message)
             }
@@ -491,6 +492,7 @@ class BubbleService : Service() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 showResult(getString(R.string.screen_assist_follow_up_error, t.toUserMessage()))
             }
         }
@@ -546,6 +548,7 @@ class BubbleService : Service() {
             db.messageDao().update(reply.copy(state = MessageState.CANCELLED))
             throw cancelled
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             val message = getString(R.string.screen_assist_answer_error, t.toUserMessage())
             db.messageDao().update(reply.copy(content = message, state = MessageState.FAILED))
             showResult(message)

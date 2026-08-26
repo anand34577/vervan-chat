@@ -114,6 +114,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 errorText = t.toUserMessage()
             } finally {
                 isGenerating = false

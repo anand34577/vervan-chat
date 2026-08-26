@@ -414,7 +414,7 @@ fun GenerationSlider(
     Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val sliderDescription = stringResource(R.string.ui_modeledit_slider_value, label, String.format(format, value))
+            val sliderDescription = stringResource(R.string.ui_modeledit_slider_value, label, String.format(java.util.Locale.getDefault(), format, value))
             Slider(
                 value = value, onValueChange = onChange, valueRange = range, steps = steps,
                 modifier = Modifier.weight(1f).semantics {
@@ -422,7 +422,7 @@ fun GenerationSlider(
                 }
             )
             Text(
-                String.format(format, value), style = MaterialTheme.typography.labelMedium,
+                String.format(java.util.Locale.getDefault(), format, value), style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(start = Space.sm)
             )
         }
@@ -432,7 +432,7 @@ fun GenerationSlider(
 fun formatBytes(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    else -> String.format(java.util.Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
 @Composable

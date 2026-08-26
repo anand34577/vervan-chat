@@ -71,6 +71,7 @@ class LicenseAcceptanceStore(private val file: File) {
                 )
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // A damaged file must not read as "everything is accepted" — an unreadable record is
             // treated as no record, so the user is asked again.
             Log.w(TAG, "Licence acceptance file unreadable, treating as empty: ${t.message}")

@@ -81,7 +81,6 @@
     options.signal = controller.signal;
     return fetch(path, options).then(function (res) {
       return res.text().then(function (raw) {
-        clearTimeout(timer);
         var parsed = {};
         try { parsed = raw ? JSON.parse(raw) : {}; } catch (e) { parsed = {}; }
         if (res.status === 401) { setStatus("auth"); throw new Error("This server needs an API key."); }
@@ -90,6 +89,9 @@
         }
         return parsed;
       });
+    }).then(function (parsed) {
+      clearTimeout(timer);
+      return parsed;
     }, function (err) {
       clearTimeout(timer);
       throw friendlyError(err);
@@ -114,6 +116,24 @@
     return safe;
   }
 
+  function copyText(value, successMessage) {
+    var textValue = String(value || "");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(textValue).then(function () { toast(successMessage || "Copied"); }, fail);
+      return;
+    }
+    var field = document.createElement("textarea");
+    field.value = textValue;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    try { document.execCommand("copy"); toast(successMessage || "Copied"); }
+    catch (err) { fail(err); }
+    document.body.removeChild(field);
+  }
+
   function showLoadError(targetId, title, err, retry) {
     var target = el(targetId);
     if (!target) return;
@@ -133,6 +153,42 @@
     var LABELS = { ok: "Connected", busy: "Generating…", err: "Server issue", auth: "API key needed", idle: "Connecting…" };
     el("statusDot").className = "dot " + (state === "idle" ? "" : state);
     el("statusLabel").textContent = label || LABELS[state] || "";
+  }
+
+  function setPrivacyBoundary(modelState) {
+    var badge = el("privacyBadge");
+    var label = el("privacyLabel");
+    if (!badge || !label) return;
+    var roles = (modelState && modelState.roles) || {};
+    var generation = roles.generation || {};
+    var models = (modelState && modelState.models) || [];
+    var selectedId = generation.loaded_model_id || generation.default_model_id;
+    var model = models.find(function (candidate) {
+      return candidate.id === selectedId && String(candidate.role || "").toUpperCase() === "GENERATION";
+    });
+    if (!model) {
+      model = models.find(function (candidate) {
+        return String(candidate.role || "").toUpperCase() === "GENERATION";
+      });
+    }
+    var boundary = model && model.privacy_boundary;
+    var remote = !!model && (model.runs_on_device === false || boundary === "remote" || model.engine === "REMOTE_API");
+    var local = !!model && (model.runs_on_device === true || boundary === "on_device" || (!boundary && model.engine !== "REMOTE_API"));
+    badge.classList.toggle("remote", remote);
+    badge.classList.toggle("unready", !model || (!local && !remote));
+    if (!model) {
+      label.textContent = "Setup needed";
+      badge.title = "Choose a generation model in Models before sending a request";
+    } else if (remote) {
+      label.textContent = "Via remote API";
+      badge.title = "The selected generation model sends prompts to a remote provider";
+    } else if (local) {
+      label.textContent = "On device";
+      badge.title = "The selected generation model runs on this device";
+    } else {
+      label.textContent = "Privacy unknown";
+      badge.title = "The selected model did not report where inference runs";
+    }
   }
 
   function setGenerationState(visible, label, detail) {
@@ -493,9 +549,10 @@
     chats: { title: "Chats", load: function () { Chat.load(); } },
     library: { title: "Library", load: function () { Library.load(); } },
     knowledge: { title: "Knowledge", load: function () { Knowledge.load(); } },
-    tools: { title: "Tools", load: function () { Tools.load(); } },
+    tools: { title: "Tools", load: function () { ToolHub.load(); } },
     models: { title: "Models", load: function () { Models.load(); } },
-    recycle: { title: "Recycle bin", load: function () { Recycle.load(); } }
+    recycle: { title: "Recycle bin", load: function () { Recycle.load(); } },
+    settings: { title: "Settings & device", load: function () { SettingsPanel.load(); } }
   };
   var current = "home";
 
@@ -505,7 +562,7 @@
     Object.keys(SECTIONS).forEach(function (key) {
       el("section-" + key).classList.toggle("active", key === name);
     });
-    Array.prototype.forEach.call(document.querySelectorAll(".rail-btn"), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll(".nav-destination"), function (b) {
       var active = b.getAttribute("data-section") === name;
       b.classList.toggle("active", active);
       if (active) b.setAttribute("aria-current", "page");
@@ -513,18 +570,30 @@
     });
     el("pageTitle").textContent = SECTIONS[name].title;
     closeLists();
+    syncListToggle();
     if (location.hash !== "#" + name) history.replaceState({}, "", "#" + name);
     SECTIONS[name].load();
   }
-  Array.prototype.forEach.call(document.querySelectorAll(".rail-btn"), function (b) {
-    b.addEventListener("click", function () { go(b.getAttribute("data-section")); });
+  Array.prototype.forEach.call(document.querySelectorAll(".nav-destination"), function (b) {
+    b.addEventListener("click", function () {
+      var utilityMenu = b.closest("details");
+      if (utilityMenu) utilityMenu.removeAttribute("open");
+      go(b.getAttribute("data-section"));
+    });
   });
   window.addEventListener("hashchange", function () { go((location.hash || "#home").slice(1)); });
 
   // On a phone-width viewport the list column is a slide-over, so it needs an explicit toggle and
   // a scrim; on a wide one both are inert because the column is always visible.
   function listColFor(section) {
-    return { chats: "chatListCol", library: "libListCol", knowledge: "kbListCol", tools: "toolListCol" }[section];
+    if (section === "tools") return ToolHub.view === "actions" ? "toolListCol" : ToolHub.view === "studio" ? "aiToolListCol" : null;
+    return { chats: "chatListCol", library: "libListCol", knowledge: "kbListCol" }[section];
+  }
+  function syncListToggle() {
+    var listId = listColFor(current);
+    el("listToggle").hidden = !listId;
+    if (listId) el("listToggle").setAttribute("aria-controls", listId);
+    else el("listToggle").removeAttribute("aria-controls");
   }
   function closeLists() {
     Array.prototype.forEach.call(document.querySelectorAll(".list-col"), function (c) { c.classList.remove("open"); });
@@ -542,16 +611,72 @@
   });
   el("scrim").addEventListener("click", closeLists);
   el("keyBtn").addEventListener("click", function () {
-    openModal("API key", [{ key: "token", label: "Bearer token (leave blank if the server does not require one)", value: token() }], function (v) {
+    openModal("API key", [{ key: "token", label: "Bearer token from Settings → Local API server", value: token() }], function (v) {
       sessionStorage.setItem("vervan_api_token", v.token.trim());
       toast("Key saved");
       go(current);
     });
   });
+  function focusWorkspaceSearch() {
+    go("home");
+    var search = el("globalSearch");
+    setTimeout(function () {
+      search.focus();
+      search.select();
+    }, 0);
+  }
+  el("commandBtn").addEventListener("click", focusWorkspaceSearch);
+  document.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      focusWorkspaceSearch();
+    }
+  });
 
   // ================================================================ HOME
 
   var Home = {
+    readinessHtml: function (data) {
+      var counts = data.counts || {};
+      var modelState = data.models || {};
+      var roles = modelState.roles || {};
+      var models = modelState.models || [];
+      var generation = roles.generation || {};
+      var generationId = generation.loaded_model_id || generation.default_model_id;
+      var generationModel = models.find(function (model) { return model.id === generationId; });
+      var hasGeneration = !!generationModel;
+      var hasSearchCorpus = (counts.knowledge_bases || 0) > 0 && (counts.documents || 0) > 0;
+      var generationReady = generation.phase === "READY" && !!generation.loaded_model_id;
+      var generationName = generationModel
+        ? (generationModel.name || generationModel.displayName || generationModel.id)
+        : "No generation model selected";
+      var generationPrivacy = generationModel && generationModel.runs_on_device === false
+        ? "Via remote API"
+        : generationModel && generationModel.runs_on_device === true ? "On device" : "Privacy not reported";
+      var title = !hasGeneration ? "Finish setup" : hasSearchCorpus ? "Workspace ready" : "Ready for chat";
+      var body = !hasGeneration
+        ? "Choose a generation model before you start a conversation."
+        : hasSearchCorpus
+          ? "Chat and document search are configured. You can refine either from the workspace."
+          : "Chat is ready. Add a knowledge base and document when you want grounded answers.";
+      var action = !hasGeneration
+        ? { label: "Choose model", section: "models" }
+        : !hasSearchCorpus ? { label: "Add knowledge", section: "knowledge" } : { label: "Open chats", section: "chats" };
+      return '<div class="card-heading"><div><span class="eyebrow">Readiness center</span><h3>' + title + "</h3>" +
+        "<p>" + body + "</p></div><button class=\"secondary\" type=\"button\" data-readiness-action=\"" +
+        action.section + "\">" + action.label + "</button></div>" +
+        '<div class="readiness-grid">' +
+        '<div class="readiness-item"><span class="readiness-dot' + (hasGeneration ? " ready" : "") + '"></span><div><b>Generation</b><small>' +
+        esc(generationName) + " · " + (generationReady ? "loaded" : hasGeneration ? "loads on first request" : "not configured") +
+        (hasGeneration ? " · " + generationPrivacy : "") + "</small></div></div>" +
+        '<div class="readiness-item"><span class="readiness-dot' + (hasSearchCorpus ? " ready" : "") + '"></span><div><b>Document search</b><small>' +
+        (hasSearchCorpus
+          ? counts.documents + " document" + (counts.documents === 1 ? "" : "s") + " across " + counts.knowledge_bases + " knowledge base" + (counts.knowledge_bases === 1 ? "" : "s")
+          : (counts.knowledge_bases || 0) > 0 ? "Add a document to enable grounded answers" : "Create a knowledge base to organize documents") +
+        "</small></div></div>" +
+        "</div>";
+    },
+
     load: function () {
       // Skeletons rather than a blank pane: the home screen's shape is known before its numbers
       // are, so showing that shape immediately reads as "arriving" instead of "broken".
@@ -560,9 +685,11 @@
         el("homeModels").innerHTML = skeletonRows(2);
         el("homeChats").innerHTML = skeletonRows(3);
         el("homeNotes").innerHTML = skeletonRows(2);
+        el("homeReadiness").innerHTML = loadingBlock("Checking workspace readiness…");
       }
       tracked(api("/api/overview")).then(function (data) {
         setStatus("ok");
+        setPrivacyBoundary(data.models);
         var counts = data.counts || {};
         el("homeStats").innerHTML = [
           ["Chats", counts.chats], ["Notes", counts.notes], ["Memories", counts.memories],
@@ -572,6 +699,11 @@
         }).join("");
 
         el("homeModels").innerHTML = Models.summaryHtml(data.models);
+        el("homeReadiness").innerHTML = Home.readinessHtml(data);
+        var readinessAction = el("homeReadiness").querySelector("[data-readiness-action]");
+        if (readinessAction) readinessAction.addEventListener("click", function () {
+          go(readinessAction.getAttribute("data-readiness-action"));
+        });
         el("homeChats").innerHTML = (data.recent_chats || []).length
           ? (data.recent_chats).map(function (c) {
               return '<div class="row" data-chat="' + esc(c.id) + '"><div class="row-title">' +
@@ -586,10 +718,24 @@
         });
         el("homeNotes").innerHTML = (data.recent_notes || []).length
           ? (data.recent_notes).map(function (n) {
-              return '<div class="row"><div class="row-title">' + esc(n.title) +
+              return '<div class="row" data-note="' + esc(n.id) + '" tabindex="0" role="button"><div class="row-title">' + esc(n.title) +
                 '</div><div class="row-sub">' + relativeTime(n.updated_at) + "</div></div>";
             }).join("")
           : '<div class="empty-note">No notes yet.</div>';
+        Array.prototype.forEach.call(el("homeNotes").querySelectorAll("[data-note]"), function (row) {
+          function openNote() {
+            Library.pendingKind = "notes";
+            Library.pendingOpen = row.getAttribute("data-note");
+            go("library");
+          }
+          row.addEventListener("click", openNote);
+          row.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openNote();
+            }
+          });
+        });
       }).catch(function (err) {
         setStatus(/API key/.test(err.message) ? "auth" : "err");
         showLoadError("homeStats", "Home is unavailable", err, Home.load);
@@ -774,6 +920,13 @@
       if (model.supports_thinking) badges.push("thinking");
       el("capChip").textContent = badges.join("  ") || "text";
       Chat.model = model;
+      var privacyHint = el("privacyHint");
+      if (privacyHint) {
+        var remote = !!model.id && (model.runs_on_device === false || model.privacy_boundary === "remote" || model.engine === "REMOTE_API");
+        var local = !!model.id && (model.runs_on_device === true || model.privacy_boundary === "on_device");
+        privacyHint.textContent = !model.id ? "" : remote ? "Prompt may leave this device" : local ? "Runs on this device" : "Privacy not reported";
+        privacyHint.classList.toggle("remote", remote);
+      }
     },
 
     loadKbs: function () {
@@ -2013,7 +2166,7 @@
   }
 
   var Library = {
-    kind: "notes", items: [], activeId: null, pendingKind: null,
+    kind: "notes", items: [], activeId: null, pendingKind: null, pendingOpen: null,
 
     load: function () {
       if (Library.pendingKind && LIB[Library.pendingKind]) {
@@ -2027,6 +2180,10 @@
       return tracked(api(spec.path)).then(function (data) {
         Library.items = data[spec.key] || [];
         Library.renderList();
+        if (Library.pendingOpen) {
+          Library.activeId = Library.pendingOpen;
+          Library.pendingOpen = null;
+        }
         if (Library.activeId) Library.select(Library.activeId);
         else el("libDetail").innerHTML = '<div class="empty-note">Pick a ' + esc(spec.label.toLowerCase()) + " to view it.</div>";
       }).catch(function (err) {
@@ -2195,7 +2352,7 @@
     },
 
     loadDocuments: function (kbId) {
-      return api("/api/documents?knowledge_base_id=" + encodeURIComponent(kbId)).then(function (data) {
+      return api("/api/documents?kb=" + encodeURIComponent(kbId)).then(function (data) {
         var docs = data.data || [];
         el("docList").innerHTML = docs.length ? docs.map(function (d) {
           var state = d.status === "ready" ? "" :
@@ -2262,6 +2419,177 @@
   };
 
   // ================================================================ TOOLS
+
+  /**
+   * The native Tools destination is a productivity studio, while ToolRegistry represents device
+   * actions the model may call. The web app used to show only the latter under the shared "Tools"
+   * label. This catalog restores the native information architecture: AI tools are the primary
+   * view, and device actions/history remain available as explicit secondary views.
+   */
+  var AI_TOOLS = [
+    { id: "translate", name: "Translate", category: "Language", description: "Translate text while preserving tone, names and formatting.", instruction: "Translate the supplied text into the requested language. Preserve meaning, tone, names, numbers and formatting. Return only the translation unless a short ambiguity note is essential.", fields: [["language", "Target language", 1], ["input", "Text to translate", 8]] },
+    { id: "writing", name: "Writing assistant", category: "Create", description: "Rewrite, improve or continue a piece of writing.", instruction: "Act as a precise writing editor. Follow the requested goal, preserve factual meaning and return polished text followed by a short list of material changes.", fields: [["goal", "What should improve?", 2], ["input", "Draft", 10]] },
+    { id: "explain", name: "Explain at my level", category: "Learn", description: "Explain a difficult idea for a chosen audience.", instruction: "Explain the topic for the requested audience. Start with the core idea, use one concrete example, define unavoidable jargon and finish with a concise recap.", fields: [["audience", "Audience or level", 1], ["input", "Topic or text", 8]] },
+    { id: "quiz", name: "Quiz generator", category: "Study", description: "Create questions and a separate answer key.", instruction: "Create a balanced quiz from the material. Mix recall and application questions. Put the answer key after a clear divider and explain each answer briefly.", fields: [["goal", "Difficulty and question count", 2], ["input", "Study material", 10]] },
+    { id: "socratic", name: "Socratic tutor", category: "Study", description: "Learn through guided questions instead of immediate answers.", instruction: "Act as a Socratic tutor. Diagnose the learner's current understanding, ask one useful question at a time, give hints before answers, and correct misconceptions respectfully.", fields: [["goal", "Learning goal", 2], ["input", "What I understand so far", 7]] },
+    { id: "exam", name: "Exam preparation", category: "Study", description: "Turn a syllabus into a focused revision plan.", instruction: "Build a realistic exam plan from the supplied scope and constraints. Prioritize high-impact gaps, include active recall and spaced review, and make every session concrete.", fields: [["goal", "Exam date and available time", 2], ["input", "Syllabus, strengths and weak areas", 9]] },
+    { id: "homework", name: "Homework checker", category: "Study", description: "Check reasoning and identify the first incorrect step.", instruction: "Review the work as a tutor. Do not merely replace it with an answer. Identify the first incorrect or unsupported step, explain why, and show a corrected path.", fields: [["goal", "Subject and expected level", 2], ["input", "Question and attempted answer", 10]] },
+    { id: "study-material", name: "Study material builder", category: "Study", description: "Turn source material into a structured revision pack.", instruction: "Turn the supplied material into a study pack with a concise outline, key terms, active-recall questions, common misconceptions and a practical review sequence. Use only facts in the material.", fields: [["goal", "Subject, level and assessment goal", 3], ["input", "Source material", 12]] },
+    { id: "language-practice", name: "Language practice", category: "Language", description: "Practice a language with corrections at the right level.", instruction: "Act as a language practice partner at the requested level. Continue the scenario naturally, correct material mistakes without interrupting every sentence, and explain corrections briefly.", fields: [["goal", "Language, level and scenario", 3], ["input", "Opening message or text to practise", 8]] },
+    { id: "planner", name: "Daily planner", category: "Plan", description: "Build a practical day around priorities and constraints.", instruction: "Create a realistic daily plan. Respect fixed commitments, energy, breaks and transition time. Call out conflicts instead of silently overbooking the day.", fields: [["goal", "Date, hours and constraints", 3], ["input", "Tasks and priorities", 8]] },
+    { id: "goals", name: "Goal breakdown", category: "Plan", description: "Turn an outcome into milestones and next actions.", instruction: "Break the goal into measurable milestones, dependencies, risks and the smallest useful next actions. Avoid invented deadlines; use the supplied constraints.", fields: [["goal", "Outcome and deadline", 3], ["input", "Context, resources and constraints", 8]] },
+    { id: "decision", name: "Decision assistant", category: "Plan", description: "Compare options using explicit criteria and uncertainty.", instruction: "Help evaluate the decision without pretending certainty. Extract criteria, compare options, expose assumptions and trade-offs, then recommend a reversible next step.", fields: [["goal", "Decision and priorities", 3], ["input", "Options and known facts", 9]] },
+    { id: "checklist", name: "Smart checklist", category: "Plan", description: "Create an ordered checklist with dependencies.", instruction: "Turn the request into a concise, ordered checklist. Group related work, note dependencies and verification points, and omit ceremonial steps.", fields: [["goal", "Outcome", 2], ["input", "Context and requirements", 8]] },
+    { id: "code", name: "Code explainer", category: "Develop", description: "Explain code flow, risks and improvement opportunities.", instruction: "Explain the code from inputs to outputs. Identify state changes, external effects, complexity and likely failure modes. Distinguish confirmed behavior from inference.", fields: [["goal", "Language and what to focus on", 2], ["input", "Code", 12]] },
+    { id: "regex-sql", name: "Regex & SQL helper", category: "Develop", description: "Create or review a regex or SQL query with examples.", instruction: "Produce the smallest correct regex or SQL solution. State the dialect, explain important parts, include representative examples and call out edge cases or unsafe assumptions.", fields: [["goal", "Task and dialect", 3], ["input", "Examples, schema or current attempt", 10]] },
+    { id: "logs", name: "JSON & log analyzer", category: "Develop", description: "Find structure, anomalies and likely causes in technical data.", instruction: "Analyze the supplied JSON or logs. Summarize the sequence, group repeated signals, identify anomalies and rank likely causes using only evidence present in the input.", fields: [["goal", "Question to answer", 2], ["input", "JSON or logs", 12]] },
+    { id: "smart-notes", name: "Smart notes", category: "Create", description: "Turn rough material into useful, structured notes.", instruction: "Convert the supplied material into concise notes. Preserve facts, group related ideas, surface action items and unanswered questions, and do not add unsupported claims.", fields: [["goal", "Preferred structure or purpose", 2], ["input", "Rough notes or source text", 12]] },
+    { id: "clipboard", name: "Clipboard assistant", category: "Create", description: "Transform text pasted from another app.", instruction: "Perform the requested transformation on the pasted text. Preserve names, numbers, links and factual meaning unless the user explicitly asks to change them.", fields: [["goal", "What should happen to this text?", 2], ["input", "Paste clipboard text", 10]] },
+    { id: "interview", name: "Interview practice", category: "Practice", description: "Prepare focused questions and stronger answers.", instruction: "Act as a realistic interviewer for the supplied role and level. Ask or evaluate questions, probe vague claims, and suggest stronger answers without inventing experience.", fields: [["goal", "Role, level and interview type", 3], ["input", "Background, job description or answer to review", 10]] },
+    { id: "presentation", name: "Presentation practice", category: "Practice", description: "Improve a talk for clarity, timing and likely questions.", instruction: "Coach the presentation using the supplied audience and time limit. Improve structure and transitions, identify unclear claims, suggest a concise opening and close, and list likely audience questions.", fields: [["goal", "Audience, purpose and time limit", 3], ["input", "Outline, script or speaker notes", 12]] },
+    { id: "email", name: "Email composer", category: "Create", description: "Draft a clear email for a specific recipient and outcome.", instruction: "Draft the email in the requested tone. Make the purpose and requested action clear, preserve supplied facts, and do not invent names, dates or commitments.", fields: [["goal", "Recipient, outcome and tone", 3], ["input", "Facts to include", 8]] },
+    { id: "compare", name: "Document comparison", category: "Research", description: "Compare two texts and surface meaningful changes.", instruction: "Compare the two texts. Separate additions, removals, changed obligations or meaning, contradictions and unchanged essentials. Quote only short identifying phrases.", fields: [["left", "First document", 10], ["right", "Second document", 10]] }
+  ];
+
+  var ToolStudio = {
+    activeId: AI_TOOLS[0].id,
+    lastOutput: "",
+    running: false,
+
+    load: function () {
+      ToolStudio.renderList();
+      if (!el("aiToolDetail").children.length) ToolStudio.select(ToolStudio.activeId);
+    },
+
+    renderList: function () {
+      var q = el("aiToolSearch").value.trim().toLowerCase();
+      var tools = AI_TOOLS.filter(function (tool) {
+        return !q || tool.name.toLowerCase().indexOf(q) >= 0 || tool.category.toLowerCase().indexOf(q) >= 0 || tool.description.toLowerCase().indexOf(q) >= 0;
+      });
+      el("aiToolList").innerHTML = tools.length ? tools.map(function (tool) {
+        return '<button class="row row-button' + (tool.id === ToolStudio.activeId ? " active" : "") + '" type="button" data-ai-tool="' + esc(tool.id) + '"' +
+          (tool.id === ToolStudio.activeId ? ' aria-current="true"' : "") + '><span class="row-title">' + esc(tool.name) + '</span><span class="row-sub">' + esc(tool.category) + ' · ' + esc(tool.description) + '</span></button>';
+      }).join("") : '<div class="empty-note">No AI tools matched.</div>';
+      Array.prototype.forEach.call(el("aiToolList").querySelectorAll("[data-ai-tool]"), function (row) {
+        row.addEventListener("click", function () { ToolStudio.select(row.getAttribute("data-ai-tool")); closeLists(); });
+      });
+    },
+
+    select: function (id) {
+      var tool = AI_TOOLS.find(function (item) { return item.id === id; });
+      if (!tool) return;
+      if (ToolStudio.running) {
+        toast("Wait for the current AI tool to finish before switching.", true);
+        return;
+      }
+      ToolStudio.activeId = id;
+      ToolStudio.lastOutput = "";
+      ToolStudio.renderList();
+      el("aiToolDetail").innerHTML =
+        '<div class="tool-studio-head"><span class="eyebrow">' + esc(tool.category) + '</span><h2>' + esc(tool.name) + '</h2><p>' + esc(tool.description) + '</p></div>' +
+        '<div class="card"><h3>Input</h3>' + tool.fields.map(function (field) {
+          var key = field[0], label = field[1], rows = field[2];
+          return '<label class="field"><span>' + esc(label) + '</span><textarea id="ait_' + esc(key) + '" rows="' + rows + '" maxlength="50000"></textarea></label>';
+        }).join("") +
+        '<div class="tool-run-actions"><label class="field compact-field"><span>Thinking</span><select id="aiThinking" aria-label="Thinking level"><option value="">Model default</option><option value="OFF">Off</option><option value="FAST">Fast</option><option value="BALANCED">Balanced</option><option value="DEEP">Deep</option></select></label>' +
+        '<button class="primary" type="button" id="runAiToolBtn">Run ' + esc(tool.name) + '</button></div></div>' +
+        '<div id="aiToolOutput" aria-live="polite"></div>';
+      upgradeSelect(el("aiThinking"));
+      el("runAiToolBtn").addEventListener("click", function () { ToolStudio.run(tool); });
+    },
+
+    run: function (tool) {
+      if (ToolStudio.running) return;
+      var parts = [];
+      tool.fields.forEach(function (field) {
+        var value = el("ait_" + field[0]).value.trim();
+        if (value) parts.push(field[1] + ":\n" + value);
+      });
+      if (!parts.length) { toast("Add input before running this tool.", true); return; }
+      var button = el("runAiToolBtn");
+      ToolStudio.running = true;
+      button.disabled = true;
+      button.classList.add("busy");
+      el("aiToolOutput").setAttribute("aria-busy", "true");
+      el("aiToolOutput").innerHTML = loadingBlock("Running " + tool.name + " on this device…");
+      api("/v1/chat/completions", {
+        messages: [
+          { role: "system", content: tool.instruction + "\n\nReturn directly useful output with clear structure. Never invent missing facts." },
+          { role: "user", content: parts.join("\n\n") }
+        ],
+        stream: false,
+        thinking: el("aiThinking").value || undefined,
+        app_tools: false
+      }, { timeoutMs: 180000 }).then(function (response) {
+        var choice = (response.choices || [])[0] || {};
+        var message = choice.message || {};
+        ToolStudio.lastOutput = message.content || choice.text || "";
+        if (!ToolStudio.lastOutput) throw new Error("The model returned an empty result.");
+        el("aiToolOutput").innerHTML = '<div class="card tool-result-card"><div class="card-heading"><div><h3>Result</h3><p>Generated by the active model on the device.</p></div><div class="tool-result-actions"><button class="ghost" type="button" id="copyAiResult">Copy</button><button class="secondary" type="button" id="saveAiResult">Save</button></div></div><div id="aiResultBody"></div></div>';
+        R.renderMarkdown(el("aiResultBody"), ToolStudio.lastOutput);
+        el("copyAiResult").addEventListener("click", function () { copyText(ToolStudio.lastOutput, "Result copied"); });
+        el("saveAiResult").addEventListener("click", function () {
+          withBusy(el("saveAiResult"), api("/api/saved-outputs", { label: tool.name + " result", content: ToolStudio.lastOutput }))
+            .then(function () { toast("Saved to Library"); }).catch(fail);
+        });
+      }).catch(function (err) {
+        el("aiToolOutput").innerHTML = '<div class="inline-state error-state"><h3>Tool could not finish</h3><p>' + esc(friendlyError(err).message) + '</p></div>';
+        fail(err);
+      }).then(function () {
+        ToolStudio.running = false;
+        button.disabled = false;
+        button.classList.remove("busy");
+        var output = el("aiToolOutput");
+        if (output) output.setAttribute("aria-busy", "false");
+      });
+    }
+  };
+
+  var ToolHub = {
+    view: "studio",
+    actionsLoaded: false,
+
+    load: function () {
+      ToolHub.show(ToolHub.view);
+    },
+
+    show: function (view) {
+      if (["studio", "actions", "history"].indexOf(view) < 0) view = "studio";
+      ToolHub.view = view;
+      el("toolStudioView").hidden = view !== "studio";
+      el("toolActionsView").hidden = view !== "actions";
+      el("toolHistoryView").hidden = view !== "history";
+      Array.prototype.forEach.call(el("toolTabs").querySelectorAll("button"), function (button) {
+        var selected = button.getAttribute("data-tool-view") === view;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-selected", String(selected));
+      });
+      if (view === "studio") ToolStudio.load();
+      if (view === "actions") {
+        ToolHub.actionsLoaded = true;
+        Tools.load();
+      }
+      if (view === "history") Tools.history();
+      closeLists();
+      syncListToggle();
+    }
+  };
+
+  el("aiToolSearch").addEventListener("input", function () { ToolStudio.renderList(); });
+  Array.prototype.forEach.call(el("toolTabs").querySelectorAll("button"), function (button) {
+    button.addEventListener("click", function () { ToolHub.show(button.getAttribute("data-tool-view")); });
+    button.addEventListener("keydown", function (event) {
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].indexOf(event.key) < 0) return;
+      event.preventDefault();
+      var tabs = Array.prototype.slice.call(el("toolTabs").querySelectorAll("button"));
+      var index = tabs.indexOf(button);
+      if (event.key === "Home") index = 0;
+      else if (event.key === "End") index = tabs.length - 1;
+      else index = (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      tabs[index].focus();
+      tabs[index].click();
+    });
+  });
 
   var Tools = {
     tools: [], appToolsOn: false, writesOn: false, activeName: null,
@@ -2339,25 +2667,34 @@
     },
 
     history: function () {
+      el("toolHistoryPane").innerHTML = loadingBlock("Loading tool history…");
       api("/api/tool-runs").then(function (data) {
         var runs = data.tool_runs || [];
-        el("toolDetail").innerHTML = "<h2>Tool history</h2>" + (runs.length ? runs.map(function (r) {
+        el("toolHistoryPane").innerHTML = "<h2>Tool history</h2>" + (runs.length ? runs.map(function (r) {
           return '<div class="card"><h3>' + esc(r.name) + ' <span class="chip">' + esc(r.state.toLowerCase()) + "</span></h3>" +
             '<p class="row-sub">' + relativeTime(r.updated_at) + (r.model_name ? " · " + esc(r.model_name) : "") + "</p>" +
             "<p>" + esc((r.output || r.error || r.input || "").slice(0, 600)) + "</p></div>";
         }).join("") : '<div class="empty-note">No tool runs recorded yet.</div>');
-        Tools.activeName = null;
-        Tools.renderList();
+        if (Tools.tools.length) { Tools.activeName = null; Tools.renderList(); }
       }).catch(fail);
     }
   };
   el("toolSearch").addEventListener("input", function () { Tools.renderList(); });
-  el("toolHistoryBtn").addEventListener("click", function () { Tools.history(); });
+  el("toolHistoryBtn").addEventListener("click", function () { ToolHub.show("history"); });
 
   // ================================================================ MODELS
 
   var Models = {
     ttlTimer: null,
+
+    privacyLabel: function (model) {
+      if (!model) return "privacy unknown";
+      if (model.runs_on_device === false || model.privacy_boundary === "remote" || model.engine === "REMOTE_API") {
+        return "via remote API";
+      }
+      if (model.runs_on_device === true || model.privacy_boundary === "on_device") return "on device";
+      return "privacy unknown";
+    },
 
     load: function () {
       if (!el("modelsPane").children.length) el("modelsPane").innerHTML = skeletonCards(3);
@@ -2381,14 +2718,17 @@
         if (info.phase === "LOADING") state = '<span class="chip warn">loading…</span>';
         else if (loaded) state = '<span class="chip on">loaded</span>';
         else state = '<span class="chip">not loaded</span>';
+        var chosen = loaded || fallback;
         return '<div class="switch-row"><span><b>' + role.charAt(0).toUpperCase() + role.slice(1) + "</b> · " +
-          esc((loaded || fallback || {}).name || "none installed") +
+          esc((chosen || {}).name || "none installed") +
+          (chosen ? ' <span class="row-sub">· ' + Models.privacyLabel(chosen) + "</span>" : "") +
           (!loaded && fallback ? ' <span class="row-sub">(default, loads on first request)</span>' : "") +
           "</span>" + state + "</div>";
       }).join("");
     },
 
     render: function (data) {
+      setPrivacyBoundary(data);
       var roles = data.roles || {};
       var ttl = data.ttl_seconds || 0;
       var html = '<div class="card"><h3>Residency</h3>' + Models.summaryHtml(data) +
@@ -2415,7 +2755,7 @@
         return '<div class="row" style="cursor:default"><div class="row-title">' + esc(m.name) +
           (m.is_default ? ' <span class="chip on">default</span>' : "") +
           (isLoaded ? ' <span class="chip on">loaded</span>' : "") + "</div>" +
-          '<div class="row-sub">' + esc(m.role.toLowerCase()) + " · " + esc(m.engine) + " · " + bytes(m.size_bytes) +
+          '<div class="row-sub">' + esc(m.role.toLowerCase()) + " · " + esc(m.engine_label || m.engine) + " · " + Models.privacyLabel(m) + " · " + bytes(m.size_bytes) +
           (m.context_tokens ? " · " + m.context_tokens + " ctx" : "") +
           (badges.length ? " · " + badges.join(", ") : "") + "</div>" +
           '<div class="modal-actions" style="margin-top:8px">' +
@@ -2543,6 +2883,87 @@
     }
   };
 
+  // ================================================================ SETTINGS & DEVICE
+
+  var SettingsPanel = {
+    load: function () {
+      SettingsPanel.applyTheme(sessionStorage.getItem("vervan_web_theme") || "device");
+      el("settingsConnection").innerHTML = loadingBlock("Reading connection security…");
+      el("settingsDevice").innerHTML = loadingBlock("Reading device status…");
+      el("settingsClients").innerHTML = loadingBlock("Reading connected clients…");
+      var systemRequest = tracked(api("/api/system")).then(function (system) {
+        SettingsPanel.renderSystem(system, system.models);
+      }).catch(function (err) {
+        showLoadError("settingsDevice", "Device status is unavailable", err, SettingsPanel.load);
+        fail(err);
+      });
+      var clientsRequest = tracked(api("/api/clients")).then(function (clients) {
+        SettingsPanel.renderClients(clients);
+        SettingsPanel.renderConnection(clients);
+      }).catch(function (err) {
+        showLoadError("settingsConnection", "Connection status is unavailable", err, SettingsPanel.load);
+        el("settingsClients").innerHTML = '<div class="empty-note">Connected clients could not be loaded.</div>';
+        fail(err);
+      });
+      return Promise.all([systemRequest, clientsRequest]);
+    },
+
+    applyTheme: function (choice) {
+      if (["device", "light", "dark"].indexOf(choice) < 0) choice = "device";
+      sessionStorage.setItem("vervan_web_theme", choice);
+      var root = document.documentElement;
+      if (choice === "device") {
+        var appTheme = window.__VERVAN_THEME || {};
+        if (appTheme.mode === "LIGHT" || appTheme.mode === "DARK") root.dataset.theme = appTheme.mode.toLowerCase();
+        else delete root.dataset.theme;
+        root.style.colorScheme = appTheme.mode === "LIGHT" ? "light" : appTheme.mode === "DARK" ? "dark" : "light dark";
+      } else {
+        root.dataset.theme = choice;
+        root.style.colorScheme = choice;
+      }
+      Array.prototype.forEach.call(el("webThemeControls").querySelectorAll("button"), function (button) {
+        var selected = button.getAttribute("data-web-theme") === choice;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+    },
+
+    renderConnection: function (clients) {
+      var requiresKey = !!clients.requires_api_key;
+      var hasKey = !!token().trim();
+      el("settingsConnection").innerHTML =
+        '<div class="status-list"><div><span>Server</span><b>Connected</b></div>' +
+        '<div><span>Access</span><b>' + (requiresKey ? "API key required" : "Trusted localhost") + '</b></div>' +
+        '<div><span>This tab</span><b class="' + (requiresKey && !hasKey ? "danger-text" : "") + '">' +
+          (hasKey ? "Key stored for this session" : requiresKey ? "Key missing" : "No key needed") + '</b></div></div>';
+    },
+
+    renderSystem: function (system, models) {
+      var memory = (system && system.memory) || {};
+      setPrivacyBoundary(models);
+      el("settingsDevice").innerHTML =
+        '<div class="status-list"><div><span>Memory available</span><b>' +
+          (memory.total_mb ? esc(memory.available_mb + " / " + memory.total_mb + " MB") : "Unavailable") + '</b></div>' +
+        '<div><span>Memory pressure</span><b class="' + (memory.low ? "danger-text" : "") + '">' + (memory.low ? "Low memory" : "Normal") + '</b></div></div>' +
+        '<div class="settings-models"><h4>Model residency</h4>' + Models.summaryHtml(models) + '</div>';
+    },
+
+    renderClients: function (payload) {
+      var clients = payload.data || [];
+      el("settingsClients").innerHTML = clients.length ? clients.map(function (client) {
+        var agentName = (client.user_agent || "Unknown client").replace(/\s+/g, " ").slice(0, 90);
+        return '<div class="client-row"><div><b>' + esc(client.local ? "This device" : client.address || "Unknown address") + '</b>' +
+          '<span>' + esc(agentName) + '</span></div><div><span>' + client.request_count + ' requests</span><span>' +
+          esc(relativeTime(client.last_seen_at)) + '</span></div></div>';
+      }).join("") : '<div class="empty-note">No clients have been recorded in this server session.</div>';
+    }
+  };
+
+  Array.prototype.forEach.call(el("webThemeControls").querySelectorAll("button"), function (button) {
+    button.addEventListener("click", function () { SettingsPanel.applyTheme(button.getAttribute("data-web-theme")); });
+  });
+  el("settingsKeyBtn").addEventListener("click", function () { el("keyBtn").click(); });
+
   function labelFor(type) {
     return {
       chat: "Chat", note: "Note", memory: "Memory", persona: "Persona", template: "Prompt template",
@@ -2581,6 +3002,7 @@
     if (document.hidden) return;
     api("/api/system").then(function (data) {
       var memory = (data && data.memory) || {};
+      setPrivacyBoundary(data && data.models);
       if (!memory.total_mb) { el("ramChip").hidden = true; return; }
       el("ramChip").hidden = false;
       el("ramChip").className = "chip" + (memory.low ? " warn" : "");

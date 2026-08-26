@@ -151,7 +151,8 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             val file = java.io.File(doc.filePath)
                             val size = if (file.exists()) {
                                 val bytes = file.length()
-                                if (bytes < 1024 * 1024) "%.1f KB".format(bytes / 1024.0) else "%.1f MB".format(bytes / (1024.0 * 1024.0))
+                                if (bytes < 1024 * 1024) "%.1f KB".format(java.util.Locale.getDefault(), bytes / 1024.0)
+                                else "%.1f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024.0))
                             } else stringResource(R.string.ui_documentviewerscreen_original_unavailable)
                             Text(
                                 stringResource(R.string.ui_documentviewerscreen_file_summary, doc.mimeType.substringAfterLast('/').uppercase(), size, chunks.size),

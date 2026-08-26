@@ -87,6 +87,7 @@ object OneShotLlm {
                 systemPrompt = PromptPolicy.ONE_SHOT_SYSTEM
             )
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             run?.let {
                 app.container.db.toolRunDao().update(
                     it.copy(state = ToolRunState.FAILED, errorMessage = t.message, updatedAt = System.currentTimeMillis())
@@ -111,6 +112,7 @@ object OneShotLlm {
                 )
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 app.container.db.toolRunDao().update(
                     run.copy(
                         output = output.toString(),

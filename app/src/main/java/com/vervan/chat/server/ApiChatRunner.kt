@@ -283,6 +283,7 @@ class ApiChatRunner(private val app: VervanApp) {
             } catch (t: kotlinx.coroutines.CancellationException) {
                 throw t
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "app tool '${tool.name}' failed", t)
                 ToolResult(false, "Tool failed: ${t.toUserMessage()}")
             }

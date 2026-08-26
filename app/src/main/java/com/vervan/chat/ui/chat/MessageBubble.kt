@@ -140,6 +140,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -679,7 +680,7 @@ internal fun MessageBubble(
                         message.state == MessageState.STREAMING &&
                         isGenerating &&
                         parsed.thinkingInProgress
-                    var thinkingNow by remember(message.id) { mutableStateOf(System.currentTimeMillis()) }
+                    var thinkingNow by remember(message.id) { mutableLongStateOf(System.currentTimeMillis()) }
                     val thinkingStartedAt = remember(message.id) {
                         if (message.state == MessageState.STREAMING) message.createdAt else null
                     }
@@ -885,7 +886,7 @@ internal fun MessageBubble(
             val tokens = message.tokenCount ?: 0
             val tps = if (seconds > 0f) tokens / seconds else 0f
             Text(
-                "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
+                "%.1fs · ~%d tokens · %.1f tok/s".format(java.util.Locale.getDefault(), seconds, tokens, tps),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

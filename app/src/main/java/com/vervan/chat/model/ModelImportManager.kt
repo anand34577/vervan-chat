@@ -155,7 +155,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         }
 
         onProgress("Registering model…")
-        val hash = digest.digest().joinToString("") { "%02x".format(it) }
+        val hash = digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         modelDao.findByHash(hash)?.let { existing ->
             dest.delete()
             return@withContext ImportResult.Duplicate(existing)
@@ -179,6 +179,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             modelDao.upsert(model)
             ImportResult.Success(model)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // A database/disk failure after the copy must not leave an unregistered model-sized
             // file in app storage for the next import or GC pass to discover accidentally.
             dest.delete()
@@ -270,6 +271,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         try {
             modelDao.upsert(updated)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             mmprojDest.delete()
             return@withContext rejectAfterPrimaryCopy("Couldn't register the vision projector: ${t.message ?: "database error"}")
         }
@@ -397,6 +399,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
             try {
                 com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer(tokenizerBytes)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 return@withContext ImportResult.Rejected(
                     "\"$tokenizerName\" doesn't look like a valid SentencePiece tokenizer.model file — check the model and tokenizer files weren't swapped. (${t.message})"
                 )
@@ -449,6 +452,7 @@ class ModelImportManager(private val context: Context, private val modelDao: Mod
         try {
             modelDao.upsert(updated)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             tokenizerDest.delete()
             return@withContext rejectAfterModelCopy("Couldn't register the tokenizer: ${t.message ?: "database error"}")
         }

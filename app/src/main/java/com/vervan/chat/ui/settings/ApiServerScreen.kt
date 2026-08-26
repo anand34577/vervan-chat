@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -71,6 +70,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.vervan.chat.VervanApp
 import com.vervan.chat.R
+import com.vervan.chat.server.requiresApiAuth
 import com.vervan.chat.ui.common.ConfirmDialog
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.setSensitiveText
@@ -126,7 +126,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
     // security choice. An
     // unkeyed remember can capture the initial state forever, leaving the key field and Copy
     // action empty after authentication is enabled.
-    var token by remember(requireAuth || allowLan) { mutableStateOf(if (requireAuth || allowLan) vm.apiServerToken else "") }
+    val authRequired = requiresApiAuth(requireAuth, allowLan, fullMode, appTools)
+    var token by remember(authRequired) { mutableStateOf(if (authRequired) vm.apiServerToken else "") }
     var confirmRegenerate by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -137,18 +138,10 @@ fun ApiServerScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        // Reachable-with-no-key is the one state worth calling out in color everywhere else in
-        // this app (see PrivacyDashboardScreen's identical lanRisk) — kept consistent here rather
-        // than inventing a second color language for the same fact on its own settings screen.
-        // Full web app mode exposes app data (chats, documents, attachments), not just inference.
-        // LAN mode always forces the key at the settings/service layers; the derived value keeps
-        // the UI correct during the short DataStore update window.
-        val authRequired = requireAuth || allowLan
-        val lanRisk = enabled && allowLan && !authRequired
-        val fullModeWithoutKey = enabled && fullMode && !authRequired
+        // The effective value mirrors the service's final policy gate: LAN and the full browser
+        // workspace always require a key, even during a DataStore update window.
         val statusTone = when {
             !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-            lanRisk -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.primary
         }
 
@@ -166,8 +159,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             Card(
                 Modifier.fillMaxWidth().padding(bottom = Space.sm),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (lanRisk) MaterialTheme.colorScheme.errorContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Column(Modifier.padding(Space.lg)) {
@@ -178,25 +170,18 @@ fun ApiServerScreen(onBack: () -> Unit) {
                                 "Server",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 if (enabled) "Listening on port $port" else "Not running",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Switch(checked = enabled, onCheckedChange = { vm.setApiServerEnabled(it) })
                     }
                     AnimatedVisibility(visible = enabled, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                         Column(Modifier.padding(top = Space.md)) {
-                            if (lanRisk) {
-                                StatusLine(
-                                    Icons.Filled.Warning,
-                                    "Reachable from this Wi-Fi network with no API key required.",
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
                             val lanAddress = remember { localLanAddress() }
                             StatusLine(
                                 if (allowLan) Icons.Filled.Wifi else Icons.Filled.PhoneAndroid,
@@ -204,7 +189,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                                     if (lanAddress != null) "From another device: http://$lanAddress:$port/"
                                     else "From another device: http://<this device's LAN IP>:$port/"
                                 } else "This device only: http://127.0.0.1:$port/",
-                                if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             // A one-time URL fragment saves the user from copy-pasting the key on
                             // this same device. Fragments are not sent as HTTP request metadata;
@@ -252,7 +237,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
             ) {
                 Text(
                     if (allowLan) {
-                        "The server is reachable from other devices on the same network. Keep an API key enabled and turn this off when you are done."
+                        "The server is reachable from other devices over unencrypted HTTP. The API key authenticates clients but does not encrypt prompts or files. Use only a trusted private network or VPN, and turn this off when finished."
                     } else {
                         "The server listens on this device only. Enable this only when another device needs to connect."
                     },
@@ -280,17 +265,10 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 )
                 AnimatedVisibility(visible = fullMode, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                     StatusLine(
-                        Icons.Filled.Warning,
-                        if (fullModeWithoutKey)
-                            "No API key is required right now, so anyone who can reach this device on the " +
-                                "network can read and change your chats, knowledge bases and documents — not " +
-                                "just run inference. Turn on \"Require an API key\" below unless you trust " +
-                                "every device on this network."
-                        else
-                            "Bigger trust boundary than Basic: also lets whoever has the URL (and the API " +
-                                "key, if required) read and add to your knowledge bases and documents, not " +
-                                "just run inference.",
-                        MaterialTheme.colorScheme.error,
+                        Icons.Filled.Lock,
+                        "Full web mode always requires an API key because it can read and change chats, " +
+                            "knowledge bases, documents, and attachments—not just run inference.",
+                        MaterialTheme.colorScheme.primary,
                         topPadding = Space.sm
                     )
                 }
@@ -399,9 +377,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 trailing = {
                     Switch(
                         checked = authRequired,
-                        enabled = !allowLan,
+                        enabled = !allowLan && !fullMode && !appTools,
                         onCheckedChange = { checked ->
-                            if (!allowLan) {
+                            if (!allowLan && !fullMode && !appTools) {
                                 vm.setApiServerRequireAuth(checked)
                                 if (checked) token = vm.apiServerToken
                             }
@@ -410,11 +388,13 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 }
             ) {
                 Text(
-                    if (allowLan) {
+                    if (fullMode) {
+                        "Full web mode always requires an API key. Switch to Basic web mode before changing this setting."
+                    } else if (allowLan) {
                         "LAN access always requires an API key. Turn LAN access off before changing this setting."
                     } else {
-                        "The localhost-only server can run without a key. Turn on LAN access only when " +
-                            "another device needs to connect; Vervan will require a key automatically."
+                        "The localhost-only Basic server can run without a key only while app tools are off. " +
+                            "LAN access, the full workspace, and this device's tools require a key automatically."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

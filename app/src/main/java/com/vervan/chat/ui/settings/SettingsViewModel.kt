@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
 import com.vervan.chat.data.settings.AccentTheme
 import com.vervan.chat.data.settings.ThemeMode
+import com.vervan.chat.system.runCatchingPreservingCancellation as safeRunCatching
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -232,11 +233,26 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     /** Fails (returns false, doesn't enable) if the chosen method needs a PIN and none is set
      * yet — the security settings screen must call [setPin] first in that case. */
     fun setAppLockEnabled(enabled: Boolean) {
-        if (enabled && appLockMethod.value != "BIOMETRIC" && !appLockManager.hasPin()) return
+        if (enabled) {
+            val method = appLockMethod.value
+            val biometricAvailable = androidx.biometric.BiometricManager.from(app).canAuthenticate(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+            ) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+            if (method != "BIOMETRIC" && !appLockManager.hasPin()) return
+            if (method == "BIOMETRIC" && !biometricAvailable && !appLockManager.hasPin()) return
+        }
         viewModelScope.launch { settings.setAppLockEnabled(enabled) }
         if (!enabled) appLockManager.unlock()
     }
-    fun setAppLockMethod(value: String) { viewModelScope.launch { settings.setAppLockMethod(value) } }
+    fun setAppLockMethod(value: String) {
+        if (value != "BIOMETRIC" && !appLockManager.hasPin()) return
+        if (value == "BIOMETRIC" && !appLockManager.hasPin() &&
+            androidx.biometric.BiometricManager.from(app).canAuthenticate(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+            ) != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+        ) return
+        viewModelScope.launch { settings.setAppLockMethod(value) }
+    }
     fun setAutoLockTimeoutSeconds(value: Int) { viewModelScope.launch { settings.setAutoLockTimeoutSeconds(value) } }
     fun setPin(pin: String) { appLockManager.setPin(pin) }
     fun clearPin() { appLockManager.clearPin() }
@@ -302,7 +318,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     // (and dropping any in-flight stream with it) to apply it would be pure collateral damage.
     fun setApiModelTtlSeconds(v: Int) { viewModelScope.launch { settings.setApiModelTtlSeconds(v) } }
     val apiServerAppTools: StateFlow<Boolean> = settings.apiServerAppTools.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    fun setApiServerAppTools(v: Boolean) { viewModelScope.launch { settings.setApiServerAppTools(v) } }
+    fun setApiServerAppTools(v: Boolean) = updateApiServerSetting { settings.setApiServerAppTools(v) }
     val apiServerAllowWriteTools: StateFlow<Boolean> = settings.apiServerAllowWriteTools.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     fun setApiServerAllowWriteTools(v: Boolean) { viewModelScope.launch { settings.setApiServerAllowWriteTools(v) } }
 
@@ -328,27 +344,66 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setAutoDeleteAfterDays(days: Int) { viewModelScope.launch { settings.setAutoDeleteAfterDays(days) } }
 
     /**
-     * Panic wipe — best-effort secure-deletes every document/model file, clears every
-     * preference and the app-lock PIN store, then closes and deletes the Room database, and
-     * finally kills the process outright (there is deliberately no "restart cleanly" step —
-     * this mirrors the abrupt, no-lingering-state behavior a panic wipe is supposed to have;
-     * the next launch starts from a genuinely fresh install).
+     * Panic wipe — best-effort overwrites known document/model files, then asks Android to clear
+     * the entire application sandbox. A defensive fallback clears every known app-owned root and
+     * terminates the process if an OEM refuses the platform request.
      */
     suspend fun panicWipe() {
-        withContext(Dispatchers.IO) {
-            settings.wipeAll()
-            appLockManager.clearPin()
-            app.container.db.documentDao().observeAll().first().forEach {
-                com.vervan.chat.data.SecureDelete.overwriteAndDelete(File(it.filePath))
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+            // Overwrite the large user-selected files we know about before Android removes the
+            // whole sandbox. Flash storage cannot guarantee physical-sector erasure, but this is
+            // useful best effort and no longer substitutes for clearing all application data.
+            try {
+                app.container.db.documentDao().observeAll().first().forEach {
+                    safeRunCatching { com.vervan.chat.data.SecureDelete.overwriteAndDelete(File(it.filePath)) }
+                }
+            } catch (failure: Exception) {
+                android.util.Log.w("SettingsViewModel", "Could not enumerate every document before panic wipe", failure)
             }
-            app.container.db.modelDao().observeModels().first().forEach {
-                com.vervan.chat.data.SecureDelete.overwriteAndDelete(File(it.filePath))
+            try {
+                app.container.db.modelDao().observeModels().first().forEach {
+                    safeRunCatching { com.vervan.chat.data.SecureDelete.overwriteAndDelete(File(it.filePath)) }
+                }
+            } catch (failure: Exception) {
+                android.util.Log.w("SettingsViewModel", "Could not enumerate every model before panic wipe", failure)
             }
-            app.container.db.close()
-            app.deleteDatabase("vervan.db")
-            app.cacheDir.deleteRecursively()
+            safeRunCatching { app.container.db.close() }
         }
-        android.os.Process.killProcess(android.os.Process.myPid())
+        val clearScheduled = try {
+            app.getSystemService(android.app.ActivityManager::class.java)
+                ?.clearApplicationUserData() == true
+        } catch (failure: Exception) {
+            android.util.Log.w("SettingsViewModel", "Android refused the platform panic wipe; using fallback", failure)
+            false
+        }
+        if (!clearScheduled) {
+            // Defensive fallback for a broken OEM implementation. Cover all app-owned roots,
+            // including encrypted preferences, attachments, voices, store blobs and exports.
+            try {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    safeRunCatching { settings.wipeAll() }
+                    safeRunCatching { appLockManager.clearPin() }
+                    val sharedPreferencesDir = File(app.applicationInfo.dataDir, "shared_prefs")
+                    listOf(
+                        app.filesDir,
+                        app.noBackupFilesDir,
+                        app.cacheDir,
+                        app.codeCacheDir,
+                        sharedPreferencesDir,
+                    )
+                        .forEach { root -> safeRunCatching { root.deleteRecursively() } }
+                    app.externalCacheDirs.filterNotNull().forEach { root ->
+                        safeRunCatching { root.deleteRecursively() }
+                    }
+                    app.getExternalFilesDirs(null).filterNotNull().forEach { root ->
+                        safeRunCatching { root.deleteRecursively() }
+                    }
+                    safeRunCatching { app.databaseList().forEach(app::deleteDatabase) }
+                }
+            } finally {
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
+        }
     }
 
     private val _cacheSizeBytes = MutableStateFlow(0L)

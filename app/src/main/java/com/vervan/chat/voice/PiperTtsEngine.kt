@@ -44,10 +44,14 @@ class PiperTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
         if (attemptedLoad) return
         attemptedLoad = true
         voiceModelDao.getByEngine("PIPER", "hi")?.let { row ->
-            hindiTts = runCatching { loadVoice(row.filePath) }.getOrNull()
+            hindiTts = com.vervan.chat.system.runCatchingPreservingCancellation {
+                loadVoice(row.filePath)
+            }.getOrNull()
         }
         voiceModelDao.getByEngine("PIPER", "en")?.let { row ->
-            englishTts = runCatching { loadVoice(row.filePath) }.getOrNull()
+            englishTts = com.vervan.chat.system.runCatchingPreservingCancellation {
+                loadVoice(row.filePath)
+            }.getOrNull()
         }
     }
 

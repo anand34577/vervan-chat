@@ -149,6 +149,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                     if (fields.values.all { it.isBlank() }) errorText = "Couldn't extract those fields. You can edit the source photo and try again."
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 errorText = t.toUserMessage()
             } finally {
                 isProcessing = false

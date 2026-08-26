@@ -143,6 +143,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -404,7 +405,7 @@ internal fun LiveGenStatsChip(stats: ChatViewModel.LiveGenStats) {
             Row(Modifier.padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(
-                    "${String.format("%.1f", stats.tokensPerSecond)} tok/s · ${stats.tokens} tokens · ${stats.availMemMb}/${stats.totalMemMb} MB free",
+                    "${String.format(java.util.Locale.getDefault(), "%.1f", stats.tokensPerSecond)} tok/s · ${stats.tokens} tokens · ${stats.availMemMb}/${stats.totalMemMb} MB free",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = Space.sm)
@@ -904,7 +905,7 @@ internal fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
 @Composable
 internal fun ConversationSearchBar(messages: List<Message>, onClose: () -> Unit, onJumpTo: (Int) -> Unit) {
     var query by remember { mutableStateOf("") }
-    var matchIndex by remember { mutableStateOf(0) }
+    var matchIndex by remember { mutableIntStateOf(0) }
     val matches = remember(query, messages) {
         if (query.isBlank()) emptyList() else messages.withIndex().filter { (_, m) -> m.content.contains(query, ignoreCase = true) }.map { it.index }
     }
@@ -1095,12 +1096,12 @@ internal fun ModeSettingsDialog(
                 Text(stringResource(R.string.chat_generation_this), style = MaterialTheme.typography.labelLarge)
                 SamplerOverrideRow(
                     label = stringResource(R.string.chat_temperature), value = temperature ?: defaultTemperature, isOverridden = temperature != null,
-                    range = 0f..2f, format = { "%.2f".format(it) },
+                    range = 0f..2f, format = { "%.2f".format(java.util.Locale.getDefault(), it) },
                     onChange = { onTemperatureChange(it) }, onReset = { onTemperatureChange(null) }
                 )
                 SamplerOverrideRow(
                     label = stringResource(R.string.chat_top_p), value = topP ?: defaultTopP, isOverridden = topP != null,
-                    range = 0.1f..1f, format = { "%.2f".format(it) },
+                    range = 0.1f..1f, format = { "%.2f".format(java.util.Locale.getDefault(), it) },
                     onChange = { onTopPChange(it) }, onReset = { onTopPChange(null) }
                 )
                 SamplerOverrideRow(

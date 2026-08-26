@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import com.vervan.chat.ui.common.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -558,7 +559,7 @@ private fun WorkspaceChatCard(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     var preview by remember(chat.id) { mutableStateOf<String?>(null) }
-    var messageCount by remember(chat.id) { mutableStateOf(0) }
+    var messageCount by remember(chat.id) { mutableIntStateOf(0) }
     LaunchedEffect(chat.id, chat.updatedAt) {
         preview = app.container.db.messageDao().getLatestForChat(chat.id)?.let { latest ->
             chatPreviewText(

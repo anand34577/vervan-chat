@@ -115,6 +115,7 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
                 }
                 _status.value = "Re-indexed ${docs.size} documents."
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _status.value = null
                 _error.value = t.toUserMessage()
             } finally {
@@ -135,6 +136,7 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
                 app.container.documentImportManager.reindexLocal(documentId)
                 _status.value = "Done."
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _status.value = null
                 _error.value = t.toUserMessage()
             } finally {

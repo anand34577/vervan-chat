@@ -147,6 +147,7 @@ fun TextActionScreen(
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 // stream() throws on load/capability failures — surface it instead of crashing
                 // the coroutine (the old blocking run() left this uncaught).
                 errorText = t.toUserMessage()

@@ -38,13 +38,13 @@ class StoreHousekeeping(
      */
     suspend fun runIfDue(activeInstallVariantIds: Set<String> = emptySet()) {
         if (isDue(KEY_LAST_SYNC, SYNC_INTERVAL_MS)) {
-            runCatching { catalogRepository.sync() }
+            com.vervan.chat.system.runCatchingPreservingCancellation { catalogRepository.sync() }
                 .onSuccess { mark(KEY_LAST_SYNC) }
                 .onFailure { Log.w(TAG, "Scheduled catalogue sync failed", it) }
         }
 
         if (isDue(KEY_LAST_GC, GC_INTERVAL_MS)) {
-            runCatching { maintenance.reconcileAndCollect(activeInstallVariantIds) }
+            com.vervan.chat.system.runCatchingPreservingCancellation { maintenance.reconcileAndCollect(activeInstallVariantIds) }
                 .onSuccess { result ->
                     mark(KEY_LAST_GC)
                     if (result.reclaimedBytes > 0 || result.stagingReclaimedBytes > 0) {
@@ -59,7 +59,7 @@ class StoreHousekeeping(
         }
 
         if (isDue(KEY_LAST_INTEGRITY, INTEGRITY_INTERVAL_MS)) {
-            runCatching { maintenance.spotCheckIntegrity(INTEGRITY_SAMPLE_SIZE) }
+            com.vervan.chat.system.runCatchingPreservingCancellation { maintenance.spotCheckIntegrity(INTEGRITY_SAMPLE_SIZE) }
                 .onSuccess { broken ->
                     mark(KEY_LAST_INTEGRITY)
                     // Manifests for broken variants are left in place on purpose: deleting them

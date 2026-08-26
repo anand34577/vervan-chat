@@ -505,8 +505,10 @@ private fun RowScope.StatCell(icon: ImageVector, value: String, label: String) {
 /** Large counts read better abbreviated ("12.4k") in a compact stat cell. */
 private fun compactNumber(n: Int): String = when {
     n < 1000 -> n.toString()
-    n < 1_000_000 -> "%.1fk".format(n / 1000f).replace(".0k", "k")
-    else -> "%.1fM".format(n / 1_000_000f).replace(".0M", "M")
+    n < 1_000_000 && n % 1_000 == 0 -> "%dk".format(java.util.Locale.getDefault(), n / 1_000)
+    n < 1_000_000 -> "%.1fk".format(java.util.Locale.getDefault(), n / 1_000f)
+    n % 1_000_000 == 0 -> "%dM".format(java.util.Locale.getDefault(), n / 1_000_000)
+    else -> "%.1fM".format(java.util.Locale.getDefault(), n / 1_000_000f)
 }
 
 @Composable
@@ -526,7 +528,7 @@ private fun ConversationInsightsCard(
             BalanceRow(stringResource(com.vervan.chat.R.string.chat_info_word_balance), userWords, assistantWords)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 InsightMetric(if (generatedReplies == 0) "—" else formatDuration(averageReplyMs), stringResource(com.vervan.chat.R.string.chat_info_avg_reply), Modifier.weight(1f))
-                InsightMetric(if (tokensPerSecond <= 0f) "—" else String.format("%.1f/s", tokensPerSecond), stringResource(com.vervan.chat.R.string.chat_info_token_speed), Modifier.weight(1f))
+                InsightMetric(if (tokensPerSecond <= 0f) "—" else String.format(java.util.Locale.getDefault(), "%.1f/s", tokensPerSecond), stringResource(com.vervan.chat.R.string.chat_info_token_speed), Modifier.weight(1f))
                 InsightMetric(interrupted.toString(), stringResource(com.vervan.chat.R.string.chat_info_interrupted), Modifier.weight(1f))
             }
         }
@@ -667,7 +669,7 @@ private fun sevenDayActivity(timestamps: List<Long>): List<ActivityPoint> {
 private fun formatDuration(milliseconds: Long): String = when {
     milliseconds <= 0L -> "—"
     milliseconds < 1_000L -> "${milliseconds}ms"
-    milliseconds < 60_000L -> String.format("%.1fs", milliseconds / 1000f)
+    milliseconds < 60_000L -> String.format(java.util.Locale.getDefault(), "%.1fs", milliseconds / 1000f)
     else -> "${milliseconds / 60_000}m ${milliseconds / 1000 % 60}s"
 }
 

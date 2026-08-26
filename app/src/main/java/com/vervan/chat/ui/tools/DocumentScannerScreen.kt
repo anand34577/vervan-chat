@@ -237,6 +237,7 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 pages.map { path -> OcrExtractor.extractFromImage(File(path)) }.joinToString("\n\n")
             }
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             statusMessage = "Couldn't read scan text: ${t.toUserMessage()}"
             return null
         }
@@ -491,7 +492,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                             contentScale = ContentScale.Fit
                         )
                     }
-                    var dragCorner by remember { mutableStateOf(-1) }
+                    var dragCorner by remember { mutableIntStateOf(-1) }
                     Canvas(
                         Modifier.fillMaxSize().pointerInput(drawW, drawH) {
                             detectDragGestures(

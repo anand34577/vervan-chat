@@ -101,7 +101,7 @@ class SentencePieceTokenizer(modelBytes: ByteArray) {
                 val codePoint = normalized.codePointAt(i)
                 val charCount = Character.charCount(codePoint)
                 for (b in String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)) {
-                    val token = "<0x%02X>".format(b.toInt() and 0xFF)
+                    val token = "<0x%02X>".format(java.util.Locale.ROOT, b.toInt() and 0xFF)
                     ids += pieceIndex[token]?.id ?: unkId
                 }
                 i += charCount

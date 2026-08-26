@@ -74,6 +74,7 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -391,15 +392,15 @@ internal fun RemoteApiModelDialog(
     // of models you're adding together is just a starting point, refinable per model afterward via
     // ModelEditDialog once the row exists.
     var temperatureOn by remember { mutableStateOf(false) }
-    var temperature by remember { mutableStateOf(defaults.temperature) }
+    var temperature by remember { mutableFloatStateOf(defaults.temperature) }
     var topPOn by remember { mutableStateOf(false) }
-    var topP by remember { mutableStateOf(defaults.topP) }
+    var topP by remember { mutableFloatStateOf(defaults.topP) }
     var topKOn by remember { mutableStateOf(false) }
-    var topK by remember { mutableStateOf(defaults.topK.toFloat()) }
+    var topK by remember { mutableFloatStateOf(defaults.topK.toFloat()) }
     var maxOutputTokensOn by remember { mutableStateOf(false) }
-    var maxOutputTokens by remember { mutableStateOf(defaults.maxOutputTokens.toFloat()) }
+    var maxOutputTokens by remember { mutableFloatStateOf(defaults.maxOutputTokens.toFloat()) }
     var contextOn by remember { mutableStateOf(false) }
-    var context by remember { mutableStateOf(defaults.contextTokens.toFloat()) }
+    var context by remember { mutableFloatStateOf(defaults.contextTokens.toFloat()) }
     var catalog by remember { mutableStateOf<List<String>>(emptyList()) }
     var fetching by remember { mutableStateOf(false) }
     var fetchNote by remember { mutableStateOf<String?>(null) }

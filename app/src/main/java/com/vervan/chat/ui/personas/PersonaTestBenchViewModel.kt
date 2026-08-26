@@ -85,6 +85,7 @@ class PersonaTestBenchViewModel(private val app: VervanApp, private val personaI
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { sb.append(it) }
                 _response.value = sb.toString()
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "run() failed for persona=$personaId", t)
                 _error.value = t.toUserMessage()
             } finally {

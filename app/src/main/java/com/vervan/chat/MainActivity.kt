@@ -36,9 +36,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.vervan.chat.data.settings.ThemeMode
 import com.vervan.chat.security.AppLockMethod
 import com.vervan.chat.ui.lock.LockScreen
@@ -61,19 +65,24 @@ class MainActivity : FragmentActivity() {
         splashScreen.setKeepOnScreenCondition { !startupReady }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Security settings arrive asynchronously. Start secure and only clear this after the
+        // atomic snapshot confirms that neither lock nor screenshot protection requires it.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         shareIntentConsumed = savedInstanceState?.getBoolean(STATE_SHARE_CONSUMED) == true
-        incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
+        incomingShare = null
+        if (!shareIntentConsumed) loadIncomingShare(intent, intentVersion)
         val app = application as VervanApp
         setContent {
             val themePreferences by app.container.settingsRepository.themePreferences.collectAsStateWithLifecycle(initialValue = null)
-            LaunchedEffect(themePreferences) {
-                if (themePreferences != null) startupReady = true
+            val securityPreferences by app.container.settingsRepository.securityPreferences.collectAsStateWithLifecycle(initialValue = null)
+            LaunchedEffect(themePreferences, securityPreferences) {
+                if (themePreferences != null && securityPreferences != null) startupReady = true
             }
             // Android's system splash is only shown for a new Activity/process. When the
             // launcher brings this singleTop Activity back from the task stack, use the same
             // branded surface briefly so reopening the app has a consistent handoff.
-            LaunchedEffect(showReentrySplash, themePreferences) {
-                if (showReentrySplash && themePreferences != null) {
+            LaunchedEffect(showReentrySplash, themePreferences, securityPreferences) {
+                if (showReentrySplash && themePreferences != null && securityPreferences != null) {
                     delay(REENTRY_SPLASH_DURATION_MS)
                     showReentrySplash = false
                 }
@@ -85,10 +94,10 @@ class MainActivity : FragmentActivity() {
             val highContrast = themePreferences?.highContrast ?: false
             val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
             val accentTheme = themePreferences?.accentTheme ?: com.vervan.chat.data.settings.AccentTheme.GREEN
-            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
-            val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
+            val appLockEnabled = securityPreferences?.appLockEnabled ?: true
+            val appLockMethodName = securityPreferences?.appLockMethod ?: "BIOMETRIC"
             val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
-            val screenshotBlockingEnabled by app.container.settingsRepository.screenshotBlockingEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val screenshotBlockingEnabled = securityPreferences?.screenshotBlockingEnabled ?: true
             // App lock and the app-wide screenshot block each contribute their own reason to the
             // shared set, independently, so neither clears a flag the other still needs.
             LaunchedEffect(appLockEnabled) {
@@ -100,8 +109,8 @@ class MainActivity : FragmentActivity() {
             val secureReasons by app.container.secureWindowReasons.collectAsStateWithLifecycle()
             // FLAG_SECURE blocks screenshots/screen recording, and blanks the recent-apps
             // thumbnail "for free" — Android does that automatically for a FLAG_SECURE window.
-            LaunchedEffect(secureReasons) {
-                if (secureReasons.isNotEmpty()) {
+            LaunchedEffect(secureReasons, securityPreferences) {
+                if (securityPreferences == null || secureReasons.isNotEmpty()) {
                     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -118,7 +127,7 @@ class MainActivity : FragmentActivity() {
                     isAppearanceLightNavigationBars = !darkTheme
                 }
             }
-            if (themePreferences == null) {
+            if (themePreferences == null || securityPreferences == null) {
                 // Do not render Home until the complete theme snapshot is available, but give
                 // startup an identity and a readable progress state instead of a blank frame.
                 VervanTheme(darkTheme = true) {
@@ -221,8 +230,9 @@ class MainActivity : FragmentActivity() {
         }
         hardwareShortcut = null
         shareIntentConsumed = false
-        incomingShare = intent.toIncomingShare(contentResolver)
+        incomingShare = null
         intentVersion++
+        loadIncomingShare(intent, intentVersion)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -285,6 +295,23 @@ class MainActivity : FragmentActivity() {
         const val STATE_SHARE_CONSUMED = "share_intent_consumed"
         const val REENTRY_SPLASH_DURATION_MS = 320L
         val STATIC_SHORTCUTS = setOf("new_chat", "voice", "capture", "search", "settings")
+    }
+
+    /** Content providers are external processes and may block while resolving MIME/name data.
+     * Never query them on the UI thread during startup. The version guard also prevents a slow
+     * old share from replacing a newer intent that arrived while its provider was responding. */
+    private fun loadIncomingShare(source: Intent, version: Int) {
+        val snapshot = Intent(source)
+        lifecycleScope.launch {
+            val parsed = withContext(Dispatchers.IO) {
+                // Exported activities must treat unparceling/provider failures as bad input, not
+                // as an app crash. Cancellation and fatal VM errors still propagate.
+                com.vervan.chat.system.runCatchingPreservingCancellation {
+                    snapshot.toIncomingShare(contentResolver)
+                }.getOrNull()
+            }
+            if (intentVersion == version && !shareIntentConsumed) incomingShare = parsed
+        }
     }
 }
 

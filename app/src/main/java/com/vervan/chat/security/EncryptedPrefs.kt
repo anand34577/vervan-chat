@@ -5,6 +5,10 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.security.InvalidKeyException
+import java.security.UnrecoverableKeyException
+import javax.crypto.AEADBadTagException
+import javax.crypto.BadPaddingException
 
 private const val TAG = "EncryptedPrefs"
 
@@ -24,9 +28,27 @@ fun createEncryptedPrefs(context: Context, name: String): SharedPreferences {
     }
     return try {
         create()
-    } catch (t: Throwable) {
-        Log.w(TAG, "Encrypted prefs '$name' Keystore key invalid, recreating (values will be lost)", t)
+    } catch (failure: Exception) {
+        if (!failure.isEncryptedPrefsKeyFailure()) throw failure
+        Log.w(TAG, "Encrypted prefs '$name' Keystore key invalid, recreating (values will be lost)", failure)
         context.deleteSharedPreferences(name)
         create()
     }
+}
+
+/** Only confirmed key invalidation/ciphertext-authentication failures justify destructive
+ * recovery. I/O, permission, programming, and VM failures must be surfaced without deleting the
+ * last recoverable copy of the user's secrets. */
+internal fun Throwable.isEncryptedPrefsKeyFailure(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        if (current is android.security.keystore.KeyPermanentlyInvalidatedException ||
+            current is UnrecoverableKeyException ||
+            current is InvalidKeyException ||
+            current is AEADBadTagException ||
+            current is BadPaddingException
+        ) return true
+        current = current.cause.takeUnless { it === current }
+    }
+    return false
 }

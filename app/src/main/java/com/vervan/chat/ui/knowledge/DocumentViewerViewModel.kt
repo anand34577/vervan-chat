@@ -76,6 +76,7 @@ class DocumentViewerViewModel(private val app: VervanApp, private val documentId
                 }
                 app.container.documentImportManager.reindexLocal(documentId)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 _error.value = "Re-indexing failed: ${t.toUserMessage()}"
             } finally {
                 _reindexing.value = false

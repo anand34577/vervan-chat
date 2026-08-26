@@ -100,6 +100,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         return try {
             Capabilities(modelPath).use { it.hasSpeculativeDecodingSupport() }
         } catch (e: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(e)
             Log.w(TAG, "detectSpeculativeDecodingSupport() failed for ${File(modelPath).name}: ${e.message}")
             false
         }
@@ -227,6 +228,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                         )
                         return LoadResult(activeBackend, fellBackToCpu = gpuFailed && activeBackend == ModelBackend.CPU)
                     } catch (e: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(e)
                         close()
                         lastError = e
                         if (backend is Backend.GPU) gpuFailed = true

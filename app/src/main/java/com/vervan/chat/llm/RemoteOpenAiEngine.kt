@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import com.vervan.chat.model.readBytesLimited
+import com.vervan.chat.model.readTextLimited
 import com.vervan.chat.tools.ToolCallParser
 import com.vervan.chat.validation.InputLimits
 import org.json.JSONArray
@@ -82,8 +83,26 @@ internal class ReasoningStreamMerger {
         if (insideThink) { insideThink = false; listOf("\n</think>\n") } else emptyList()
 }
 
-private fun readAllUtf8(stream: java.io.InputStream): String =
-    stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+private fun readAllUtf8(stream: java.io.InputStream, maxChars: Int): String =
+    stream.bufferedReader(StandardCharsets.UTF_8).use { it.readTextLimited(maxChars) }
+
+/** BufferedReader.readLine() has no size limit and can allocate until OOM on a hostile endpoint. */
+internal fun BufferedReader.readLineLimited(maxChars: Int): String? {
+    val line = StringBuilder(minOf(maxChars, 256))
+    while (true) {
+        val value = read()
+        if (value == -1) return line.takeIf { it.isNotEmpty() }?.toString()
+        val char = value.toChar()
+        if (char == '\n') return line.toString()
+        if (char == '\r') {
+            mark(1)
+            if (read() != '\n'.code) reset()
+            return line.toString()
+        }
+        if (line.length >= maxChars) throw RemoteOpenAiApiException("Remote provider sent an oversized response line")
+        line.append(char)
+    }
+}
 
 private fun describeHttpError(status: Int, body: String, context: String): String {
     val message = try {
@@ -99,10 +118,19 @@ private fun describeHttpError(status: Int, body: String, context: String): Strin
 private fun HttpURLConnection.requireSuccessResponse(context: String) {
     val status = responseCode
     if (status !in 200..299) {
-        val errorBody = (errorStream ?: inputStream)?.use { readAllUtf8(it) }.orEmpty()
+        val errorBody = (errorStream ?: inputStream)?.use { readAllUtf8(it, MAX_ERROR_BODY_CHARS) }.orEmpty()
         throw RemoteOpenAiApiException(describeHttpError(status, errorBody, context), status)
     }
 }
+
+private const val MAX_ERROR_BODY_CHARS = 64 * 1024
+private const val MAX_SSE_EVENT_CHARS = 2 * 1024 * 1024
+private const val MAX_SSE_STREAM_CHARS = 32L * 1024 * 1024
+private const val MAX_TOOL_ARGUMENT_CHARS = 1024 * 1024
+private const val MAX_EMBEDDING_RESPONSE_CHARS = 16 * 1024 * 1024
+private const val MAX_MODEL_LIST_RESPONSE_CHARS = 2 * 1024 * 1024
+private const val MAX_MODEL_COUNT = 10_000
+private const val MAX_MODEL_ID_CHARS = 512
 
 /**
  * Calls an external OpenAI-compatible `/chat/completions` endpoint — the bring-your-own-API-key
@@ -159,6 +187,7 @@ class RemoteOpenAiEngine {
         Log.i(TAG, "generate(): starting request to model=$remoteModelId")
         val url = URL(endpointUrl(baseUrl))
         val connection = (url.openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
@@ -189,47 +218,90 @@ class RemoteOpenAiEngine {
             val merger = ReasoningStreamMerger()
             val nativeToolCalls = linkedMapOf<Int, NativeToolCall>()
             var eventType: String? = null
+            val dataLines = mutableListOf<String>()
+            var eventChars = 0L
+            var streamChars = 0L
+
+            suspend fun dispatchEvent(): Boolean {
+                if (dataLines.isEmpty()) return false
+                val data = dataLines.joinToString("\n")
+                dataLines.clear()
+                eventChars = 0L
+                streamChars += data.length.toLong()
+                if (streamChars > MAX_SSE_STREAM_CHARS) {
+                    throw RemoteOpenAiApiException("Remote provider response exceeded the stream limit")
+                }
+                if (data == "[DONE]") return true
+                if (eventType.equals("error", ignoreCase = true)) {
+                    throw RemoteOpenAiApiException("Remote provider reported a streaming error")
+                }
+                val error = runCatching { JSONObject(data).optJSONObject("error") }.getOrNull()
+                if (error != null) {
+                    val message = error.optString("message").ifBlank { "Remote provider returned an error" }
+                    throw RemoteOpenAiApiException(message)
+                }
+                val delta = try {
+                    deltaParts(data)
+                } catch (failure: Exception) {
+                    // A malformed provider event must be visible instead of silently deleting a
+                    // section of the model's answer or tool arguments.
+                    throw RemoteOpenAiApiException("Remote provider sent a malformed streaming event").also {
+                        it.initCause(failure)
+                    }
+                } ?: return false
+                merger.accept(delta.content, delta.reasoning).forEach { emit(it) }
+                delta.toolCalls.forEach { part ->
+                    val call = nativeToolCalls.getOrPut(part.index) { NativeToolCall() }
+                    part.name?.let { call.name = it }
+                    if (!part.arguments.isNullOrEmpty()) {
+                        if (call.arguments.length + part.arguments.length > MAX_TOOL_ARGUMENT_CHARS) {
+                            throw RemoteOpenAiApiException("Remote provider returned oversized tool arguments")
+                        }
+                        call.arguments.append(part.arguments)
+                    }
+                }
+                return false
+            }
+
             reader.use { r ->
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    val line = withContext(Dispatchers.IO) { r.readLine() } ?: break
+                    val line = withContext(Dispatchers.IO) { r.readLineLimited(MAX_SSE_EVENT_CHARS) }
+                    if (line == null) {
+                        dispatchEvent()
+                        break
+                    }
+                    if (line.isEmpty()) {
+                        if (dispatchEvent()) break
+                        eventType = null
+                        continue
+                    }
+                    if (line.startsWith(":")) continue
                     if (line.startsWith("event:")) {
                         eventType = line.removePrefix("event:").trim()
                         continue
                     }
                     if (!line.startsWith("data:")) continue
-                    val data = line.removePrefix("data:").trim()
-                    if (data == "[DONE]") break
-                    if (eventType.equals("error", ignoreCase = true)) {
-                        throw RemoteOpenAiApiException("Remote provider reported a streaming error")
+                    val value = line.removePrefix("data:").let {
+                        if (it.startsWith(" ")) it.drop(1) else it
                     }
-                    eventType = null
-                    val error = runCatching { JSONObject(data).optJSONObject("error") }.getOrNull()
-                    if (error != null) {
-                        val message = error.optString("message").ifBlank { "Remote provider returned an error" }
-                        throw RemoteOpenAiApiException(message)
+                    eventChars += value.length + if (dataLines.isEmpty()) 0 else 1
+                    if (eventChars > MAX_SSE_EVENT_CHARS) {
+                        throw RemoteOpenAiApiException("Remote provider sent an oversized streaming event")
                     }
-                    val delta = try {
-                        deltaParts(data)
-                    } catch (e: Exception) {
-                        // Never put streamed model output or provider payloads into logs. The
-                        // response can contain private prompts, attachments, or tool arguments.
-                        Log.w(TAG, "generate(): could not parse an SSE chunk; skipping malformed event", e)
-                        null
-                    } ?: continue
-                    merger.accept(delta.content, delta.reasoning).forEach { emit(it) }
-                    delta.toolCalls.forEach { part ->
-                        val call = nativeToolCalls.getOrPut(part.index) { NativeToolCall() }
-                        part.name?.let { call.name = it }
-                        if (!part.arguments.isNullOrEmpty()) call.arguments.append(part.arguments)
-                    }
+                    dataLines += value
                 }
             }
             merger.finish().forEach { emit(it) }
             nativeToolCalls.values.forEach { call ->
                 val name = call.name?.takeIf { it.isNotBlank() } ?: return@forEach
-                val params = runCatching { JSONObject(call.arguments.toString()) }.getOrNull()
-                    ?: JSONObject()
+                val params = try {
+                    JSONObject(call.arguments.toString())
+                } catch (failure: Exception) {
+                    throw RemoteOpenAiApiException("Remote provider returned malformed tool arguments").also {
+                        it.initCause(failure)
+                    }
+                }
                 emit(
                     JSONObject()
                         .put("tool", name)
@@ -241,6 +313,7 @@ class RemoteOpenAiEngine {
         } catch (c: kotlinx.coroutines.CancellationException) {
             throw c
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "generate(): request to model=$remoteModelId failed", t)
             throw t
         } finally {
@@ -272,10 +345,11 @@ class RemoteOpenAiEngine {
      */
     suspend fun embedBatch(baseUrl: String, apiKey: String, remoteModelId: String, texts: List<String>): Result<List<FloatArray>> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                if (texts.isEmpty()) return@runCatching emptyList()
+            com.vervan.chat.system.runCatchingPreservingCancellation {
+                if (texts.isEmpty()) return@runCatchingPreservingCancellation emptyList()
                 val url = URL(normalizedBaseUrl(baseUrl) + "/embeddings")
                 val connection = (url.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     requestMethod = "POST"
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
@@ -288,14 +362,31 @@ class RemoteOpenAiEngine {
                     val body = JSONObject().put("model", remoteModelId).put("input", input).toString()
                     connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
                     connection.requireSuccessResponse("Embedding request failed")
-                    val data = JSONObject(readAllUtf8(connection.inputStream)).getJSONArray("data")
+                    val data = JSONObject(readAllUtf8(connection.inputStream, MAX_EMBEDDING_RESPONSE_CHARS)).getJSONArray("data")
+                    if (data.length() != texts.size) {
+                        throw RemoteOpenAiApiException("Embedding response returned the wrong number of entries")
+                    }
                     val byIndex = arrayOfNulls<FloatArray>(texts.size)
+                    var expectedDimension: Int? = null
                     for (i in 0 until data.length()) {
                         val item = data.getJSONObject(i)
                         val embedding = item.getJSONArray("embedding")
                         val index = item.optInt("index", i)
-                        if (index !in byIndex.indices) continue
-                        byIndex[index] = FloatArray(embedding.length()) { embedding.getDouble(it).toFloat() }
+                        if (index !in byIndex.indices || byIndex[index] != null) {
+                            throw RemoteOpenAiApiException("Embedding response contained an invalid index")
+                        }
+                        if (embedding.length() !in 1..MAX_EMBEDDING_DIMENSIONS) {
+                            throw RemoteOpenAiApiException("Embedding response contained an invalid vector size")
+                        }
+                        if (expectedDimension != null && embedding.length() != expectedDimension) {
+                            throw RemoteOpenAiApiException("Embedding response used inconsistent vector sizes")
+                        }
+                        expectedDimension = embedding.length()
+                        byIndex[index] = FloatArray(embedding.length()) { dimension ->
+                            val value = embedding.getDouble(dimension).toFloat()
+                            if (!value.isFinite()) throw RemoteOpenAiApiException("Embedding response contained a non-finite value")
+                            value
+                        }
                     }
                     byIndex.map { it ?: throw RemoteOpenAiApiException("Embedding response missing an entry") }
                 } finally {
@@ -384,9 +475,9 @@ class RemoteOpenAiEngine {
                 "DEEP" -> "high"
                 else -> "none"
             }
-            when (options.thinkingParameter?.trim()?.lowercase()) {
+            when (options.thinkingParameter?.trim()?.lowercase(java.util.Locale.ROOT)) {
                 "enable_thinking", "enable-thinking" -> json.put("enable_thinking", options.thinkingMode != "OFF")
-                "thinking", "think" -> json.put("thinking", options.thinkingMode.lowercase())
+                "thinking", "think" -> json.put("thinking", options.thinkingMode.lowercase(java.util.Locale.ROOT))
                 else -> json.put(options.thinkingParameter?.trim().takeUnless { it.isNullOrBlank() } ?: "reasoning_effort", effort)
             }
         }
@@ -412,7 +503,7 @@ class RemoteOpenAiEngine {
         var lastToolCallId: String? = null
         var toolCallCounter = 0
         source.forEach { (rawRole, rawContent) ->
-            val role = rawRole.lowercase().let { if (it == "developer") "developer" else it }
+            val role = rawRole.lowercase(java.util.Locale.ROOT).let { if (it == "developer") "developer" else it }
             val message = JSONObject().put("role", role)
             if (role == "assistant") {
                 val parsed = ToolCallParser.parseAll(rawContent)
@@ -482,7 +573,7 @@ class RemoteOpenAiEngine {
         require(file.isFile) { "Attachment file could not be read: ${file.name}" }
         val bytes = file.inputStream().use { it.readBytesLimited(InputLimits.MAX_NORMALIZED_IMAGE_BYTES) }
         val mime = android.webkit.MimeTypeMap.getSingleton()
-            .getMimeTypeFromExtension(file.extension.lowercase())
+            .getMimeTypeFromExtension(file.extension.lowercase(java.util.Locale.ROOT))
             ?: defaultMime
         val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
         return "data:$mime;base64,$base64"
@@ -496,7 +587,7 @@ class RemoteOpenAiEngine {
         require(file.isFile) { "Audio attachment could not be read: ${file.name}" }
         val bytes = file.inputStream().use { it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES) }
         val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
-        return base64 to file.extension.lowercase().ifBlank { "wav" }
+        return base64 to file.extension.lowercase(java.util.Locale.ROOT).ifBlank { "wav" }
     }
 
     private data class ToolCallDelta(val index: Int, val name: String?, val arguments: String?)
@@ -576,7 +667,7 @@ class RemoteOpenAiEngine {
         }
 
         private fun isCleartextHostAllowed(host: String?): Boolean {
-            val normalized = host?.trim()?.trim('[', ']')?.lowercase() ?: return false
+            val normalized = host?.trim()?.trim('[', ']')?.lowercase(java.util.Locale.ROOT) ?: return false
             return normalized == "localhost" ||
                 normalized == "127.0.0.1" ||
                 normalized == "10.0.2.2" ||
@@ -586,6 +677,7 @@ class RemoteOpenAiEngine {
         // minute loading weights or between long reasoning bursts; a five-minute stall bound still
         // fails dead connections while avoiding false failures during legitimate cold starts.
         private const val READ_TIMEOUT_MS = 300_000
+        private const val MAX_EMBEDDING_DIMENSIONS = 65_536
 
         /**
          * The provider's own model catalog, from its `/models` endpoint — so the user can pick from
@@ -602,12 +694,13 @@ class RemoteOpenAiEngine {
          * `["id"]` shapes self-hosted servers sometimes return. Sorted, de-duplicated.
          */
         suspend fun fetchModels(baseUrl: String, apiKey: String): Result<List<String>> = withContext(Dispatchers.IO) {
-            runCatching {
+            com.vervan.chat.system.runCatchingPreservingCancellation {
                 withTimeout(DISCOVERY_TIMEOUT_MS) {
                     val trimmed = baseUrl.trim()
                     baseUrlError(trimmed)?.let { throw RemoteOpenAiApiException(it) }
                     val url = URL(java.net.URI(trimmed).toString().trimEnd('/') + "/models")
                     val connection = (url.openConnection() as HttpURLConnection).apply {
+                        instanceFollowRedirects = false
                         requestMethod = "GET"
                         connectTimeout = CONNECT_TIMEOUT_MS
                         readTimeout = CONNECT_TIMEOUT_MS
@@ -615,16 +708,22 @@ class RemoteOpenAiEngine {
                     }
                     val body = try {
                         connection.requireSuccessResponse("Could not list models")
-                        readAllUtf8(connection.inputStream)
+                        readAllUtf8(connection.inputStream, MAX_MODEL_LIST_RESPONSE_CHARS)
                     } finally {
                         connection.disconnect()
                     }
                     val array = runCatching { org.json.JSONObject(body).optJSONArray("data") }.getOrNull()
                         ?: runCatching { org.json.JSONArray(body) }.getOrNull()
                         ?: throw RemoteOpenAiApiException("The endpoint's /models response wasn't in a recognized format")
+                    if (array.length() > MAX_MODEL_COUNT) {
+                        throw RemoteOpenAiApiException("The endpoint reported too many models")
+                    }
                     val ids = (0 until array.length()).mapNotNull { i ->
                         array.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }
                             ?: array.optString(i).takeIf { it.isNotBlank() }
+                    }
+                    if (ids.any { id -> id.length > MAX_MODEL_ID_CHARS || id.any { ch -> ch.isISOControl() } }) {
+                        throw RemoteOpenAiApiException("The endpoint returned an invalid model identifier")
                     }
                     if (ids.isEmpty()) throw RemoteOpenAiApiException("The endpoint reported no available models")
                     ids.distinct().sorted()

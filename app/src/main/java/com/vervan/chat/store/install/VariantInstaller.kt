@@ -174,6 +174,7 @@ class VariantInstaller(
             recorder.onState(variant.variantId, StoreInstallState.PAUSED)
             throw e
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             return fail(
                 variant.variantId,
                 InstallOutcome.Failed(t.message ?: "Install failed", permanent = false),
@@ -220,6 +221,7 @@ class VariantInstaller(
             recorder.finish(variant.variantId, StoreInstallState.READY)
             InstallOutcome.Success(record)
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             // The manifest is what makes a variant installed, so removing it is what un-installs
             // the failed attempt. Blobs stay; GC decides whether they are orphaned.
             manifestStore.uninstall(variant.variantId)
@@ -274,7 +276,7 @@ class VariantInstaller(
         // actually using, and If-Range tells us if that source's content has changed since.
         var (knownEtag, knownLastModified) = recorder.artifactResumeMetadata(variantId, artifact.artifactId)
 
-        for (source in artifact.sources) {
+        for ((sourceIndex, source) in artifact.sources.withIndex()) {
             try {
                 val meta = fetcher.fetch(
                     source, dest, artifact.sizeBytes, onProgress,
@@ -302,13 +304,19 @@ class VariantInstaller(
                 knownLastModified = null
                 recorder.onArtifactResumeMetadata(variantId, artifact.artifactId, null, null)
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.w(TAG, "Fetch failed from ${source.provider.wireName}: ${t.message}")
                 lastError = t.message
-                // Keep the partial file: the next source is a different URL, but a retry of this
-                // same source can resume from it. The validators above remain valid for a same-source
-                // retry; switching to a different source below clears them via the PermanentFetchException
-                // arm only on permanent failures — a transient failure of a non-permanent kind keeps
-                // the partial AND the validators, which is correct.
+                // Partial bytes and validators belong to one URL. Preserve them only when this
+                // artifact has a single source, where the next user retry will reach that same URL.
+                // With mirrors, the next loop iteration (and the next install retry) may select a
+                // different source, so retaining either would splice unrelated byte streams.
+                if (artifact.sources.size > 1 || sourceIndex > 0) {
+                    dest.delete()
+                    knownEtag = null
+                    knownLastModified = null
+                    recorder.onArtifactResumeMetadata(variantId, artifact.artifactId, null, null)
+                }
             }
         }
         return InstallOutcome.Failed(
@@ -348,7 +356,8 @@ class VariantInstaller(
 
     private fun formatBytes(bytes: Long): String {
         val gib = bytes / (1024.0 * 1024 * 1024)
-        return if (gib >= 1) "%.1f GB".format(gib) else "%.0f MB".format(bytes / (1024.0 * 1024))
+        return if (gib >= 1) "%.1f GB".format(java.util.Locale.getDefault(), gib)
+        else "%.0f MB".format(java.util.Locale.getDefault(), bytes / (1024.0 * 1024))
     }
 
     companion object {

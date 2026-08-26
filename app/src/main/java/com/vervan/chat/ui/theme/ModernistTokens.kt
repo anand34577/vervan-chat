@@ -12,20 +12,13 @@ import androidx.compose.ui.unit.dp
 object ModernistTokens {
     object Primitive {
         val unit = 4.dp
-        // The prototype's geometry was useful as a reference, but its Android translation
-        // over-rounded almost every surface. Shapes now have a stronger hierarchy: controls
-        // are compact, modules are calm, and only the composer/hero gets a visibly soft frame.
-        // The product uses a compact 4/8/12/16/20 scale. Stadium shapes are reserved for
-        // continuous controls; app modules and icon badges never use the pill token.
-        // A restrained radius ladder keeps list rows, fields, and cards visibly related.
-        // Only hero/composer surfaces use the largest value; controls never become stadiums.
-        // A calm radius ladder: small controls feel intentional, while hero/composer
-        // surfaces carry the softer signature of the product.
+        // A strict 4dp radius rhythm keeps controls, fields, modules, and hero surfaces related.
+        // Stadium shapes are reserved for components that are genuinely pill-shaped.
         val radiusXs = 4.dp
-        val radiusSm = 10.dp
-        val radiusMd = 14.dp
-        val radiusLg = 18.dp
-        val radiusXl = 24.dp
+        val radiusSm = 8.dp
+        val radiusMd = 12.dp
+        val radiusLg = 16.dp
+        val radiusXl = 20.dp
         val radiusPill = 999.dp
         /** Compatibility alias for older call sites; new components use the named radii. */
         val radius = radiusMd

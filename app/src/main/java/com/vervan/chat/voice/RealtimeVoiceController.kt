@@ -230,7 +230,9 @@ class RealtimeVoiceController(
         cancelResponse?.invoke()
         _turns.update { turns -> turns.map { it.copy(isStreaming = false, audioPending = false) } }
         app.applicationScope.launch(Dispatchers.Default) {
-            jobsToJoin.forEach { runCatching { it.cancelAndJoin() } }
+            jobsToJoin.forEach {
+                com.vervan.chat.system.runCatchingPreservingCancellation { it.cancelAndJoin() }
+            }
             if (::playbackQueue.isInitialized) playbackQueue.release()
             audioCapture.stop()
             vad.release()
@@ -313,6 +315,7 @@ class RealtimeVoiceController(
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.w(TAG, "Inbuilt STT unavailable this turn", t)
             null
         }
@@ -356,7 +359,9 @@ class RealtimeVoiceController(
         // resolves the user's chosen engine AND its isReady() in one call, so the warm-up loads
         // exactly the model the loop will end up using.
         if (app.container.settingsRepository.inbuiltSttEnabled.first()) {
-            controllerScope?.launch(Dispatchers.Default) { runCatching { pickInbuiltStt() } }
+            controllerScope?.launch(Dispatchers.Default) {
+                com.vervan.chat.system.runCatchingPreservingCancellation { pickInbuiltStt() }
+            }
         }
 
         if (!pushToTalkModeInitialized) {
@@ -510,36 +515,37 @@ class RealtimeVoiceController(
      * from an audio blob directly gives no language signal, whereas replying to transcript text
      * lets [PiperTtsEngine]'s per-sentence script detection work as intended. Returns null on
      * any failure (model error, empty output) so the caller can just re-listen. */
-    private suspend fun transcribeAudio(audioPath: String): String? = runCatching {
-        val model = generationModelId?.let { app.container.db.modelDao().get(it) }
-            ?: app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
-            ?: return@runCatching null
-        val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
-        if (!loaded.success || !app.container.audioEnabled(model)) return@runCatching null
-        val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
-        val audioFile = File(audioPath)
-        require(audioFile.isFile) { "Recorded audio file is missing" }
-        require(audioFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
-        val decoded = audioFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
-        val durationMs = decoded.samples.size * 1_000L / decoded.sampleRateHz
-        require(durationMs <= InputLimits.MAX_AUDIO_DURATION_MS) { "Recorded audio is longer than 30 minutes" }
-        val builder = StringBuilder()
-        app.container.generate(
-            model, TRANSCRIBE_PROMPT, null, audioPath,
-            temperature = 0f,
-            topP = params.topP,
-            topK = params.topK,
-            seed = params.seed,
-            minP = params.minP,
-            repetitionPenalty = params.repetitionPenalty,
-            maxOutputTokens = params.maxOutputTokens.coerceAtMost(MAX_TRANSCRIPT_TOKENS),
-            stopSequences = (params.stopSequences + TRANSCRIBE_STOP_SEQUENCES).distinct(),
-            systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
-        ).collect { token ->
-            builder.append(token)
-        }
-        ModelAudioTranscriptSanitizer.clean(builder.toString(), durationMs)
-    }.getOrNull()
+    private suspend fun transcribeAudio(audioPath: String): String? =
+        com.vervan.chat.system.runCatchingPreservingCancellation {
+            val model = generationModelId?.let { app.container.db.modelDao().get(it) }
+                ?: app.container.db.modelDao().getActiveModel(ModelRole.GENERATION)
+                ?: return@runCatchingPreservingCancellation null
+            val loaded = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.VOICE_SESSION)
+            if (!loaded.success || !app.container.audioEnabled(model)) return@runCatchingPreservingCancellation null
+            val params = com.vervan.chat.llm.resolveGenerationParams(model, app.container.settingsRepository)
+            val audioFile = File(audioPath)
+            require(audioFile.isFile) { "Recorded audio file is missing" }
+            require(audioFile.length() <= 50L * 1024 * 1024) { "Recorded audio is too large" }
+            val decoded = audioFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
+            val durationMs = decoded.samples.size * 1_000L / decoded.sampleRateHz
+            require(durationMs <= InputLimits.MAX_AUDIO_DURATION_MS) { "Recorded audio is longer than 30 minutes" }
+            val builder = StringBuilder()
+            app.container.generate(
+                model, TRANSCRIBE_PROMPT, null, audioPath,
+                temperature = 0f,
+                topP = params.topP,
+                topK = params.topK,
+                seed = params.seed,
+                minP = params.minP,
+                repetitionPenalty = params.repetitionPenalty,
+                maxOutputTokens = params.maxOutputTokens.coerceAtMost(MAX_TRANSCRIPT_TOKENS),
+                stopSequences = (params.stopSequences + TRANSCRIBE_STOP_SEQUENCES).distinct(),
+                systemPrompt = TRANSCRIBE_SYSTEM_PROMPT
+            ).collect { token ->
+                builder.append(token)
+            }
+            ModelAudioTranscriptSanitizer.clean(builder.toString(), durationMs)
+        }.getOrNull()
 
     private suspend fun respondAndSpeak(userInput: VoiceInputTurn) {
         responseInterrupted = false

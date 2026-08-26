@@ -629,7 +629,7 @@ fun ValidationMessage(message: String, modifier: Modifier = Modifier) {
 private fun compactCount(n: Int): String = when {
     n < 1000 -> n.toString()
     n % 1000 == 0 -> "${n / 1000}k"
-    else -> "${"%.1f".format(n / 1000f)}k"
+    else -> "${"%.1f".format(java.util.Locale.getDefault(), n / 1000f)}k"
 }
 
 @Composable

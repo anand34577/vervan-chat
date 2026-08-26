@@ -246,7 +246,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             Text(stringResource(R.string.persona_response_length), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = Space.md))
             DialRow(listOf("BALANCED", "SHORT", "LONG"), responseLength, vm::setResponseLength)
 
-            val creativityValue = String.format("%.1f", creativity)
+            val creativityValue = String.format(java.util.Locale.getDefault(), "%.1f", creativity)
             val creativityDescription = stringResource(R.string.persona_creativity_accessibility, creativityValue)
             Text(stringResource(R.string.persona_creativity, creativityValue), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
             Slider(

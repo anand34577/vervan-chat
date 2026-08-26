@@ -66,6 +66,7 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 com.vervan.chat.llm.OneShotLlm.stream(app, "$instruction\n\n$originalText")
                     ?.collect { chunk -> _revision.value += chunk }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "run(${action.name}) failed", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             }

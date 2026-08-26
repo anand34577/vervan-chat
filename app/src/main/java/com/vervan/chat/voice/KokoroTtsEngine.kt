@@ -30,7 +30,9 @@ class KokoroTtsEngine(private val voiceModelDao: TtsVoiceModelDao) : TtsEngine {
         if (attemptedLoad) return
         attemptedLoad = true
         val row = voiceModelDao.getByEngine("KOKORO", "multi") ?: return
-        tts = runCatching { loadVoice(row.filePath) }.getOrNull()
+        tts = com.vervan.chat.system.runCatchingPreservingCancellation {
+            loadVoice(row.filePath)
+        }.getOrNull()
     }
 
     private fun loadVoice(voiceDir: String): com.k2fsa.sherpa.onnx.OfflineTts {

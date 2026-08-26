@@ -31,27 +31,30 @@
 <div class="app">
   <nav class="rail" id="rail">
     <div class="rail-brand" id="brandMark"></div>
-    <button class="rail-btn" type="button" data-section="home" aria-label="Home" aria-current="page">
+    <button class="rail-btn nav-destination" type="button" data-section="home" aria-label="Home" aria-current="page">
       <svg viewBox="0 0 24 24"><path d="M3 10.2 12 3l9 7.2V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span>
     </button>
-    <button class="rail-btn" type="button" data-section="chats" aria-label="Chats">
+    <button class="rail-btn nav-destination" type="button" data-section="chats" aria-label="Chats">
       <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/></svg><span>Chats</span>
     </button>
-    <button class="rail-btn" type="button" data-section="library" aria-label="Library">
+    <button class="rail-btn nav-destination" type="button" data-section="library" aria-label="Library">
       <svg viewBox="0 0 24 24"><path d="M4 5h5l2 2h9v12H4z"/></svg><span>Library</span>
     </button>
-    <button class="rail-btn" type="button" data-section="knowledge" aria-label="Knowledge">
+    <button class="rail-btn nav-destination" type="button" data-section="knowledge" aria-label="Knowledge">
       <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z"/><path d="M8 3v18"/></svg><span>Knowledge</span>
     </button>
-    <button class="rail-btn" type="button" data-section="tools" aria-label="Tools">
+    <button class="rail-btn nav-destination" type="button" data-section="tools" aria-label="Tools">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Tools</span>
     </button>
     <div class="rail-spacer"></div>
-    <button class="rail-btn" type="button" data-section="models" aria-label="Models">
+    <button class="rail-btn nav-destination secondary-destination" type="button" data-section="models" aria-label="Models">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>Models</span>
     </button>
-    <button class="rail-btn" type="button" data-section="recycle" aria-label="Recycle bin">
+    <button class="rail-btn nav-destination secondary-destination" type="button" data-section="recycle" aria-label="Recycle bin">
       <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg><span>Bin</span>
+    </button>
+    <button class="rail-btn nav-destination secondary-destination" type="button" data-section="settings" aria-label="Settings and device">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg><span>Settings</span>
     </button>
   </nav>
 
@@ -65,9 +68,26 @@
         <h1 id="pageTitle">Home</h1>
       </div>
       <div class="grow"></div>
-      <div class="local-badge"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/><path d="M12 14v2"/></svg><span>On device</span></div>
+      <div class="local-badge privacy-badge" id="privacyBadge" title="Where the selected generation model runs">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12v10H6z"/><path d="M12 14v2"/></svg>
+        <span id="privacyLabel">Checking privacy…</span>
+      </div>
       <div class="status" role="status" aria-live="polite"><span class="dot" id="statusDot"></span><span id="statusLabel">Connecting…</span></div>
       <span class="chip" id="ramChip" hidden></span>
+      <details class="compact-utilities">
+        <summary class="icon-btn" role="button" aria-haspopup="menu" aria-label="More workspace destinations" title="More">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></svg>
+        </summary>
+        <div class="compact-utilities-menu">
+          <button class="nav-destination" type="button" data-section="models">Models</button>
+          <button class="nav-destination" type="button" data-section="recycle">Recycle bin</button>
+          <button class="nav-destination" type="button" data-section="settings">Settings &amp; device</button>
+        </div>
+      </details>
+      <button class="command-trigger" type="button" id="commandBtn" aria-label="Search workspace" title="Search workspace">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <span>Search</span><kbd>Ctrl K</kbd>
+      </button>
       <button class="icon-btn" type="button" id="keyBtn" aria-label="API key" title="API key">
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3"/><path d="m10.2 12.8 7.8-7.8 2 2-1.8 1.8 1.6 1.6-2 2-1.6-1.6-3.8 3.8"/></svg>
       </button>
@@ -90,11 +110,21 @@
             <div class="card home-search-card">
               <div class="card-heading"><div><h3>Find anything</h3><p>Search chats, notes, memories, personas, and documents.</p></div><svg class="ui-icon heading-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></div>
               <label class="field" style="margin:0">
-                <input type="search" id="globalSearch" maxlength="200" placeholder="Search your local workspace" autocomplete="off">
+                <input type="search" id="globalSearch" maxlength="200" placeholder="Search your local workspace" aria-label="Search your local workspace" autocomplete="off">
               </label>
               <div id="searchResults"></div>
             </div>
+            <div class="card workspace-launcher">
+              <div class="card-heading"><div><h3>Continue your work</h3><p>The same workspace and local models, organized for a larger screen.</p></div></div>
+              <div class="workspace-actions">
+                <button class="nav-destination" type="button" data-section="chats"><b>Chat</b><span>Conversations, files and audio</span></button>
+                <button class="nav-destination" type="button" data-section="tools"><b>AI tools</b><span>Write, learn, plan and develop</span></button>
+                <button class="nav-destination" type="button" data-section="knowledge"><b>Knowledge</b><span>Documents and retrieval</span></button>
+                <button class="nav-destination" type="button" data-section="library"><b>Library</b><span>Notes, projects and reusable context</span></button>
+              </div>
+            </div>
             <div class="card-grid" id="homeStats"></div>
+            <div class="card readiness-card" id="homeReadiness"></div>
             <div class="card"><h3>Model status</h3><div id="homeModels"></div></div>
             <div class="card"><h3>Recent chats</h3><div id="homeChats"></div></div>
             <div class="card"><h3>Recent notes</h3><div id="homeNotes"></div></div>
@@ -137,7 +167,7 @@
       <div class="cols">
         <aside class="list-col" id="chatListCol">
           <div class="list-col-head">
-                <input type="search" id="chatSearch" maxlength="200" placeholder="Search chats">
+                <input type="search" id="chatSearch" maxlength="200" placeholder="Search chats" aria-label="Search chats">
             <button class="primary button-with-icon" type="button" id="newChatBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
           </div>
           <div class="list-scroll" id="chatList"></div>
@@ -204,7 +234,7 @@
                     <button type="button" data-attach="ocr"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8M12 8v8"/></svg>Extract text from an image</button>
                   </div>
                 </div>
-                <textarea id="input" maxlength="12000" rows="1" placeholder="Message Vervan…"></textarea>
+                <textarea id="input" maxlength="12000" rows="1" placeholder="Message Vervan…" aria-label="Message Vervan"></textarea>
                 <button class="send-btn" type="button" id="sendBtn" aria-label="Send" title="Send message">
                   <svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
                 </button>
@@ -214,7 +244,7 @@
               </div>
               <div class="composer-hint">
                 <span>Enter to send · Shift+Enter for a new line</span>
-                <span id="ragHint"></span>
+                <span id="ragHint"></span><span id="privacyHint" class="privacy-hint"></span>
               </div>
             </div>
           </div>
@@ -242,19 +272,19 @@
             </div>
             <div class="opt-group">
               <h4>Knowledge</h4>
-              <div class="switch-row"><span>Answer from my documents</span><input type="checkbox" id="ragToggle"></div>
+              <div class="switch-row"><span>Answer from my documents</span><input type="checkbox" id="ragToggle" aria-label="Answer from my documents"></div>
               <div class="check-list" id="kbCheckList"></div>
             </div>
             <div class="opt-group">
               <h4>Tools</h4>
-              <div class="switch-row"><span>Let the model use tools</span><input type="checkbox" id="toolsToggle"></div>
+              <div class="switch-row"><span>Let the model use tools</span><input type="checkbox" id="toolsToggle" aria-label="Let the model use tools"></div>
               <div class="check-list" id="toolCheckList"></div>
             </div>
             <div class="opt-group">
               <h4>Organise</h4>
               <label class="field"><span>Project</span><select id="projectSelect"></select></label>
               <label class="field"><span>Folder</span><select id="folderSelect"></select></label>
-              <div class="switch-row"><span>Archived</span><input type="checkbox" id="archivedToggle"></div>
+              <div class="switch-row"><span>Archived</span><input type="checkbox" id="archivedToggle" aria-label="Archived chat"></div>
             </div>
             <div class="opt-group">
               <h4>Sampling</h4>
@@ -310,7 +340,7 @@
       <div class="cols">
         <aside class="list-col" id="kbListCol">
           <div class="list-col-head">
-            <input type="search" id="kbSearch" placeholder="Search knowledge bases">
+            <input type="search" id="kbSearch" placeholder="Search knowledge bases" aria-label="Search knowledge bases">
             <button class="primary button-with-icon" type="button" id="newKbBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
           </div>
           <div class="list-scroll" id="kbList"></div>
@@ -320,17 +350,32 @@
     </section>
 
     <!-- Tools ------------------------------------------------------------ -->
-    <section class="section" id="section-tools">
-      <div class="cols">
+    <section class="section section-stack" id="section-tools">
+      <div class="subnav" id="toolTabs" role="tablist" aria-label="Tool views">
+        <button type="button" role="tab" data-tool-view="studio" class="active" aria-selected="true" aria-controls="toolStudioView">AI tools</button>
+        <button type="button" role="tab" data-tool-view="actions" aria-selected="false" aria-controls="toolActionsView">Device actions</button>
+        <button type="button" role="tab" data-tool-view="history" aria-selected="false" aria-controls="toolHistoryView">History</button>
+      </div>
+      <div class="cols" id="toolStudioView">
+        <aside class="list-col" id="aiToolListCol">
+          <div class="list-col-head">
+            <input type="search" id="aiToolSearch" placeholder="Search AI tools" aria-label="Search AI tools">
+          </div>
+          <div class="list-scroll" id="aiToolList"></div>
+        </aside>
+        <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="aiToolDetail"></div></div></div>
+      </div>
+      <div class="cols" id="toolActionsView" hidden>
         <aside class="list-col" id="toolListCol">
           <div class="list-col-head">
-            <input type="search" id="toolSearch" placeholder="Search tools">
+            <input type="search" id="toolSearch" placeholder="Search tools" aria-label="Search tools">
             <button class="secondary button-with-icon" type="button" id="toolHistoryBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 5v5h5M12 8v4l3 2"/></svg>History</button>
           </div>
           <div class="list-scroll" id="toolList"></div>
         </aside>
         <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="toolDetail"></div></div></div>
       </div>
+      <div class="detail-col" id="toolHistoryView" hidden><div class="detail-scroll"><div class="detail-inner" id="toolHistoryPane"></div></div></div>
     </section>
 
     <!-- Models ----------------------------------------------------------- -->
@@ -342,6 +387,46 @@
     <section class="section section-stack" id="section-recycle">
       <div class="subnav" id="recycleTabs"></div>
       <div class="detail-col"><div class="detail-scroll"><div class="detail-inner" id="recyclePane"></div></div></div>
+    </section>
+
+    <!-- Settings & device ----------------------------------------------- -->
+    <section class="section" id="section-settings">
+      <div class="detail-col"><div class="detail-scroll"><div class="detail-inner settings-layout">
+        <div class="home-intro settings-intro">
+          <div class="home-intro-mark" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg></div>
+          <div><span class="eyebrow">This browser · that device</span><h2>Settings and device</h2><p>See the state of the phone serving this workspace and control browser-safe preferences.</p></div>
+        </div>
+        <div class="settings-grid">
+          <div class="card"><div class="card-heading"><div><h3>Appearance</h3><p>Applies to this browser tab. “Device” follows Vervan’s injected app theme.</p></div></div>
+            <div class="segmented" id="webThemeControls" role="group" aria-label="Browser theme">
+              <button type="button" data-web-theme="device" class="active" aria-pressed="true">Device</button>
+              <button type="button" data-web-theme="light" aria-pressed="false">Light</button>
+              <button type="button" data-web-theme="dark" aria-pressed="false">Dark</button>
+            </div>
+          </div>
+          <div class="card"><div class="card-heading"><div><h3>Connection</h3><p>Full web mode always requires the API key stored for this tab.</p></div></div>
+            <div id="settingsConnection" aria-live="polite"></div>
+            <button class="secondary button-with-icon" type="button" id="settingsKeyBtn"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3"/><path d="m10.2 12.8 7.8-7.8 2 2-1.8 1.8 1.6 1.6-2 2-1.6-1.6-3.8 3.8"/></svg>Manage API key</button>
+          </div>
+          <div class="card"><div class="card-heading"><div><h3>Device status</h3><p>Live memory and model residency on the phone.</p></div></div><div id="settingsDevice" aria-live="polite"></div></div>
+          <div class="card"><div class="card-heading"><div><h3>Connected clients</h3><p>Browsers and API clients seen during this server session.</p></div></div><div id="settingsClients" aria-live="polite"></div></div>
+        </div>
+        <div class="card device-boundary-card">
+          <div class="card-heading"><div><h3>Protected device controls</h3><p>These remain in the Android app because they change OS permissions, secrets, storage, or the listening socket itself.</p></div></div>
+          <div class="boundary-grid">
+            <div><b>Security &amp; privacy</b><span>App lock, panic wipe, permissions, privacy dashboard</span></div>
+            <div><b>Local API server</b><span>Start/stop, LAN access, token regeneration, tool-write permission</span></div>
+            <div><b>Models &amp; storage</b><span>Install/import models, storage cleanup, index maintenance</span></div>
+            <div><b>Voice &amp; overlays</b><span>Microphone, speech engines, capture and floating-assistant access</span></div>
+            <div><b>Backup &amp; restore</b><span>Encrypted workspace export, restore, retention and destructive actions</span></div>
+            <div><b>Diagnostics</b><span>Native logs, background jobs, backend and device compatibility details</span></div>
+          </div>
+          <div class="browser-equivalents">
+            <b>Browser equivalents already included</b>
+            <p>Use Chat’s attachment menu for image understanding, OCR, audio clips and chat-with-file. Use Knowledge for reusable documents, Models for residency/default controls, and AI tools for the app’s text-based writing, learning, planning and developer workflows.</p>
+          </div>
+        </div>
+      </div></div></div>
     </section>
   </main>
 </div>

@@ -88,7 +88,8 @@ class ModelStoreViewModel(app: VervanApp) : ViewModel() {
                     is SyncResult.Failed -> null // surfaced via syncError instead
                 }
                 rebuild()
-            } catch (_: Throwable) {
+            } catch (failure: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(failure)
                 _syncMessage.value = "Catalogue update failed. Try again."
             } finally {
                 // A thrown network/parser failure must not leave the toolbar permanently in a

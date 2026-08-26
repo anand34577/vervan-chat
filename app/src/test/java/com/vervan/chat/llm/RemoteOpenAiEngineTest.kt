@@ -1,10 +1,26 @@
 package com.vervan.chat.llm
 
+import java.io.BufferedReader
+import java.io.StringReader
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RemoteOpenAiEngineTest {
+
+    @Test
+    fun `bounded line reader handles CRLF and EOF`() {
+        val reader = BufferedReader(StringReader("one\r\ntwo"))
+        assertEquals("one", reader.readLineLimited(8))
+        assertEquals("two", reader.readLineLimited(8))
+        assertNull(reader.readLineLimited(8))
+    }
+
+    @Test(expected = RemoteOpenAiApiException::class)
+    fun `bounded line reader rejects oversized provider lines`() {
+        BufferedReader(StringReader("12345\n")).readLineLimited(4)
+    }
 
     @Test
     fun acceptsHttpsEndpoints() {

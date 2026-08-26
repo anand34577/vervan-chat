@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,13 +58,27 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
     val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
-    var lockoutRemainingMs by remember { mutableStateOf(appLockManager.pinLockoutRemainingMs()) }
+    var lockoutRemainingMs by remember { mutableLongStateOf(appLockManager.pinLockoutRemainingMs()) }
     val pinFocusRequester = remember { FocusRequester() }
+    val hasPin = appLockManager.hasPin()
     val biometricAvailable = remember(method) {
         method != AppLockMethod.PIN &&
             BiometricManager.from(context).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
     }
-    val showPinField = method != AppLockMethod.BIOMETRIC || !biometricAvailable
+    // Recovery for a legacy/interrupted configuration that has app lock enabled but no usable
+    // app PIN (for example, biometric enrollment was removed after setup). The Android device
+    // credential remains a secure owner check and avoids permanently locking the user out.
+    val useDeviceCredentialFallback = !hasPin && !biometricAvailable
+    val allowedAuthenticators = if (useDeviceCredentialFallback) {
+        BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    } else {
+        BiometricManager.Authenticators.BIOMETRIC_WEAK
+    }
+    val systemAuthenticationAvailable = remember(method, allowedAuthenticators) {
+        (method != AppLockMethod.PIN || useDeviceCredentialFallback) &&
+            BiometricManager.from(context).canAuthenticate(allowedAuthenticators) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+    val showPinField = hasPin && (method != AppLockMethod.BIOMETRIC || !systemAuthenticationAvailable)
     val lockoutMessage = if (lockoutRemainingMs > 0) {
         val seconds = ((lockoutRemainingMs + 999) / 1_000).toInt()
         context.resources.getQuantityString(R.plurals.lock_too_many_attempts, seconds, seconds)
@@ -83,15 +98,22 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
             }
         )
     }
-    val promptInfo = remember {
+    val promptInfo = remember(allowedAuthenticators, showPinField) {
         BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Vervan Chat")
             .setSubtitle("Confirm it's you to continue")
-            .setNegativeButtonText(if (showPinField) "Use PIN instead" else "Cancel")
+            .setAllowedAuthenticators(allowedAuthenticators)
+            .apply {
+                // Android forbids a custom negative button when device credential is one of the
+                // allowed authenticators; the system supplies its own fallback affordance.
+                if (!useDeviceCredentialFallback) {
+                    setNegativeButtonText(if (showPinField) "Use PIN instead" else "Cancel")
+                }
+            }
             .build()
     }
-    LaunchedEffect(biometricAvailable) {
-        if (biometricAvailable) biometricPrompt.authenticate(promptInfo)
+    LaunchedEffect(systemAuthenticationAvailable, promptInfo) {
+        if (systemAuthenticationAvailable) biometricPrompt.authenticate(promptInfo)
     }
     LaunchedEffect(showPinField) {
         if (showPinField) pinFocusRequester.requestFocus()
@@ -148,10 +170,14 @@ fun LockScreen(activity: FragmentActivity, appLockManager: AppLockManager, metho
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (biometricAvailable) {
+                if (systemAuthenticationAvailable) {
                     OutlinedButton(onClick = { biometricPrompt.authenticate(promptInfo) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Fingerprint, contentDescription = null)
-                        Text(stringResource(R.string.ui_lockscreen_148_unlock_with_biometrics), modifier = Modifier.padding(start = Space.sm))
+                        Text(
+                            if (useDeviceCredentialFallback) "Unlock with device security"
+                            else stringResource(R.string.ui_lockscreen_148_unlock_with_biometrics),
+                            modifier = Modifier.padding(start = Space.sm)
+                        )
                     }
                 }
                 if (showPinField) {

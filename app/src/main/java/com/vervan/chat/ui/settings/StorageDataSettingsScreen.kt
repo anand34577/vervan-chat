@@ -122,6 +122,7 @@ class StorageDataViewModel(private val app: VervanApp) : ViewModel() {
                     try {
                         refresh(modelBytes, documentPaths)
                     } catch (t: Throwable) {
+                        com.vervan.chat.system.rethrowCancellation(t)
                         if (t is CancellationException) throw t
                         _error.value = t.message ?: "Storage details could not be loaded."
                     }
@@ -143,6 +144,7 @@ class StorageDataViewModel(private val app: VervanApp) : ViewModel() {
                 val current = _overview.value
                 refresh(current.models, app.container.db.documentDao().observeAll().first().map { it.filePath })
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _error.value = t.message ?: "Cache could not be cleared."
             } finally {

@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.vervan.chat.ui.theme.ModernistTokens
 
@@ -98,7 +99,7 @@ fun VervanToggle(
             ) {
                 Surface(
                     modifier = Modifier
-                        .offset(x = thumbOffset)
+                        .offset { IntOffset(thumbOffset.roundToPx(), 0) }
                         .size(ModernistTokens.Component.toggleThumbSize)
                         .shadow(ModernistTokens.Component.innerRule, thumbShape),
                     shape = thumbShape,

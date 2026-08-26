@@ -545,7 +545,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Materializes any device-decodable audio document as the same mono 16 kHz WAV used by
      * microphone recordings. The returned file is app-owned, so the SAF grant can safely end. */
     suspend fun importAudio(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             AudioNormalizer.normalize(app, uri, newAudioFile()).absolutePath
         }.onFailure { Log.e(TAG, "Audio import failed", it) }
     }
@@ -568,6 +568,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
             dest.absolutePath
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             Log.e(TAG, "copyImage failed", t)
             copied?.delete()
             null
@@ -597,7 +598,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * gallery image. */
     suspend fun extractOcr(uri: Uri): Result<OcrResult> = withContext(Dispatchers.IO) {
         var copied: java.io.File? = null
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
             val dest = java.io.File(dir, "${System.currentTimeMillis()}_ocr.jpg")
             copied = dest
@@ -619,7 +620,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     /** Same as [extractOcr] but for a camera capture already materialized as a file (via
      * [newCameraImageFile]). */
     suspend fun extractOcrFromFile(file: java.io.File): Result<OcrResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { "Image exceeds the 64 MB limit" }
             check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { "The captured file is not a readable image" }
             val text = com.vervan.chat.model.OcrExtractor.extractFromImage(file)
@@ -637,7 +638,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * over a picked gallery image. */
     suspend fun extractQr(uri: Uri): Result<QrResult> = withContext(Dispatchers.IO) {
         var copied: java.io.File? = null
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             val dir = java.io.File(app.filesDir, "images").apply { mkdirs() }
             val dest = java.io.File(dir, "${System.currentTimeMillis()}_qr.jpg")
             copied = dest
@@ -655,7 +656,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     /** Same as [extractQr] but for a camera capture already materialized as a file. */
     suspend fun extractQrFromFile(file: java.io.File): Result<QrResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { "Image exceeds the 64 MB limit" }
             check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { "The captured file is not a readable image" }
             val text = com.vervan.chat.model.BarcodeExtractor.extractFromImage(file)
@@ -680,6 +681,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val name = try {
                 queryDisplayName(uri) ?: uri.lastPathSegment ?: "document"
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] could not read document name", t)
                 "document"
             }
@@ -722,6 +724,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     }
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] document attachment failed", t)
                 db.knowledgeBaseDao().delete(kb)
                 _pendingDocument.value = DocumentAttachState.Failed(name, t.toUserMessage())
@@ -751,7 +754,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
 
     private suspend fun ensureEmbeddingModelLoaded() {
         val active = db.modelDao().getActiveModel(ModelRole.EMBEDDING) ?: return
-        runCatching {
+        com.vervan.chat.system.runCatchingPreservingCancellation {
             app.container.modelLoadCoordinator.ensureLoaded(active, LoadTrigger.RAG_RETRIEVAL)
         }.onFailure {
             // A bare runCatching here previously swallowed every load failure — a corrupt or
@@ -913,6 +916,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     _confirmationMessage.value = "Not enough conversation content to generate a title"
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] title generation failed", t)
                 _confirmationMessage.value = "Title generation failed: ${t.toUserMessage()}"
             } finally {
@@ -961,6 +965,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 titleRetryPending = true
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 titleRetryPending = true
                 Log.e(TAG, "[$chatId] auto title generation failed", t)
             }
@@ -976,6 +981,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             try {
                 summarizeOlderHistoryIfNeeded()
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] context summarization failed", t)
             }
         }
@@ -1371,6 +1377,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         voiceRecordingPath: String? = null
     ) {
         if (text.isBlank() && imagePath == null && audioPath == null && documentId == null) return
+        if (text.length > InputLimits.CHAT_TEXT_CHARS) {
+            _error.value = "Message is too long (maximum ${InputLimits.CHAT_TEXT_CHARS} characters)"
+            return
+        }
         Log.i(TAG, "[$chatId] send() textLen=${text.length}, hasImage=${imagePath != null}, hasAudio=${audioPath != null}")
         draftSaveJob?.cancel()
         launchGeneration {
@@ -1660,6 +1670,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 }
                 throw cancelled
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] generation FAILED after ${System.currentTimeMillis() - startedAt}ms: ${t::class.simpleName}: ${t.message}", t)
                 _error.value = "Generation failed: ${t.toUserMessage()}"
             } finally {
@@ -2139,6 +2150,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val result = try {
                 tool.execute(app, toolCall.params.withImagePathContext(imagePath))
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 Log.e(TAG, "[$chatId] runGenerationLoop() hop=$hop tool '${tool.name}' threw", t)
                 ToolResult(false, "Tool failed: ${t.toUserMessage()}")
             }
@@ -2223,6 +2235,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             val result = try {
                 tool.execute(app, params.withImagePathContext(ChatFormatting.nearestImagePath(all, message)))
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 ToolResult(false, "Tool failed: ${t.toUserMessage()}")
             }
             recordToolAudit(tool.name, params, result, tool.risk.name)
@@ -2307,7 +2320,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         } else RetrievalMode.KEYWORD
 
         val queries = if (queryModel != null && app.container.settingsRepository.queryExpansionEnabled.first()) {
-            runCatching { com.vervan.chat.retrieval.QueryExpander.expand(app, queryModel, query) }.getOrDefault(listOf(query))
+            com.vervan.chat.system.runCatchingPreservingCancellation {
+                com.vervan.chat.retrieval.QueryExpander.expand(app, queryModel, query)
+            }.getOrDefault(listOf(query))
         } else listOf(query)
 
         // Called directly, NOT wrapped in app.container.withEmbedding{} — retrieve() already takes

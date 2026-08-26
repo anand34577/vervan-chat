@@ -96,6 +96,7 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
                     _document.value = null
                 }
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 if (t is CancellationException) throw t
                 _error.value = t.toUserMessage()
             } finally {

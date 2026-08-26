@@ -283,7 +283,7 @@ internal fun SourceCards(
                     Text(source.optString("excerpt"), modifier = Modifier.padding(top = Space.sm))
                     Text(
                         if (expertMode) {
-                            "Retrieval score ${String.format("%.2f", source.optDouble("score"))} · rank ${index + 1} · ranking signal, not confidence"
+                            "Retrieval score ${String.format(java.util.Locale.getDefault(), "%.2f", source.optDouble("score"))} · rank ${index + 1} · ranking signal, not confidence"
                         } else {
                             "${matchStrength(source.optDouble("score"))} match"
                         },

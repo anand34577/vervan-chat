@@ -180,6 +180,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
+                com.vervan.chat.system.rethrowCancellation(t)
                 turns = turns + ChatTurn(false, "⚠️ ${t.toUserMessage()}")
             } finally {
                 isThinking = false

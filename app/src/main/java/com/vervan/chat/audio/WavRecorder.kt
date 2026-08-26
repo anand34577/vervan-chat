@@ -47,6 +47,7 @@ class WavRecorder(
         try {
             record.startRecording()
         } catch (t: Throwable) {
+            com.vervan.chat.system.rethrowCancellation(t)
             record.release()
             throw t
         }
