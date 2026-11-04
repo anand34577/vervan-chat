@@ -159,31 +159,28 @@ window.VervanRender = (function () {
     }
     function parseSeq(text) {
       var save = [i, src]; src = text; i = 0;
-      var out = "";
-      function popLast() {
-        var m2 = /(<m(?:i|n|o|sup|sub|frac|sqrt|text)[^]*>[^]*<\/m(?:i|n|o|sup|sub|frac|sqrt|text)>|<m[a-z]+\/>)$/.exec(out);
-        if (m2) { out = out.slice(0, out.length - m2[0].length); return m2[0]; }
-        return "<mi></mi>";
-      }
+      // One entry per MathML node, so ^ and _ attach to exactly the preceding atom. A regex over
+      // the concatenated string can't find that boundary (it used to swallow the whole run, making
+      // `x+y^2` render as (x+y)² with an invalid four-child <msup>).
+      var nodes = [];
       while (i < src.length) {
         var ch = src[i];
         if (ch === " ") { i++; continue; }
         if (ch === "^" || ch === "_") {
           i++;
-          var base = out.length ? popLast() : "<mi></mi>";
-          var sup = readGroup();
-          out += ch === "^" ? "<msup>" + base + sup + "</msup>" : "<msub>" + base + sup + "</msub>";
+          var base = nodes.length ? nodes.pop() : "<mi></mi>";
+          var script = i < src.length ? readGroup() : "<mi></mi>";
+          nodes.push(ch === "^" ? "<msup>" + base + script + "</msup>" : "<msub>" + base + script + "</msub>");
           continue;
         }
-        if (ch === "{") { out += readGroup(); continue; }
-        if (ch === "\\") { var m = /^\\[a-zA-Z]+/.exec(src.slice(i)); if (m) { i += m[0].length; out += atomOrCommand(m[0].slice(1)); continue; } i++; continue; }
-        if (/[+\-=<>]/.test(ch)) { out += "<mo>" + escapeHtml(ch) + "</mo>"; i++; continue; }
-        if (/[0-9.]/.test(ch)) { var num = ""; while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; i++; } out += "<mn>" + num + "</mn>"; continue; }
-        out += "<mi>" + escapeHtml(ch) + "</mi>"; i++;
+        if (ch === "{") { nodes.push(readGroup()); continue; }
+        if (ch === "\\") { var m = /^\\[a-zA-Z]+/.exec(src.slice(i)); if (m) { i += m[0].length; var node = atomOrCommand(m[0].slice(1)); if (node) nodes.push(node); continue; } i++; continue; }
+        if (/[+\-=<>]/.test(ch)) { nodes.push("<mo>" + escapeHtml(ch) + "</mo>"); i++; continue; }
+        if (/[0-9.]/.test(ch)) { var num = ""; while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; i++; } nodes.push("<mn>" + num + "</mn>"); continue; }
+        nodes.push("<mi>" + escapeHtml(ch) + "</mi>"); i++;
       }
-      var res = out;
       i = save[0]; src = save[1];
-      return "<mrow>" + res + "</mrow>";
+      return "<mrow>" + nodes.join("") + "</mrow>";
     }
     return parseSeq(src);
   }
@@ -249,22 +246,36 @@ window.VervanRender = (function () {
 
   function renderMarkdownText(md) {
     // Protect LaTeX spans from the rest of the markdown pass, then swap in MathML at the end.
-    var mathStore = [];
-    md = md.replace(/\$\$([\s\S]+?)\$\$/g, function (m, g) { mathStore.push(renderLatex(g, true)); return " MATH" + (mathStore.length - 1) + " "; });
-    md = md.replace(/\$([^\n$]+?)\$/g, function (m, g) { mathStore.push(renderLatex(g, false)); return " MATH" + (mathStore.length - 1) + " "; });
+    var mathStore = [], mathSource = [];
+    md = md.replace(/\$\$([\s\S]+?)\$\$/g, function (m, g) { mathStore.push(renderLatex(g, true)); mathSource.push(m); return " MATH" + (mathStore.length - 1) + " "; });
+    md = md.replace(/\$([^\n$]+?)\$/g, function (m, g) { mathStore.push(renderLatex(g, false)); mathSource.push(m); return " MATH" + (mathStore.length - 1) + " "; });
 
     var lines = md.split("\n");
     var html = "";
     var i = 0;
     function inline(text) {
       text = escapeHtml(text);
-      text = text.replace(/ MATH(\d+) /g, function (m, idx) { return mathStore[parseInt(idx, 10)]; });
-      text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
+      // Code spans are literal: pull them out before emphasis runs, or `a*b*c` gains an <em> and
+      // **bold `x**y`** produces overlapping tags. \u0000 can't appear in escaped model text.
+      var codeStore = [];
+      text = text.replace(/`([^`]+)`/g, function (m, code) {
+        // Math inside a code span is literal text, not a formula — put its source back.
+        code = code.replace(/ MATH(\d+) /g, function (m, idx) {
+          var raw = mathSource[parseInt(idx, 10)];
+          return raw === undefined ? m : escapeHtml(raw);
+        });
+        codeStore.push("<code>" + code + "</code>");
+        return "\u0000C" + (codeStore.length - 1) + "\u0000";
+      });
+      text = text.replace(/ MATH(\d+) /g, function (m, idx) {
+        var rendered = mathStore[parseInt(idx, 10)];
+        return rendered === undefined ? m : rendered;
+      });
       text = text.replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, function (m, a, b) { return "<strong>" + (a || b) + "</strong>"; });
       text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
       text = text.replace(/~~([^~]+)~~/g, "<del>$1</del>");
       text = text.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-      return text;
+      return text.replace(/\u0000C(\d+)\u0000/g, function (m, idx) { return codeStore[parseInt(idx, 10)]; });
     }
     while (i < lines.length) {
       var line = lines[i];

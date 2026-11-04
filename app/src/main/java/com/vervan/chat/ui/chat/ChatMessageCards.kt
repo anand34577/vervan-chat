@@ -42,6 +42,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -184,6 +186,25 @@ internal fun rememberBatchedStreamingText(text: String, isStreaming: Boolean): S
     return if (isStreaming) displayedText else text
 }
 
+/**
+ * While [active], this element never reports a smaller height than it already had. A streaming
+ * reply only grows in the end, but intermediate Markdown can briefly lay out a line taller (a
+ * list marker or heading that is still being typed); letting that line disappear again made the
+ * followed-to-bottom chat bounce up and down. The floor resets as soon as streaming stops.
+ */
+internal fun Modifier.neverShrinkWhile(active: Boolean, key: Any): Modifier = composed {
+    val floor = remember(key) { IntArray(1) }
+    if (!active) floor[0] = 0
+    layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val height = if (active) {
+            maxOf(placeable.height, floor[0]).coerceAtMost(constraints.maxHeight)
+        } else placeable.height
+        if (active) floor[0] = height
+        layout(placeable.width, height) { placeable.place(0, 0) }
+    }
+}
+
 /** Standard mode translates the raw retrieval score into a plain-language match
  * strength instead of a bare number; Expert mode shows the exact score (see call site). */
 private fun matchStrength(score: Double): String = when {
@@ -221,7 +242,7 @@ internal fun SourceCards(
     if (array.length() == 0) {
         Column(Modifier.padding(top = Space.sm)) {
             Text(
-                "Not grounded — no matching sources found in the selected knowledge bases",
+                stringResource(R.string.chat_message_not_grounded_no_matching_sources),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error
             )
@@ -230,7 +251,7 @@ internal fun SourceCards(
             }
             betterModelName?.let {
                 Text(
-                    "$it may work better for this question. Switch models in Mode & model.",
+                    stringResource(R.string.chat_message_arg1_may_work_better_for, it),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.xs)
@@ -354,10 +375,10 @@ internal fun MemoryActivityCard(memoryActivityJson: String) {
     }
     if (recalled.isEmpty() && saved.isEmpty()) return
     val title = when {
-        saved.isNotEmpty() && recalled.isNotEmpty() -> "Memory · ${saved.size} saved, ${recalled.size} recalled"
+        saved.isNotEmpty() && recalled.isNotEmpty() -> stringResource(R.string.chat_message_memory_arg1_saved_arg2_recalled, saved.size, recalled.size)
         saved.isNotEmpty() -> if (saved.size == 1) "Saved to memory" else "Saved ${saved.size} memories"
         recalled.size == 1 -> "Recalled 1 memory"
-        else -> "Recalled ${recalled.size} memories"
+        else -> stringResource(R.string.chat_message_recalled_arg1_memories, recalled.size)
     }
     com.vervan.chat.ui.common.AssistantSubCard(
         kind = com.vervan.chat.ui.common.SubCardKind.Memory,
@@ -440,7 +461,7 @@ internal fun ToolResultCard(toolResultJson: String, toolCallJson: String?) {
                 )
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Hide details" else "Show request and response",
+                    contentDescription = if (expanded) stringResource(R.string.chat_message_hide_details) else stringResource(R.string.chat_message_show_request_and_response),
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -503,7 +524,7 @@ internal fun ToolConfirmationCard(toolCallJson: String?, onConfirm: (Boolean) ->
                 Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = acknowledged, onCheckedChange = { acknowledged = it })
                     Text(
-                        "This leaves the app and can't be undone from here",
+                        stringResource(R.string.chat_message_this_leaves_the_app_and),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = Space.xs)
                     )

@@ -19,7 +19,9 @@ import java.security.SecureRandom
  * response latency.
  */
 class ApiServerAuth(context: Context) {
-    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_api_server")
+    // Lazy: opening Keystore-backed prefs costs a Keystore round-trip, and this object is
+    // built during Application.onCreate on the main thread, before the first frame.
+    private val prefs: SharedPreferences by lazy { createEncryptedPrefs(context, "vervan_api_server") }
 
     // @Volatile: read on the API server worker threads, mutated only under synchronized(this).
     @Volatile

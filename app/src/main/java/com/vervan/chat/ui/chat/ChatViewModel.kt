@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -27,6 +29,7 @@ import com.vervan.chat.model.ChatDefaults
 import com.vervan.chat.model.DocumentImportOutcome
 import com.vervan.chat.model.ImportLimits
 import com.vervan.chat.model.copyToLimited
+import com.vervan.chat.llm.LlmEngine
 import com.vervan.chat.llm.ModelProfileType
 import com.vervan.chat.llm.ModelProfiles
 import com.vervan.chat.llm.TitleGenerator
@@ -61,6 +64,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -69,7 +73,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class ChatViewModel(private val app: VervanApp, private val chatId: String) : ViewModel() {
+class ChatViewModel(private val app: VervanApp, val chatId: String) : ViewModel() {
 
     private val db = app.container.db
     private val engine = app.container.llmEngine
@@ -80,6 +84,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     private fun activeEngineFor(model: ModelInfo) =
         if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.LLAMA_CPP) app.container.llamaCppEngine else engine
 
+    /** (messageId, visible text) of the response currently streaming, held in memory between
+     * the throttled Room writes in the generation loop. */
+    private val liveStream = MutableStateFlow<Pair<String, String>?>(null)
+
     /** Every message in every branch — raw input to [BranchUtil]. */
     val allMessages: StateFlow<List<Message>> = db.messageDao().observeMessages(chatId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -88,8 +96,14 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Root-to-active-leaf path — what's actually rendered and fed to the model. */
-    val messages: StateFlow<List<Message>> = combine(allMessages, chat) { all, chatRow ->
-        BranchUtil.pathTo(all, chatRow?.activeLeafId)
+    val messages: StateFlow<List<Message>> = combine(allMessages, chat, liveStream) { all, chatRow, live ->
+        val path = BranchUtil.pathTo(all, chatRow?.activeLeafId)
+        // While a response streams, its visible text comes from memory ([liveStream]) rather than
+        // Room — persisting every token used to re-query and re-render the whole chat many times
+        // a second. Only applied while the stored row is still STREAMING, so the final DB write
+        // (COMPLETE/FAILED/CANCELLED) always wins without a flash of stale text.
+        if (live == null) path
+        else path.map { m -> if (m.id == live.first && m.state == MessageState.STREAMING) m.copy(content = live.second) else m }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val personas = db.personaDao().observePersonas()
@@ -168,6 +182,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         data class Loading(val modelName: String, val stage: String) : ModelLoadState()
         data class Ready(val modelName: String, val backend: String) : ModelLoadState()
         data class Failed(val modelName: String, val reason: String) : ModelLoadState()
+
+        /** Sending is allowed once a model is resolved: beginGeneration() loads a NotLoaded
+         * model itself (CHAT_SEND), so the composer must not wait for a manual Load tap. */
+        val acceptsSend: Boolean get() = this is Ready || this is NotLoaded
     }
 
     private val _modelLoadState = MutableStateFlow<ModelLoadState>(ModelLoadState.NoModel)
@@ -400,7 +418,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.modelDao().get(id)?.takeIf { it.role == ModelRole.GENERATION }?.let { return it }
         }
         if (app.container.settingsRepository.autoModelSelectionEnabled.first()) {
-            val installed = db.modelDao().observeModels().first().filter { it.role == ModelRole.GENERATION }
+            // Only models that can actually run: Auto used to pick a model whose file had been
+            // deleted, or an NPU-only build this phone's chip can't compile, and the turn then
+            // failed while the title still named the (working) default model.
+            val installed = db.modelDao().observeModels().first().filter { it.role == ModelRole.GENERATION && isAutoSelectable(it) }
             // A single installed model has nothing to choose between — skip straight to the
             // plain fallback chain below rather than spend an extra pass over it.
             if (installed.size > 1) {
@@ -423,6 +444,15 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return db.modelDao().getActiveModel(ModelRole.GENERATION)
     }
 
+    /** Whether Auto may pick [model] on its own: its weights exist (remote models have none), and
+     * an NPU-only build has actually run on this phone's NPU before. */
+    private fun isAutoSelectable(model: ModelInfo): Boolean {
+        if (model.engine == com.vervan.chat.data.db.entities.ModelEngine.REMOTE_API) return true
+        if (!java.io.File(model.filePath).exists()) return false
+        val npuOnly = com.vervan.chat.system.DeviceSoc.looksNpuCompiled(java.io.File(model.filePath).name)
+        return !npuOnly || model.lastWorkingBackend == com.vervan.chat.data.db.entities.ModelBackend.NPU
+    }
+
     /** Maps the coordinator's role-wide load state onto this chat's specific resolved model —
      * the coordinator only knows "what's loaded/loading for GENERATION app-wide", so this chat
      * only shows Ready/Loading/Failed when that happens to be *its* model, not just any
@@ -436,7 +466,10 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 // otherwise fall back to the LiteRT-LM engine's backend, which reflects whatever
                 // (unrelated) model that engine last happened to load, not this one.
                 if (!model.traits.runsOnDevice) REMOTE_BACKEND_LABEL
-                else activeEngineFor(model).activeBackend.name.lowercase().replaceFirstChar { it.uppercase() }
+                // GPU/CPU/NPU are acronyms, so they stay upper-case ("Gpu" read as a typo).
+                else activeEngineFor(model).activeBackend.let { backend ->
+                    if (backend == LlmEngine.ModelBackend.UNVERIFIED) "Unverified" else backend.name
+                }
             )
             // An off-device model has no memory to load into — ModelLoadCoordinator's own
             // REMOTE_API short-circuit still technically passes through LOADING/READY for internal
@@ -444,7 +477,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             // so this chat should never claim otherwise even for the one synchronous frame it might
             // be observed in.
             info.phase == ModelLoadPhase.LOADING && info.loadingModelId == model.id && model.traits.runsOnDevice ->
-                ModelLoadState.Loading(model.displayName, "Loading model into memory")
+                ModelLoadState.Loading(model.displayName, app.getString(R.string.chat_loading_model_into_memory))
             info.error?.loadedModelId == model.id ->
                 ModelLoadState.Failed(model.displayName, info.error?.errorMessage.toUserMessage())
             // nothing auto-loads this model just because the chat is open, so absent any
@@ -538,7 +571,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             } ?: return@withContext null
             // Orientation fix — bakes the EXIF rotation into the pixels so
             // the vision model (which has no EXIF awareness) doesn't see a sideways image.
-            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { app.getString(R.string.chat_the_selected_file_is_not) }
             dest.absolutePath
         } catch (t: Throwable) {
             Log.e(TAG, "copyImage failed", t)
@@ -576,8 +609,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             copied = dest
             app.contentResolver.openInputStream(uri)?.use { input ->
                 dest.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_IMAGE_SOURCE_BYTES) }
-            } ?: throw java.io.IOException("Could not read image")
-            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { "The selected file is not a readable image" }
+            } ?: throw java.io.IOException(app.getString(R.string.chat_could_not_read_image))
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(dest)) { app.getString(R.string.chat_the_selected_file_is_not) }
             val text = com.vervan.chat.model.OcrExtractor.extractFromImage(dest)
             require(text.length <= InputLimits.OCR_TEXT_CHARS) {
                 "OCR produced too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)"
@@ -593,8 +626,8 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * [newCameraImageFile]). */
     suspend fun extractOcrFromFile(file: java.io.File): Result<OcrResult> = withContext(Dispatchers.IO) {
         runCatching {
-            require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { "Image exceeds the 64 MB limit" }
-            check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { "The captured file is not a readable image" }
+            require(file.length() <= ImportLimits.MAX_IMAGE_SOURCE_BYTES) { app.getString(R.string.chat_image_exceeds_the_64_mb) }
+            check(com.vervan.chat.model.ImageUtils.normalizeForModel(file)) { app.getString(R.string.chat_the_captured_file_is_not) }
             val text = com.vervan.chat.model.OcrExtractor.extractFromImage(file)
             require(text.length <= InputLimits.OCR_TEXT_CHARS) {
                 "OCR produced too much text (maximum ${InputLimits.OCR_TEXT_CHARS} characters)"
@@ -640,7 +673,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                         val existingKbId = outcome.existing.knowledgeBaseId
                         val alreadyInThisChat = db.chatDao().getChat(chatId)?.kbIdList()?.contains(existingKbId) == true
                         if (alreadyInThisChat) {
-                            _pendingDocument.value = DocumentAttachState.Failed(name, "Already attached to this chat")
+                            _pendingDocument.value = DocumentAttachState.Failed(name, app.getString(R.string.chat_already_attached_to_this_chat))
                         } else {
                             // Same content already imported (this chat previously, or another
                             // chat) — reuse it instead of re-extracting/re-chunking/re-embedding
@@ -714,14 +747,31 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         return null
     }
 
+    /** Draft text typed but not yet written (still inside the debounce window). Flushed before
+     * the leave-cleanup decides whether the chat is empty, so typing and leaving quickly can't
+     * make a chat with an unsent draft look empty and get purged. */
+    @Volatile private var pendingDraft: String? = null
+
     fun saveDraft(text: String) {
         draftSaveJob?.cancel()
+        pendingDraft = text
         draftSaveJob = viewModelScope.launch {
             // Avoid a Room write and full-chat Flow invalidation for every keystroke.
             // This also prevents a late autosave from restoring text after Send clears it.
             delay(DRAFT_SAVE_DEBOUNCE_MS)
-            db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(draft = text)) }
+            writeDraft(text)
         }
+    }
+
+    private suspend fun writeDraft(text: String) {
+        db.chatDao().getChat(chatId)?.let { db.chatDao().update(it.copy(draft = text)) }
+        if (pendingDraft == text) pendingDraft = null
+    }
+
+    private suspend fun flushPendingDraft() {
+        val text = pendingDraft ?: return
+        draftSaveJob?.cancel()
+        writeDraft(text)
     }
 
     fun setSourceGrounding(enabled: Boolean, kbIds: List<String>) {
@@ -841,20 +891,20 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                         // judgment on the best title, so don't claim it is (see B: "hi" chats
                         // reporting "still the best title" when the model never got a chance to
                         // answer at all).
-                        result.isFallback -> "The model did not return a usable title — used the first message as a placeholder instead"
+                        result.isFallback -> app.getString(R.string.chat_the_model_did_not_return)
                         // Told the model to avoid this exact title and it still landed here — a
                         // thin/ambiguous conversation genuinely doesn't support a different one
                         // right now, not a wiring bug. Say so plainly instead of a "Title updated"
                         // that looks like nothing happened.
                         result.title.equals(currentTitle, ignoreCase = true) -> "Regenerated, but this is still the best title for this conversation so far"
-                        else -> "Title updated"
+                        else -> app.getString(R.string.chat_title_updated)
                     }
                 } else {
-                    _confirmationMessage.value = "Not enough conversation content to generate a title"
+                    _confirmationMessage.value = app.getString(R.string.chat_not_enough_conversation_content_to)
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "[$chatId] title generation failed", t)
-                _confirmationMessage.value = "Title generation failed: ${t.toUserMessage()}"
+                _confirmationMessage.value = app.getString(R.string.chat_title_generation_failed_arg1, t.toUserMessage())
             } finally {
                 _titleGenerating.value = false
             }
@@ -1026,7 +1076,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
             db.chatDao().getChat(chatId)?.let {
                 db.chatDao().update(it.copy(workspaceId = workspaceId, folderId = null, updatedAt = System.currentTimeMillis()))
             }
-            _confirmationMessage.value = "Moved to $workspaceName"
+            _confirmationMessage.value = app.getString(R.string.chat_moved_to_arg1, workspaceName)
         }
     }
 
@@ -1036,7 +1086,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         viewModelScope.launch {
             workspace.value?.let {
                 app.container.workspaceManager.setActive(it)
-                _confirmationMessage.value = "${it.name} is now active"
+                _confirmationMessage.value = app.getString(R.string.chat_arg1_is_now_active, it.name)
             }
         }
     }
@@ -1065,7 +1115,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     )
                 )
             }
-            _confirmationMessage.value = "Chat settings reset to workspace defaults"
+            _confirmationMessage.value = app.getString(R.string.chat_chat_settings_reset_to_workspace)
         }
     }
 
@@ -1112,6 +1162,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
     }
 
     private suspend fun cleanupChatOnLeave() {
+        flushPendingDraft()
         val chat = db.chatDao().getChat(chatId) ?: return
         val hasNoConversation = db.messageDao().getMessages(chatId).isEmpty() && chat.draft.isBlank()
         if (hasNoConversation || chat.isTemporary) purgeTemporaryChat(chat)
@@ -1134,9 +1185,12 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         db.chatDao().delete(chat)
     }
 
-    fun duplicate(onDone: () -> Unit) {
+    /** Copies this chat and its whole message tree; [onDone] receives the copy's id so the
+     * caller can open it (the user asked for a duplicate, so they expect to land in it). */
+    fun duplicate(onDone: (String) -> Unit) {
         viewModelScope.launch {
             val original = db.chatDao().getChat(chatId) ?: return@launch
+            var copyId = ""
             db.withTransaction {
                 val allMsgs = db.messageDao().getMessages(chatId)
                 val ids = allMsgs.associate { it.id to java.util.UUID.randomUUID().toString() }
@@ -1149,13 +1203,14 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     deletedAt = null
                 )
                 db.chatDao().upsert(copy)
+                copyId = copy.id
                 allMsgs.forEach { message ->
                     db.messageDao().upsert(
                         message.copy(id = ids.getValue(message.id), chatId = copy.id, parentId = message.parentId?.let(ids::get))
                     )
                 }
             }
-            onDone()
+            onDone(copyId)
         }
     }
 
@@ -1306,6 +1361,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         if (text.isBlank() && imagePath == null && audioPath == null && documentId == null) return
         Log.i(TAG, "[$chatId] send() textLen=${text.length}, hasImage=${imagePath != null}, hasAudio=${audioPath != null}")
         draftSaveJob?.cancel()
+        pendingDraft = null
         launchGeneration {
             val expandedText = expandSlashCommand(text)
             val chatRow = db.chatDao().getChat(chatId) ?: return@launchGeneration null
@@ -1594,7 +1650,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 throw cancelled
             } catch (t: Throwable) {
                 Log.e(TAG, "[$chatId] generation FAILED after ${System.currentTimeMillis() - startedAt}ms: ${t::class.simpleName}: ${t.message}", t)
-                _error.value = "Generation failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.chat_generation_failed_arg1, t.toUserMessage())
             } finally {
                 if (responseCompleted) {
                     withContext(NonCancellable + Dispatchers.IO) {
@@ -1603,6 +1659,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 }
                 _isGenerating.value = false
                 _liveGenStats.value = null
+                liveStream.value = null
                 com.vervan.chat.system.GenerationService.stop(app)
             }
         }
@@ -1639,7 +1696,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val model = resolveGenerationModelForTurn(chatRow, triggerText, imagePath, audioPath)
         if (model == null) {
             Log.w(TAG, "[$chatId] beginGeneration() no generation model resolved (chatRow.modelId=${chatRow.modelId})")
-            _error.value = "No model selected. Open Settings → AI models, then import or activate one."
+            _error.value = app.getString(R.string.chat_no_model_selected_open_settings)
             return
         }
         val activeEngine = activeEngineFor(model)
@@ -1653,7 +1710,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
         val adjustedContext = if (alreadyResident) null else computeAdjustedContext(chatRow.profile, model)
         val loadResult = app.container.modelLoadCoordinator.ensureLoaded(model, LoadTrigger.CHAT_SEND, adjustedContext)
         if (!loadResult.success) {
-            _error.value = "Could not load ${model.displayName}: ${loadResult.errorMessage ?: "unknown error"}"
+            _error.value = app.getString(R.string.chat_could_not_load_arg1_arg2, model.displayName, loadResult.errorMessage ?: "unknown error")
             return
         }
         // Model-level capability, not activeEngine's own property: activeEngineFor falls back to
@@ -1753,6 +1810,57 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
      * parallel calls, no multi-tool-per-response parsing (fuller loop
      * protection — per-tool rate limits, result-size caps — isn't built).
      */
+    /**
+     * Second pass for a turn whose reasoning used the whole output budget and never reached an
+     * answer (LiteRT-LM and remote models have no native reasoning cap). The tail of the
+     * reasoning goes back in as notes with thinking switched off, so the model only has to write
+     * the answer. Returns the content to persist (reasoning block kept when [keepReasoning]), or
+     * null when this pass produced nothing either.
+     */
+    private suspend fun answerAfterRunawayThinking(
+        model: ModelInfo,
+        systemPrompt: String?,
+        prompt: String,
+        reasoning: String,
+        genParams: com.vervan.chat.llm.GenerationParams,
+        assistantMessage: Message,
+        keepReasoning: Boolean
+    ): String? {
+        val notes = reasoning.takeLast(RECOVERY_REASONING_CHARS)
+        val recoveryPrompt = buildString {
+            append(prompt)
+            append("\n\nYour notes so far:\n")
+            append(notes)
+            append("\n\nYou ran out of room to think. Using those notes, write the final answer to the last message now. Do not think out loud or repeat the notes.")
+        }
+        val reasoningBlock = if (keepReasoning) "<think>\n$reasoning\n</think>\n\n" else ""
+        val answer = StringBuilder()
+        var lastLiveUiAt = 0L
+        Log.i(TAG, "[$chatId] answerAfterRunawayThinking(): retrying with thinking off (${notes.length} chars of notes)")
+        val ok = runCatching {
+            app.container.generate(
+                model, recoveryPrompt, null, null,
+                genParams.temperature, genParams.topP, genParams.topK, genParams.seed,
+                genParams.minP, genParams.repetitionPenalty, genParams.maxOutputTokens, genParams.stopSequences,
+                assistantPrefill = ThinkingPolicy.assistantPrefillFor("OFF", model.engine, model.supportsThinking == true),
+                systemPrompt = systemPrompt,
+                reasoningBudget = ThinkingPolicy.reasoningBudgetFor("OFF", model.engine, model.supportsThinking == true)
+            ).collect { chunk ->
+                answer.append(chunk)
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastLiveUiAt >= LIVE_UI_INTERVAL_MS) {
+                    liveStream.value = assistantMessage.id to reasoningBlock + com.vervan.chat.llm.ThinkingParser.parse(answer.toString()).answer
+                    lastLiveUiAt = now
+                }
+            }
+        }.onFailure { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "[$chatId] answerAfterRunawayThinking() failed: ${e.message}")
+        }.isSuccess
+        val finalAnswer = com.vervan.chat.llm.ThinkingParser.parse(answer.toString()).answer
+        return if (ok && finalAnswer.isNotBlank()) reasoningBlock + finalAnswer else null
+    }
+
     private suspend fun runGenerationLoop(
         toolsEnabled: Boolean,
         imagePath: String?,
@@ -1849,7 +1957,9 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 if (suppressReasoning) com.vervan.chat.llm.ThinkingParser.parse(raw).answer else raw
             var failed = false
             var lastStreamPersistAt = 0L
+            var lastLiveUiAt = 0L
             var lastLiveStatsAt = 0L
+            var firstTokenAt = 0L
             val settings = app.container.settingsRepository
             val genStartedAt = android.os.SystemClock.elapsedRealtime()
             val resolvedGenParams = com.vervan.chat.llm.resolveGenerationParams(
@@ -1891,18 +2001,34 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     failed = true
                     Log.e(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() FAILED after ${accumulated.length} chars: ${e::class.simpleName}: ${e.message}", e)
                     db.messageDao().update(assistantMessage.copy(content = accumulated.toString(), state = MessageState.FAILED))
-                    _error.value = "Generation failed: ${e.toUserMessage()}"
+                    _error.value = app.getString(R.string.chat_generation_failed_arg1, e.toUserMessage())
+                }
+                .onCompletion { cause ->
+                    // Stop/cancel: the last throttled DB write can be up to STREAM_PERSIST_INTERVAL_MS
+                    // old, so flush what the user actually saw before the row is finalized.
+                    if (cause is kotlinx.coroutines.CancellationException && accumulated.isNotEmpty()) {
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            db.messageDao().update(assistantMessage.copy(content = persistContent(accumulated.toString()), state = MessageState.STREAMING))
+                        }
+                    }
                 }
                 .collect { chunk ->
                     accumulated.append(chunk)
                     val now = android.os.SystemClock.elapsedRealtime()
+                    if (firstTokenAt == 0L) firstTokenAt = now
+                    if (now - lastLiveUiAt >= LIVE_UI_INTERVAL_MS) {
+                        liveStream.value = assistantMessage.id to persistContent(accumulated.toString())
+                        lastLiveUiAt = now
+                    }
                     if (now - lastStreamPersistAt >= STREAM_PERSIST_INTERVAL_MS) {
                         db.messageDao().update(assistantMessage.copy(content = persistContent(accumulated.toString()), state = MessageState.STREAMING))
                         lastStreamPersistAt = now
                     }
                     if (now - lastLiveStatsAt >= LIVE_STATS_INTERVAL_MS) {
                         lastLiveStatsAt = now
-                        val elapsedS = (now - genStartedAt) / 1000f
+                        // Decode speed only: measured from the first token so prompt prefill time
+                        // doesn't drag the number down.
+                        val elapsedS = (now - firstTokenAt) / 1000f
                         val tokens = com.vervan.chat.llm.estimateTokens(accumulated.toString())
                         val mem = android.app.ActivityManager.MemoryInfo().also {
                             (app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(it)
@@ -1936,8 +2062,26 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 // reports. Parsing out the real answer regardless of suppressReasoning catches both.
                 if (com.vervan.chat.llm.ThinkingParser.parse(output).answer.isBlank()) {
                     Log.w(TAG, "[$chatId] runGenerationLoop() hop=$hop generate() produced no content after ${generationMs}ms")
-                    db.messageDao().update(assistantMessage.copy(content = "", state = MessageState.FAILED))
-                    _error.value = "The model didn't return a response. Try regenerating, or check that it's still loaded in Settings → AI models."
+                    // Runaway reasoning: the think block ate the whole output budget. Keep what the
+                    // model worked out and ask once more, thinking off, for just the answer.
+                    val reasoning = com.vervan.chat.llm.ThinkingParser.parse(output).reasoning
+                    val recovered = if (model != null && !reasoning.isNullOrBlank()) {
+                        answerAfterRunawayThinking(model, systemPrompt, prompt, reasoning, genParams, assistantMessage, keepReasoning = !suppressReasoning)
+                    } else null
+                    if (recovered != null) {
+                        db.messageDao().update(
+                            assistantMessage.copy(
+                                content = recovered,
+                                state = MessageState.COMPLETE,
+                                generationMs = android.os.SystemClock.elapsedRealtime() - genStartedAt,
+                                tokenCount = com.vervan.chat.llm.estimateTokens(recovered)
+                            )
+                        )
+                        return
+                    }
+                    // Keep the reasoning on a failed turn so the user can still read it.
+                    db.messageDao().update(assistantMessage.copy(content = if (suppressReasoning) "" else output, state = MessageState.FAILED))
+                    _error.value = app.getString(R.string.chat_the_model_didn_t_return)
                     return
                 }
                 db.messageDao().update(
@@ -2176,7 +2320,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                 // broken embedding model made RAG quietly degrade with no visible reason at all.
                 // Surface it once per attempt instead.
                 Log.w(TAG, "[$chatId] retrieveSources() embedding load failed, falling back to keyword: ${result.errorMessage}")
-                _error.value = "Semantic search is unavailable. Using keyword search instead."
+                _error.value = app.getString(R.string.chat_semantic_search_is_unavailable_using)
                 RetrievalMode.KEYWORD
             } else {
                 val preferred = app.container.settingsRepository.defaultRetrievalMode.first()
@@ -2275,7 +2419,7 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
                     .put("indexed", saved.indexed)
             )
             db.messageDao().update(message.copy(memoryActivityJson = activity.toString()))
-            _confirmationMessage.value = if (saved.indexed) "Saved to memory and semantic index" else "Saved to memory"
+            _confirmationMessage.value = if (saved.indexed) app.getString(R.string.chat_saved_to_memory_and_semantic) else app.getString(R.string.chat_saved_to_memory)
         }
     }
 
@@ -2550,7 +2694,11 @@ class ChatViewModel(private val app: VervanApp, private val chatId: String) : Vi
          *  EngineTraits.runsOnDevice) — shown in the model-ready pill and per-message stats. */
         private const val REMOTE_BACKEND_LABEL = "Remote"
         private const val DRAFT_SAVE_DEBOUNCE_MS = 300L
-        private const val STREAM_PERSIST_INTERVAL_MS = 80L
+        // Room is the durable copy (survives process death); the UI reads [liveStream] in between.
+        private const val STREAM_PERSIST_INTERVAL_MS = 1_500L
+        private const val LIVE_UI_INTERVAL_MS = 50L
+        // Reasoning tail fed back as notes when a turn thought itself out of budget.
+        private const val RECOVERY_REASONING_CHARS = 3_000
         // Memory readout is a binder call to ActivityManager — throttled separately (and
         // coarser) than the plain in-memory token-count/speed math above it.
         private const val LIVE_STATS_INTERVAL_MS = 500L

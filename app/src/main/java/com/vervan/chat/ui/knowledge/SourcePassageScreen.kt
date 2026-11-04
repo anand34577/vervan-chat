@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.knowledge
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -110,11 +111,11 @@ class SourcePassageViewModel(private val app: VervanApp, private val chunkId: St
 fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> }) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SourcePassageViewModel = viewModel(factory = viewModelFactory { initializer { SourcePassageViewModel(app, chunkId) } })
-    val chunk by vm.chunk.collectAsState()
-    val neighbors by vm.neighbors.collectAsState()
-    val document by vm.document.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val chunk by vm.chunk.collectAsStateWithLifecycle()
+    val neighbors by vm.neighbors.collectAsStateWithLifecycle()
+    val document by vm.document.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
     LaunchedEffect(chunk, neighbors) {
@@ -126,14 +127,14 @@ fun SourcePassageScreen(chunkId: String, onBack: () -> Unit, onOpenPdfPage: (doc
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Source passage") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.source_passage_source_passage)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     val page = chunk?.pageNumber
                     val docId = document?.id
                     if (page != null && docId != null) {
                         IconButton(onClick = { onOpenPdfPage(docId, page) }) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "View page $page in PDF")
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = stringResource(R.string.source_passage_view_page_arg1_in_pdf, page))
                         }
                     }
                 }

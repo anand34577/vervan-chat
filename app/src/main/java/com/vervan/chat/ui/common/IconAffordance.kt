@@ -24,7 +24,7 @@ enum class IconAffordanceSize(val box: Dp, val corner: Dp, val icon: Dp) {
     /** Dense list rows — chat list, recycle bin, job queue. */
     Compact(28.dp, 6.dp, 16.dp),
     /** Card-style rows — Home recents, folders, knowledge documents. */
-    Default(36.dp, 9.dp, 20.dp),
+    Default(36.dp, 10.dp, 20.dp),
     /** Hero cards — Home's "Ask anything," project tiles, empty states. */
     Feature(48.dp, 12.dp, 26.dp)
 }

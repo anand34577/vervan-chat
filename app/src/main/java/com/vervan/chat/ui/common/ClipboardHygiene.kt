@@ -68,3 +68,20 @@ private fun sensitiveClip(label: String, text: String): ClipData =
             }
         }
     }
+
+/**
+ * Ordinary copy of the user's own content (a reply, a translation, a draft): stays on the
+ * clipboard like a copy anywhere else on Android. The timed auto-clear in [setSensitiveText]
+ * is reserved for secrets such as API tokens — applying it to every copy wiped text people
+ * meant to paste a minute later, and it only worked while the copying screen stayed open.
+ */
+fun Clipboard.copyText(text: String, scope: CoroutineScope, label: String = "Vervan") {
+    scope.launch { setClipEntry(ClipEntry(ClipData.newPlainText(label, text))) }
+}
+
+fun ClipboardManager.copyText(text: String, @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null, label: String = "Vervan") {
+    setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+/** Android 13+ shows its own "Copied" confirmation; older versions need one from the app. */
+val needsCopyConfirmation: Boolean get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU

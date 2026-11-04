@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.personas
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,51 +56,51 @@ import com.vervan.chat.ui.theme.VervanMono
 fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: PersonaTestBenchViewModel = viewModel(factory = viewModelFactory { initializer { PersonaTestBenchViewModel(app, personaId) } })
-    val persona by vm.persona.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
-    val prompt by vm.samplePrompt.collectAsState()
-    val response by vm.response.collectAsState()
-    val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
+    val persona by vm.persona.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val prompt by vm.samplePrompt.collectAsStateWithLifecycle()
+    val response by vm.response.collectAsStateWithLifecycle()
+    val running by vm.running.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { OverflowTooltipText("Test: ${persona?.name ?: "Persona"}") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { OverflowTooltipText(stringResource(R.string.persona_test_bench_title, persona?.name ?: stringResource(R.string.chat_persona))) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Persona unavailable",
+                title = stringResource(R.string.persona_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your persona is safe. Retry loading it or return to the persona list.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.persona_test_bench_your_persona_is_safe_retry),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             persona == null -> EmptyState(
                 icon = Icons.Outlined.Person,
-                title = "Persona not found",
-                body = "This persona may have been deleted or moved to the recycle bin.",
-                actionLabel = "Back",
+                title = stringResource(R.string.persona_not_found),
+                body = stringResource(R.string.persona_not_found_body),
+                actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
             persona?.let { p ->
-                Text("System instruction", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.persona_system_instruction), style = MaterialTheme.typography.labelMedium)
                 Card(Modifier.fillMaxWidth().padding(bottom = Space.md)) {
                     Text(p.systemInstruction, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(Space.md))
                 }
-                Text("Token cost (chars/4 estimate)", style = MaterialTheme.typography.labelMedium)
-                Text("${p.systemInstruction.length / 4} tokens", style = MaterialTheme.typography.bodyMedium, fontFamily = VervanMono, modifier = Modifier.padding(bottom = Space.md))
+                Text(stringResource(R.string.persona_test_bench_token_cost_chars_4_estimate), style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.persona_test_bench_arg1_tokens, p.systemInstruction.length / 4), style = MaterialTheme.typography.bodyMedium, fontFamily = VervanMono, modifier = Modifier.padding(bottom = Space.md))
             }
 
-            Text("Sample prompt", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.persona_test_bench_sample_prompt), style = MaterialTheme.typography.labelMedium)
             BoundedTextField(
                 value = prompt,
                 onValueChange = { vm.setPrompt(it) },
@@ -110,32 +113,32 @@ fun PersonaTestBenchScreen(personaId: String, onBack: () -> Unit) {
                 Button(onClick = { vm.run() }, enabled = !running && persona != null) {
                     if (running) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     else Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Run")
+                    Text(stringResource(R.string.persona_test_bench_run))
                 }
                 OutlinedButton(onClick = { vm.reset() }, enabled = !running) {
                     Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Reset")
+                    Text(stringResource(R.string.action_reset))
                 }
             }
 
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Testing this persona",
-                    body = "Testing the persona with your sample prompt."
+                    title = stringResource(R.string.persona_test_bench_testing_this_persona),
+                    body = stringResource(R.string.persona_test_bench_testing_the_persona_with_your)
                 )
             }
 
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Persona test couldn't run",
+                    title = stringResource(R.string.persona_test_bench_persona_test_couldn_t_run),
                     message = it,
-                    recovery = "Your work is safe. Load a model, then try again.",
+                    recovery = stringResource(R.string.persona_test_bench_your_work_is_safe_load),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
 
             response?.let { resp ->
-                Text("Response preview", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg))
+                Text(stringResource(R.string.persona_test_bench_response_preview), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg))
                 Card(Modifier.fillMaxWidth()) {
                     Text(resp, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.md))
                 }

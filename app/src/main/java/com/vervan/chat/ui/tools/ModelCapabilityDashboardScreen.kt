@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -90,25 +93,25 @@ class ModelCapabilityDashboardViewModel(private val app: VervanApp) : ViewModel(
 fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ModelCapabilityDashboardViewModel = viewModel(factory = viewModelFactory { initializer { ModelCapabilityDashboardViewModel(app) } })
-    val models by vm.models.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.error.collectAsState()
+    val models by vm.models.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Model capabilities") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.model_capability_dashboard_model_capabilities)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Model capabilities unavailable",
+                title = stringResource(R.string.model_capability_dashboard_model_capabilities_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Installed models are safe. Retry loading their capability details.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.model_capability_dashboard_installed_models_are_safe_retry),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retry,
                 modifier = Modifier.padding(Space.md)
             )
@@ -117,13 +120,13 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(Space.md)) {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
-                    title = "Know what each model can do",
-                    body = "Compare model features, context, and compatible runtimes."
+                    title = stringResource(R.string.model_capability_dashboard_know_what_each_model_can),
+                    body = stringResource(R.string.model_capability_dashboard_compare_model_features_context_an)
                 )
                 EmptyState(
                     icon = Icons.Filled.Memory,
-                    title = "No models to compare",
-                    body = "Import a model to see its features and device compatibility."
+                    title = stringResource(R.string.model_capability_dashboard_no_models_to_compare),
+                    body = stringResource(R.string.model_capability_dashboard_import_a_model_to_see)
                 )
             }
             }
@@ -132,15 +135,15 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
             item {
                 ToolIntro(
                     icon = Icons.Filled.Memory,
-                    title = "Know what each model can do",
-                    body = "Compare model features, context, and compatible runtimes.",
+                    title = stringResource(R.string.model_capability_dashboard_know_what_each_model_can),
+                    body = stringResource(R.string.model_capability_dashboard_compare_model_features_context_an),
                     modifier = Modifier.padding(bottom = Space.md)
                 )
             }
             items(models, key = { it.id }) { model ->
                 Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
                     Column(Modifier.padding(Space.md)) {
-                        Text(model.displayName, style = MaterialTheme.typography.titleSmall)
+                        Text(model.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         Text(
                             // No weights on disk for a remote model — same reasoning as ModelCard's
                             // own size line — and lastWorkingBackend never advances past its
@@ -149,7 +152,7 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                             // so showing it verbatim reads as a warning about a model that's fine.
                             (if (model.traits.storesWeightsLocally) "${model.fileSizeBytes / (1024 * 1024)} MB on disk"
                              else model.traits.label) +
-                                " · context ${model.contextTokens ?: "—"} tokens" +
+                                (model.contextTokens?.let { " · context $it tokens" } ?: "") +
                                 (if (model.isActive) " · Active" else ""),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -168,7 +171,7 @@ fun ModelCapabilityDashboardScreen(onBack: () -> Unit) {
                                 CapBadge("Thinking", model.supportsThinking)
                             }
                             CapBadge(
-                                if (model.traits.runsOnDevice) "Backend: ${model.lastWorkingBackend.name}" else "Backend: Remote",
+                                if (model.traits.runsOnDevice) stringResource(R.string.model_capability_dashboard_backend_arg1, model.lastWorkingBackend.name) else stringResource(R.string.model_capability_dashboard_backend_remote),
                                 null, neutral = true
                             )
                         }
@@ -194,7 +197,8 @@ private fun CapBadge(label: String, supported: Boolean?, neutral: Boolean = fals
         neutral -> label
         supported == true -> "$label ✓"
         supported == false -> "$label ✗"
-        else -> "$label ?"
+        // "Tools ?" read as a typo. Unknown means the model file doesn't declare it.
+        else -> "$label: not declared"
     }
     Surface(shape = MaterialTheme.shapes.small, color = color) {
         Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs))

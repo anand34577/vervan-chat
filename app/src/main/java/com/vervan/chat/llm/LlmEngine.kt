@@ -3,7 +3,6 @@ package com.vervan.chat.llm
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Capabilities
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -22,8 +21,10 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
@@ -53,6 +54,17 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         val speculativeDecoding: Boolean
     )
     private var loadedKey: LoadKey? = null
+    // Kept so a running-state model can get a fresh Engine before each turn (see
+    // [RecurrentStateModels]); null while nothing is loaded.
+    private var loadedEngineConfig: EngineConfig? = null
+    private var recurrentStateModel = false
+    private var turnsOnCurrentEngine = 0
+    // Guards engine swaps: the background fresh-engine build for a running-state model must never
+    // overlap close() or a load. engineEpoch changes on every close, so a build scheduled for a
+    // model that has since been unloaded does nothing.
+    private val engineLock = Any()
+    private var engineEpoch = 0
+    @Volatile private var pendingFreshEngine: Job? = null
     override var loadedModelPath: String? = null
         private set
     override val loadedContextTokens: Int? get() = loadedKey?.maxTokens
@@ -97,7 +109,9 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
      */
     fun detectSpeculativeDecodingSupport(modelPath: String): Boolean {
         return try {
-            Capabilities(modelPath).use { it.hasSpeculativeDecodingSupport() }
+            com.google.ai.edge.litertlm.ModelInfo.from(modelPath).use {
+                (it as? com.google.ai.edge.litertlm.LlmCapability)?.hasSpeculativeDecodingSupport() == true
+            }
         } catch (e: Throwable) {
             Log.w(TAG, "detectSpeculativeDecodingSupport() failed for ${File(modelPath).name}: ${e.message}")
             false
@@ -130,24 +144,39 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
             return LoadResult(activeBackend, fellBackToCpu = false)
         }
         close()
+        val npuTarget = readNpuTarget(modelPath)
+        // Only a package built for an NPU can run there: compiled ahead of time for one chip, or
+        // an "NPU_Uncompiled" build that LiteRT compiles on the phone with the vendor plugin. A
+        // generic GPU/CPU package on the NPU backend finds no plugin, falls through to an
+        // unaccelerated graph and used enough memory that Android killed the app.
+        val npuReady = npuTarget?.compiledForNpu == true ||
+            com.vervan.chat.system.DeviceSoc.looksNpuCompiled(File(modelPath).name)
+        if (backendPreference == BackendPreference.NPU_ONLY && !npuReady) {
+            throw IllegalStateException(
+                "${File(modelPath).name} is not built for the NPU. Download an NPU build of the model, " +
+                    "or set its backend to Auto to run it on the GPU."
+            )
+        }
         // A backend explicitly picked by the user (GPU_ONLY/CPU_ONLY/NPU_ONLY) never falls back
         // to another backend — a single entry here means "load only on this, error if it can't."
         // Only AUTO tries more than one hardware backend.
         val backendOrder = when (backendPreference) {
             BackendPreference.GPU_ONLY -> listOf(Backend.GPU())
             BackendPreference.CPU_ONLY -> listOf(Backend.CPU())
-            BackendPreference.NPU_ONLY -> listOf(Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir))
-            // Default AUTO order is NPU first, then GPU, then CPU fallback (user ask). A hint
-            // from the last backend that actually worked for this model still jumps the queue,
-            // so a model known to only run on CPU doesn't re-attempt NPU/GPU every single load.
+            BackendPreference.NPU_ONLY -> listOf(npuBackendFor(npuTarget?.brand))
+            // AUTO: NPU first only where it can work — an NPU-capable chip (DeviceSoc) running a
+            // package compiled for an NPU. A generic package on the NPU backend always fails, and
+            // used to cost seconds on every first load on every phone. A hint from the last
+            // backend that actually worked for this model still jumps the queue.
             BackendPreference.AUTO -> {
-                val npu = Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
-                when (preferredBackendHint) {
+                val npu = npuBackendFor(npuTarget?.brand)
+                val tryNpu = npuReady && (preferredBackendHint == ModelBackend.NPU || com.vervan.chat.system.DeviceSoc.hasLiteRtNpu)
+                val ordered = when (preferredBackendHint) {
                     ModelBackend.CPU -> listOf(Backend.CPU(), npu, Backend.GPU())
                     ModelBackend.GPU -> listOf(Backend.GPU(), npu, Backend.CPU())
-                    ModelBackend.NPU -> listOf(npu, Backend.GPU(), Backend.CPU())
                     else -> listOf(npu, Backend.GPU(), Backend.CPU())
                 }
+                if (tryNpu) ordered else ordered.filterNot { it is Backend.NPU || it is Backend.GOOGLE_TENSOR }
             }
         }
         Log.i(TAG, "load() backend attempt order: ${backendOrder.map { it.name }}")
@@ -190,17 +219,16 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                     // into an unrelated load elsewhere.
                     ExperimentalFlags.enableSpeculativeDecoding = useMtp
                     try {
-                        val newEngine = Engine(
-                            EngineConfig(
-                                modelPath = modelPath,
-                                backend = backend,
-                                visionBackend = if (maxNumImages > 0 && capability != Capability.TEXT_ONLY) Backend.GPU() else null,
-                                audioBackend = if (capability == Capability.FULL) Backend.CPU() else null,
-                                maxNumTokens = maxTokens,
-                                maxNumImages = maxNumImages.takeIf { it > 0 },
-                                cacheDir = context.cacheDir.absolutePath
-                            )
+                        val engineConfig = EngineConfig(
+                            modelPath = modelPath,
+                            backend = backend,
+                            visionBackend = if (maxNumImages > 0 && capability != Capability.TEXT_ONLY) Backend.GPU() else null,
+                            audioBackend = if (capability == Capability.FULL) Backend.CPU() else null,
+                            maxNumTokens = maxTokens,
+                            maxNumImages = maxNumImages.takeIf { it > 0 },
+                            cacheDir = context.cacheDir.absolutePath
                         )
+                        val newEngine = Engine(engineConfig)
                         // Keep ownership before initialize so a partial native initialization is
                         // still released by close() if initialize/createConversation throws.
                         engine = newEngine
@@ -208,9 +236,12 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                         conversation = newEngine.createConversation(ConversationConfig())
                         loadedModelPath = modelPath
                         loadedKey = requestedKey
+                        loadedEngineConfig = engineConfig
+                        recurrentStateModel = RecurrentStateModels.matches(File(modelPath).name)
+                        turnsOnCurrentEngine = 0
                         activeBackend = when (backend) {
                             is Backend.GPU -> ModelBackend.GPU
-                            is Backend.NPU -> ModelBackend.NPU
+                            is Backend.NPU, is Backend.GOOGLE_TENSOR -> ModelBackend.NPU
                             else -> ModelBackend.CPU
                         }
                         visionEnabled = capability != Capability.TEXT_ONLY && maxNumImages > 0
@@ -253,6 +284,31 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
 
     private enum class Capability { FULL, NO_AUDIO, TEXT_ONLY }
 
+    /** What the model package itself says about NPU use: whether its text graph was compiled for
+     * an NPU, and for which vendor. Null when the metadata can't be read (older packages). */
+    private data class NpuTarget(val compiledForNpu: Boolean, val brand: com.google.ai.edge.litertlm.NpuBrand?)
+
+    private fun readNpuTarget(modelPath: String): NpuTarget? = try {
+        com.google.ai.edge.litertlm.ModelInfo.from(modelPath).use { info ->
+            val text = com.google.ai.edge.litertlm.Modality.TEXT
+            val brand = runCatching { info.npuBrand(text) }.getOrNull()
+                ?.takeIf { it != com.google.ai.edge.litertlm.NpuBrand.UNKNOWN }
+            val backends = runCatching { info.supportedBackends(text) }.getOrDefault(emptyList())
+            NpuTarget(compiledForNpu = brand != null || com.google.ai.edge.litertlm.BackendType.NPU in backends && backends.size == 1, brand = brand)
+        }
+    } catch (t: Throwable) {
+        Log.w(TAG, "readNpuTarget() could not read metadata for ${File(modelPath).name}: ${t.message}")
+        null
+    }
+
+    /** Google Tensor NPUs have their own backend in LiteRT-LM; Qualcomm and MediaTek go through
+     * the generic NPU backend, which loads the vendor dispatch library from nativeLibraryDir. */
+    private fun npuBackendFor(brand: com.google.ai.edge.litertlm.NpuBrand?): Backend =
+        if (brand == com.google.ai.edge.litertlm.NpuBrand.GOOGLE_TENSOR ||
+            (brand == null && com.vervan.chat.system.DeviceSoc.current.vendor == com.vervan.chat.system.DeviceSoc.Vendor.GOOGLE_TENSOR)
+        ) Backend.GOOGLE_TENSOR()
+        else Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
+
     fun generate(
         prompt: String,
         imagePath: String? = null,
@@ -271,6 +327,9 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         // never distinguished from ordinary conversation text.
         systemPrompt: String? = null
     ): Flow<String> = callbackFlow flow@{
+        // A running-state model's next engine is built in the background after each turn; wait
+        // for it rather than racing it.
+        pendingFreshEngine?.join()
         val conv = conversation ?: run {
             Log.e(TAG, "generate() called with no model loaded")
             throw IllegalStateException("No model loaded")
@@ -319,6 +378,16 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         // close the outgoing conversation on a background thread, fire-and-forget, the same way
         // the upstream reference implementation's closeConversationAsync avoids blocking on a
         // native session that might still be unwinding.
+        // LiteRT-LM keeps a running-state model's recurrent buffers across conversations on one
+        // Engine (LiteRT-LM issue #3165, still open in 0.19.0), so from the second turn on such a
+        // model would continue the previous turn's state: echoed prompts and wrong answers. A
+        // fresh Engine per turn is the only reset the SDK offers. It is normally built in the
+        // background right after the previous turn (see [scheduleFreshEngine]), so this inline
+        // rebuild only runs when that one was skipped, e.g. after a cancelled turn.
+        if (recurrentStateModel && turnsOnCurrentEngine > 0) {
+            withContext(Dispatchers.IO) { synchronized(engineLock) { rebuildEngineForFreshState() } }
+        }
+        turnsOnCurrentEngine++
         val previousConversation = conversation
         conversation = engine?.createConversation(
             ConversationConfig(
@@ -362,6 +431,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
                     Log.i(TAG, "generate() #$callId done in ${System.currentTimeMillis() - startedAt}ms, receivedAnyChunk=$receivedAnyChunk")
                     sendInFlight.set(false)
                     this@flow.close()
+                    if (recurrentStateModel) scheduleFreshEngine()
                 }
 
                 override fun onError(throwable: Throwable) {
@@ -386,7 +456,7 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         // Unbounded buffer: the native callback delivers tokens faster than the collector's
         // Room-persist cycle can drain during bursts, and callbackFlow's default 64-slot buffer
         // makes trySend silently DROP overflowing tokens — visibly missing words mid-response.
-    }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
+    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
 
     override fun loadModel(
         modelPath: String,
@@ -408,7 +478,8 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         )
     }
 
-    override fun close() {
+    override fun close() = synchronized(engineLock) {
+        engineEpoch++
         // Read into a local val instead of a separate null-check + `!!` — a concurrent close()
         // on another thread could null loadedModelPath between the two, which would NPE here.
         // All current callers happen to hold llmMutex/tryLock, so this was latent, not live, but
@@ -420,11 +491,51 @@ class LlmEngine(private val context: Context) : GenerationLoadable {
         engine = null
         loadedModelPath = null
         loadedKey = null
+        loadedEngineConfig = null
+        recurrentStateModel = false
+        turnsOnCurrentEngine = 0
         activeBackend = ModelBackend.UNVERIFIED
         visionEnabled = false
         audioEnabled = false
         speculativeDecodingActive = false
         sendInFlight.set(false)
+    }
+
+    /** Builds the next turn's fresh engine while the user reads the reply, so a running-state
+     * model's follow-up doesn't wait on an engine init. */
+    private fun scheduleFreshEngine() {
+        val epoch = engineEpoch
+        pendingFreshEngine = backgroundScope.launch {
+            synchronized(engineLock) {
+                if (epoch != engineEpoch || !recurrentStateModel || turnsOnCurrentEngine == 0) return@synchronized
+                runCatching { rebuildEngineForFreshState() }
+                    .onFailure { Log.w(TAG, "scheduleFreshEngine(): background rebuild failed", it) }
+            }
+        }
+    }
+
+    /** Caller holds [engineLock]. */
+    @OptIn(ExperimentalApi::class)
+    private fun rebuildEngineForFreshState() {
+        val config = loadedEngineConfig ?: return
+        val startedAt = System.currentTimeMillis()
+        runCatching { conversation?.close() }.onFailure { Log.w(TAG, "rebuild: conversation.close() threw", it) }
+        runCatching { engine?.close() }.onFailure { Log.w(TAG, "rebuild: engine.close() threw", it) }
+        conversation = null
+        ExperimentalFlags.enableSpeculativeDecoding = speculativeDecodingActive
+        try {
+            val fresh = Engine(config)
+            engine = fresh
+            fresh.initialize()
+            conversation = fresh.createConversation(ConversationConfig())
+            turnsOnCurrentEngine = 0
+            Log.i(TAG, "rebuildEngineForFreshState(): fresh engine in ${System.currentTimeMillis() - startedAt}ms")
+        } catch (e: Throwable) {
+            close(e)
+            throw e
+        } finally {
+            ExperimentalFlags.enableSpeculativeDecoding = false
+        }
     }
 
     private fun close(error: Throwable) {

@@ -16,7 +16,9 @@ import com.vervan.chat.security.createEncryptedPrefs
  * same provider with different keys (e.g. two OpenAI accounts) are stored independently.
  */
 class RemoteApiKeyStore(context: Context) {
-    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_remote_api_keys")
+    // Lazy: opening Keystore-backed prefs costs a Keystore round-trip, and this object is
+    // built during Application.onCreate on the main thread, before the first frame.
+    private val prefs: SharedPreferences by lazy { createEncryptedPrefs(context, "vervan_remote_api_keys") }
 
     fun get(modelId: String): String? = prefs.getString(keyFor(modelId), null)
 

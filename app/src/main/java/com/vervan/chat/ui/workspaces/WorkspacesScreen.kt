@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.workspaces
 
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,7 +132,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
-          LazyColumn(Modifier.fillMaxWidth()) {
+          LazyColumn(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
             item {
                 FeatureHero(
                     icon = Icons.Filled.Dashboard,
@@ -141,7 +142,7 @@ fun WorkspacesScreen(onBack: () -> Unit, onOpenWorkspace: (String) -> Unit) {
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
-            item { VervanSectionHeader(stringResource(com.vervan.chat.R.string.workspace_active_title), count = workspaces.size, actionLabel = stringResource(com.vervan.chat.R.string.action_new), onAction = { showCreate = true }) }
+            item { VervanSectionHeader(stringResource(com.vervan.chat.R.string.workspace_active_title), count = workspaces.size) }
             if (error != null) {
                 item {
                     OperationErrorCard(
@@ -370,8 +371,8 @@ private fun CreateWorkspaceDialog(
     onDismiss: () -> Unit,
     onCreate: (name: String, description: String, personaId: String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
     var selectedPersona by remember { mutableStateOf(personas.firstOrNull()) }
     var expanded by remember { mutableStateOf(false) }
 
@@ -402,7 +403,7 @@ private fun CreateWorkspaceDialog(
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         personas.forEach { persona ->
                             DropdownMenuItem(
-                                text = { Text(persona.name) },
+                                text = { Text(persona.name, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                                 onClick = { selectedPersona = persona; expanded = false }
                             )
                         }

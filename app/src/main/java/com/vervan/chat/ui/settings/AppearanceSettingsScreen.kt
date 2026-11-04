@@ -1,5 +1,10 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,17 +50,17 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
-    val themeMode by vm.themeMode.collectAsState()
-    val accentTheme by vm.accentTheme.collectAsState()
-    val oledTrueBlack by vm.oledTrueBlack.collectAsState()
-    val dynamicColor by vm.dynamicColor.collectAsState()
+    val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val accentTheme by vm.accentTheme.collectAsStateWithLifecycle()
+    val oledTrueBlack by vm.oledTrueBlack.collectAsStateWithLifecycle()
+    val dynamicColor by vm.dynamicColor.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Appearance") },
+                title = { Text(stringResource(R.string.appearance_settings_appearance)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         }
@@ -64,8 +69,8 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
             FeatureHero(
                 icon = Icons.Filled.Palette,
                 eyebrow = "Personalize your workspace",
-                title = "Make Vervan feel at home",
-                body = "Choose the visual mood, color source, and display contrast that feel comfortable throughout the app."
+                title = stringResource(R.string.appearance_settings_make_vervan_feel_at_home),
+                body = stringResource(R.string.appearance_settings_choose_the_visual_mood_color)
             )
             ContentCard {
                 Column(
@@ -73,7 +78,7 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     verticalArrangement = Arrangement.spacedBy(Space.lg)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Text("Theme", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.appearance_settings_theme), style = MaterialTheme.typography.bodyMedium)
                         Row(
                             Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(Space.sm)
@@ -89,16 +94,16 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                     }
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         Row(
-                            Modifier.fillMaxWidth(),
+                            Modifier.fillMaxWidth().toggleable(value = dynamicColor, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setDynamicColor(it) }).heightIn(min = 48.dp),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Use device color (Material You)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
-                            Switch(checked = dynamicColor, onCheckedChange = { vm.setDynamicColor(it) })
+                            Text(stringResource(R.string.appearance_settings_use_device_color_material_you), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
+                            Switch(checked = dynamicColor, onCheckedChange = null)
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Text(
-                            "Accent color",
+                            stringResource(R.string.appearance_settings_accent_color),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (dynamicColor) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                         )
@@ -116,18 +121,18 @@ fun AppearanceSettingsScreen(onBack: () -> Unit = {}) {
                         }
                         if (dynamicColor) {
                             Text(
-                                "Custom accent colors are ignored while device color is on.",
+                                stringResource(R.string.appearance_settings_custom_accent_colors_are_ignored),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().toggleable(value = oledTrueBlack, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setOledTrueBlack(it) }).heightIn(min = 48.dp),
                         horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("OLED true black (dark theme)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
-                        Switch(checked = oledTrueBlack, onCheckedChange = { vm.setOledTrueBlack(it) })
+                        Text(stringResource(R.string.appearance_settings_oled_true_black_dark_theme), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = Space.sm))
+                        Switch(checked = oledTrueBlack, onCheckedChange = null)
                     }
                 }
             }

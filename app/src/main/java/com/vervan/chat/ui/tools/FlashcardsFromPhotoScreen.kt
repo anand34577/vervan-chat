@@ -1,5 +1,9 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,11 +75,11 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     val app = context.applicationContext as VervanApp
     val vm: StudyWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { StudyWorkspaceViewModel(app) } })
     val scope = rememberCoroutineScope()
-    val generating by vm.generating.collectAsState()
-    val generationStage by vm.generationStage.collectAsState()
-    val error by vm.error.collectAsState()
+    val generating by vm.generating.collectAsStateWithLifecycle()
+    val generationStage by vm.generationStage.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
 
-    var sourceText by remember { mutableStateOf("") }
+    var sourceText by rememberSaveable { mutableStateOf("") }
     var deckName by remember {
         mutableStateOf("Photo deck " + java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date()))
     }
@@ -143,7 +147,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
             else { file.delete(); ocrError = "The captured image could not be read. Please try again." }
         }
     }
-    val requestCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCamera = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val dir = File(app.filesDir, "scans").apply { mkdirs() }
             val file = File(dir, "card-${System.currentTimeMillis()}.jpg")
@@ -155,37 +159,37 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Flashcards from photo") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.flashcards_from_photo_flashcards_from_photo)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 780.dp) {
                 ToolIntro(
                     icon = Icons.Filled.School,
-                    title = "Turn notes into a study deck",
-                    body = "Photograph pages or notes to create flashcards on-device."
+                    title = stringResource(R.string.flashcards_from_photo_turn_notes_into_a_study),
+                    body = stringResource(R.string.flashcards_from_photo_photograph_pages_or_notes_to)
                 )
                 ResponsiveActions(Modifier.padding(top = Space.lg)) {
                     OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                        Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                     }
                     OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !generating) {
                         Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                        Text("Gallery", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.media_gallery), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 if (ocrRunning) {
                     Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("Reading the image…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.flashcards_from_photo_reading_the_image), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 OutlinedTextField(
                     value = sourceText,
                     onValueChange = { sourceText = it.take(ValidationLimits.STUDY_SOURCE) },
-                    label = { Text("Study material (editable)") },
+                    label = { Text(stringResource(R.string.flashcards_from_photo_study_material_editable)) },
                     minLines = 5,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                     enabled = !generating
@@ -193,7 +197,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 OutlinedTextField(
                     value = deckName,
                     onValueChange = { deckName = it.take(ValidationLimits.STUDY_SET_NAME) },
-                    label = { Text("Deck name") },
+                    label = { Text(stringResource(R.string.study_deck_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                     enabled = !generating
@@ -219,7 +223,7 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         enabled = sourceText.isNotBlank() && deckName.isNotBlank() && !ocrRunning
                     ) {
                         Icon(Icons.Filled.School, null, Modifier.size(18.dp))
-                        Text("Generate deck", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.study_generate), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 error?.let {

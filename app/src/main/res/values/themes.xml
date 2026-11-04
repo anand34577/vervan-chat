@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Vervan" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Window background matches the Compose background, so there is no white flash in dark
+         mode between the splash and the first frame. -->
+    <style name="Theme.Vervan" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Launch theme: the AndroidX splash screen (backported to API 26), replaced by Theme.Vervan
+         once MainActivity has its first frame ready. -->
+    <style name="Theme.Vervan.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/app_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Vervan</item>
+    </style>
 
     <!-- Phase I — compact floating window for QuickActionActivity (ACTION_PROCESS_TEXT),
          so it appears as a small popup over the host app instead of taking the full screen. -->

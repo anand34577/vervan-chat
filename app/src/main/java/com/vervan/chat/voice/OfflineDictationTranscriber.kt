@@ -44,9 +44,20 @@ object OfflineDictationTranscriber {
             app.container.db.ttsVoiceModelDao(),
             app.container.settingsRepository
         )
+        val shruti = ShrutiSttEngine(
+            app,
+            app.container.db.ttsVoiceModelDao(),
+            app.container.settingsRepository
+        )
         try {
             for (candidate in resolution.candidates) {
                 when (candidate) {
+                    SttEngineChoice.SHRUTI -> if (shruti.isReady()) {
+                        shruti.transcribe(decoded.samples, decoded.sampleRateHz)
+                            ?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let { return@runCatching TranscriptionResult(it, candidate.label) }
+                    }
                     SttEngineChoice.WHISPER_CPP -> if (whisper.isReady()) {
                         whisper.transcribe(decoded.samples, decoded.sampleRateHz)
                             ?.trim()
@@ -92,6 +103,7 @@ object OfflineDictationTranscriber {
             }
         } finally {
             whisper.release()
+            shruti.release()
         }
         error("No speech was recognized with the configured engine")
     }

@@ -12,6 +12,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,6 +38,13 @@ fun ContextGuideCard(
     accentIndex: Int = 0,
 ) {
     val accent = vervanAccentFor(accentIndex)
+    // Orientation is for the first visits; once dismissed it stays gone (per card title), so
+    // regular users get their screen space back.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("ui_hints", android.content.Context.MODE_PRIVATE) }
+    val key = "guide_dismissed_" + title
+    var dismissed by remember { mutableStateOf(runCatching { prefs.getBoolean(key, false) }.getOrDefault(false)) }
+    if (dismissed) return
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
@@ -43,7 +55,7 @@ fun ContextGuideCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(40.dp).background(accent.container, MaterialTheme.shapes.medium),
+                Modifier.size(40.dp).background(accent.container, MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(icon, contentDescription = null, tint = accent.onContainer, modifier = Modifier.size(20.dp))
@@ -55,6 +67,17 @@ fun ContextGuideCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.xs),
+                )
+            }
+            androidx.compose.material3.IconButton(onClick = {
+                dismissed = true
+                runCatching { prefs.edit().putBoolean(key, true).apply() }
+            }) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Filled.Close,
+                    contentDescription = androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.guide_dismiss),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

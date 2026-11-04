@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.personas
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -79,35 +80,45 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
     val vm: PersonaEditorViewModel = viewModel(factory = viewModelFactory {
         initializer { PersonaEditorViewModel(app, personaId) }
     })
-    val name by vm.name.collectAsState()
-    val description by vm.description.collectAsState()
-    val systemInstruction by vm.systemInstruction.collectAsState()
-    val isBuiltIn by vm.isBuiltIn.collectAsState()
-    val tone by vm.tone.collectAsState()
-    val formality by vm.formality.collectAsState()
-    val conciseness by vm.conciseness.collectAsState()
-    val creativity by vm.creativity.collectAsState()
-    val responseLength by vm.responseLength.collectAsState()
-    val language by vm.language.collectAsState()
-    val avatarPath by vm.avatarPath.collectAsState()
-    val importError by vm.importError.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
-    val recordFound by vm.recordFound.collectAsState()
+    val name by vm.name.collectAsStateWithLifecycle()
+    val description by vm.description.collectAsStateWithLifecycle()
+    val systemInstruction by vm.systemInstruction.collectAsStateWithLifecycle()
+    val isBuiltIn by vm.isBuiltIn.collectAsStateWithLifecycle()
+    val tone by vm.tone.collectAsStateWithLifecycle()
+    val formality by vm.formality.collectAsStateWithLifecycle()
+    val conciseness by vm.conciseness.collectAsStateWithLifecycle()
+    val creativity by vm.creativity.collectAsStateWithLifecycle()
+    val responseLength by vm.responseLength.collectAsStateWithLifecycle()
+    val language by vm.language.collectAsStateWithLifecycle()
+    val avatarPath by vm.avatarPath.collectAsStateWithLifecycle()
+    val importError by vm.importError.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val recordFound by vm.recordFound.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showAvatarChooser by remember { mutableStateOf(false) }
+    val guardedBack = com.vervan.chat.ui.common.rememberUnsavedChangesGuard(vm::hasUnsavedChanges, onBack)
     val context = LocalContext.current
     val pickAvatarLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
     ) { uri -> uri?.let { vm.importAvatar(context, it) } }
 
+    val withinLimits = name.isNotBlank() && systemInstruction.isNotBlank() &&
+                name.length <= ValidationLimits.PERSONA_NAME &&
+                description.length <= ValidationLimits.PERSONA_ROLE &&
+                systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(if (personaId == null) R.string.persona_new_title else R.string.persona_edit_title)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
+                navigationIcon = { IconButton(onClick = guardedBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
+                    // Save lives where people look for it, not only at the bottom of a long form.
+                    androidx.compose.material3.TextButton(
+                        enabled = withinLimits,
+                        onClick = { scope.launch { if (vm.save()) onBack() } }
+                    ) { Text(stringResource(R.string.persona_save_short)) }
                     if (personaId != null && onTest != null) {
                         IconButton(onClick = { onTest(personaId) }) { Icon(Icons.Filled.Science, contentDescription = stringResource(R.string.persona_test_bench_short)) }
                     }
@@ -264,13 +275,22 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onDuplicated: (S
             // Mirrors PersonaEditorViewModel.save()'s own requirement — disabling the button on
             // the same condition that would otherwise make it silently no-op is the fix, not a
             // dialog explaining a failure the user could never have triggered in the first place.
-            val withinLimits = name.isNotBlank() && systemInstruction.isNotBlank() &&
-                name.length <= ValidationLimits.PERSONA_NAME &&
-                description.length <= ValidationLimits.PERSONA_ROLE &&
-                systemInstruction.length <= ValidationLimits.PERSONA_SYSTEM_INSTRUCTION
-            ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text(stringResource(R.string.persona_duplicate)) }
-                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text(stringResource(R.string.persona_save_changes)) }
+            if (!withinLimits) {
+                Text(
+                    stringResource(R.string.persona_save_needs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.lg)
+                )
+            }
+            ResponsiveActions(Modifier.padding(top = Space.md)) {
+                // A persona that does not exist yet cannot be duplicated.
+                if (personaId != null) {
+                    OutlinedButton(onClick = { scope.launch { onDuplicated(vm.duplicate()) } }) { Text(stringResource(R.string.persona_duplicate)) }
+                }
+                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) {
+                    Text(stringResource(if (personaId == null) R.string.persona_create_action else R.string.persona_save_changes))
+                }
             }
             }
         }

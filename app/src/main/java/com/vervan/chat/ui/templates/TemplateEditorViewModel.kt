@@ -38,6 +38,11 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
     private val _recordFound = MutableStateFlow(templateId == null)
     val recordFound: StateFlow<Boolean> = _recordFound
 
+    private var savedSnapshot: List<Any?> = snapshot()
+    private fun snapshot(): List<Any?> = listOf(_name.value, _description.value, _body.value)
+    /** True when Back would throw away edits (compared with what was loaded or last saved). */
+    fun hasUnsavedChanges(): Boolean = !_isLoading.value && _recordFound.value && snapshot() != savedSnapshot
+
     init {
         load()
     }
@@ -64,6 +69,7 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
                     _body.value = t.body
                     _isBuiltIn.value = t.isBuiltIn
                 }
+                savedSnapshot = snapshot()
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 _recordFound.value = false
@@ -92,6 +98,7 @@ class TemplateEditorViewModel(private val app: VervanApp, private val templateId
             isBuiltIn = false
         )
         db.promptTemplateDao().upsert(template)
+        savedSnapshot = snapshot()
         return true
     }
 

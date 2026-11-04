@@ -5,6 +5,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -12,8 +14,8 @@ import androidx.compose.ui.graphics.Color
  * `IconAffordance`, etc. unified, but `FilterChip` was still using default M3 styling on every
  * call site (ChatListScreen, OnboardingScreen). This single wrapper standardizes the look so
  * FilterChips read as part of the same Vervan design language:
- *  - selected state uses `secondaryContainer` (the app's standard "selected" tint, matching
- *    NavigationBar items and cards), not M3's default `primaryContainer`-with-low-elevation.
+ *  - selected state uses `primaryContainer` plus a check mark, matching the selected NavigationBar
+ *    item (never colour alone).
  *  - unselected state uses `surfaceContainerHigh` so chips visually echo the search field and
  *    status chips used elsewhere, instead of `surfaceVariant`'s cooler gray.
  *
@@ -36,16 +38,22 @@ fun VervanFilterChip(
         label = label,
         modifier = modifier,
         enabled = enabled,
-        leadingIcon = leadingIcon,
+        leadingIcon = leadingIcon ?: if (selected) ({
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Check,
+                contentDescription = null,
+                modifier = Modifier.size(FilterChipDefaults.IconSize)
+            )
+        }) else null,
         trailingIcon = trailingIcon,
         colors = FilterChipDefaults.filterChipColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            selectedTrailingIconColor = MaterialTheme.colorScheme.onSecondaryContainer
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
         )
     )
 }

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -99,6 +101,7 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}, onProcessAsStudyMaterial: (String) -> Unit = {}) {
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
@@ -140,9 +143,9 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             isImportingScan = false
             pages = pages + result.first
             statusMessage = when {
-                result.first.isEmpty() -> "Couldn't import the scan pages. Try scanning again."
-                result.second > 0 -> "Imported ${result.first.size} page(s); ${result.second} page(s) were rejected because they could not be read or were too large."
-                allUris.size > uris.size -> "Imported the first ${InputLimits.MAX_DOCUMENT_SCAN_PAGES} pages."
+                result.first.isEmpty() -> localResources.getString(R.string.document_scanner_couldn_t_import_the_scan)
+                result.second > 0 -> localResources.getString(R.string.document_scanner_imported_arg1_page_s_arg2, result.first.size.toString(), result.second.toString())
+                allUris.size > uris.size -> localResources.getString(R.string.document_scanner_imported_the_first_arg1_pages, InputLimits.MAX_DOCUMENT_SCAN_PAGES.toString())
                 else -> null
             }
         }
@@ -280,22 +283,16 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document scanner") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.document_scanner_document_scanner)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
             ToolIntro(
                 icon = Icons.Filled.PhotoCamera,
-                title = "Scan a complete document",
-                body = "Capture pages, review them, then export a PDF or searchable text."
-            )
-            Text(
-                "Capture pages, then export or add them to Knowledge.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.sm)
+                title = stringResource(R.string.document_scanner_scan_a_complete_document),
+                body = stringResource(R.string.document_scanner_capture_pages_review_them_then)
             )
             OutlinedButton(
                 onClick = ::startScan,
@@ -304,15 +301,15 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
             ) {
                 if (isImportingScan) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Importing…", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.notification_importing), modifier = Modifier.padding(start = Space.sm))
                 } else {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text("Capture page ${pages.size + 1}", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.document_scanner_capture_page_arg1, pages.size + 1), modifier = Modifier.padding(start = Space.sm))
                 }
             }
             if (!gmsAvailable) {
                 Text(
-                    "Document scanning needs Google Play services, which isn't available on this device.",
+                    stringResource(R.string.document_scanner_document_scanning_needs_google_play),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = Space.sm)
@@ -337,33 +334,33 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                                 },
                                 modifier = Modifier.align(Alignment.TopEnd)
                                     .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.82f), CircleShape)
-                            ) { Icon(Icons.Filled.Close, "Remove page", tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.size(16.dp)) }
+                            ) { Icon(Icons.Filled.Close, stringResource(R.string.document_scanner_remove_page), tint = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.size(16.dp)) }
                         }
                     }
                 }
                 if (isWorking) {
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Processing ${pages.size} ${if (pages.size == 1) "page" else "pages"}",
-                        body = "Reading and preparing captured pages. Keep this screen open.",
+                        body = stringResource(R.string.document_scanner_reading_and_preparing_captured_pages),
                         modifier = Modifier.padding(top = Space.lg)
                     )
                 } else {
                     ResponsiveActions(Modifier.padding(top = Space.lg)) {
                         OutlinedButton(onClick = ::exportPdf) {
                             Icon(Icons.Filled.PictureAsPdf, null, Modifier.size(18.dp))
-                            Text("PDF", modifier = Modifier.padding(start = Space.sm))
+                            Text(stringResource(R.string.export_pdf), modifier = Modifier.padding(start = Space.sm))
                         }
                         OutlinedButton(onClick = ::exportImages) {
                             Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
-                            Text("Images", modifier = Modifier.padding(start = Space.sm))
+                            Text(stringResource(R.string.document_scanner_images), modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                     Button(onClick = ::saveAsDocument, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text("Save as document (RAG)", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.document_scanner_save_as_document_rag), modifier = Modifier.padding(start = Space.sm))
                     }
                     OutlinedButton(onClick = ::processAsStudyMaterial, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) {
-                        Text("Create study material")
+                        Text(stringResource(R.string.document_scanner_create_study_material))
                     }
                 }
                 statusMessage?.let {
@@ -450,9 +447,9 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.sm),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, "Cancel crop", tint = Color.White) }
+                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, stringResource(R.string.document_scanner_cancel_crop), tint = Color.White) }
                     Text(
-                        "Adjust corners",
+                        stringResource(R.string.document_scanner_adjust_corners),
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                         modifier = Modifier.weight(1f)
@@ -460,7 +457,7 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     androidx.compose.material3.TextButton(onClick = {
                         corners[0] = Offset(0f, 0f); corners[1] = Offset(1f, 0f)
                         corners[2] = Offset(1f, 1f); corners[3] = Offset(0f, 1f)
-                    }) { Text("Full page") }
+                    }) { Text(stringResource(R.string.document_scanner_full_page)) }
                 }
 
                 Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = Space.lg)) {
@@ -539,12 +536,12 @@ private fun PageCropDialog(imagePath: String, onDone: () -> Unit, onCancel: () -
                     Modifier.fillMaxWidth().padding(Space.lg),
                     horizontalArrangement = Arrangement.spacedBy(Space.md)
                 ) {
-                    OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving) { Text("Cancel") }
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving) { Text(stringResource(R.string.action_cancel)) }
                     Button(onClick = ::confirmCrop, modifier = Modifier.weight(1f), enabled = !isSaving) {
                         if (isSaving) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text("Saving…", modifier = Modifier.padding(start = Space.sm))
-                        } else Text("Use this crop")
+                            Text(stringResource(R.string.document_scanner_saving), modifier = Modifier.padding(start = Space.sm))
+                        } else Text(stringResource(R.string.document_scanner_use_this_crop))
                     }
                 }
             }

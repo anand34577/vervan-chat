@@ -201,6 +201,9 @@ class ScreenCaptureActivity : ComponentActivity() {
             manager.getMediaProjection(resultCode, data)
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "Could not create MediaProjection", t)
+            null
+        } ?: run {
+            // The platform returns null when the consent result is no longer valid.
             BubbleService.endCapture()
             return null
         }

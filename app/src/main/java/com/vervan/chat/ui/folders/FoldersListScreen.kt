@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.folders
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,9 +67,9 @@ import kotlinx.coroutines.launch
 fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: FoldersViewModel = viewModel(factory = viewModelFactory { initializer { FoldersViewModel(app) } })
-    val folders by vm.folders.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val folders by vm.folders.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -122,7 +123,7 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                 onAction = { showCreate = true }
             )
           } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = 88.dp)) {
                 items(folders, key = { it.id }) { folder ->
                     val isSelected = folder.id in selected
                     Card(
@@ -144,7 +145,7 @@ fun FoldersListScreen(onBack: () -> Unit, onOpenFolder: (String) -> Unit) {
                                 androidx.compose.foundation.layout.Spacer(Modifier.width(Space.md))
                             }
                                 Column(Modifier.weight(1f)) {
-                                Text(folder.name, style = MaterialTheme.typography.titleMedium)
+                                Text(folder.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 val personaDefaultLabel = stringResource(R.string.folder_default_persona)
                                 val modelDefaultLabel = stringResource(R.string.folder_default_model)
                                 val sourceDefaultLabel = stringResource(R.string.folder_default_sources).lowercase()

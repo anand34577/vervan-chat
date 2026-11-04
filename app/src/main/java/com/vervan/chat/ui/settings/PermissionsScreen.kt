@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Column
@@ -57,14 +59,14 @@ fun PermissionsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Permissions") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.permissions_permissions)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
             Text(
-                "See why each permission is used. Vervan asks only when a feature needs it.",
+                stringResource(R.string.permissions_see_why_each_permission_is),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Space.sm)
@@ -92,7 +94,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                             Text(info.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         StatusChip(
-                            label = if (granted) "Granted" else "Not granted",
+                            label = if (granted) stringResource(R.string.permissions_granted) else stringResource(R.string.permissions_not_granted),
                             tone = if (granted) StatusTone.Ready else StatusTone.Info,
                             modifier = Modifier.padding(start = Space.sm)
                         )

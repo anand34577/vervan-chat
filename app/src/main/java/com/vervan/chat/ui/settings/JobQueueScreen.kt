@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -118,9 +121,9 @@ class JobQueueViewModel(app: VervanApp) : ViewModel() {
 fun JobQueueScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: JobQueueViewModel = viewModel(factory = viewModelFactory { initializer { JobQueueViewModel(app) } })
-    val jobs by vm.jobs.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val jobs by vm.jobs.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     var view by remember { mutableStateOf(JobView.ACTIVE) }
     var confirmClear by remember { mutableStateOf(false) }
     val active = jobs.filter { it.state in ACTIVE_STATES }
@@ -134,11 +137,11 @@ fun JobQueueScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Background jobs") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.channel_jobs)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { confirmClear = true }, enabled = history.isNotEmpty()) {
-                        Icon(Icons.Filled.DeleteSweep, "Clear job history")
+                        Icon(Icons.Filled.DeleteSweep, stringResource(R.string.job_queue_clear_job_history_2))
                     }
                 }
             )
@@ -148,10 +151,10 @@ fun JobQueueScreen(onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(top = Space.sm)) {
                 when {
                     error != null -> OperationErrorCard(
-                        title = "Job queue unavailable",
+                        title = stringResource(R.string.job_queue_job_queue_unavailable),
                         message = error.orEmpty(),
-                        recovery = "Background work is not cancelled by this screen. Retry loading the queue.",
-                        actionLabel = "Retry",
+                        recovery = stringResource(R.string.job_queue_background_work_is_not_cancelled),
+                        actionLabel = stringResource(R.string.action_retry),
                         onAction = vm::retry,
                         modifier = Modifier.padding(Space.md)
                     )
@@ -190,9 +193,9 @@ fun JobQueueScreen(onBack: () -> Unit) {
 
     if (confirmClear) {
         ConfirmDialog(
-            title = "Clear job history?",
+            title = stringResource(R.string.job_queue_clear_job_history),
             body = "Remove ${history.size} finished job${if (history.size == 1) "" else "s"}? Active work will stay.",
-            confirmLabel = "Clear",
+            confirmLabel = stringResource(R.string.action_clear),
             destructive = true,
             onConfirm = { vm.clearHistory(); confirmClear = false },
             onDismiss = { confirmClear = false }
@@ -240,7 +243,7 @@ private fun JobCard(job: JobRecord, onStop: () -> Unit) {
             if (active) {
                 if (job.progress in 1..99) {
                     LinearProgressIndicator(progress = { job.progress / 100f }, modifier = Modifier.fillMaxWidth().padding(top = Space.xs))
-                    Text("${job.progress}% complete", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.job_queue_arg1_complete, job.progress), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.xs))
                 }
@@ -264,24 +267,25 @@ private fun JobCard(job: JobRecord, onStop: () -> Unit) {
                 if (active && job.type in STOPPABLE_TYPES) {
                     TextButton(onClick = onStop) {
                         Icon(Icons.Filled.StopCircle, null, modifier = Modifier.padding(end = Space.xs))
-                        Text("Stop")
+                        Text(stringResource(R.string.action_stop))
                     }
                 } else if (active) {
-                    Text("Finishing current step", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.job_queue_finishing_current_step), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
     }
 }
 
+@androidx.compose.runtime.Composable
 private fun jobStateLabel(state: JobState): String = when (state) {
-    JobState.WAITING -> "Waiting"
-    JobState.PREPARING -> "Preparing"
-    JobState.RUNNING -> "In progress"
-    JobState.PAUSED -> "Paused"
-    JobState.COMPLETED -> "Completed"
-    JobState.FAILED -> "Needs attention"
-    JobState.CANCELLED -> "Stopped"
+    JobState.WAITING -> stringResource(R.string.job_queue_waiting)
+    JobState.PREPARING -> stringResource(R.string.job_queue_preparing)
+    JobState.RUNNING -> stringResource(R.string.study_in_progress)
+    JobState.PAUSED -> stringResource(R.string.job_queue_paused)
+    JobState.COMPLETED -> stringResource(R.string.job_queue_completed)
+    JobState.FAILED -> stringResource(R.string.job_queue_needs_attention)
+    JobState.CANCELLED -> stringResource(R.string.message_bubble_stopped)
 }
 
 private fun jobTypeLabel(job: JobRecord): String = job.type.name.lowercase().split('_').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }

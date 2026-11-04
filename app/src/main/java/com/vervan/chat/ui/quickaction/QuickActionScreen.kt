@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.quickaction
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,7 +43,7 @@ import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.OperationProgressCard
 import com.vervan.chat.ui.common.VervanFilterChip
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import com.vervan.chat.ui.theme.VervanExtraShapes
@@ -63,9 +66,9 @@ fun QuickActionScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: WritingWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { WritingWorkspaceViewModel(app) } })
-    val revision by vm.revision.collectAsState()
-    val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
+    val revision by vm.revision.collectAsStateWithLifecycle()
+    val running by vm.running.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var targetLanguage by remember { mutableStateOf("") }
@@ -82,8 +85,8 @@ fun QuickActionScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconAffordance(icon = Icons.Filled.AutoAwesome, size = IconAffordanceSize.Default)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text("QUICK ACTION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Edit with Vervan", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.quick_action_quick_action), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.quick_action_edit_with_vervan), style = MaterialTheme.typography.titleMedium)
                 }
             }
             Card(
@@ -123,51 +126,51 @@ fun QuickActionScreen(
                 OutlinedTextField(
                     value = targetLanguage,
                     onValueChange = { targetLanguage = it.take(80) },
-                    label = { Text("Translate to") },
-                    placeholder = { Text("e.g. Spanish") },
+                    label = { Text(stringResource(R.string.quick_action_translate_to)) },
+                    placeholder = { Text(stringResource(R.string.quick_action_e_g_spanish)) },
                     singleLine = true,
                     enabled = !running,
                     trailingIcon = {
                         TextButton(
                             onClick = { vm.run(WritingAction.TRANSLATE, originalText, targetLanguage) },
                             enabled = !running && targetLanguage.isNotBlank()
-                        ) { Text("Go") }
+                        ) { Text(stringResource(R.string.quick_action_go)) }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md)
                 )
             }
             if (running) {
                 OperationProgressCard(
-                    title = "Preparing your text",
-                    body = "Applying the selected action locally.",
+                    title = stringResource(R.string.quick_action_preparing_your_text),
+                    body = stringResource(R.string.quick_action_applying_the_selected_action_locally),
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
                 OperationErrorCard(
-                    title = "Couldn't generate a result",
+                    title = stringResource(R.string.quick_action_couldn_t_generate_a_result),
                     message = it,
-                    recovery = "Your text is safe. Check the model, then try again.",
+                    recovery = stringResource(R.string.quick_action_your_text_is_safe_check),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (revision.isNotBlank()) {
                 HorizontalDivider(Modifier.padding(vertical = Space.md), color = vervanSubtleDividerColor())
-                Text("RESULT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.quick_action_result), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(revision, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
                 Row(
                     Modifier.fillMaxWidth().padding(top = Space.md),
                     horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { clipboard.setSensitiveText(revision, scope) }) { Text("Copy") }
+                    TextButton(onClick = { clipboard.copyText(revision, scope) }) { Text(stringResource(R.string.library_copy)) }
                     if (canInsertBack) {
-                        FilledTonalButton(onClick = { onInsertBack(revision) }) { Text("Replace") }
+                        FilledTonalButton(onClick = { onInsertBack(revision) }) { Text(stringResource(R.string.action_replace)) }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Close") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
             }
         }
     }

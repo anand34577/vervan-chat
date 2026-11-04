@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -30,22 +32,16 @@ internal fun ToolIntro(
     icon: ImageVector,
     title: String,
     body: String,
-    eyebrow: String = "Uses the active model's privacy setting",
+    eyebrow: String = stringResource(R.string.tool_intro_eyebrow),
     modifier: Modifier = Modifier,
 ) {
+    // No trailing ⓘ: it looked tappable but did nothing, and sat next to the dismiss button.
     FeatureHero(
         icon = icon,
         eyebrow = eyebrow,
         title = title,
         body = body,
-        modifier = modifier,
-        trailing = {
-            Icon(
-                Icons.Filled.Info,
-                contentDescription = "Privacy depends on the active model",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
+        modifier = modifier
     )
 }
 
@@ -61,7 +57,7 @@ internal fun ToolSection(
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

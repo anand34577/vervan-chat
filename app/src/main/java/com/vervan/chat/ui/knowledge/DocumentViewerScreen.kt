@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.knowledge
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,20 +55,20 @@ import com.vervan.chat.R
 fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: (documentId: String, page: Int) -> Unit = { _, _ -> }) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: DocumentViewerViewModel = viewModel(factory = viewModelFactory { initializer { DocumentViewerViewModel(app, documentId) } })
-    val document by vm.document.collectAsState()
-    val chunks by vm.chunks.collectAsState()
-    val reindexing by vm.reindexing.collectAsState()
-    val error by vm.error.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
+    val document by vm.document.collectAsStateWithLifecycle()
+    val chunks by vm.chunks.collectAsStateWithLifecycle()
+    val reindexing by vm.reindexing.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document preview", maxLines = 1) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.media_document_preview), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     // "Open externally" lives on the document card below (tap the whole card) —
                     // this used to also have its own copy of the same action in the top bar,
@@ -85,14 +86,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                 }
                                 context.startActivity(android.content.Intent.createChooser(send, "Export extracted text"))
                             }
-                        }) { Icon(Icons.Filled.Share, contentDescription = "Export extracted text") }
+                        }) { Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.document_viewer_export_extracted_text)) }
                     }
                     if (reindexing) {
                         androidx.compose.foundation.layout.Box(Modifier.size(48.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     } else {
-                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index") }
+                        IconButton(onClick = { vm.reindex() }, enabled = document != null) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.document_viewer_re_index)) }
                     }
                 }
             )
@@ -140,16 +141,27 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                             val size = if (file.exists()) {
                                 val bytes = file.length()
                                 if (bytes < 1024 * 1024) "%.1f KB".format(bytes / 1024.0) else "%.1f MB".format(bytes / (1024.0 * 1024.0))
-                            } else "Original unavailable"
+                            } else stringResource(R.string.document_viewer_original_unavailable)
                             Text(
-                                "${doc.mimeType.substringAfterLast('/').uppercase()} · $size · ${chunks.size} sections",
+                                // "plain" is an internal MIME subtype, not something to show to a person.
+                                run {
+                                    val sub = doc.mimeType.substringAfterLast('/').lowercase()
+                                    val kind = when {
+                                        sub == "plain" -> "Text"
+                                        sub == "pdf" -> "PDF"
+                                        sub == "markdown" || sub == "x-markdown" -> "Markdown"
+                                        sub.length > 8 -> doc.displayName.substringAfterLast('.', "").uppercase().ifBlank { "File" }
+                                        else -> sub.uppercase()
+                                    }
+                                    "$kind · $size · " + androidx.compose.ui.res.pluralStringResource(R.plurals.document_viewer_sections_count, chunks.size, chunks.size)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.xs)
                             )
                             Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text("Stored on this device", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.document_viewer_stored_on_this_device), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                         Icon(
@@ -160,23 +172,25 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs)) {
-                    Text(doc.status.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("${chunks.size} sections", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // READY is the normal state and the section count is already in the card above;
+                    // only surface the status when it is something the person should notice.
+                    if (doc.status != com.vervan.chat.data.db.entities.DocumentStatus.READY) {
+                        Text(doc.status.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
             error?.let {
                 OperationErrorCard(
-                    title = "Couldn't rebuild this index",
+                    title = stringResource(R.string.document_viewer_couldn_t_rebuild_this_index),
                     message = it,
-                    recovery = "Check the original file, then try again.",
+                    recovery = stringResource(R.string.document_viewer_check_the_original_file_then),
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
-                    actionLabel = "Retry",
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::reindex
                 )
             }
             VervanSectionHeader(
-                title = "Searchable text",
-                count = chunks.size,
+                title = stringResource(R.string.document_viewer_searchable_text),
                 modifier = Modifier.padding(horizontal = Space.md)
             )
             LazyColumn(Modifier.fillMaxSize().padding(Space.sm)) {
@@ -192,14 +206,14 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "~${chunk.tokenCount} tokens",
+                                    stringResource(R.string.document_viewer_arg1_tokens, chunk.tokenCount),
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = VervanMono,
-                                    modifier = Modifier.weight(1f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f).padding(top = Space.sm)
                                 )
                                 chunk.pageNumber?.let { page ->
                                     androidx.compose.material3.TextButton(onClick = { onOpenPdfPage(documentId, page) }) {
-                                        Text("Page $page")
+                                        Text(stringResource(R.string.document_viewer_page_arg1, page))
                                     }
                                 }
                             }
@@ -208,7 +222,7 @@ fun DocumentViewerScreen(documentId: String, onBack: () -> Unit, onOpenPdfPage: 
                 }
                 if (chunks.isEmpty()) {
                     item {
-                        Text("No searchable text. Re-index if the source file is available.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
+                        Text(stringResource(R.string.document_viewer_no_searchable_text_re_index), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.lg))
                     }
                 }
             }

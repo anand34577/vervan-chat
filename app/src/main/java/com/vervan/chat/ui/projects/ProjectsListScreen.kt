@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.projects
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,9 +67,9 @@ import com.vervan.chat.R
 fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ProjectsListViewModel = viewModel(factory = viewModelFactory { initializer { ProjectsListViewModel(app) } })
-    val projects by vm.projects.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Project?>(null) }
     var pendingDelete by remember { mutableStateOf<Project?>(null) }
@@ -116,8 +117,8 @@ fun ProjectsListScreen(onOpenProject: (String) -> Unit, onBack: () -> Unit = {})
                 body = stringResource(R.string.project_hero_body),
                 modifier = Modifier.padding(top = Space.sm)
               )
-              VervanSectionHeader(stringResource(R.string.project_all), count = projects.size, actionLabel = stringResource(R.string.action_new), onAction = { showCreate = true })
-              LazyColumn(Modifier.fillMaxSize()) {
+              VervanSectionHeader(stringResource(R.string.project_all), count = projects.size)
+              LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,

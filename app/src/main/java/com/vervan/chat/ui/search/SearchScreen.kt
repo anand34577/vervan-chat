@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.search
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +76,7 @@ import com.vervan.chat.VervanApp
 import com.vervan.chat.ui.common.ValidationLimits
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.displayTitle
 import com.vervan.chat.ui.common.IconAffordance
 import com.vervan.chat.ui.common.IconAffordanceSize
 import com.vervan.chat.ui.common.LoadingSkeletonList
@@ -117,10 +119,10 @@ fun SearchScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SearchViewModel = viewModel(factory = viewModelFactory { initializer { SearchViewModel(app) } })
-    val query by vm.query.collectAsState()
-    val results by vm.results.collectAsState()
-    val searching by vm.searching.collectAsState()
-    val error by vm.error.collectAsState()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val results by vm.results.collectAsStateWithLifecycle()
+    val searching by vm.searching.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
     var restoredQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(Unit) {
@@ -150,7 +152,7 @@ fun SearchScreen(
                         modifier = Modifier.focusRequester(focusRequester)
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -251,7 +253,7 @@ fun SearchScreen(
                         }
                         if ((scope == SearchScope.All || scope == SearchScope.Reusable) && results.savedOutputs.isNotEmpty()) {
                             item { GroupLabel("Saved outputs") }
-                            items(results.savedOutputs, key = { "saved_" + it.id }) { ResultRow(Icons.Filled.Description, it.label.ifBlank { "Saved output" }, it.content.take(100), query) { onOpenSavedOutput(it.id) } }
+                            items(results.savedOutputs, key = { "saved_" + it.id }) { ResultRow(Icons.Filled.Description, it.displayTitle(stringResource(R.string.library_saved_output)), it.content.take(100), query) { onOpenSavedOutput(it.id) } }
                         }
                         if ((scope == SearchScope.All || scope == SearchScope.Tools) && results.tools.isNotEmpty()) {
                             item { GroupLabel("Tools") }

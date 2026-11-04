@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.first
 
 enum class SttEngineChoice(val settingValue: String, val label: String) {
     MODEL_AUDIO("MODEL_AUDIO", "Active model"),
+    SHRUTI("SHRUTI", "Shruti"),
     WHISPER_CPP("WHISPER_CPP", "whisper.cpp"),
     ANDROID("ANDROID", "Android speech service");
 
@@ -23,17 +24,21 @@ data class SttAvailability(
     val modelAvailable: Boolean,
     val whisperEnabled: Boolean,
     val whisperAvailable: Boolean,
+    val shrutiEnabled: Boolean = false,
+    val shrutiAvailable: Boolean = false,
     val androidEnabled: Boolean,
     val androidAvailable: Boolean
 ) {
     fun enabled(choice: SttEngineChoice): Boolean = when (choice) {
         SttEngineChoice.MODEL_AUDIO -> modelEnabled
+        SttEngineChoice.SHRUTI -> shrutiEnabled
         SttEngineChoice.WHISPER_CPP -> whisperEnabled
         SttEngineChoice.ANDROID -> androidEnabled
     }
 
     fun available(choice: SttEngineChoice): Boolean = when (choice) {
         SttEngineChoice.MODEL_AUDIO -> modelAvailable
+        SttEngineChoice.SHRUTI -> shrutiAvailable
         SttEngineChoice.WHISPER_CPP -> whisperAvailable
         SttEngineChoice.ANDROID -> androidAvailable
     }
@@ -56,6 +61,9 @@ data class SttResolution(
 object SttEnginePolicy {
     private val defaultOrder = listOf(
         SttEngineChoice.MODEL_AUDIO,
+        // Shruti only counts once a language model is downloaded; a user who fetched one wants it
+        // ahead of the general-purpose whisper.cpp tier for Indian-language speech.
+        SttEngineChoice.SHRUTI,
         SttEngineChoice.WHISPER_CPP,
         SttEngineChoice.ANDROID
     )
@@ -82,6 +90,7 @@ object SttEnginePolicy {
 
         val reason = when (requested) {
             SttEngineChoice.MODEL_AUDIO -> "The active model does not support audio input"
+            SttEngineChoice.SHRUTI -> "The selected Shruti language model is not downloaded"
             SttEngineChoice.WHISPER_CPP -> "The whisper.cpp model is not downloaded or cannot load"
             SttEngineChoice.ANDROID -> "Android speech recognition is unavailable on this device"
             null -> "No enabled speech-to-text engine is currently available"
@@ -93,6 +102,8 @@ object SttEnginePolicy {
         val settings = app.container.settingsRepository
         val whisperRow = app.container.db.ttsVoiceModelDao()
             .getByEngine(WhisperCppSttEngine.ENGINE, WhisperCppSttEngine.MODEL_LANGUAGE_KEY)
+        val shrutiVariant = settings.shrutiModelVariant.first()
+        val shrutiRow = app.container.db.ttsVoiceModelDao().getByEngine(ShrutiSttEngine.ENGINE, shrutiVariant)
         val modelAvailable = modelSupportsAudio
             ?: (app.container.db.modelDao()
                 .getActiveModel(com.vervan.chat.data.db.entities.ModelRole.GENERATION)
@@ -108,6 +119,9 @@ object SttEnginePolicy {
                 whisperAvailable = BuildConfig.WHISPER_CPP_AVAILABLE &&
                     (whisperRow?.isReady != false) &&
                     WhisperCppSttEngine.findInstalledModelFile(app, whisperRow?.filePath) != null,
+                shrutiEnabled = settings.shrutiSttEnabled.first(),
+                shrutiAvailable = BuildConfig.NEEDLE_AVAILABLE && (shrutiRow?.isReady != false) &&
+                    ShrutiSttEngine.findInstalledModelFile(app, shrutiRow?.filePath, shrutiVariant) != null,
                 androidEnabled = settings.androidSttEnabled.first(),
                 androidAvailable = AndroidSystemSttRecognizer.isAvailable(app)
             )

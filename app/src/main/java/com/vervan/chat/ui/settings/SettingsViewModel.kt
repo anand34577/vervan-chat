@@ -92,6 +92,21 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val whisperModelVariant: StateFlow<String> = settings.whisperModelVariant
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "multi")
     fun setWhisperModelVariant(v: String) = viewModelScope.launch { settings.setWhisperModelVariant(v) }
+    val shrutiSttEnabled: StateFlow<Boolean> = settings.shrutiSttEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    fun setShrutiSttEnabled(v: Boolean) = viewModelScope.launch { settings.setShrutiSttEnabled(v) }
+    val shrutiModelVariant: StateFlow<String> = settings.shrutiModelVariant
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "hi")
+    fun setShrutiModelVariant(v: String) = viewModelScope.launch { settings.setShrutiModelVariant(v) }
+    val shrutiEnglishOnly: StateFlow<Boolean> = settings.shrutiEnglishOnly
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    fun setShrutiEnglishOnly(v: Boolean) = viewModelScope.launch { settings.setShrutiEnglishOnly(v) }
+    val shrutiKeywords: StateFlow<String> = settings.shrutiKeywords
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    fun setShrutiKeywords(v: String) = viewModelScope.launch { settings.setShrutiKeywords(v) }
+    val omniTtsVoice: StateFlow<String> = settings.omniTtsVoice
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "female")
+    fun setOmniTtsVoice(v: String) = viewModelScope.launch { settings.setOmniTtsVoice(v) }
     val speechInputEnabled = settings.speechInputEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val voiceReplyMode = settings.voiceReplyMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "MANUAL")
     val voiceInputMethod = settings.voiceInputMethod.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DICTATION")
@@ -185,6 +200,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val topK = settings.topK.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 40)
     val preferredBackend = settings.preferredBackend.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
     val allowLowMemoryModelLoads = settings.allowLowMemoryModelLoads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val backgroundUnloadMinutes = settings.backgroundUnloadMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
     val showGenerationStats = settings.showGenerationStats.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val maxNumImages = settings.maxNumImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
     val randomSeed = settings.randomSeed.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
@@ -258,6 +274,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     val apiServerRequireAuth: StateFlow<Boolean> = settings.apiServerRequireAuth.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val apiServerFullMode: StateFlow<Boolean> = settings.apiServerFullMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiServerAutoStart: StateFlow<Boolean> = settings.apiServerAutoStart.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val apiServerLanAccess: StateFlow<Boolean> = settings.apiServerLanAccess.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val apiModelTtlSeconds: StateFlow<Int> = settings.apiModelTtlSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 300)
     val apiServerToken: String get() = app.container.apiServerAuth.tokenOrGenerate()
     fun regenerateApiServerToken(): String = app.container.apiServerAuth.regenerate()
@@ -282,6 +299,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setApiServerPort(v: Int) = updateApiServerSetting { settings.setApiServerPort(v) }
     fun setApiServerRequireAuth(v: Boolean) = updateApiServerSetting { settings.setApiServerRequireAuth(v) }
     fun setApiServerFullMode(v: Boolean) = updateApiServerSetting { settings.setApiServerFullMode(v) }
+    fun setApiServerLanAccess(v: Boolean) = updateApiServerSetting { settings.setApiServerLanAccess(v) }
     /** Not routed through [updateApiServerSetting]: this changes what happens at the *next* app
      * start, so restarting the running server (and dropping any in-flight stream) would achieve
      * nothing. Turning it on while the server is off also starts it now, because otherwise
@@ -392,6 +410,7 @@ class SettingsViewModel(private val app: VervanApp) : ViewModel() {
     fun setTopK(value: Int) { viewModelScope.launch { settings.setTopK(value) } }
     fun setPreferredBackend(value: String) { viewModelScope.launch { settings.setPreferredBackend(value) } }
     fun setAllowLowMemoryModelLoads(value: Boolean) { viewModelScope.launch { settings.setAllowLowMemoryModelLoads(value) } }
+    fun setBackgroundUnloadMinutes(value: Int) { viewModelScope.launch { settings.setBackgroundUnloadMinutes(value) } }
     fun setMaxNumImages(value: Int) { viewModelScope.launch { settings.setMaxNumImages(value) } }
     fun setRandomSeed(value: Int) { viewModelScope.launch { settings.setRandomSeed(value) } }
     fun setMinP(value: Float) { viewModelScope.launch { settings.setMinP(value) } }

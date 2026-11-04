@@ -6,6 +6,8 @@ import com.vervan.chat.ui.common.MdSegment
 import com.vervan.chat.ui.common.highlightCode
 import com.vervan.chat.ui.common.normalizeLatexDelimiters
 import com.vervan.chat.ui.common.splitMarkdownSegments
+import com.vervan.chat.ui.common.repairMarkdownTables
+import com.vervan.chat.ui.common.stabilizeStreamingMarkdown
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +29,36 @@ class MarkdownRendererTest {
         assertEquals("Inline \$\$x^2\$\$ and `price \$5`", normalizeLatexDelimiters("Inline \$x^2\$ and `price \$5`"))
         assertEquals("\$\$E=mc^2\$\$", normalizeLatexDelimiters("\\(E=mc^2\\)"))
         assertEquals("\$\$\na+b\n\$\$", normalizeLatexDelimiters("\\[a+b\\]"))
+    }
+
+    @Test fun leavesPricesAsTextInsteadOfMath() {
+        val price = "Was \$12.90/mo and now \$10.99/mo."
+        assertEquals(price, normalizeLatexDelimiters(price))
+        assertEquals("Total: \$155.62", normalizeLatexDelimiters("Total: \$155.62"))
+        assertEquals("Area \$\$\\pi r^2\$\$ costs \$5", normalizeLatexDelimiters("Area \$\\pi r^2\$ costs \$5"))
+    }
+
+    @Test fun holdsBackMarkupThatWouldRenderAsAnEmptyLine() {
+        assertEquals("- one", stabilizeStreamingMarkdown("- one\n*"))
+        assertEquals("Intro", stabilizeStreamingMarkdown("Intro\n\n##"))
+        assertEquals("Intro", stabilizeStreamingMarkdown("Intro\n1."))
+        assertEquals("| a | b |", stabilizeStreamingMarkdown("| a | b |\n|---|"))
+        assertEquals("- **Gr**", stabilizeStreamingMarkdown("- **Gr"))
+        assertEquals("Use `npm`", stabilizeStreamingMarkdown("Use `npm"))
+        assertEquals("```kotlin\nval a = \"**\"", stabilizeStreamingMarkdown("```kotlin\nval a = \"**\"\n"))
+        assertEquals("plain text", stabilizeStreamingMarkdown("plain text\n\n"))
+    }
+
+    @Test fun repairsTableSeparatorsThatDoNotMatchTheHeader() {
+        val broken = "## Fixes\n| Problem | Cause | Solution |\n| :--- | :--- |\n| A | B | C |"
+        assertEquals(
+            "## Fixes\n\n| Problem | Cause | Solution |\n| --- | --- | --- |\n| A | B | C |",
+            repairMarkdownTables(broken)
+        )
+        val valid = "| a | b |\n|---|---|\n| 1 | 2 |"
+        assertEquals(valid, repairMarkdownTables(valid))
+        val fenced = "```\n| a | b | c |\n| - |\n```"
+        assertEquals(fenced, repairMarkdownTables(fenced))
     }
 
     @Test fun highlightsEveryOptionalGrammarWithoutMissingGroupCrashes() {

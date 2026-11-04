@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color as AndroidColor
@@ -144,13 +146,108 @@ internal fun normalizeLatexDelimiters(markdown: String): String {
             markdown.getOrNull(index - 1) != '\\' &&
             markdown.getOrNull(index - 1) != '$' && markdown.getOrNull(index + 1) != '$'
         ) {
-            out.append("$$")
+            // Only a real `$…$` span becomes math. Prices ("$12.90/mo and $10.99") used to be
+            // paired up as one formula, which garbled the sentence into italic LaTeX.
+            val close = inlineMathClose(markdown, index)
+            if (close > 0) {
+                out.append("$$").append(markdown, index + 1, close).append("$$")
+                index = close + 1
+                continue
+            }
+            out.append('$')
         } else {
             out.append(markdown[index])
         }
         index++
     }
     return out.toString()
+}
+
+/** Index of the `$` closing an inline-math span opened at [open], or -1. Follows Pandoc's rule:
+ * the opener is followed by a non-space, the closer is preceded by a non-space and not followed
+ * by a digit, and the span stays on one line. An opener followed by a digit is read as currency. */
+private fun inlineMathClose(text: String, open: Int): Int {
+    val first = text.getOrNull(open + 1) ?: return -1
+    if (first.isWhitespace() || first.isDigit()) return -1
+    var i = open + 1
+    while (i < text.length) {
+        val c = text[i]
+        if (c == '\n') return -1
+        if (c == '$' && text[i - 1] != '\\') {
+            if (text[i - 1].isWhitespace() || text.getOrNull(i + 1)?.isDigit() == true) return -1
+            return if (text.getOrNull(i + 1) == '$') -1 else i
+        }
+        i++
+    }
+    return -1
+}
+
+private val TABLE_DELIMITER_ROW = Regex("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-+:?\\s*)*\\|?\\s*$")
+
+private fun tableCells(row: String): Int =
+    row.trim().removePrefix("|").removeSuffix("|").split(Regex("(?<!\\\\)\\|")).size
+
+/**
+ * Small models often write a table whose separator row has a different column count than its
+ * header (`| a | b | c |` over `| --- | --- |`), and GFM then drops the whole table to raw pipe
+ * text. Rebuilds such separators to match the header, and puts the blank line a table needs in
+ * front of it when it follows a paragraph directly. Lines inside code fences are left alone.
+ */
+internal fun repairMarkdownTables(markdown: String): String {
+    if ('|' !in markdown) return markdown
+    val lines = markdown.split('\n').toMutableList()
+    var inFence = false
+    var i = 0
+    while (i < lines.size - 1) {
+        val line = lines[i]
+        if (line.trimStart().startsWith("```")) inFence = !inFence
+        val next = lines[i + 1]
+        if (!inFence && '|' in line && !TABLE_DELIMITER_ROW.matches(line) && TABLE_DELIMITER_ROW.matches(next) && '-' in next) {
+            val columns = tableCells(line)
+            if (tableCells(next) != columns) {
+                lines[i + 1] = (1..columns).joinToString(" | ", prefix = "| ", postfix = " |") { "---" }
+            }
+            val previous = lines.getOrNull(i - 1)
+            if (previous != null && previous.isNotBlank() && '|' !in previous) {
+                lines.add(i, "")
+                i++
+            }
+            i += 2
+            continue
+        }
+        i++
+    }
+    return lines.joinToString("\n")
+}
+
+private val MARKUP_ONLY_LINE =Regex("^\\s*(#{1,6}|>+|[*+-]|\\d{1,3}[.)]|[|:\\-\\s]+|[*_~`=]+)?\\s*$")
+
+/**
+ * Makes a half-streamed Markdown document render the same height it will have one token later.
+ * A chunk that ends on bare markup (a lone `*` list marker, `#`, `1.`, a table rule) renders as an
+ * empty extra line that the next chunk takes away again, which made the chat jump up and back
+ * down while streaming. Trailing blank lines and markup-only last lines are held back, and a
+ * still-open `**bold**` or `code` span on the last line is closed so it styles as it grows.
+ */
+internal fun stabilizeStreamingMarkdown(text: String): String {
+    var body = text.trimEnd()
+    // Inside a still-open code fence every character is literal code; leave it alone.
+    if (Regex("```").findAll(body).count() % 2 == 1) return body
+    val lastBreak = body.lastIndexOf('\n')
+    val lastLine = body.substring(lastBreak + 1)
+    if (lastBreak >= 0 && MARKUP_ONLY_LINE.matches(lastLine)) {
+        body = body.substring(0, lastBreak).trimEnd()
+    }
+    val tail = body.substring(body.lastIndexOf('\n') + 1)
+    if (tail.startsWith("```")) return body
+    val sb = StringBuilder(body)
+    if (Regex("\\*\\*").findAll(tail).count() % 2 == 1) {
+        if (sb.endsWith("**")) sb.setLength(sb.length - 2) else sb.append("**")
+    }
+    if (tail.count { it == '`' } % 2 == 1) {
+        if (sb.endsWith("`")) sb.setLength(sb.length - 1) else sb.append('`')
+    }
+    return sb.toString().trimEnd()
 }
 
 private inline fun String.indexOfFirstFrom(start: Int, predicate: (Char) -> Boolean): Int {
@@ -166,7 +263,9 @@ fun MarkdownLiteText(
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val segments = remember(text) { splitMarkdownSegments(text) }
+    val segments = remember(text, isStreaming) {
+        splitMarkdownSegments(if (isStreaming) stabilizeStreamingMarkdown(text) else text)
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         segments.forEach { segment ->
             when (segment) {
@@ -225,7 +324,8 @@ private fun MarkdownProse(markdown: String, renderTables: Boolean) {
         update = { view ->
             view.setTextColor(colors.onSurface.toArgb())
             view.setLinkTextColor(colors.primary.toArgb())
-            markwon.setMarkdown(view, normalizeLatexDelimiters(markdown))
+            val source = if (renderTables) repairMarkdownTables(markdown) else markdown
+            markwon.setMarkdown(view, normalizeLatexDelimiters(source))
         }
     )
 }
@@ -328,7 +428,7 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
     ) {
         Column {
             RendererHeader(
-                label = "Mermaid · offline",
+                label = stringResource(R.string.markdown_lite_mermaid_offline),
                 onCopy = onCopy,
                 showDiagramIcon = true,
                 onExpand = { showFullscreen = true }
@@ -362,7 +462,7 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Couldn't render this diagram — showing raw source below.",
+                        stringResource(R.string.markdown_lite_couldn_t_render_this_diagram),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.weight(1f)
@@ -371,7 +471,7 @@ private fun MermaidDiagram(source: String, onCopy: () -> Unit) {
                         if (fixing) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("Fix with AI")
+                            Text(stringResource(R.string.markdown_lite_fix_with_ai))
                         }
                     }
                 }
@@ -399,8 +499,8 @@ private fun MermaidFullscreenDialog(source: String, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Diagram", style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close") }
+                    Text(stringResource(R.string.markdown_lite_diagram), style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.action_close)) }
                 }
                 HorizontalDivider(color = scheme.outlineVariant)
                 AndroidView(
@@ -538,8 +638,8 @@ private fun RendererHeader(label: String, onCopy: () -> Unit, showDiagramIcon: B
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (onExpand != null) IconButton(onClick = onExpand) { Icon(Icons.Filled.Fullscreen, "Expand diagram") }
-            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, "Copy") }
+            if (onExpand != null) IconButton(onClick = onExpand) { Icon(Icons.Filled.Fullscreen, stringResource(R.string.markdown_lite_expand_diagram)) }
+            IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, stringResource(R.string.library_copy)) }
         }
     }
 }

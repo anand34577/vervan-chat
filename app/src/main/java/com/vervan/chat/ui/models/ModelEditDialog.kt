@@ -1,5 +1,9 @@
 package com.vervan.chat.ui.models
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -207,7 +211,7 @@ internal fun ModelEditDialog(
     var gpuLayerCountOn by remember(model.id) { mutableStateOf(model.gpuLayerCount != null) }
     var gpuLayerCount by remember(model.id) { mutableStateOf((model.gpuLayerCount ?: (model.layerCount ?: 32)).toFloat()) }
     var cpuThreadsOn by remember(model.id) { mutableStateOf(model.cpuThreads != null) }
-    var cpuThreads by remember(model.id) { mutableStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors()).toFloat()) }
+    var cpuThreads by remember(model.id) { mutableStateOf((model.cpuThreads ?: defaults.cpuThreads.takeIf { it > 0 } ?: com.vervan.chat.system.CpuTopology.recommendedInferenceThreads).toFloat()) }
     var nBatchOn by remember(model.id) { mutableStateOf(model.nBatch != null) }
     var nBatch by remember(model.id) { mutableStateOf((model.nBatch ?: defaults.nBatch).toFloat()) }
     var nUbatchOn by remember(model.id) { mutableStateOf(model.nUbatch != null) }
@@ -278,9 +282,9 @@ internal fun ModelEditDialog(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize()) {
                 TopAppBar(
-                    title = { Text("Configure model", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = { Text(stringResource(R.string.model_edit_configure_model), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
+                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_cancel)) }
                     },
                     actions = {
                         TextButton(
@@ -332,40 +336,40 @@ internal fun ModelEditDialog(
                                 }
                                 onSave(finalModel, if (isRemote) remoteApiKey else null)
                             }
-                        ) { Text("Save") }
+                        ) { Text(stringResource(R.string.action_save)) }
                     }
                 )
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     com.vervan.chat.ui.common.BoundedTextField(
-                        value = displayName, onValueChange = { displayName = it }, label = "Display name", singleLine = true,
+                        value = displayName, onValueChange = { displayName = it }, label = stringResource(R.string.model_edit_display_name), singleLine = true,
                         maxLength = com.vervan.chat.ui.common.ValidationLimits.MODEL_DISPLAY_NAME,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                     )
                     if (isRemote) {
                         Text(
-                            "Connects to an OpenAI-compatible endpoint. Requests leave this device.",
+                            stringResource(R.string.model_edit_connects_to_an_openai_compatible),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp)
                         )
                         SectionDivider()
-                        SectionLabel("Connection")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_connection))
                         com.vervan.chat.ui.common.BoundedTextField(
-                            value = remoteBaseUrl, onValueChange = { remoteBaseUrl = it }, label = "Base URL", singleLine = true,
+                            value = remoteBaseUrl, onValueChange = { remoteBaseUrl = it }, label = stringResource(R.string.model_base_url), singleLine = true,
                             maxLength = 512,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         )
                         remoteBaseUrlError?.takeIf { remoteBaseUrl.isNotBlank() }?.let { ValidationMessage(it) }
                         com.vervan.chat.ui.common.BoundedTextField(
-                            value = remoteApiModelId, onValueChange = { remoteApiModelId = it }, label = "Model id", singleLine = true,
+                            value = remoteApiModelId, onValueChange = { remoteApiModelId = it }, label = stringResource(R.string.model_edit_model_id), singleLine = true,
                             maxLength = 256,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                         )
                         OutlinedTextField(
                             value = remoteApiKey,
                             onValueChange = { remoteApiKey = it.take(128) },
-                            label = { Text("API key") },
-                            supportingText = { Text("Leave blank to keep the existing key") },
+                            label = { Text(stringResource(R.string.model_api_key)) },
+                            supportingText = { Text(stringResource(R.string.model_edit_leave_blank_to_keep_the)) },
                             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                             singleLine = true,
@@ -373,7 +377,7 @@ internal fun ModelEditDialog(
                         )
                     } else {
                         Text(
-                            "Storage: ${model.filePath}",
+                            stringResource(R.string.model_edit_storage_arg1, model.filePath),
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = VervanMono,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -390,7 +394,7 @@ internal fun ModelEditDialog(
                         // runsOnDevice.
                         if (!isRemote) {
                         SectionDivider()
-                        SectionLabel("Performance mode")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_performance_mode))
                         if (expertMode) {
                             // llama.cpp offloads via Vulkan and has no NPU backend, so GGUF
                             // models get Auto/GPU/CPU only.
@@ -410,7 +414,7 @@ internal fun ModelEditDialog(
                                 when {
                                     backend == BackendChoice.AUTO && isLlamaCpp -> "Tries Vulkan GPU offload, then falls back to CPU."
                                     backend == BackendChoice.AUTO -> "Tries NPU, then GPU, then falls back to CPU."
-                                    else -> "Strict: use ${backend.name} only, with no fallback."
+                                    else -> stringResource(R.string.model_edit_strict_use_arg1_only_with, backend.name)
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -421,8 +425,9 @@ internal fun ModelEditDialog(
                             // AUTO/GPU/CPU/NPU chip row — maps straight onto the same
                             // BackendChoice the expert row edits.
                             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Use GPU acceleration", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Switch(
+                                Text(stringResource(R.string.model_edit_use_gpu_acceleration), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                com.vervan.chat.ui.common.LabeledSwitch(
+                                    label = stringResource(R.string.model_edit_use_gpu_acceleration),
                                     checked = backend != BackendChoice.CPU,
                                     onCheckedChange = { backend = if (it) BackendChoice.GPU else BackendChoice.CPU }
                                 )
@@ -443,7 +448,7 @@ internal fun ModelEditDialog(
                         }
 
                         SectionDivider()
-                        SectionLabel("Capabilities")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_capabilities))
                         CapabilityToggle(
                             "Vision", vision, enabled = visionSupported,
                             disabledHint = if (!visionSupported)
@@ -460,7 +465,7 @@ internal fun ModelEditDialog(
                         CapabilityToggle("Thinking", thinking) { thinking = it }
                         if (thinking) {
                             Text(
-                                "Default thinking mode",
+                                stringResource(R.string.model_edit_default_thinking_mode),
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
                             )
@@ -474,7 +479,7 @@ internal fun ModelEditDialog(
                                 }
                             }
                             Text(
-                                "New chats on this model start here; a chat can still override it.",
+                                stringResource(R.string.model_edit_new_chats_on_this_model),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
@@ -484,7 +489,7 @@ internal fun ModelEditDialog(
                         // auto-turns it off here (see reconcileCapabilities) instead of quietly
                         // pretending it still works — surfacing that as a plain fact, not an error.
                         Text(
-                            "Turns off if the loaded model cannot support it.",
+                            stringResource(R.string.model_edit_turns_off_if_the_loaded),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
@@ -492,7 +497,7 @@ internal fun ModelEditDialog(
 
                         if (tools) {
                             SectionDivider()
-                            SectionLabel("Tool approval")
+                            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_tool_approval))
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(
                                     ToolApprovalMode.ALWAYS_ASK to "Always ask",
@@ -508,27 +513,27 @@ internal fun ModelEditDialog(
                         // remote model — speculative decoding is an on-device inference trick.
                         if (!isLlamaCpp && !isRemote) {
                             SectionDivider()
-                            SectionLabel("Speculative decoding (MTP)")
-                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_speculative_decoding_mtp))
+                            Row(Modifier.fillMaxWidth().toggleable(value = mtpEnabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { mtpEnabled = it }).heightIn(min = 48.dp).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     when (model.mtpSupported) {
-                                        false -> "Last attempt failed. Turn on to retry at the next load."
-                                        true -> "Speeds up generation on GPU; no effect on CPU/NPU."
-                                        null -> "Tried automatically on load; auto-disabled if unsupported."
+                                        false -> stringResource(R.string.model_edit_last_attempt_failed_turn_on)
+                                        true -> stringResource(R.string.model_edit_speeds_up_generation_on_gpu)
+                                        null -> stringResource(R.string.model_edit_tried_automatically_on_load_auto)
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                                 )
-                                Switch(checked = mtpEnabled, onCheckedChange = { mtpEnabled = it })
+                                Switch(checked = mtpEnabled, onCheckedChange = null)
                             }
                         }
 
                         SectionDivider()
-                        SectionLabel("Generation defaults")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_generation_defaults))
                         if (expertMode) {
                         Text(
-                            "Raw per-model overrides. Disabled values use the app default.",
+                            stringResource(R.string.model_edit_raw_per_model_overrides_disabled),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 4.dp)
@@ -538,7 +543,7 @@ internal fun ModelEditDialog(
                         OverrideSlider("Top-k", topKOn, { topKOn = it }, topK, { topK = it }, defaults.topK.toFloat(), "%.0f", 1f..64f)
                         if (isRemote) {
                             Text(
-                                "Top-k isn't part of the OpenAI API — only sent if the endpoint happens to accept it.",
+                                stringResource(R.string.model_edit_top_k_isn_t_part),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 4.dp)
@@ -567,17 +572,17 @@ internal fun ModelEditDialog(
                         if (!isRemote) {
                         OverrideField("Seed", seedOn, { seedOn = it }, seed, { seed = it.filter(Char::isDigit) }, "Random")
                         if (seedOn) {
-                            TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text("Randomize") }
+                            TextButton(onClick = { seed = kotlin.random.Random.nextInt(0, Int.MAX_VALUE).toString() }) { Text(stringResource(R.string.model_edit_randomize)) }
                         }
                         }
                         } else {
                             Text(
-                                "Simple controls for this model. Choose Default to follow the app settings.",
+                                stringResource(R.string.model_edit_simple_controls_for_this_model),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
-                            Text("Response style", style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.model_edit_response_style), style = MaterialTheme.typography.titleSmall)
                             val styleChoice = when {
                                 !temperatureOn -> "DEFAULT"
                                 temperature <= 0.45f -> "FOCUSED"
@@ -601,7 +606,7 @@ internal fun ModelEditDialog(
                                 }
                             }
 
-                            Text("Response size", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(stringResource(R.string.model_edit_response_size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
                             val sizeChoice = when {
                                 !maxOutputTokensOn -> "DEFAULT"
                                 maxOutputTokens <= 320f -> "SHORT"
@@ -617,7 +622,7 @@ internal fun ModelEditDialog(
                                 }
                             }
 
-                            Text("Conversation memory", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
+                            Text(stringResource(R.string.model_edit_conversation_memory), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 14.dp))
                             val memoryChoice = if (!contextOn) 0 else context.toInt()
                             // "Default" literally means the app-wide Settings value, which happens
                             // to be 4096 out of the box — the same number "Standard" sets. Spelling
@@ -634,7 +639,7 @@ internal fun ModelEditDialog(
                                 }
                             }
                             Text(
-                                "More memory keeps a longer conversation but uses more RAM.",
+                                stringResource(R.string.model_edit_more_memory_keeps_a_longer),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 6.dp)
@@ -643,7 +648,7 @@ internal fun ModelEditDialog(
 
                         if (isLlamaCpp && expertMode) {
                             SectionDivider()
-                            SectionLabel("Advanced (llama.cpp)")
+                            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_advanced_llama_cpp))
                             // GPU layers: default (override off) = offload the whole model on
                             // GPU/Auto; 0 keeps this model on CPU even under Auto.
                             run {
@@ -664,28 +669,28 @@ internal fun ModelEditDialog(
                             )
                             OverrideSlider("Batch size (n_batch)", nBatchOn, { nBatchOn = it }, nBatch, { nBatch = it }, defaults.nBatch.toFloat(), "%.0f", 128f..4096f, steps = 30)
                             OverrideSlider("Physical batch size (n_ubatch)", nUbatchOn, { nUbatchOn = it }, nUbatch, { nUbatch = it }, defaults.nUbatch.toFloat(), "%.0f", 32f..2048f, steps = 30)
-                            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Lock model in RAM (mlock)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Row(Modifier.fillMaxWidth().toggleable(value = useMlockOn, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { useMlockOn = it }).heightIn(min = 48.dp).padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.model_edit_lock_model_in_ram_mlock), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                 Text(
-                                    if (useMlockOn) (if (useMlock) "On" else "Off") else "Default (${if (useMlockDefault) "On" else "Off"})",
+                                    if (useMlockOn) (if (useMlock) "On" else stringResource(R.string.privacy_off)) else "Default (${if (useMlockDefault) "On" else stringResource(R.string.privacy_off)})",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(end = 10.dp)
                                 )
-                                Switch(checked = useMlockOn, onCheckedChange = { useMlockOn = it })
+                                Switch(checked = useMlockOn, onCheckedChange = null)
                             }
                             if (useMlockOn) {
-                                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Enabled", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                    Switch(checked = useMlock, onCheckedChange = { useMlock = it })
+                                Row(Modifier.fillMaxWidth().toggleable(value = useMlock, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { useMlock = it }).heightIn(min = 48.dp).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(stringResource(R.string.privacy_enabled), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Switch(checked = useMlock, onCheckedChange = null)
                                 }
                             }
                             OverrideDropdown(
-                                "Flash attention", flashAttentionOn, { flashAttentionOn = it }, flashAttentionMode,
+                                stringResource(R.string.model_edit_flash_attention), flashAttentionOn, { flashAttentionOn = it }, flashAttentionMode,
                                 { flashAttentionMode = it }, listOf("Auto", "On", "Off"),
                                 defaultValue = flashAttentionModeDefault.lowercase().replaceFirstChar(Char::uppercase)
                             )
                             OverrideDropdown(
-                                "KV cache type", kvCacheTypeOn, { kvCacheTypeOn = it }, kvCacheType,
+                                stringResource(R.string.model_edit_kv_cache_type), kvCacheTypeOn, { kvCacheTypeOn = it }, kvCacheType,
                                 { kvCacheType = it }, listOf("f16", "q8_0", "q4_0"), defaultValue = kvCacheTypeDefault
                             )
                             OverrideField("RoPE freq base", ropeFreqBaseOn, { ropeFreqBaseOn = it }, ropeFreqBase, { ropeFreqBase = it.filter { c -> c.isDigit() || c == '.' } }, "From model")
@@ -698,12 +703,12 @@ internal fun ModelEditDialog(
                             if (chatTemplateOverrideOn) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "Tap a preset, paste Jinja text above, or load a template file.",
+                                        stringResource(R.string.model_edit_tap_a_preset_paste_jinja),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f).padding(top = 2.dp)
                                     )
-                                    TextButton(onClick = { pickTemplateFile.launch(arrayOf("*/*")) }) { Text("From file") }
+                                    TextButton(onClick = { pickTemplateFile.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.model_edit_from_file)) }
                                 }
                                 Row(
                                     Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp),
@@ -720,17 +725,17 @@ internal fun ModelEditDialog(
                             }
 
                             SectionDivider()
-                            SectionLabel("LoRA adapter")
+                            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_edit_lora_adapter))
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    loraPath?.let { File(it).name } ?: "None attached",
+                                    loraPath?.let { File(it).name } ?: stringResource(R.string.model_edit_none_attached),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f)
                                 )
                                 TextButton(onClick = { pickLoraFile.launch(arrayOf("*/*")) }) { Text(if (loraPath != null) "Replace" else "Attach") }
                                 if (loraPath != null) {
-                                    TextButton(onClick = { loraPath = null }) { Text("Remove") }
+                                    TextButton(onClick = { loraPath = null }) { Text(stringResource(R.string.action_remove)) }
                                 }
                             }
                             loraError?.let {
@@ -742,7 +747,7 @@ internal fun ModelEditDialog(
                         }
                     } else {
                         Text(
-                            "Embedding models power semantic search and have no generation settings.",
+                            stringResource(R.string.model_edit_embedding_models_power_semantic_search),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 12.dp)
@@ -769,14 +774,14 @@ internal fun CapabilityToggle(
     onChange: (Boolean) -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
-            Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
+            Switch(checked = checked, enabled = enabled, onCheckedChange = null)
         }
         if (!enabled && disabledHint != null) {
             Text(
@@ -805,7 +810,7 @@ internal fun OverrideSlider(
     steps: Int = 0
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().toggleable(value = override, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onOverrideChange).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
                 if (override) String.format(format, value) else "Default (${String.format(format, defaultValue)})",
@@ -813,7 +818,7 @@ internal fun OverrideSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 10.dp)
             )
-            Switch(checked = override, onCheckedChange = onOverrideChange)
+            Switch(checked = override, onCheckedChange = null)
         }
         val effectiveValue = if (override) value else defaultValue
         Slider(
@@ -843,7 +848,7 @@ internal fun OverrideField(
     maxLength: Int = 128
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().toggleable(value = override, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onOverrideChange).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (!override) {
                 Text(
@@ -851,7 +856,7 @@ internal fun OverrideField(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 10.dp)
                 )
             }
-            Switch(checked = override, onCheckedChange = onOverrideChange)
+            Switch(checked = override, onCheckedChange = null)
         }
         if (override) {
             OutlinedTextField(
@@ -876,22 +881,22 @@ internal fun OverrideDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().toggleable(value = override, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onOverrideChange).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(
-                if (override) value else "Default ($defaultValue)",
+                if (override) overrideOptionLabel(value) else stringResource(R.string.model_edit_default_arg1, overrideOptionLabel(defaultValue)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 10.dp)
             )
-            Switch(checked = override, onCheckedChange = onOverrideChange)
+            Switch(checked = override, onCheckedChange = null)
         }
         if (override) {
             Box(Modifier.padding(top = 6.dp)) {
-                TextButton(onClick = { expanded = true }) { Text(value) }
+                TextButton(onClick = { expanded = true }) { Text(overrideOptionLabel(value)) }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     options.forEach { option ->
-                        DropdownMenuItem(text = { Text(option) }, onClick = { onValueChange(option); expanded = false })
+                        DropdownMenuItem(text = { Text(overrideOptionLabel(option)) }, onClick = { onValueChange(option); expanded = false })
                     }
                 }
             }
@@ -910,7 +915,14 @@ internal fun ModelInfo.runtimeSummary(): String {
     // No on-device execution means no hardware backend to choose between — preferredBackend is
     // stored on every row but only means something for an engine that actually runs here.
     val hardware = if (!traits.runsOnDevice) "Network" else when (preferredBackend) {
-        BackendChoice.AUTO -> if (traits.hasNativeTuningKnobs) "Auto: Vulkan → CPU" else "Auto: NPU → GPU → CPU"
+        BackendChoice.AUTO -> when {
+            traits.hasNativeTuningKnobs -> "Auto: Vulkan → CPU"
+            // Mirrors LlmEngine's AUTO order: the NPU is only tried for an NPU-compiled package
+            // on a supported chip, so don't promise it otherwise.
+            com.vervan.chat.system.DeviceSoc.hasLiteRtNpu &&
+                com.vervan.chat.system.DeviceSoc.looksNpuCompiled(java.io.File(filePath).name) -> "Auto: NPU → GPU → CPU"
+            else -> "Auto: GPU → CPU"
+        }
         BackendChoice.GPU -> if (traits.hasNativeTuningKnobs) "Vulkan GPU" else "GPU"
         BackendChoice.CPU -> "CPU"
         BackendChoice.NPU -> "NPU"
@@ -924,4 +936,14 @@ internal fun ModelInfo.runtimeSummary(): String {
 internal fun com.vervan.chat.modeldownload.ModelUiState.fitsBudget(budgetBytes: Long): Boolean {
     val needBytes = minimumRamBytes ?: ((totalBytes ?: 0L) * 13 / 10)
     return needBytes <= budgetBytes
+}
+
+/** Option values ("Auto"/"On"/"Off") stay English because they are matched in code; only the
+ * text shown is translated. Other values (cache types like "q8_0") are shown as-is. */
+@Composable
+private fun overrideOptionLabel(value: String): String = when (value) {
+    "Auto" -> stringResource(R.string.option_auto)
+    "On" -> stringResource(R.string.option_on)
+    "Off" -> stringResource(R.string.option_off)
+    else -> value
 }

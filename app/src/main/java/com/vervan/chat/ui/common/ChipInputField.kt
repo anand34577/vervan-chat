@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -55,7 +57,8 @@ fun ChipInputField(
 
     Column(modifier.fillMaxWidth()) {
         Text(
-            "$label (${items.size}/$maxItemCount)",
+            // The item count only matters once the list is nearly full.
+            if (items.size >= (maxItemCount * 0.8f).toInt().coerceAtLeast(1)) stringResource(R.string.chip_input_field_arg1_arg2_arg3, label, items.size, maxItemCount) else label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -71,7 +74,7 @@ fun ChipInputField(
                         onClick = { onItemsChange(items - item) },
                         label = { Text(item) },
                         trailingIcon = {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove $item", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.chip_input_field_remove_arg1, item), modifier = Modifier.size(16.dp))
                         }
                     )
                 }
@@ -81,11 +84,13 @@ fun ChipInputField(
             value = draft,
             onValueChange = { if (it.length <= maxItemLength) draft = it },
             enabled = !atLimit,
-            placeholder = { Text(if (atLimit) "Limit reached" else placeholder) },
+            placeholder = { Text(if (atLimit) stringResource(R.string.chip_input_field_limit_reached) else placeholder) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { commit() }),
-            supportingText = { Text("${draft.length} / $maxItemLength", style = MaterialTheme.typography.labelSmall) },
+            supportingText = if (draft.length >= (maxItemLength * 0.8f).toInt().coerceAtLeast(1)) {
+                { Text(stringResource(R.string.chip_input_field_arg1_arg2, draft.length, maxItemLength), style = MaterialTheme.typography.labelSmall) }
+            } else null,
             modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
         )
     }

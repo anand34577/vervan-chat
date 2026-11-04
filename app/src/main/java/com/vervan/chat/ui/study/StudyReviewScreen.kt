@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.study
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -66,10 +69,10 @@ import com.vervan.chat.ui.theme.Space
 fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: StudyReviewViewModel = viewModel(factory = viewModelFactory { initializer { StudyReviewViewModel(app, setName) } })
-    val cards by vm.cards.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.error.collectAsState()
-    val missedOnly by vm.missedOnly.collectAsState()
+    val cards by vm.cards.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
+    val missedOnly by vm.missedOnly.collectAsStateWithLifecycle()
     val reducedMotion = rememberReducedMotion()
 
     var index by remember { mutableIntStateOf(0) }
@@ -103,20 +106,20 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 title = {
                     Column {
                         OverflowTooltipText(setName)
-                        Text("Active recall review", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.study_review_active_recall_review), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           when {
             loadError != null -> OperationErrorCard(
-                title = "Study deck unavailable",
+                title = stringResource(R.string.study_review_study_deck_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your study progress is safe. Retry loading this deck.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.study_review_your_study_progress_is_safe),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retry,
                 modifier = Modifier.padding(Space.md)
             )
@@ -126,13 +129,13 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                 VervanFilterChip(
                     selected = missedOnly,
                     onClick = { vm.setMissedOnly(!missedOnly) },
-                    label = { Text("Needs practice") },
+                    label = { Text(stringResource(R.string.study_review_needs_practice)) },
                     leadingIcon = { Icon(Icons.Filled.School, contentDescription = null) }
                 )
                 VervanFilterChip(
                     selected = shuffled,
                     onClick = { shuffled = !shuffled },
-                    label = { Text("Shuffle") },
+                    label = { Text(stringResource(R.string.study_review_shuffle)) },
                     leadingIcon = { Icon(Icons.Filled.Shuffle, contentDescription = null) }
                 )
             }
@@ -140,8 +143,8 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
             if (sessionCards.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.CheckCircle,
-                    title = if (missedOnly) "Nothing needs practice" else "This deck has no cards",
-                    body = if (missedOnly) "Nice work — your missed cards are cleared for now." else "Create a new deck with study material to begin.",
+                    title = if (missedOnly) stringResource(R.string.study_review_nothing_needs_practice) else stringResource(R.string.study_review_this_deck_has_no_cards),
+                    body = if (missedOnly) stringResource(R.string.study_review_nice_work_your_missed_cards) else stringResource(R.string.study_review_create_a_new_deck_with),
                     modifier = Modifier.weight(1f)
                 )
                 return@Column
@@ -162,8 +165,8 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
 
             val progress = (index + 1f) / sessionCards.size
             Row(Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Card ${index + 1} of ${sessionCards.size}", style = MaterialTheme.typography.labelMedium)
-                Text("$sessionCorrect correct", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.study_review_card_arg1_of_arg2, index + 1, sessionCards.size), style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.study_review_arg1_correct, sessionCorrect), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
 
@@ -214,7 +217,7 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                         modifier = Modifier.padding(top = Space.lg)
                     )
                     Text(
-                        if (showAnswer) "Tap to flip back" else "Think first, then tap to flip",
+                        if (showAnswer) stringResource(R.string.study_review_tap_to_flip_back) else stringResource(R.string.study_review_think_first_then_tap_to),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (showAnswer) accent.onContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xxl)
@@ -230,17 +233,17 @@ fun StudyReviewScreen(setName: String, onBack: () -> Unit) {
                             sessionSeen++; revealed = false; index++
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Again") }
+                    ) { Text(stringResource(R.string.study_review_again)) }
                     Button(
                         onClick = {
                             vm.markResult(card, true)
                             sessionCorrect++; sessionSeen++; revealed = false; index++
                         },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Got it") }
+                    ) { Text(stringResource(R.string.study_review_got_it)) }
                 }
             } else {
-                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text("Reveal answer") }
+                Button(onClick = { revealed = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.lg)) { Text(stringResource(R.string.study_review_reveal_answer)) }
             }
             }
           }
@@ -277,19 +280,19 @@ private fun SessionComplete(
                 drawArc(ringColor, -90f, 360f * sweep, useCenter = false, style = stroke, topLeft = topLeft, size = arcSize)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("$correct of $seen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.study_review_arg1, percent), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.study_review_arg1_of_arg2, correct, seen), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text("Review complete", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.xl))
+        Text(stringResource(R.string.study_review_review_complete), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = Space.xl))
         Text(
-            if (percent >= 80) "Strong recall. A short review later will help it stick." else "Review the cards you missed while they are still fresh.",
+            if (percent >= 80) stringResource(R.string.study_review_strong_recall_a_short_review) else stringResource(R.string.study_review_review_the_cards_you_missed),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = Space.sm)
         )
-        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = Space.xxl)) { Text("Review again") }
-        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) { Text("Practice missed cards") }
+        Button(onClick = onAgain, modifier = Modifier.fillMaxWidth().padding(top = Space.xxl)) { Text(stringResource(R.string.study_review_review_again)) }
+        if (correct < seen) OutlinedButton(onClick = onPracticeMissed, modifier = Modifier.fillMaxWidth().padding(top = Space.sm)) { Text(stringResource(R.string.study_review_practice_missed_cards)) }
     }
 }

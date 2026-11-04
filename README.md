@@ -48,6 +48,10 @@ Import PDFs, Word documents, spreadsheets, presentations, EPUBs, HTML, CSV, text
 
 Use offline dictation, spoken replies, voice messages, and hands-free voice conversations. The voice pipeline supports on-device speech recognition, text-to-speech, voice activity detection, and barge-in behavior where the selected model and voice package support it.
 
+For Indian languages, download a [Shruti](https://udgamlabs.com/models/shruti) speech-to-text model (Hindi, Marathi, Tamil, Bengali or Telugu, each about 30 MB and each also covering English) from the Models screen, then pick the language in Settings → Voice. Shruti runs on Cactus's needle engine and works for dictation, voice chat and the Transcribe tool.
+
+**Omni Studio** (Tools → Talk & translate) runs LFM3 Omni 2B with everything it can do: voice chat where the model hears you directly and answers out loud, questions about a photo or the first 13 seconds of a video (pictures and sound), text-to-speech in a male or female voice, and English transcription. It needs two downloads, "LFM3 Omni 2B" and the "LFM3 Omni speech pack", and about 3.2 GB of free space the first time it loads. The Omni voice can also be chosen for spoken replies in Settings → Voice.
+
 ### Understand your screen
 
 The optional floating assistant can capture and explain the current screen after Android’s screen-capture consent flow. It can also continue the conversation without making you recreate the context manually.
@@ -140,7 +144,7 @@ Vervan is an Android application built with Kotlin and Jetpack Compose.
 | --- | --- |
 | App | Kotlin, Jetpack Compose, Navigation Compose, ViewModels |
 | Local inference | LiteRT-LM; optional llama.cpp with GGUF, CPU, Vulkan, and native acceleration paths |
-| Speech | whisper.cpp / Android speech paths, Piper or Kokoro through ONNX, Supertonic, Silero VAD |
+| Speech | whisper.cpp, Shruti (Cactus needle) and Android speech paths, Piper or Kokoro through ONNX, Supertonic, LFM3 Omni speech output (LiteRT), Silero VAD |
 | Retrieval | Local keyword, semantic, and hybrid retrieval over indexed chunks |
 | Embeddings | EmbeddingGemma with a local TFLite/LiteRT fallback |
 | Storage | Room, local files, encrypted preferences, JSON backup and restore |
@@ -152,8 +156,8 @@ Vervan is an Android application built with Kotlin and Jetpack Compose.
 
 ### Requirements
 
-- Android Studio with JDK 17.
-- Android SDK 35 for the current checkout, with an Android 8 / API 26+ device or emulator.
+- Android Studio (2026.1 or newer) with JDK 17 or 21. The project uses Gradle 9.8, AGP 9.5 and Kotlin 2.4.
+- Android SDK platform 37 (compile) and an Android 8 / API 26+ device or emulator. The app targets API 36.
 - ARM hardware is strongly recommended for local inference.
 - Optional native integrations: NDK `28.1.13356709` and CMake `3.22.1`.
 - Enough free storage and RAM for the model you want to run. A model file can be several gigabytes.
@@ -177,6 +181,8 @@ whispercpp.dir=C:/path/to/whisper.cpp
 ```
 
 If they are not configured, the rest of the app can still compile, but the corresponding native capabilities will not be available.
+
+The Shruti engine (Cactus needle) needs no setup: Gradle's `fetchNeedleEngine` task downloads the pinned prebuilt `libneedle.a` for each ABI from Hugging Face, checks its SHA-256 and caches it in `.native-cache/`. Set `needle.enabled=false` in `local.properties` to build without it, or `needle.dir=` to use a local copy.
 
 ### Release build configuration
 
@@ -213,11 +219,32 @@ release.keyPassword=...
 
 CI equivalents: `VERVAN_RELEASE_STORE_FILE`, `VERVAN_RELEASE_STORE_PASSWORD`, `VERVAN_RELEASE_KEY_ALIAS`, `VERVAN_RELEASE_KEY_PASSWORD`.
 
-### Continuous integration
+### Continuous integration and releases
 
-[`.github/workflows/android.yml`](.github/workflows/android.yml) runs a debug build/lint/test verification on every push (no native backends — `llamacpp.dir`/`whispercpp.dir` are unset in CI, so that target is skipped, same as an offline checkout).
+[`.github/workflows/android.yml`](.github/workflows/android.yml) runs unit tests, lint and a debug build on every push and pull request, and uploads the reports and debug APKs as artifacts.
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on a `vX.Y.Z` tag push: it builds llama.cpp and whisper.cpp **CPU-only** for Android (`scripts/ci/build-native-android-linux.sh` — a Linux/CI-only counterpart to the Vulkan-capable `scripts/build-llama-android-vulkan.ps1`/`scripts/build-whisper-android.ps1`, which stay Windows-only since the Vulkan backend needs MSVC + the Vulkan SDK on the host), signs the resulting APKs, and attaches them to a GitHub Release. See the comments at the top of `release.yml` for the repo secrets it needs. Build the Vulkan-accelerated variant locally if you need GPU acceleration in a release.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) publishes a release. To ship version 1.3.0:
+
+```bash
+git tag v1.3.0
+git push origin v1.3.0
+```
+
+The workflow then:
+
+1. builds llama.cpp (`b12078`) and whisper.cpp (`v1.9.5`) for Android with `scripts/ci/build-native-android-linux.sh`. arm64 gets per-device CPU kernels (so it runs on every ARMv8 phone, not just recent ones) plus the Vulkan GPU backend; 32-bit ARM gets a NEON CPU build;
+2. sets `versionName` 1.3.0 and `versionCode` 10300 from the tag;
+3. runs the unit tests and builds signed per-ABI APKs, a universal APK and the Play bundle;
+4. creates a GitHub Release with all files plus `SHA256SUMS`;
+5. uploads the bundle to Google Play when the `PLAY_SERVICE_ACCOUNT_JSON` secret is set (track from the `PLAY_TRACK` repository variable, default `internal`).
+
+Repository secrets: `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`, and optionally `PLAY_SERVICE_ACCOUNT_JSON`. The first Play upload of a new app has to be done by hand in Play Console; after that the workflow can publish.
+
+### Models and hardware acceleration
+
+The built-in catalogue offers models in tiers so most phones have something that runs well: Qwen3 0.6B (about 0.5 GB, 2 GB RAM phones), LFM2.5 1.2B (0.7 GB), Gemma 4 E2B (2.6 GB) and Gemma 4 E4B (3.7 GB, 12 GB RAM phones). Every download is pinned to a Hugging Face commit and checked against its SHA-256.
+
+LiteRT-LM models use the phone's NPU when one is supported (Snapdragon 8 Gen 2 or newer, Dimensity 8300/9300 or newer, Tensor G3 or newer) and the model was compiled for it. The catalogue lists NPU-compiled builds only on matching chips (for example Gemma 4 E2B for Snapdragon 8 Elite and Tensor G5/G6). Otherwise models run on the GPU, then the CPU. The NPU runtimes come from Google's `litert-npu-runtime-*` Maven artifacts; the Qualcomm QNN HTP libraries and LiteRT-LM GPU accelerators are committed under `app/src/main/jniLibs/arm64-v8a`.
 
 ## Project map
 
@@ -244,7 +271,6 @@ Before calling it production-ready, complete at least the following:
 - test the release bundle on real low-, mid-, and high-memory ARM devices, including interrupted downloads and thermal throttling;
 - review every permission, foreground-service type, overlay flow, screen-capture flow, and remote API path for Play Console disclosure and policy fit;
 - publish a privacy policy and complete Play Console’s Data safety, content rating, target audience, app access, and foreground-service declarations;
-- update the Android target/compile configuration and increment `versionCode` immediately before the Play release;
 - provide a support/contact path and a clear way for users to report crashes or model-download failures.
 
 ## Who is likely to enjoy Vervan?

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -49,6 +50,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     private val piper = PiperTtsEngine(voiceModelDao)
     private val kokoro = KokoroTtsEngine(voiceModelDao)
     private val supertonic = SupertonicTtsEngine(voiceModelDao, settings)
+    private val omni = com.vervan.chat.omni.OmniTtsEngine(app)
 
     val installedVoiceModels: StateFlow<List<TtsVoiceModel>> =
         voiceModelDao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -95,6 +97,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     private fun engineFor(name: String): TtsEngine = when (name) {
         "KOKORO" -> kokoro
         "SUPERTONIC" -> supertonic
+        "LFM3_OMNI" -> omni
         else -> piper
     }
 
@@ -108,7 +111,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     fun generate(text: String, engineName: String, lang: String, supertonicVoice: String?, pauseMs: Int) {
         if (text.isBlank()) return
         if (text.length > InputLimits.TTS_TEXT_CHARS) {
-            _phase.value = Phase.Failed("Text is too long for speech (maximum ${InputLimits.TTS_TEXT_CHARS} characters).")
+            _phase.value = Phase.Failed(app.getString(R.string.text_to_speech_text_is_too_long_for, InputLimits.TTS_TEXT_CHARS.toString()))
             return
         }
         job?.cancel()
@@ -128,13 +131,13 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
                 val engine = engineFor(engineName)
                 sessionEngine = engine
                 if (!engine.isReady()) {
-                    _phase.value = Phase.Failed("The selected voice isn't downloaded yet. Download it in Model Manager first.")
+                    _phase.value = Phase.Failed(app.getString(R.string.text_to_speech_the_selected_voice_isn_t))
                     restoreOverride()
                     return@launch
                 }
                 val sentences = TtsFileGenerator.splitSentences(text)
                 if (sentences.isEmpty()) {
-                    _phase.value = Phase.Failed("No text to convert")
+                    _phase.value = Phase.Failed(app.getString(R.string.text_to_speech_no_text_to_convert))
                     restoreOverride()
                     return@launch
                 }
@@ -147,7 +150,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
             } catch (c: kotlinx.coroutines.CancellationException) {
                 throw c
             } catch (t: Throwable) {
-                _phase.value = Phase.Failed(t.message ?: "Could not generate audio.")
+                _phase.value = Phase.Failed(t.message ?: app.getString(R.string.text_to_speech_could_not_generate_audio))
                 restoreOverride()
             }
         }
@@ -190,7 +193,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
             _phase.value = Phase.Done(outFile)
         } catch (t: Throwable) {
             Log.e(TAG, "finishMerge failed", t)
-            _phase.value = Phase.Failed(t.message ?: "Could not save audio.")
+            _phase.value = Phase.Failed(t.message ?: app.getString(R.string.text_to_speech_could_not_save_audio))
         } finally {
             restoreOverride()
         }
@@ -215,8 +218,8 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
     // in its own subdirectory and self-pruned by age on every write instead, same pattern as
     // TranscriptionViewModel.pruneOldExports uses for its own one-off export artifacts.
     suspend fun exportM4a(wavFile: File): File = withContext(Dispatchers.IO) {
-        require(wavFile.isFile) { "Audio export file is missing" }
-        require(wavFile.length() <= InputLimits.MAX_DECODED_AUDIO_BYTES) { "Audio export is too large" }
+        require(wavFile.isFile) { app.getString(R.string.text_to_speech_audio_export_file_is_missing) }
+        require(wavFile.length() <= InputLimits.MAX_DECODED_AUDIO_BYTES) { app.getString(R.string.text_to_speech_audio_export_is_too_large) }
         val audio = wavFile.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(InputLimits.MAX_DECODED_AUDIO_BYTES)) }
         val dir = File(app.filesDir, "tts_output/exports").apply { mkdirs() }
         val outFile = File(dir, wavFile.nameWithoutExtension + ".m4a")
@@ -237,6 +240,7 @@ class TextToSpeechViewModel(private val app: VervanApp) : ViewModel() {
         piper.release()
         kokoro.release()
         supertonic.release()
+        omni.release()
     }
 
     companion object {

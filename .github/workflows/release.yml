@@ -1,75 +1,127 @@
 name: Android Release
 
-# Builds signed release APKs with the llama.cpp and whisper.cpp native backends compiled in
-# (CPU-only — see scripts/ci/build-native-android-linux.sh for why: the Vulkan GPU backend needs
-# MSVC + the Vulkan SDK on the host, which only scripts/build-llama-android-vulkan.ps1's Windows
-# dev-machine path has) and attaches them to a GitHub Release. .github/workflows/android.yml
-# stays the lightweight per-push verify job with no native backends.
+# Builds the production app with the llama.cpp (GGUF, CPU variants + Vulkan) and whisper.cpp
+# native backends compiled in, signs it, and publishes it:
+#   - GitHub Release: per-ABI APKs, a universal APK, the Play bundle and SHA256SUMS
+#   - Google Play: the bundle on the configured track (only when PLAY_SERVICE_ACCOUNT_JSON is set)
+#
+# Trigger: push a tag like v1.2.0, or run it manually from the Actions tab.
+# The version comes from the tag: vX.Y.Z -> versionName X.Y.Z, versionCode X*10000 + Y*100 + Z.
 #
 # Required repo secrets (Settings > Secrets and variables > Actions):
-#   RELEASE_KEYSTORE_BASE64  - `base64 -w0 your.keystore` output
+#   RELEASE_KEYSTORE_BASE64  - `base64 -w0 your.keystore` output (Play upload key)
 #   RELEASE_STORE_PASSWORD   - keystore password
 #   RELEASE_KEY_ALIAS        - signing key alias
 #   RELEASE_KEY_PASSWORD     - signing key password
+# Optional:
+#   PLAY_SERVICE_ACCOUNT_JSON - Google Play Developer API service-account JSON. Without it the
+#                               Play upload step is skipped.
+# Optional repo variables:
+#   PLAY_TRACK               - internal (default), alpha, beta or production
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.2.0 (creates a draft release)"
+        required: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp
-      LLAMA_CPP_REV: 3da5396a9d57a81e07a8b2c6f41c83e5cae2bf46
+      LLAMA_CPP_REF: b12078
       WHISPER_CPP_REPO: https://github.com/ggml-org/whisper.cpp
-      WHISPER_CPP_REV: 080bbbe85230f624f0b52127f1ae1218247989f9
-      # Model Store catalogue verification key/endpoints — public values, not secrets (see
+      WHISPER_CPP_REF: v1.9.5
+      NDK_VERSION: 28.1.13356709
+      # Job-level so the Play step's `if:` can see whether the secret exists.
+      PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      # Model Store catalogue verification key/endpoints: public values, not secrets (see
       # docs/model-store-publishing.md).
       VERVAN_CATALOG_PUBLIC_KEYS: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECmNLZpwKtmgeGuu6Z4O+qXc8oi4/0mpAX4oxqlFDGGiaXy/KDzbP+1mmWbGbR8gu0EnFuNRO2onbY0ESOrXncA==
       VERVAN_CATALOG_ENDPOINTS: https://anand34577.github.io/vervan-model-store/api/v1/latest.json,https://raw.githubusercontent.com/anand34577/vervan-model-store/main/docs/api/v1/latest.json
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            name="${{ github.event.inputs.version }}"
+          else
+            name="${GITHUB_REF_NAME#v}"
+          fi
+          if ! [[ "$name" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Version '$name' is not X.Y.Z" >&2; exit 1
+          fi
+          code=$(( BASH_REMATCH[1] * 10000 + BASH_REMATCH[2] * 100 + BASH_REMATCH[3] ))
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Building $name ($code)"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # ubuntu-latest ships an Android SDK with ANDROID_HOME/sdkmanager already on PATH — just
-      # add the NDK and the SDK's own CMake+Ninja package the native build needs.
-      - name: Install NDK + CMake
+      - name: Install NDK, CMake, Ninja and glslc
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "ndk;28.1.13356709" "cmake;3.22.1" > /dev/null
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
+          sdkmanager "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/cmake/3.22.1/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          # glslc + Vulkan headers let the arm64 build include llama.cpp's Vulkan GPU backend.
+          sudo apt-get install -y -qq ninja-build glslc libvulkan-dev
 
-      - name: Install ninja
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+      - name: Cache native builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/llama.cpp/build-android/*/bin
+            /tmp/whisper.cpp/build-android/*/bin
+          key: native-${{ env.LLAMA_CPP_REF }}-${{ env.WHISPER_CPP_REF }}-${{ env.NDK_VERSION }}-${{ hashFiles('scripts/ci/build-native-android-linux.sh', 'scripts/whisper-cmake/**', 'scripts/patches/**') }}
 
-      - name: Clone llama.cpp
+      - name: Fetch llama.cpp and whisper.cpp
         run: |
-          git clone --quiet "$LLAMA_CPP_REPO" /tmp/llama.cpp
-          git -C /tmp/llama.cpp checkout --quiet "$LLAMA_CPP_REV"
+          git clone --quiet --depth 1 --branch "$LLAMA_CPP_REF" "$LLAMA_CPP_REPO" /tmp/llama.cpp-src
+          git clone --quiet --depth 1 --branch "$WHISPER_CPP_REF" "$WHISPER_CPP_REPO" /tmp/whisper.cpp-src
+          # Keep any cached build output from the cache step.
+          mkdir -p /tmp/llama.cpp /tmp/whisper.cpp
+          cp -a /tmp/llama.cpp-src/. /tmp/llama.cpp/
+          cp -a /tmp/whisper.cpp-src/. /tmp/whisper.cpp/
 
-      - name: Clone whisper.cpp
+      - name: Build native libraries
         run: |
-          git clone --quiet "$WHISPER_CPP_REPO" /tmp/whisper.cpp
-          git -C /tmp/whisper.cpp checkout --quiet "$WHISPER_CPP_REV"
-
-      - name: Build native libs (CPU-only)
-        run: LLAMA_CPP_DIR=/tmp/llama.cpp WHISPER_CPP_DIR=/tmp/whisper.cpp bash scripts/ci/build-native-android-linux.sh
+          if ls /tmp/llama.cpp/build-android/arm64-v8a/bin/libllama.so /tmp/whisper.cpp/build-android/arm64-v8a/bin/libwhisper.so >/dev/null 2>&1; then
+            echo "Using cached native build"
+          else
+            LLAMA_CPP_DIR=/tmp/llama.cpp WHISPER_CPP_DIR=/tmp/whisper.cpp bash scripts/ci/build-native-android-linux.sh
+          fi
 
       - name: Decode signing keystore
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "RELEASE_KEYSTORE_BASE64 secret is not set; see the header of this workflow." >&2
+            exit 1
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
       - name: Write local.properties
         run: |
@@ -81,20 +133,59 @@ jobs:
           whispercpp.autobuild=false
           EOF
 
-      - name: Build signed release APKs
+      - name: Test and build signed APKs and bundle
         env:
           VERVAN_RELEASE_STORE_FILE: ${{ runner.temp }}/release.keystore
           VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace
+        run: >
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease --stacktrace
+          -Pvervan.versionName=${{ steps.version.outputs.name }}
+          -Pvervan.versionCode=${{ steps.version.outputs.code }}
 
       - name: Remove keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.keystore"
 
+      - name: Collect release files
+        id: files
+        run: |
+          v="${{ steps.version.outputs.name }}"
+          mkdir -p dist
+          for apk in app/build/outputs/apk/release/*.apk; do
+            base=$(basename "$apk" .apk)              # app-arm64-v8a-release / app-universal-release
+            abi=${base#app-}; abi=${abi%-release}
+            cp "$apk" "dist/Vervan-$v-$abi.apk"
+          done
+          cp app/build/outputs/bundle/release/app-release.aab "dist/Vervan-$v.aab"
+          cp app/build/outputs/mapping/release/mapping.txt "dist/Vervan-$v-mapping.txt" 2>/dev/null || true
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -la dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', steps.version.outputs.name) || github.ref_name }}
+          name: Vervan ${{ steps.version.outputs.name }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
           generate_release_notes: true
+          body: |
+            ### Which file should I install?
+            - **Most phones:** `Vervan-${{ steps.version.outputs.name }}-arm64-v8a.apk`
+            - **Older 32-bit phones:** `Vervan-${{ steps.version.outputs.name }}-armeabi-v7a.apk`
+            - **Not sure:** `Vervan-${{ steps.version.outputs.name }}-universal.apk` (works everywhere, larger download)
+
+            The `.aab` file is the Google Play bundle. Verify downloads against `SHA256SUMS`.
+          files: dist/*
+
+      - name: Upload to Google Play
+        if: env.PLAY_JSON != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.vervan.chat
+          releaseFiles: dist/Vervan-${{ steps.version.outputs.name }}.aab
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          status: ${{ (vars.PLAY_TRACK || 'internal') == 'production' && 'draft' || 'completed' }}
+          mappingFile: dist/Vervan-${{ steps.version.outputs.name }}-mapping.txt

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -78,11 +80,11 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Branch tree") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                title = { Text(stringResource(R.string.branch_tree_branch_tree)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = { scope.launch { if (activeIndex >= 0) listState.animateScrollToItem(activeIndex) } }) {
-                        Icon(Icons.Filled.MyLocation, contentDescription = "Return to active branch")
+                        Icon(Icons.Filled.MyLocation, contentDescription = stringResource(R.string.branch_tree_return_to_active_branch))
                     }
                 }
             )
@@ -92,8 +94,8 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
         if (rows.isEmpty()) {
             com.vervan.chat.ui.common.EmptyState(
                 icon = Icons.Filled.MyLocation,
-                title = "No branches yet",
-            body = "Edit or retry a message to create a branch. Every branch appears here."
+                title = stringResource(R.string.branch_tree_no_branches_yet),
+            body = stringResource(R.string.branch_tree_edit_or_retry_a_message)
             )
         } else {
             LazyColumn(
@@ -119,9 +121,9 @@ fun BranchTreeScreen(chatId: String, onBack: () -> Unit) {
 @Composable
 private fun TreeRow(message: Message, depth: Int, isActive: Boolean, isCurrentLeaf: Boolean, onClick: () -> Unit) {
     val label = when (message.role) {
-        MessageRole.USER -> "You"
-        MessageRole.ASSISTANT -> "Vervan"
-        MessageRole.SYSTEM -> "Tool result"
+        MessageRole.USER -> stringResource(R.string.branch_tree_you)
+        MessageRole.ASSISTANT -> stringResource(R.string.message_bubble_vervan)
+        MessageRole.SYSTEM -> stringResource(R.string.entity_tool_result)
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         if (depth > 0) {

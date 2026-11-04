@@ -6,7 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -50,11 +51,13 @@ fun QuickReplyChips(
     visible: Boolean = true
 ) {
     AnimatedVisibility(visible = visible) {
-        FlowRow(
-            modifier = modifier.padding(top = Space.sm),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-            maxItemsInEachRow = 3
+        // One scrolling row: wrapping onto a second and third line made every answer end in a
+        // block of buttons taller than a short reply itself.
+        Row(
+            modifier = modifier
+                .padding(top = Space.sm)
+                .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             suggestions.take(6).forEach { suggestion ->
                 QuickReplyChip(suggestion, onClick = { onClick(suggestion) })
@@ -76,6 +79,7 @@ private fun QuickReplyChip(suggestion: QuickReply, onClick: () -> Unit) {
                 shape = VervanExtraShapes.pill
             )
             .clickable(onClick = onClick)
+            .heightIn(min = 36.dp)
             .padding(horizontal = Space.md, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.xs)
@@ -86,7 +90,8 @@ private fun QuickReplyChip(suggestion: QuickReply, onClick: () -> Unit) {
         Text(
             text = suggestion.label,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
     }
 }
@@ -99,10 +104,26 @@ data class QuickReply(
 
 /** Default suggestions rendered after a completed assistant response. Curated to be useful
  *  across most contexts (writing, reasoning, translation) without being noisy. */
-fun defaultQuickReplies(): List<QuickReply> = listOf(
-    QuickReply("Continue", "Continue", Icons.AutoMirrored.Filled.ArrowForward),
-    QuickReply("Summarize", "Summarize this in 3 bullets", Icons.Filled.AutoAwesome),
-    QuickReply("Make shorter", "Make this shorter", Icons.Filled.Compress),
-    QuickReply("Regenerate", "__regenerate__", Icons.Filled.Refresh),
-    QuickReply("Translate", "Translate this to Hindi", Icons.Filled.Translate)
-)
+@androidx.compose.runtime.Composable
+fun defaultQuickReplies(): List<QuickReply> {
+    // Translate into the phone's own language. On an English phone there's no sensible implied
+    // target (the old hard-coded "Hindi" assumed one), so the chip drops a "Translate this to "
+    // starter into the composer and lets the user finish it.
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val translatePrompt = if (locale.language == java.util.Locale.ENGLISH.language) {
+        QUICK_REPLY_TRANSLATE_DRAFT
+    } else {
+        "Translate this to ${locale.getDisplayLanguage(java.util.Locale.ENGLISH)}"
+    }
+    return listOf(
+        QuickReply(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.quick_reply_continue), "Continue", Icons.AutoMirrored.Filled.ArrowForward),
+        QuickReply(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.quick_reply_summarize), "Summarize this in 3 bullets", Icons.Filled.AutoAwesome),
+        QuickReply(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.quick_reply_shorter), "Make this shorter", Icons.Filled.Compress),
+        QuickReply(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.quick_reply_regenerate), QUICK_REPLY_REGENERATE, Icons.Filled.Refresh),
+        QuickReply(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.quick_reply_translate), translatePrompt, Icons.Filled.Translate)
+    )
+}
+
+const val QUICK_REPLY_REGENERATE = "__regenerate__"
+/** Puts "Translate this to " into the composer instead of sending, so the user picks the language. */
+const val QUICK_REPLY_TRANSLATE_DRAFT = "__translate_draft__"

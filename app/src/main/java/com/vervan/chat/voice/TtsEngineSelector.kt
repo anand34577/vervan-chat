@@ -22,7 +22,10 @@ class TtsEngineSelector(
     private val settingsRepository: SettingsRepository,
     private val piper: PiperTtsEngine,
     private val kokoro: KokoroTtsEngine,
-    private val supertonic: SupertonicTtsEngine
+    private val supertonic: SupertonicTtsEngine,
+    /** LFM3 Omni's own voice ([com.vervan.chat.omni.OmniTtsEngine]); only an explicit
+     * "LFM3_OMNI" pin picks it, like Kokoro/Supertonic. Null where no app context is at hand. */
+    private val omni: TtsEngine? = null
 ) {
     /** The engine [resolve] picked last time, for the "TTS: {engineName}" UI badge — read
      * after a [resolve] call, not a live/reactive value. */
@@ -33,6 +36,7 @@ class TtsEngineSelector(
         val preference = settingsRepository.ttsEnginePreference.first()
 
         val engine = when {
+            preference == "LFM3_OMNI" && omni != null && omni.isReady() -> omni
             preference == "SUPERTONIC" && supertonic.isReady() -> supertonic
             preference == "KOKORO" && kokoro.isReady() -> kokoro
             piper.isReady() -> piper
@@ -49,5 +53,6 @@ class TtsEngineSelector(
         piper.release()
         kokoro.release()
         supertonic.release()
+        (omni as? com.vervan.chat.omni.OmniTtsEngine)?.release()
     }
 }

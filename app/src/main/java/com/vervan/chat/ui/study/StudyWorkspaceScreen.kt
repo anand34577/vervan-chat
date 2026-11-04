@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.study
 
+import androidx.compose.ui.graphics.compositeOver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.text.format.DateUtils
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
@@ -72,10 +75,10 @@ import com.vervan.chat.R
 fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: StudyWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { StudyWorkspaceViewModel(app) } })
-    val sets by vm.sets.collectAsState()
-    val generating by vm.generating.collectAsState()
-    val generationStage by vm.generationStage.collectAsState()
-    val error by vm.error.collectAsState()
+    val sets by vm.sets.collectAsStateWithLifecycle()
+    val generating by vm.generating.collectAsStateWithLifecycle()
+    val generationStage by vm.generationStage.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
 
     var showGenerate by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
@@ -129,20 +132,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 item {
-                    FeatureHero(
-                        icon = Icons.Filled.School,
-                        eyebrow = stringResource(R.string.study_workspace),
-                        title = stringResource(R.string.study_recall_title),
-                        body = stringResource(R.string.study_recall_body),
-                        trailing = {
-                            Text(
-                                stringResource(R.string.study_decks_count, sets.size),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    )
-                    StudySnapshotCard(sets, modifier = Modifier.padding(top = Space.md, bottom = Space.xs))
+                    StudySnapshotCard(sets, modifier = Modifier.padding(bottom = Space.xs))
                 }
                 items(sets, key = { it.name }) { set ->
                     StudySetCard(
@@ -189,9 +179,9 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
     }
 
     if (showGenerate) {
-        var setName by remember { mutableStateOf("") }
-        var sourceText by remember { mutableStateOf("") }
-        var focus by remember { mutableStateOf("") }
+        var setName by rememberSaveable { mutableStateOf("") }
+        var sourceText by rememberSaveable { mutableStateOf("") }
+        var focus by rememberSaveable { mutableStateOf("") }
         var cardCount by remember { mutableFloatStateOf(12f) }
         var cardStyle by remember { mutableStateOf("balanced") }
         AlertDialog(
@@ -201,7 +191,7 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                 if (generating) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.large,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
                         modifier = Modifier.fillMaxWidth().padding(vertical = Space.sm)
                     ) {
@@ -253,9 +243,17 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                             VervanFilterChip(selected = cardStyle == value, onClick = { cardStyle = value }, label = { Text(label) }, enabled = !generating)
                         }
                     }
-                    Text(stringResource(R.string.study_cards_count, cardCount.toInt()), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+                    Text(androidx.compose.ui.res.pluralStringResource(R.plurals.study_cards_count, cardCount.toInt(), cardCount.toInt()), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
                     Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..30f, steps = 24, enabled = !generating)
-                    error?.let { ValidationMessage(it, modifier = Modifier.padding(top = Space.sm)) }
+                    error?.let {
+                        ValidationMessage(it, modifier = Modifier.padding(top = Space.sm))
+                        val openModels = com.vervan.chat.ui.common.LocalOpenModels.current
+                        if (it.startsWith("No model") && openModels != null) {
+                            TextButton(onClick = { showGenerate = false; openModels() }) {
+                                Text(stringResource(R.string.vervan_open_ai_models))
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -264,7 +262,13 @@ fun StudyWorkspaceScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     enabled = !generating && setName.isNotBlank() && sourceText.isNotBlank()
                 ) { Text(stringResource(R.string.study_generate)) }
             },
-            dismissButton = { TextButton(onClick = { showGenerate = false }, enabled = !generating) { Text(stringResource(R.string.action_cancel)) } }
+            dismissButton = {
+                if (generating) {
+                    TextButton(onClick = { vm.cancelGeneration() }) { Text(stringResource(R.string.action_stop)) }
+                } else {
+                    TextButton(onClick = { showGenerate = false }) { Text(stringResource(R.string.action_cancel)) }
+                }
+            }
         )
     }
 }
@@ -278,7 +282,7 @@ private fun StudySnapshotCard(sets: List<StudySetSummary>, modifier: Modifier = 
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.md),
@@ -330,14 +334,14 @@ private fun StudySetCard(
         set.masteredCount > 0 -> stringResource(R.string.study_in_progress)
         else -> stringResource(R.string.study_new_deck)
     }
-    val cardsReadyLabel = stringResource(R.string.study_cards_ready, set.cardCount)
+    val cardsReadyLabel = androidx.compose.ui.res.pluralStringResource(R.plurals.study_cards_ready, set.cardCount, set.cardCount)
     val accuracyLabel = set.accuracyPercent?.let { stringResource(R.string.study_accuracy, it) }
     Card(
         modifier = Modifier.fillMaxWidth().selectableItem(selectionMode, onOpen, onToggleSelected, onEnterSelection),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else accentContainer.copy(alpha = 0.34f)),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else accentContainer.copy(alpha = 0.34f).compositeOver(MaterialTheme.colorScheme.surface)),
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else accent.copy(alpha = 0.26f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp, pressedElevation = 3.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp)
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -360,7 +364,7 @@ private fun StudySetCard(
                                 masteryLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = onAccentContainer,
-                                maxLines = 1,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 softWrap = false,
                                 modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs)
                             )

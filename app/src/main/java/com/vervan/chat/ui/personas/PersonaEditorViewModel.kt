@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.personas
 
+import com.vervan.chat.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -69,6 +70,17 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
      * doesn't leave one behind either — see [setScratchAvatar]/[discardPendingScratchAvatar]. */
     private var pendingScratchAvatarFile: File? = null
 
+    /** Field values as last loaded or saved; [hasUnsavedChanges] compares against it so Back
+     * can ask before throwing edits away. */
+    private var savedSnapshot: List<Any?> = snapshot()
+
+    private fun snapshot(): List<Any?> = listOf(
+        _name.value, _description.value, _systemInstruction.value, _tone.value, _formality.value,
+        _conciseness.value, _creativity.value, _responseLength.value, _language.value, _avatarPath.value
+    )
+
+    fun hasUnsavedChanges(): Boolean = !_isLoading.value && _recordFound.value && snapshot() != savedSnapshot
+
     init {
         load()
     }
@@ -102,6 +114,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
                     _language.value = it.language
                     _avatarPath.value = it.avatarPath
                 }
+                savedSnapshot = snapshot()
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 _recordFound.value = false
@@ -139,7 +152,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
                 _importError.value = e.message
             } catch (t: Throwable) {
                 android.util.Log.e(TAG, "importCharacterCard failed for $uri", t)
-                _importError.value = "Could not import this file: ${t.message ?: t::class.simpleName}"
+                _importError.value = app.getString(R.string.persona_editor_could_not_import_this_file, t.message ?: t::class.simpleName)
             }
         }
     }
@@ -155,7 +168,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
             val dest = File(File(context.filesDir, "personas/avatars"), "${UUID.randomUUID()}.png")
             val ok = withContext(Dispatchers.IO) { ImageUtils.copyNormalizedPng(context, uri, dest, 512) }
             if (ok) setScratchAvatar(dest)
-            else _importError.value = "Could not use this image as an avatar. Try a different file."
+            else _importError.value = app.getString(R.string.persona_editor_could_not_use_this_image)
         }
     }
 
@@ -208,6 +221,7 @@ class PersonaEditorViewModel(private val app: VervanApp, private val personaId: 
         // The scratch file (if any) is now the persona's real, persisted avatar — stop treating
         // it as an unsaved leftover this ViewModel owns and would otherwise delete on dispose.
         pendingScratchAvatarFile = null
+        savedSnapshot = snapshot()
         return true
     }
 

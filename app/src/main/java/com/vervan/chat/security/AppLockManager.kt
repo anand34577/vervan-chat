@@ -30,7 +30,9 @@ class AppLockManager(context: Context) {
     // from Application.onCreate(), an uncaught throw here crashes every single app launch.
     // Android's own documented recovery is to delete the corrupted prefs file so a fresh master
     // key gets created; that costs the user their PIN (they re-set it), not their whole app.
-    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_lock")
+    // Lazy: opening Keystore-backed prefs costs a Keystore round-trip, and this object is
+    // built during Application.onCreate on the main thread, before the first frame.
+    private val prefs: SharedPreferences by lazy { createEncryptedPrefs(context, "vervan_lock") }
 
     // Starts locked — if app lock is enabled, cold start should show the gate; if it's
     // disabled, this flag is simply never consulted (see LockScreen's gating), so defaulting
@@ -48,6 +50,7 @@ class AppLockManager(context: Context) {
             .putString(KEY_HASH, Base64.encodeToString(hash(pin, salt), Base64.NO_WRAP))
             .remove(KEY_FAILED_ATTEMPTS)
             .remove(KEY_LOCKED_UNTIL)
+            .remove(KEY_LOCKOUT_COUNT)
             .apply()
     }
 
@@ -57,6 +60,7 @@ class AppLockManager(context: Context) {
             .remove(KEY_HASH)
             .remove(KEY_FAILED_ATTEMPTS)
             .remove(KEY_LOCKED_UNTIL)
+            .remove(KEY_LOCKOUT_COUNT)
             .apply()
     }
 
@@ -68,13 +72,17 @@ class AppLockManager(context: Context) {
         val expected = Base64.decode(hashB64, Base64.NO_WRAP)
         val correct = MessageDigest.isEqual(hash(pin, salt), expected)
         if (correct) {
-            prefs.edit().remove(KEY_FAILED_ATTEMPTS).remove(KEY_LOCKED_UNTIL).apply()
+            prefs.edit().remove(KEY_FAILED_ATTEMPTS).remove(KEY_LOCKED_UNTIL).remove(KEY_LOCKOUT_COUNT).apply()
         } else {
             val failedAttempts = prefs.getInt(KEY_FAILED_ATTEMPTS, 0) + 1
             if (failedAttempts >= MAX_PIN_ATTEMPTS) {
+                // Each lockout in a row lasts longer (30 s, 1 min, 5 min, 15 min, then 1 h), so a
+                // short PIN can't be brute-forced in an afternoon. Reset only by a correct PIN.
+                val lockouts = prefs.getInt(KEY_LOCKOUT_COUNT, 0)
                 prefs.edit()
                     .remove(KEY_FAILED_ATTEMPTS)
-                    .putLong(KEY_LOCKED_UNTIL, SystemClock.elapsedRealtime() + PIN_LOCKOUT_MS)
+                    .putInt(KEY_LOCKOUT_COUNT, lockouts + 1)
+                    .putLong(KEY_LOCKED_UNTIL, SystemClock.elapsedRealtime() + lockoutDurationMs(lockouts))
                     .apply()
             } else {
                 prefs.edit().putInt(KEY_FAILED_ATTEMPTS, failedAttempts).apply()
@@ -90,11 +98,12 @@ class AppLockManager(context: Context) {
      * [KEY_LOCKED_UNTIL] stays on disk as an absolute elapsedRealtime value from before the
      * reboot — so `stored - new elapsedRealtime` stays large instead of going negative, and an
      * uncapped remaining time could then read as "locked out for hours" (however long the device
-     * had been up when the lockout was set) instead of clearing. Capping at [PIN_LOCKOUT_MS]
+     * had been up when the lockout was set) instead of clearing. Capping at the current step's duration
      * bounds the worst case to the intended lockout length regardless of what elapsedRealtime did
      * across a reboot. */
     fun pinLockoutRemainingMs(): Long =
-        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - SystemClock.elapsedRealtime()).coerceIn(0, PIN_LOCKOUT_MS)
+        (prefs.getLong(KEY_LOCKED_UNTIL, 0) - SystemClock.elapsedRealtime())
+            .coerceIn(0, lockoutDurationMs((prefs.getInt(KEY_LOCKOUT_COUNT, 1) - 1).coerceAtLeast(0)))
 
     /** Locks immediately — cold start with lock enabled, or a manual "Lock now" action. */
     fun lockNow() { _isLocked.value = true }
@@ -128,6 +137,11 @@ class AppLockManager(context: Context) {
         private const val KEY_LOCKED_UNTIL = "pin_locked_until"
         private const val PBKDF2_ITERATIONS = 120_000
         private const val MAX_PIN_ATTEMPTS = 5
-        private const val PIN_LOCKOUT_MS = 30_000L
+        private const val KEY_LOCKOUT_COUNT = "pin_lockout_count"
+        private val LOCKOUT_STEPS_MS = longArrayOf(30_000L, 60_000L, 5 * 60_000L, 15 * 60_000L, 60 * 60_000L)
+
+        /** Duration of the lockout that follows [previousLockouts] consecutive earlier ones. */
+        internal fun lockoutDurationMs(previousLockouts: Int): Long =
+            LOCKOUT_STEPS_MS[previousLockouts.coerceIn(0, LOCKOUT_STEPS_MS.lastIndex)]
     }
 }

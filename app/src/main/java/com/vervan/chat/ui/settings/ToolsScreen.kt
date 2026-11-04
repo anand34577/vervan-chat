@@ -1,5 +1,10 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,8 +60,8 @@ import com.vervan.chat.ui.theme.SurfaceRole
 fun ToolsScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
-    val disabledIds by vm.disabledToolIds.collectAsState()
-    val alwaysDateTime by vm.alwaysIncludeDateTime.collectAsState()
+    val disabledIds by vm.disabledToolIds.collectAsStateWithLifecycle()
+    val alwaysDateTime by vm.alwaysIncludeDateTime.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
 
     val filtered = remember(query) {
@@ -67,15 +72,15 @@ fun ToolsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tools") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.nav_tools)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           Column(Modifier.fillMaxSize()) {
             Text(
-                "Choose which tools chats can use by default. Each chat can override this.",
+                stringResource(R.string.tools_choose_which_tools_chats_can),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.sm, bottom = Space.sm)
@@ -86,26 +91,35 @@ fun ToolsScreen(onBack: () -> Unit) {
                 colors = SurfaceRole.Card.cardColors(),
                 border = SurfaceRole.Card.border()
             ) {
-                Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.toggleable(value = alwaysDateTime, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setAlwaysIncludeDateTime(it) }).heightIn(min = 48.dp).padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Always tell the model the date & time", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.tools_always_tell_the_model_the), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Include the current date and time in every prompt.",
+                            stringResource(R.string.tools_include_the_current_date_and),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = alwaysDateTime, onCheckedChange = { vm.setAlwaysIncludeDateTime(it) })
+                    Switch(checked = alwaysDateTime, onCheckedChange = null)
                 }
             }
 
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search model tools",
+                placeholder = stringResource(R.string.tools_search_model_tools),
                 modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
             )
 
+            if (filtered.isEmpty()) {
+                com.vervan.chat.ui.common.EmptyState(
+                    icon = androidx.compose.material.icons.Icons.Filled.Search,
+                    title = stringResource(R.string.tools_no_matching_tools),
+                    body = stringResource(R.string.tools_no_matching_tools_body),
+                    actionLabel = stringResource(R.string.tools_clear_search),
+                    onAction = { query = "" }
+                )
+            }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(filtered, key = { it.name }) { tool ->
                     ToolRow(
@@ -127,9 +141,9 @@ private fun ToolRow(tool: ToolDefinition, enabled: Boolean, onToggle: (Boolean) 
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border()
     ) {
-        Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.toggleable(value = enabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onToggle).heightIn(min = 48.dp).padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(tool.name, style = MaterialTheme.typography.titleSmall)
+                Text(tool.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text(tool.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StatusChip(
                     label = riskLabel(tool.risk),
@@ -141,13 +155,14 @@ private fun ToolRow(tool: ToolDefinition, enabled: Boolean, onToggle: (Boolean) 
                     modifier = Modifier.padding(top = Space.xs)
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onToggle)
+            Switch(checked = enabled, onCheckedChange = null)
         }
     }
 }
 
+@androidx.compose.runtime.Composable
 internal fun riskLabel(risk: ToolRisk): String = when (risk) {
     ToolRisk.READ_ONLY -> "Read-only"
-    ToolRisk.REVERSIBLE_WRITE -> "Writes data (undoable)"
-    ToolRisk.EXTERNAL_ACTION -> "Opens another app"
+    ToolRisk.REVERSIBLE_WRITE -> stringResource(R.string.tools_writes_data_undoable)
+    ToolRisk.EXTERNAL_ACTION -> stringResource(R.string.tools_opens_another_app)
 }

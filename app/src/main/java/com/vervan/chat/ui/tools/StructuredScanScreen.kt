@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -54,7 +57,7 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.rememberManagedImagePath
 import com.vervan.chat.ui.common.rememberThumbnail
 import com.vervan.chat.ui.common.VervanSectionHeader
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -89,9 +92,9 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var fields by remember { mutableStateOf(mapOf<String, String>()) }
-    var lineItems by remember { mutableStateOf("") }
-    var markdownTable by remember { mutableStateOf("") }
-    var customFieldsInput by remember { mutableStateOf("") }
+    var lineItems by rememberSaveable { mutableStateOf("") }
+    var markdownTable by rememberSaveable { mutableStateOf("") }
+    var customFieldsInput by rememberSaveable { mutableStateOf("") }
     var lastFile by remember { mutableStateOf<File?>(null) }
     val activeFields = remember(kind, customFieldsInput) {
         if (kind == ScanKind.CUSTOM) customFieldsInput.split(",").take(InputLimits.STRUCTURED_FIELD_COUNT)
@@ -169,7 +172,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             runExtraction(file)
         } else file?.delete()
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = newImageFile()
             pendingFile = file
@@ -194,7 +197,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
 
     fun copyText(text: String) {
         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.setSensitiveText(text, scope, kind.title)
+        clipboard.copyText(text, scope, kind.title)
     }
 
     fun exportFile(name: String, content: String, mime: String) {
@@ -209,7 +212,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(kind.title) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -217,30 +220,34 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             FeatureHero(
                 icon = Icons.Filled.PhotoCamera,
                 eyebrow = "Scan and extract",
-                title = kind.title,
-                body = "Capture a clear image, review the extracted fields, then export."
+                // The app bar already names this screen.
+                title = null,
+                dismissKey = kind.title,
+                body = stringResource(R.string.structured_scan_capture_a_clear_image_review)
             )
-            VervanSectionHeader("1 · Choose what to capture")
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_1_choose_what_to_capture))
             if (kind == ScanKind.CUSTOM) {
                 OutlinedTextField(
                     value = customFieldsInput, onValueChange = { customFieldsInput = it.take(InputLimits.STRUCTURED_FIELD_COUNT * (InputLimits.STRUCTURED_FIELD_CHARS + 1)) },
                     modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
-                    label = { Text("Fields to extract") },
-                    placeholder = { Text("e.g. name, ID number, date of birth, expiry date") }
+                    label = { Text(stringResource(R.string.structured_scan_fields_to_extract)) },
+                    placeholder = { Text(stringResource(R.string.structured_scan_e_g_name_id_number)) },
+                    // Camera and From files stay disabled until this has a field; say so.
+                    supportingText = { Text(stringResource(R.string.structured_scan_fields_required)) }
                 )
             }
             val captureEnabled = kind != ScanKind.CUSTOM || activeFields.isNotEmpty()
             ResponsiveActions {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = captureEnabled) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = captureEnabled) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text("From files", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.structured_scan_from_files), modifier = Modifier.padding(start = Space.sm))
                 }
             }
-            VervanSectionHeader("2 · Check the source")
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_2_check_the_source))
             imagePath?.let { path ->
                 val bitmap = rememberThumbnail(path, 700)
                 bitmap?.let { Image(it, "Scanned image", Modifier.fillMaxWidth().height(180.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
@@ -249,18 +256,21 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 Text(
-                    "Take a photo or choose an image to begin.",
+                    stringResource(R.string.structured_scan_take_a_photo_or_choose),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(Space.lg)
                 )
             }
-            VervanSectionHeader("3 · Review extracted data")
+            // A step heading with nothing under it read as a broken section.
+            if (errorText != null || isProcessing || markdownTable.isNotBlank() || fields.isNotEmpty()) {
+                VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_3_review_extracted_data))
+            }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't extract data",
+                    title = stringResource(R.string.structured_scan_couldn_t_extract_data),
                     message = it,
-                    recovery = "Use a sharper, well-lit image, then try again.",
+                    recovery = stringResource(R.string.structured_scan_use_a_sharper_well_lit),
                     actionLabel = lastFile?.let { "Try again" },
                     onAction = lastFile?.let { file -> { runExtraction(file) } },
                     modifier = Modifier.padding(bottom = Space.md)
@@ -269,18 +279,18 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             if (isProcessing) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = "Extracting ${kind.title.lowercase()}",
-                    body = "Reading the image and organizing its contents locally."
+                    body = stringResource(R.string.structured_scan_reading_the_image_and_organizing)
                 )
             } else if (kind == ScanKind.TABLE) {
                 if (markdownTable.isNotBlank()) {
                     OutlinedTextField(
                         value = markdownTable, onValueChange = { markdownTable = it.take(InputLimits.OCR_TEXT_CHARS) },
-                        modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 6, label = { Text("Markdown table") }
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 6, label = { Text(stringResource(R.string.structured_scan_markdown_table)) }
                     )
                     ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                        OutlinedButton(onClick = { copyText(markdownTable) }) { Text("Copy Markdown") }
-                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }) { Text("Copy CSV") }
-                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }) { Text("Copy JSON") }
+                        OutlinedButton(onClick = { copyText(markdownTable) }) { Text(stringResource(R.string.structured_scan_copy_markdown)) }
+                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }) { Text(stringResource(R.string.structured_scan_copy_csv)) }
+                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }) { Text(stringResource(R.string.structured_scan_copy_json)) }
                     }
                 }
             } else if (fields.isNotEmpty()) {
@@ -296,7 +306,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                     if (kind == ScanKind.RECEIPT) {
                         OutlinedTextField(
                             value = lineItems, onValueChange = { lineItems = it.take(20_000) },
-                            label = { Text("Line items") }, minLines = 3,
+                            label = { Text(stringResource(R.string.structured_scan_line_items)) }, minLines = 3,
                             modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )
                     }
@@ -310,7 +320,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                         exportFile("receipt-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                     },
                                     modifier = Modifier.weight(1f)
-                                ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Export CSV", modifier = Modifier.padding(start = Space.sm)) }
+                                ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.structured_scan_export_csv), modifier = Modifier.padding(start = Space.sm)) }
                                 Button(
                                     onClick = {
                                         scope.launch {
@@ -326,7 +336,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                         }
                                     },
                                     modifier = Modifier.weight(1f)
-                                ) { Text("Log as expense") }
+                                ) { Text(stringResource(R.string.structured_scan_log_as_expense)) }
                             }
                             statusMessage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.xs)) }
                         }
@@ -337,7 +347,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                     copyText(json.toString(2))
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Copy JSON") }
+                            ) { Text(stringResource(R.string.structured_scan_copy_json)) }
                             Button(
                                 onClick = {
                                     val header = activeFields.joinToString(",") { it.first }
@@ -345,7 +355,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                     exportFile("form-${System.currentTimeMillis()}.csv", "$header\n$row\n", "text/csv")
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Export CSV", modifier = Modifier.padding(start = Space.sm)) }
+                            ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.structured_scan_export_csv), modifier = Modifier.padding(start = Space.sm)) }
                         }
                         else -> {}
                     }

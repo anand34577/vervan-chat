@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -158,14 +159,14 @@ private fun SessionOptionToggle(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        com.vervan.chat.ui.common.LabeledSwitch(title, checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
 @Composable
 private fun SessionNavigationRow(icon: ImageVector, title: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = Space.md, vertical = Space.md),
+        Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick).heightIn(min = 48.dp).padding(horizontal = Space.md, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md)
     ) {

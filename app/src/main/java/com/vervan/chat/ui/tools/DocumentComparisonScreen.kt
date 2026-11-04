@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -67,13 +70,13 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var textA by remember { mutableStateOf("") }
-    var textB by remember { mutableStateOf("") }
+    var textA by rememberSaveable { mutableStateOf("") }
+    var textB by rememberSaveable { mutableStateOf("") }
     var isComparing by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(listOf<Pair<Int, String>>()) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var comparedOnce by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf("") }
+    var progress by rememberSaveable { mutableStateOf("") }
 
     val pickA = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -151,8 +154,8 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document comparison") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.document_comparison_document_comparison)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -163,60 +166,60 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
             ) {
             ToolIntro(
                 icon = Icons.AutoMirrored.Filled.CompareArrows,
-                title = "See exactly what changed",
-                body = "Compare two versions for changes, conflicts, and risky clauses."
+                title = stringResource(R.string.document_comparison_see_exactly_what_changed),
+                body = stringResource(R.string.document_comparison_compare_two_versions_for_changes)
             )
             ToolSection(
-                title = "Choose both versions",
-                description = "Paste text or load a text file. Content stays local.",
+                title = stringResource(R.string.document_comparison_choose_both_versions),
+                description = stringResource(R.string.document_comparison_paste_text_or_load_a),
                 icon = Icons.Filled.UploadFile
             ) {
-            Text("Original · Version A", style = MaterialTheme.typography.labelMedium)
-            OutlinedTextField(value = textA, onValueChange = { textA = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the original version") })
-            OutlinedButton(onClick = { pickA.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text("Load Version A") }
+            Text(stringResource(R.string.document_comparison_original_version_a), style = MaterialTheme.typography.labelMedium)
+            OutlinedTextField(value = textA, onValueChange = { textA = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text(stringResource(R.string.document_comparison_paste_the_original_version)) })
+            OutlinedButton(onClick = { pickA.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.document_comparison_load_version_a)) }
 
-            Text("Revised · Version B", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
-            OutlinedTextField(value = textB, onValueChange = { textB = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text("Paste the revised version") })
-            OutlinedButton(onClick = { pickB.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text("Load Version B") }
+            Text(stringResource(R.string.document_comparison_revised_version_b), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
+            OutlinedTextField(value = textB, onValueChange = { textB = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text(stringResource(R.string.document_comparison_paste_the_revised_version)) })
+            OutlinedButton(onClick = { pickB.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.document_comparison_load_version_b)) }
 
             Button(
                 onClick = ::compare,
                 enabled = textA.isNotBlank() && textB.isNotBlank() && !isComparing,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-            ) { Text("Compare versions") }
+            ) { Text(stringResource(R.string.document_comparison_compare_versions)) }
             }
 
             if (isComparing) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = progress.ifBlank { "Preparing the comparison" },
-                    body = "Comparing each section locally. Results appear as they finish."
+                    body = stringResource(R.string.document_comparison_comparing_each_section_locally_results)
                 )
             }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't compare the documents",
+                    title = stringResource(R.string.document_comparison_couldn_t_compare_the_documents),
                     message = it,
-                    recovery = "Check both versions or shorten large sections, then try again.",
-                    actionLabel = "Try again",
+                    recovery = stringResource(R.string.document_comparison_check_both_versions_or_shorten),
+                    actionLabel = stringResource(R.string.action_try_again),
                     onAction = { compare() },
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             if (comparedOnce && results.isEmpty() && errorText == null) {
                 Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Text("No meaningful differences found.", Modifier.padding(Space.md), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.document_comparison_no_meaningful_differences_found), Modifier.padding(Space.md), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (results.isNotEmpty()) {
                 ToolResultHeader(
-                    title = "Comparison ready",
+                    title = stringResource(R.string.document_comparison_comparison_ready),
                     supportingText = "${results.size} changed ${if (results.size == 1) "section" else "sections"} found"
                 )
             }
             results.forEach { (section, explanation) ->
                 Card(Modifier.fillMaxWidth().padding(top = Space.md), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                     Column(Modifier.padding(Space.md)) {
-                        Text("Section $section", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.document_comparison_section_arg1, section), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         Text(explanation, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
                     }
                 }

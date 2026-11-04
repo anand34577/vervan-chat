@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -76,7 +77,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -276,7 +276,7 @@ private fun VoicePanelHeader(
             )
         }
         Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-            Text(stringResource(R.string.voice_chat), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text(stringResource(R.string.voice_chat), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val stateLabel = voicePanelStateLabel(state, microphoneMuted, playbackPaused)
                 val voiceStatusDescription = stringResource(R.string.voice_status, stateLabel)
@@ -397,14 +397,16 @@ private fun ModeSegment(
     )
     Surface(
         onClick = onClick,
-        modifier = modifier.height(38.dp).semantics { contentDescription = modeDescription },
+        modifier = modifier.heightIn(min = 38.dp).semantics { contentDescription = modeDescription },
         shape = VervanExtraShapes.pill,
         color = segmentColor,
         contentColor = segmentContentColor,
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
     ) {
+        // fillMaxWidth, not fillMaxSize: the panel has no height bound, so fillMaxSize made each
+        // segment as tall as the screen and pushed the rest of the voice console off it.
         Row(
-            Modifier.fillMaxSize().padding(horizontal = Space.sm),
+            Modifier.fillMaxWidth().heightIn(min = 38.dp).padding(horizontal = Space.sm),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -490,26 +492,15 @@ private fun VoiceStateBody(
             Modifier.fillMaxWidth().padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                VoiceActivityIndicator(state, Modifier.size(18.dp))
+            // The state itself is already named in the header chip (and spoken as a live region);
+            // repeating it here in capitals made "Preparing your local model" appear three times.
+            if (state == VoiceControllerState.LISTENING) {
                 Text(
-                    voicePanelStateLabel(state, microphoneMuted, playbackPaused).uppercase(),
+                    formatVoiceElapsed(elapsedMs),
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-                    color = voiceStateColor(state),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = Space.sm).weight(1f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.End)
                 )
-                if (state == VoiceControllerState.LISTENING) {
-                    Text(
-                        formatVoiceElapsed(elapsedMs),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = VervanMono),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
             when (state) {
                 VoiceControllerState.IDLE -> IdleState(microphoneMuted, pushToTalkEnabled, onStart)
@@ -811,7 +802,7 @@ private fun HandsFreeListeningLayout(
             )
         }
         Row(
-            Modifier.fillMaxWidth().height(52.dp),
+            Modifier.fillMaxWidth().heightIn(min = 52.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
@@ -946,7 +937,7 @@ private fun PushToTalkListeningLayout(
             color = if (liveTranscript.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().height(36.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp)
         )
     }
 }
@@ -1118,16 +1109,7 @@ private fun NormalVoiceVisualizer(
                     Modifier
                         .weight(1f)
                         .height((5 + animatedLevel * 38).dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    accent.copy(alpha = if (muted) 0.24f else 0.52f),
-                                    accent.copy(alpha = if (muted) 0.42f else 0.96f),
-                                    accent.copy(alpha = if (muted) 0.20f else 0.58f)
-                                )
-                            ),
-                            CircleShape
-                        )
+                        .background(accent.copy(alpha = if (muted) 0.36f else 0.88f), CircleShape)
                 )
             }
         }
@@ -1195,10 +1177,9 @@ private fun VoiceControlDock(
     onMore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Was VervanExtraShapes.pill (100dp, fully stadium) — nested inside the panel's own
-    // 20dp-radius `hero` Card, a full pill read as visually mismatched against the card
-    // it sits in rather than as one coherent surface.
-    Surface(modifier.fillMaxWidth(), shape = VervanExtraShapes.hero, color = MaterialTheme.colorScheme.surfaceContainer) {
+    // Nested inside the panel's 20dp `hero` Card, so it takes the next step down (16dp): an
+    // inner surface with the same or a larger radius than its container reads as a mismatch.
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs),
             verticalAlignment = Alignment.Top

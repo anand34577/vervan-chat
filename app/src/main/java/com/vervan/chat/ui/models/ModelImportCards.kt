@@ -141,19 +141,26 @@ internal fun RecommendedSetupCard(model: ModelUiState, reason: String, onSetup: 
                 Icon(Icons.Filled.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
             Text(stringResource(R.string.model_recommended_setup), style = MaterialTheme.typography.titleMedium)
-                    Text(model.displayName, style = MaterialTheme.typography.titleSmall)
+                    Text(model.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
             }
             Text(reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(top = Space.sm))
             Text(
-                "Downloads, verifies, imports, activates, loads, and tests the model. You can pause the download at any time.",
-                style = MaterialTheme.typography.labelSmall,
+                stringResource(R.string.model_import_downloads_verifies_imports_activates_loads),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(top = Space.xs),
             )
+            // The size is what a user on mobile data needs before committing to a download.
+            val sizeLabel = model.totalBytes?.takeIf { it > 0 }?.let {
+                android.text.format.Formatter.formatShortFileSize(androidx.compose.ui.platform.LocalContext.current, it)
+            }
             Button(onClick = onSetup, modifier = Modifier.padding(top = Space.md)) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(stringResource(R.string.model_set_up_for_me), modifier = Modifier.padding(start = Space.sm))
+            Text(
+                if (sizeLabel != null) stringResource(R.string.model_set_up_for_me_size, sizeLabel) else stringResource(R.string.model_set_up_for_me),
+                modifier = Modifier.padding(start = Space.sm)
+            )
             }
         }
     }
@@ -180,7 +187,7 @@ internal fun ModelManagerSwitcher(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Row(Modifier.padding(4.dp)) {
@@ -227,7 +234,7 @@ private fun ModelManagerSwitchItem(
             if (supportingLabel != null) {
                 Surface(
                     modifier = Modifier.padding(start = Space.sm),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
@@ -248,7 +255,7 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Icon(
@@ -259,12 +266,12 @@ internal fun EmptyModelLibrary(onDiscover: () -> Unit, onImport: () -> Unit) {
             )
         }
         Text(
-            "Your models will live here",
+            stringResource(R.string.model_import_your_models_will_live_here),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = Space.lg)
         )
         Text(
-            "Download a verified model or bring one you already have.",
+            stringResource(R.string.model_import_download_a_verified_model_or),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.lg)
@@ -295,7 +302,7 @@ internal fun ImportModelDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text(
-                    "Choose the format of your model file.",
+                    stringResource(R.string.model_import_choose_the_format_of_your),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = Space.xs)
@@ -379,11 +386,11 @@ internal fun RemoteApiModelDialog(
         selections: List<ModelManagerViewModel.RemoteModelSelection>
     ) -> Unit
 ) {
-    var baseUrl by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
+    var baseUrl by rememberSaveable { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") } // secret: never written to saved state
     // Search box AND free-text entry: an endpoint that serves no catalog (or serves one missing
     // the model you want) is still usable by typing the id and pressing Add.
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     var picked by remember { mutableStateOf(emptyList<ModelManagerViewModel.RemoteModelSelection>()) }
     // Same override-or-default pattern ModelEditDialog uses for a local model — "unset" (the
     // switch off) means "use the app-wide Settings value", not "use whatever the slider happens
@@ -527,7 +534,7 @@ internal fun RemoteApiModelDialog(
                                     catalog.isNotEmpty() -> IconButton(onClick = { menuOpen = !menuOpen }) {
                                         Icon(
                                             if (menuOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                            contentDescription = if (menuOpen) "Hide model list" else "Show model list"
+                                            contentDescription = if (menuOpen) stringResource(R.string.model_import_hide_model_list) else stringResource(R.string.model_import_show_model_list)
                                         )
                                     }
                                 }
@@ -535,9 +542,9 @@ internal fun RemoteApiModelDialog(
                             supportingText = {
                                 Text(
                                     when {
-                                        fetching -> "Checking the endpoint…"
+                                        fetching -> stringResource(R.string.model_import_checking_the_endpoint)
                                         fetchNote != null -> fetchNote!!
-                                        else -> "Pick as many as you like."
+                                        else -> stringResource(R.string.model_import_pick_as_many_as_you)
                                     }
                                 )
                             },
@@ -576,7 +583,7 @@ internal fun RemoteApiModelDialog(
                                     enabled = false,
                                     text = {
                                         Text(
-                                            "${suggestions.size - MAX_MODEL_SUGGESTIONS} more — keep typing to narrow",
+                                            stringResource(R.string.model_import_arg1_more_keep_typing_to, suggestions.size - MAX_MODEL_SUGGESTIONS),
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     },
@@ -589,7 +596,7 @@ internal fun RemoteApiModelDialog(
                     if (picked.isNotEmpty()) {
                         HorizontalDivider()
                         Text(
-                            "Selected (${picked.size})",
+                            stringResource(R.string.model_import_selected_arg1, picked.size),
                             style = MaterialTheme.typography.labelLarge
                         )
                         Text(
@@ -677,7 +684,7 @@ internal fun RemoteApiModelDialog(
                         "Top-k", topKOn, { topKOn = it }, topK, { topK = it }, defaults.topK.toFloat(), "%.0f", 1f..64f
                     )
                     Text(
-                        "Top-k isn't part of the OpenAI API — only sent if the endpoint happens to accept it.",
+                        stringResource(R.string.model_import_top_k_isn_t_part),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -714,9 +721,9 @@ internal fun RemoteApiModelDialog(
             ) {
                 Text(
                     when {
-                        saving -> "Saving…"
-                        picked.size <= 1 -> "Save"
-                        else -> "Add ${picked.size} models"
+                        saving -> stringResource(R.string.document_scanner_saving)
+                        picked.size <= 1 -> stringResource(R.string.action_save)
+                        else -> stringResource(R.string.model_import_add_arg1_models, picked.size)
                     }
                 )
             }
@@ -746,7 +753,7 @@ internal fun ImportCard(
         Column(Modifier.padding(Space.lg)) {
             Text(stringResource(R.string.model_add_local), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Choose the runtime that matches your model file.",
+                stringResource(R.string.model_import_choose_the_runtime_that_matches),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.xs, bottom = Space.md)
@@ -819,6 +826,7 @@ internal fun EmbeddingImportDialog(
     onDismiss: () -> Unit,
     onImport: (Uri, Uri) -> Unit
 ) {
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val context = LocalContext.current
     var validationError by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -827,7 +835,7 @@ internal fun EmbeddingImportDialog(
         text = {
             Column {
                 Text(
-                    "Choose the embedding model and its SentencePiece tokenizer.",
+                    stringResource(R.string.model_import_choose_the_embedding_model_and),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 14.dp)
@@ -852,8 +860,8 @@ internal fun EmbeddingImportDialog(
         confirmButton = {
             TextButton(onClick = {
                 validationError = when {
-                    modelUri == null -> "Select the embedding model file first."
-                    tokenizerUri == null -> "Choose a SentencePiece tokenizer before importing."
+                    modelUri == null -> localResources.getString(R.string.model_import_select_the_embedding_model_file)
+                    tokenizerUri == null -> localResources.getString(R.string.model_import_choose_a_sentencepiece_tokenizer_before)
                     else -> null
                 }
                 if (modelUri != null && tokenizerUri != null) onImport(modelUri, tokenizerUri)
@@ -882,7 +890,7 @@ internal fun LlamaCppImportDialog(
         text = {
             Column {
                 Text(
-                    "Add an mmproj file only for vision models.",
+                    stringResource(R.string.model_import_add_an_mmproj_file_only),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 14.dp)
@@ -935,7 +943,7 @@ internal fun WhisperCppImportDialog(
         text = {
             Column {
                 Text(
-                    "Choose a whisper.cpp model file (.bin ggml, or .gguf).",
+                    stringResource(R.string.model_import_choose_a_whisper_cpp_model),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 14.dp)
@@ -970,7 +978,7 @@ internal fun EmbeddingImportStep(stepNumber: Int, label: String, fileName: Strin
         Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Text(stringResource(R.string.model_step, stepNumber, label), style = MaterialTheme.typography.labelMedium)
             Text(
-                fileName ?: "Not selected",
+                fileName ?: stringResource(R.string.model_import_not_selected),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (fileName != null) MaterialTheme.colorScheme.vervanSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -1101,7 +1109,7 @@ internal fun ModelCard(
                         if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {
                             Text(
                                 "Downloaded" + (model.catalogVersion?.let { " · v$it" } ?: "") +
-                                    " · ${java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(model.importedAt))}",
+                                    " · ${java.text.SimpleDateFormat("MMM d, yyyy", androidx.compose.ui.platform.LocalConfiguration.current.locales[0]).format(java.util.Date(model.importedAt))}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1114,7 +1122,7 @@ internal fun ModelCard(
                         // A remote model never "loads" into memory — it's just the one requests
                         // currently go to. "Using"/"Use" instead of "Loaded"/"Load" says that
                         // truthfully instead of implying a local weights file just got read in.
-                        if (isLoaded) SemanticChip(if (model.traits.runsOnDevice) "Loaded" else "Using", ChipTone.Neutral)
+                        if (isLoaded) SemanticChip(if (model.traits.runsOnDevice) stringResource(R.string.model_import_loaded) else stringResource(R.string.model_import_using), ChipTone.Neutral)
                         if (model.isActive) SemanticChip("Default", ChipTone.Neutral)
                         Box {
                             IconButton(onClick = { menuOpen = true }, enabled = !busy) {
@@ -1196,8 +1204,8 @@ internal fun ModelCard(
                     ) {
                         Icon(if (isLoaded) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(
-                            if (model.traits.runsOnDevice) (if (isLoaded) "Unload" else "Load")
-                            else (if (isLoaded) "Stop using" else "Use"),
+                            if (model.traits.runsOnDevice) (if (isLoaded) stringResource(R.string.model_import_unload) else stringResource(R.string.action_load))
+                            else (if (isLoaded) stringResource(R.string.model_import_stop_using) else stringResource(R.string.action_use)),
                             modifier = Modifier.padding(start = 6.dp)
                         )
                     }
@@ -1209,7 +1217,7 @@ internal fun ModelCard(
     if (confirmDelete) {
         ConfirmDialog(
         title = stringResource(R.string.model_delete_title),
-            body = "Remove \"${model.displayName}\" permanently?",
+            body = stringResource(R.string.model_import_remove_arg1_permanently, model.displayName),
         confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },

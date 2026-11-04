@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.collections
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -64,13 +67,13 @@ fun SmartCollectionsScreen(
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SmartCollectionsViewModel = viewModel(factory = viewModelFactory { initializer { SmartCollectionsViewModel(app) } })
     var selected by remember { mutableStateOf(SmartCollection.entries.first()) }
-    val contents by remember(selected) { vm.contents(selected) }.collectAsState()
+    val contents by remember(selected) { vm.contents(selected) }.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Smart collections") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.smart_collections_smart_collections)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -85,7 +88,7 @@ fun SmartCollectionsScreen(
                 }
             }
             Text(
-                "Automatic · ${selected.description}",
+                stringResource(R.string.smart_collections_automatic_arg1, selected.description),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = Space.xs)
@@ -93,8 +96,8 @@ fun SmartCollectionsScreen(
             if (contents.total == 0) {
                 EmptyState(
                     icon = Icons.Filled.Collections,
-                    title = "Nothing here yet",
-                    body = "Matching chats, notes, and documents appear here automatically."
+                    title = stringResource(R.string.smart_collections_nothing_here_yet),
+                    body = stringResource(R.string.smart_collections_matching_chats_notes_and_documents)
                 )
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)) {

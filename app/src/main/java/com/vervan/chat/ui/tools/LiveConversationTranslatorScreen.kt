@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -8,6 +10,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,7 +82,7 @@ private fun localeFor(languageName: String): Locale? =
  * device's offline recognizer, the LLM translates, and the result is read aloud via TTS in the
  * other side's language (best-effort voice match by language name; falls back silently if the
  * device has no matching TTS voice installed). Badges make every hop's origin explicit. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -151,18 +158,18 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
         }
         if (forA) recognizeForA.launch(intent) else recognizeForB.launch(intent)
     }
-    val requestMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestMicPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) listen(true)
     }
-    val requestMicPermissionB = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestMicPermissionB = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) listen(false)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Live conversation translator") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.live_conversation_translator_live_conversation_translator)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -173,22 +180,36 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize()) {
             ToolIntro(
                 icon = Icons.Filled.Translate,
-                title = "Two people, one private translator",
-                body = "Choose two languages and take turns speaking. Translation stays local.",
+                title = stringResource(R.string.live_conversation_translator_two_people_one_private_translat),
+                body = stringResource(R.string.live_conversation_translator_choose_two_languages_and_take),
                 modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm)
             )
-            Row(Modifier.fillMaxWidth().padding(Space.md).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Badge("STT: Android Offline")
+            // Wraps instead of scrolling: the third badge was cut off mid-word on a phone.
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
                 Badge("Translation: $modelName")
-                Badge("TTS: Android System")
+                Badge("Speech: on this phone")
             }
             if (isBusy) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Text("Translating…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.live_conversation_translator_translating), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = Space.sm))
                 }
             }
-            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // One or the other gets the space. Both used to take weight(1f), so an empty screen
+            // was split in half and the empty state floated in the top half.
+            if (turns.isEmpty()) {
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center) {
+                    com.vervan.chat.ui.common.EmptyState(
+                        icon = androidx.compose.material.icons.Icons.Filled.Translate,
+                        title = stringResource(R.string.live_translator_empty_title),
+                        body = stringResource(R.string.live_translator_empty_body)
+                    )
+                }
+            } else LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 items(turns) { turn ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (turn.fromA) Arrangement.Start else Arrangement.End) {
                         Card(
@@ -204,33 +225,78 @@ fun LiveConversationTranslatorScreen(onBack: () -> Unit) {
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box { OutlinedButton(onClick = { menuAOpen = true }) { Text(langA) }
-                        DropdownMenu(expanded = menuAOpen, onDismissRequest = { menuAOpen = false }) {
-                            LANGUAGES.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { langA = l; menuAOpen = false }) }
-                        }
-                    }
-                    IconButton(
-                        modifier = Modifier.padding(top = Space.sm),
-                        enabled = !isBusy,
-                        onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }
-                    ) { Icon(Icons.Filled.Mic, "Person A speaks") }
-                }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box { OutlinedButton(onClick = { menuBOpen = true }) { Text(langB) }
-                        DropdownMenu(expanded = menuBOpen, onDismissRequest = { menuBOpen = false }) {
-                            LANGUAGES.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { langB = l; menuBOpen = false }) }
-                        }
-                    }
-                    IconButton(
-                        modifier = Modifier.padding(top = Space.sm),
-                        enabled = !isBusy,
-                        onClick = { requestMicPermissionB.launch(android.Manifest.permission.RECORD_AUDIO) }
-                    ) { Icon(Icons.Filled.Mic, "Person B speaks") }
-                }
+            // One clear panel per speaker: their language, then a full-size "Speak" button. The
+            // mic used to be a bare 24dp icon under each language with no label or container.
+            Row(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.md)
+            ) {
+                SpeakerPanel(
+                    label = stringResource(R.string.live_translator_person_a),
+                    language = langA,
+                    menuOpen = menuAOpen,
+                    onMenuOpen = { menuAOpen = it },
+                    onLanguage = { langA = it },
+                    enabled = !isBusy,
+                    speakDescription = stringResource(R.string.live_conversation_translator_person_a_speaks),
+                    onSpeak = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                    primary = false,
+                    modifier = Modifier.weight(1f)
+                )
+                SpeakerPanel(
+                    label = stringResource(R.string.live_translator_person_b),
+                    language = langB,
+                    menuOpen = menuBOpen,
+                    onMenuOpen = { menuBOpen = it },
+                    onLanguage = { langB = it },
+                    enabled = !isBusy,
+                    speakDescription = stringResource(R.string.live_conversation_translator_person_b_speaks),
+                    onSpeak = { requestMicPermissionB.launch(android.Manifest.permission.RECORD_AUDIO) },
+                    primary = true,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
+        }
+    }
+}
+
+@Composable
+private fun SpeakerPanel(
+    label: String,
+    language: String,
+    menuOpen: Boolean,
+    onMenuOpen: (Boolean) -> Unit,
+    onLanguage: (String) -> Unit,
+    enabled: Boolean,
+    speakDescription: String,
+    onSpeak: () -> Unit,
+    primary: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(Modifier.padding(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.xs))
+            Box {
+                OutlinedButton(onClick = { onMenuOpen(true) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(language, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenuOpen(false) }) {
+                    LANGUAGES.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { onLanguage(l); onMenuOpen(false) }) }
+                }
+            }
+            val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+                Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.live_translator_speak), modifier = Modifier.padding(start = Space.xs))
+            }
+            val speakModifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics { contentDescription = speakDescription }
+            if (primary) androidx.compose.material3.Button(onClick = onSpeak, enabled = enabled, modifier = speakModifier, content = content)
+            else androidx.compose.material3.FilledTonalButton(onClick = onSpeak, enabled = enabled, modifier = speakModifier, content = content)
         }
     }
 }

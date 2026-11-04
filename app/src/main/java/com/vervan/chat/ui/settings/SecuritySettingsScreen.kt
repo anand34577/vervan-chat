@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -72,10 +75,10 @@ fun SecuritySettingsScreen(
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
-    val enabled by vm.appLockEnabled.collectAsState()
-    val method by vm.appLockMethod.collectAsState()
-    val timeoutSeconds by vm.autoLockTimeoutSeconds.collectAsState()
-    val retentionDays by vm.autoDeleteAfterDays.collectAsState()
+    val enabled by vm.appLockEnabled.collectAsStateWithLifecycle()
+    val method by vm.appLockMethod.collectAsStateWithLifecycle()
+    val timeoutSeconds by vm.autoLockTimeoutSeconds.collectAsStateWithLifecycle()
+    val retentionDays by vm.autoDeleteAfterDays.collectAsStateWithLifecycle()
     var showPinSetup by remember { mutableStateOf(false) }
     var confirmWipeStep1 by remember { mutableStateOf(false) }
     var confirmWipeStep2 by remember { mutableStateOf(false) }
@@ -95,7 +98,7 @@ fun SecuritySettingsScreen(
                 Column(Modifier.padding(Space.lg)) {
                     Text(stringResource(R.string.security_dashboard), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "See what's stored, what's indexed, and what has ever left this device.",
+                        stringResource(R.string.security_settings_see_what_s_stored_what),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = Space.sm)
@@ -105,22 +108,28 @@ fun SecuritySettingsScreen(
             }
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // Whole row is the switch, so TalkBack announces "App lock, switch" rather than
+                    // an unnamed switch, and the label is a tap target too.
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                            value = enabled,
+                            role = androidx.compose.ui.semantics.Role.Switch,
+                            onValueChange = { turnOn ->
+                                if (turnOn && method != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
+                                else vm.setAppLockEnabled(turnOn)
+                            }
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.security_app_lock), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Require biometrics or a PIN when opening Vervan.",
+                                stringResource(R.string.security_settings_require_biometrics_or_a_pin),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
-                            checked = enabled,
-                            onCheckedChange = { turnOn ->
-                                if (turnOn && method != "BIOMETRIC" && !vm.hasPin) showPinSetup = true
-                                else vm.setAppLockEnabled(turnOn)
-                            }
-                        )
+                        Switch(checked = enabled, onCheckedChange = null)
                     }
                     if (enabled || showPinSetup) {
                         Spacer(Modifier.height(Space.md))
@@ -140,7 +149,7 @@ fun SecuritySettingsScreen(
                         }
                         if (method != "BIOMETRIC") {
                             OutlinedButton(onClick = { showPinSetup = true }, modifier = Modifier.padding(top = Space.sm)) {
-                                Text(if (vm.hasPin) "Change PIN" else "Set PIN")
+                                Text(if (vm.hasPin) stringResource(R.string.security_settings_change_pin) else stringResource(R.string.security_settings_set_pin))
                             }
                         }
                         Spacer(Modifier.height(Space.md))
@@ -157,26 +166,26 @@ fun SecuritySettingsScreen(
                         )
                         Text(
                             if (timeoutSeconds == 0) "Locks immediately every time the app leaves the foreground."
-                            else "Locks if the app was backgrounded for at least this long.",
+                            else stringResource(R.string.security_settings_locks_if_the_app_was),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-            val screenshotBlocking by vm.screenshotBlockingEnabled.collectAsState()
+            val screenshotBlocking by vm.screenshotBlockingEnabled.collectAsStateWithLifecycle()
             Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
                 Column(Modifier.padding(Space.lg)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().toggleable(value = screenshotBlocking, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setScreenshotBlockingEnabled(it) }).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.security_block_screenshots), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                            "Hide app content in screenshots, recordings, and recent apps.",
+                            stringResource(R.string.security_settings_hide_app_content_in_screenshots),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = screenshotBlocking, onCheckedChange = { vm.setScreenshotBlockingEnabled(it) })
+                        Switch(checked = screenshotBlocking, onCheckedChange = null)
                     }
                 }
             }
@@ -189,7 +198,7 @@ fun SecuritySettingsScreen(
                 Column(Modifier.padding(Space.lg)) {
                     Text(stringResource(R.string.security_local_api), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Let trusted apps use the active model through a local API.",
+                        stringResource(R.string.security_settings_let_trusted_apps_use_the),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = Space.sm)
@@ -202,7 +211,7 @@ fun SecuritySettingsScreen(
                 Column(Modifier.padding(Space.lg)) {
                     Text(stringResource(R.string.security_data_privacy), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Vervan sends no analytics or crash reports. Diagnostics stay on this device.",
+                        stringResource(R.string.security_settings_vervan_sends_no_analytics_or),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.xs, bottom = Space.sm)
@@ -228,7 +237,7 @@ fun SecuritySettingsScreen(
                         modifier = Modifier.padding(top = Space.md)
                     )
                     Text(
-                        "Moves old chats to the bin. Pinned and temporary chats are kept.",
+                        stringResource(R.string.security_settings_moves_old_chats_to_the),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -246,7 +255,7 @@ fun SecuritySettingsScreen(
 
                     Text(stringResource(R.string.security_panic_wipe), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
                     Text(
-                        "Erases all local content and models, then closes Vervan. Export a backup first.",
+                        stringResource(R.string.security_settings_erases_all_local_content_and),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -255,7 +264,7 @@ fun SecuritySettingsScreen(
                         enabled = !wiping,
                         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.padding(top = Space.sm)
-                    ) { Text(if (wiping) "Wiping…" else "Wipe everything") }
+                    ) { Text(if (wiping) stringResource(R.string.security_settings_wiping) else stringResource(R.string.security_wipe_everything)) }
                 }
             }
         }
@@ -264,7 +273,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep1) {
         ConfirmDialog(
             title = stringResource(R.string.security_wipe_title),
-            body = "Permanently erase all local content and models?",
+            body = stringResource(R.string.security_settings_permanently_erase_all_local_content),
             confirmLabel = stringResource(R.string.action_continue),
             destructive = true,
             onConfirm = { confirmWipeStep1 = false; confirmWipeStep2 = true },
@@ -274,7 +283,7 @@ fun SecuritySettingsScreen(
     if (confirmWipeStep2) {
         ConfirmDialog(
             title = stringResource(R.string.security_are_you_sure),
-            body = "This cannot be undone. The app will close when the wipe starts.",
+            body = stringResource(R.string.security_settings_this_cannot_be_undone_the),
             confirmLabel = stringResource(R.string.security_wipe_everything),
             destructive = true,
             onConfirm = {
@@ -298,6 +307,9 @@ fun SecuritySettingsScreen(
     }
 }
 
+/** Six digits: with escalating lockouts this takes years to brute-force, where four takes days. */
+private const val MIN_PIN_LENGTH = 6
+
 @Composable
 private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var pin by remember { mutableStateOf("") }
@@ -312,6 +324,7 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                     value = pin,
                     onValueChange = { if (it.length <= 12) pin = it.filter(Char::isDigit) },
             label = { Text(stringResource(R.string.security_pin_label)) },
+                    supportingText = { Text(stringResource(R.string.security_pin_min_length, MIN_PIN_LENGTH)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
@@ -331,7 +344,7 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
             }
         },
         confirmButton = {
-        TextButton(onClick = { onConfirm(pin) }, enabled = pin.length >= 4 && pin == confirm) { Text(stringResource(R.string.action_save)) }
+        TextButton(onClick = { onConfirm(pin) }, enabled = pin.length >= MIN_PIN_LENGTH && pin == confirm) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
@@ -348,10 +361,10 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 @Composable
 private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
     val context = LocalContext.current
-    val calendar by vm.calendarToolEnabled.collectAsState()
-    val deviceStatus by vm.deviceStatusToolEnabled.collectAsState()
+    val calendar by vm.calendarToolEnabled.collectAsStateWithLifecycle()
+    val deviceStatus by vm.deviceStatusToolEnabled.collectAsStateWithLifecycle()
 
-    val requestCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.setCalendarToolEnabled(granted) }
+    val requestCalendar = com.vervan.chat.ui.common.rememberPermissionRequester { granted -> vm.setCalendarToolEnabled(granted) }
 
     // Each toggle's own app-level "on" is independently checked at call time anyway (see
     // ToolRegistry.gatedResult), so a revoked permission never breaks a tool call — this just
@@ -367,7 +380,7 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
         Column(Modifier.padding(Space.lg)) {
         Text(stringResource(R.string.security_data_sources), style = MaterialTheme.typography.titleSmall)
             Text(
-            "Choose which local data Vervan can use. Processing stays on-device.",
+            stringResource(R.string.security_settings_choose_which_local_data_vervan),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Space.sm)
@@ -382,11 +395,11 @@ private fun OnDeviceDataSourcesCard(vm: SettingsViewModel) {
 
 @Composable
 private fun DataSourceRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onToggle).heightIn(min = 48.dp).padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
         }
-        Switch(checked = checked, onCheckedChange = onToggle)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -400,7 +413,7 @@ private fun DataSourceRow(label: String, checked: Boolean, onToggle: (Boolean) -
 @Composable
 private fun QuickActionBubbleCard(vm: SettingsViewModel) {
     val context = LocalContext.current
-    val enabled by vm.quickActionBubbleEnabled.collectAsState()
+    val enabled by vm.quickActionBubbleEnabled.collectAsStateWithLifecycle()
     var showPermissionExplanation by remember { mutableStateOf(false) }
     val overlayLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (android.provider.Settings.canDrawOverlays(context)) vm.setQuickActionBubbleEnabled(true)
@@ -417,7 +430,7 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
             )
         }
     }
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+    val notificationLauncher = com.vervan.chat.ui.common.rememberPermissionRequester {
         // Notifications improve awareness, but Android still permits the foreground service
         // when this optional runtime permission is declined.
         requestOverlayOrEnable()
@@ -433,25 +446,25 @@ private fun QuickActionBubbleCard(vm: SettingsViewModel) {
 
     Card(Modifier.fillMaxWidth().padding(vertical = Space.sm), colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(), border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()) {
         Column(Modifier.padding(Space.lg)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                    value = enabled,
+                    role = androidx.compose.ui.semantics.Role.Switch,
+                    onValueChange = { turnOn ->
+                        if (!turnOn) vm.setQuickActionBubbleEnabled(false) else showPermissionExplanation = true
+                    }
+                ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.security_quick_bubble), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.security_quick_bubble), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                            "Show a floating button for screenshot questions. Requires overlay permission; each capture still needs approval.",
+                        stringResource(R.string.security_settings_show_a_floating_button_for),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = { turnOn ->
-                        if (!turnOn) {
-                            vm.setQuickActionBubbleEnabled(false)
-                        } else {
-                            showPermissionExplanation = true
-                        }
-                    }
-                )
+                Switch(checked = enabled, onCheckedChange = null)
             }
         }
     }

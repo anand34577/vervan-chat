@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.Icons
@@ -37,13 +39,13 @@ fun SelectionTopBar(
     extraActions: @Composable RowScope.() -> Unit = {}
 ) {
     VervanTopAppBar(
-        title = { Text("$selectedCount selected") },
-        navigationIcon = { IconButton(onClick = onExit) { Icon(Icons.Filled.Close, contentDescription = "Exit selection") } },
+        title = { Text(stringResource(R.string.selection_top_bar_arg1_selected, selectedCount)) },
+        navigationIcon = { IconButton(onClick = onExit) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.selection_top_bar_exit_selection)) } },
         actions = {
             IconButton(onClick = onToggleSelectAll) {
                 Icon(
                     if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                    contentDescription = if (allSelected) "Deselect all" else "Select all"
+                    contentDescription = if (allSelected) stringResource(R.string.selection_top_bar_deselect_all) else stringResource(R.string.selection_top_bar_select_all)
                 )
             }
             extraActions()

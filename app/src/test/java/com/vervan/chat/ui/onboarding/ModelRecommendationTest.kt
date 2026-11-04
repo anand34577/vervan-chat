@@ -18,12 +18,13 @@ class ModelRecommendationTest {
         sizeBytes: Long,
         minRam: Long? = null,
         enabled: Boolean = true,
-        category: ModelRole = ModelRole.GENERATION
+        category: ModelRole = ModelRole.GENERATION,
+        npuSocs: Set<String> = emptySet()
     ) = CatalogModel(
         modelId = id, version = "1", displayName = id, description = "",
         category = category, format = ModelFormat.LITERTLM, files = emptyList(),
         totalExpectedBytes = sizeBytes, minimumRamBytes = minRam, enabled = enabled,
-        sourceUrl = "https://example.com"
+        sourceUrl = "https://example.com", npuSocs = npuSocs
     )
 
     @Test
@@ -61,5 +62,14 @@ class ModelRecommendationTest {
     fun skipsDisabledModels() {
         val rec = recommendModel(8 * GB, listOf(gen("off", 2 * GB, enabled = false)))
         assertNull(rec)
+    }
+
+    @Test
+    fun prefersNpuBuildWhenItFits() {
+        val generic = gen("generic", 2 * GB, minRam = 3 * GB)
+        val npu = gen("npu", 3 * GB, minRam = 4 * GB, npuSocs = setOf("sm8750"))
+        assertEquals("npu", recommendModel(12 * GB, listOf(generic, npu))!!.model.modelId)
+        // Not enough memory for the NPU build: fall back to the generic one.
+        assertEquals("generic", recommendModel(3 * GB + GB / 2, listOf(generic, npu))!!.model.modelId)
     }
 }

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.notes
 
+import com.vervan.chat.R
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,7 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class NotesListViewModel(app: VervanApp) : ViewModel() {
+class NotesListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
     private val reload = MutableStateFlow(0)
     private val _isLoading = MutableStateFlow(true)
@@ -108,6 +109,9 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving
     private var saveJob: Job? = null
+    /** The latest edit not yet written. Flushed in [onCleared] so a back gesture inside the
+     * autosave debounce window can't drop the last keystrokes. */
+    @Volatile private var pendingEdit: Triple<String, String, String>? = null
 
     init {
         load()
@@ -135,7 +139,17 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     }
 
     fun delete() {
-        viewModelScope.launch { _note.value?.let { db.noteDao().update(it.copy(deletedAt = System.currentTimeMillis())) } }
+        // Drop any queued autosave first — flushing it in onCleared would rewrite the row from
+        // the pre-delete copy and silently restore the note from the recycle bin.
+        saveJob?.cancel()
+        pendingEdit = null
+        viewModelScope.launch(NonCancellable) {
+            _note.value?.let { current ->
+                val deleted = current.copy(deletedAt = System.currentTimeMillis())
+                db.noteDao().update(deleted)
+                _note.value = deleted
+            }
+        }
     }
 
     val knowledgeBases = db.knowledgeBaseDao().observeAll()
@@ -152,20 +166,39 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
     fun save(title: String, content: String, tags: String = _note.value?.tags ?: "") {
         saveJob?.cancel()
         _saving.value = true
+        pendingEdit = Triple(title, content, tags)
         saveJob = viewModelScope.launch(NonCancellable) { persist(title, content, tags) }
     }
 
     fun scheduleSave(title: String, content: String, tags: String = _note.value?.tags ?: "") {
         saveJob?.cancel()
         _saving.value = true
+        pendingEdit = Triple(title, content, tags)
         saveJob = viewModelScope.launch {
             delay(450)
             persist(title, content, tags)
         }
     }
 
+    override fun onCleared() {
+        val edit = pendingEdit
+        val loaded = _note.value
+        app.applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                if (edit != null) persist(edit.first, edit.second, edit.third)
+                // A note opened from "New note"/"Quick note" and left without typing anything
+                // is removed instead of accumulating blank "Untitled note" rows.
+                val latest = db.noteDao().get(noteId) ?: return@runCatching
+                val untouched = loaded != null && latest.content.isBlank() && latest.tags.isBlank() &&
+                    (latest.title.isBlank() || latest.title == "Untitled note") && latest.deletedAt == null
+                if (untouched) db.noteDao().hardDelete(noteId)
+            }.onFailure { Log.w("NoteEditorViewModel", "Final note save failed", it) }
+        }
+    }
+
     private suspend fun persist(title: String, content: String, tags: String) {
         val current = _note.value ?: run { _saving.value = false; return }
+        if (pendingEdit == Triple(title, content, tags)) pendingEdit = null
         val updated = current.copy(
             title = title.ifBlank { "Untitled note" }, content = content, tags = tags.trim(),
             updatedAt = System.currentTimeMillis()
@@ -183,7 +216,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
             _error.value = null
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
+                _error.value = app.getString(R.string.notes_no_model_is_ready_open)
                 _running.value = false
                 return@launch
             }
@@ -194,7 +227,7 @@ class NoteEditorViewModel(private val app: VervanApp, private val noteId: String
                 onResult(result)
             } catch (t: Throwable) {
                 Log.e(TAG, "runAction(${action.name}) failed", t)
-                _error.value = "Generation failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.notes_generation_failed_arg1, t.toUserMessage())
             }
             _running.value = false
         }

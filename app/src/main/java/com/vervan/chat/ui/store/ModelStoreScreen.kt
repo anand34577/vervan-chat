@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.store
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 
 import androidx.compose.foundation.layout.Arrangement
@@ -79,10 +81,10 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Model store") },
+                title = { Text(stringResource(R.string.model_store_model_store)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
@@ -90,7 +92,7 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
                         if (syncing) {
                             CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Check for catalogue updates")
+                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.model_store_check_for_catalogue_updates))
                         }
                     }
                 }
@@ -107,8 +109,8 @@ fun ModelStoreScreen(onBack: () -> Unit = {}) {
                  FeatureHero(
                      icon = Icons.Filled.CloudDownload,
                      eyebrow = "Curated and device-aware",
-                     title = "Download a model with confidence",
-                     body = "Review runtime, size, licensing, and device eligibility before anything is installed."
+                     title = stringResource(R.string.model_store_download_a_model_with_confidence),
+                     body = stringResource(R.string.model_store_review_runtime_size_licensing_and)
                  )
              }
              // A sync failure is advisory: the previously accepted catalogue is still on screen
@@ -189,7 +191,7 @@ private fun StoreModelCard(
 
             Spacer(Modifier.height(Space.sm))
             Text(
-                "Licence: ${entry.model.license.name}",
+                stringResource(R.string.model_store_licence_arg1, entry.model.license.name),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -238,12 +240,12 @@ private fun VariantRow(
                 variantUi.installed -> OutlinedButton(
                     onClick = onUninstall,
                     modifier = Modifier.padding(start = Space.sm),
-                ) { Text("Remove") }
+                ) { Text(stringResource(R.string.action_remove)) }
                 // The device check is enforced before the download, never after it —
                 !variantUi.eligibility.canInstall -> AssistChip(
                     onClick = {},
                     enabled = false,
-                    label = { Text("Incompatible") },
+                    label = { Text(stringResource(R.string.model_store_incompatible)) },
                     colors = AssistChipDefaults.assistChipColors(),
                     modifier = Modifier.padding(start = Space.sm),
                 )
@@ -251,7 +253,7 @@ private fun VariantRow(
                     onClick = onInstall,
                     enabled = !installBusy,
                     modifier = Modifier.padding(start = Space.sm),
-                ) { Text("Install") }
+                ) { Text(stringResource(R.string.model_store_install)) }
             }
         }
 
@@ -289,7 +291,7 @@ private fun ActiveInstallCard(
             if (error != null) {
                 Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(Space.sm))
-                TextButton(onClick = onDismissError) { Text("Dismiss") }
+                TextButton(onClick = onDismissError) { Text(stringResource(R.string.model_store_dismiss)) }
             } else {
                 if (totalBytes > 0) {
                     LinearProgressIndicator(
@@ -306,7 +308,7 @@ private fun ActiveInstallCard(
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 Spacer(Modifier.height(Space.sm))
-                TextButton(onClick = onCancel) { Text("Cancel") }
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
             }
         }
     }
@@ -330,7 +332,7 @@ private fun NoticeCard(title: String, body: String, isError: Boolean) {
 private fun EmptyCatalogCard(syncing: Boolean) {
     ContentCard {
         Column(Modifier.padding(Space.lg)) {
-            Text("No models available yet", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.model_store_no_models_available_yet), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(Space.xs))
             Text(
                 if (syncing) {
@@ -363,10 +365,10 @@ private fun LicenseDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Accept licence") },
+        title = { Text(stringResource(R.string.model_store_accept_licence)) },
         text = {
             Column {
-                Text("$modelName is provided under $licenseName.", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.model_store_arg1_is_provided_under_arg2, modelName, licenseName), style = MaterialTheme.typography.bodyMedium)
                 if (licenseUrl.isNotBlank()) {
                     Spacer(Modifier.height(Space.xs))
                     Text(
@@ -379,8 +381,8 @@ private fun LicenseDialog(
                 }
                 if (restrictions.isNotEmpty()) {
                     Spacer(Modifier.height(Space.sm))
-                    Text("Use restrictions:", style = MaterialTheme.typography.labelLarge)
-                    restrictions.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                    Text(stringResource(R.string.model_store_use_restrictions), style = MaterialTheme.typography.labelLarge)
+                    restrictions.forEach { Text(stringResource(R.string.model_store_arg1, it), style = MaterialTheme.typography.bodySmall) }
                 }
                 usageThresholdClause?.let {
                     Spacer(Modifier.height(Space.sm))
@@ -395,8 +397,8 @@ private fun LicenseDialog(
                 )
             }
         },
-        confirmButton = { Button(onClick = onAccept) { Text("Accept and download") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { Button(onClick = onAccept) { Text(stringResource(R.string.model_store_accept_and_download)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 

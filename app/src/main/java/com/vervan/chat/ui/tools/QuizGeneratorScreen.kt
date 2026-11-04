@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,7 +63,7 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
-    var sourceText by remember { mutableStateOf("") }
+    var sourceText by rememberSaveable { mutableStateOf("") }
     var difficulty by remember { mutableStateOf("Medium") }
     var difficultyMenuOpen by remember { mutableStateOf(false) }
     var isGenerating by remember { mutableStateOf(false) }
@@ -130,8 +133,8 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Quiz generator") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.quiz_generator_quiz_generator)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -142,53 +145,57 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
         ) {
             ToolIntro(
                 icon = Icons.Filled.Quiz,
-                title = "Turn material into active recall",
-                body = "Add study material and create a five-question local quiz."
+                title = stringResource(R.string.quiz_generator_turn_material_into_active_recall),
+                body = stringResource(R.string.quiz_generator_add_study_material_and_create)
             )
             OutlinedTextField(
                 value = sourceText, onValueChange = { sourceText = it.take(100_000) },
                 modifier = Modifier.fillMaxWidth(), minLines = 4,
-                placeholder = { Text("Paste study material to generate a quiz from") }
+                placeholder = { Text(stringResource(R.string.quiz_generator_paste_study_material_to_generate)) }
             )
-            ResponsiveActions {
-                Box {
-                    OutlinedButton(onClick = { difficultyMenuOpen = true }) { Text(difficulty) }
-                    DropdownMenu(expanded = difficultyMenuOpen, onDismissRequest = { difficultyMenuOpen = false }) {
-                        DIFFICULTIES.forEach { d -> DropdownMenuItem(text = { Text(d) }, onClick = { difficulty = d; difficultyMenuOpen = false }) }
-                    }
+            // Difficulty is a labelled choice of three, and Generate is the screen's full-width
+            // primary action like every other tool — not a bare "Medium" button beside a small one.
+            Text(stringResource(R.string.quiz_difficulty), style = MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                DIFFICULTIES.forEach { d ->
+                    com.vervan.chat.ui.common.VervanFilterChip(selected = difficulty == d, onClick = { difficulty = d }, label = { Text(d) })
                 }
-                Button(onClick = ::generate, enabled = sourceText.isNotBlank() && !isGenerating) { Text("Generate quiz") }
             }
+            Button(
+                onClick = ::generate,
+                enabled = sourceText.isNotBlank() && !isGenerating,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(stringResource(R.string.quiz_generator_generate_quiz)) }
             if (isGenerating) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Building your quiz",
-                    body = "Creating five $difficulty questions from your material."
+                    title = stringResource(R.string.quiz_generator_building_your_quiz),
+                    body = stringResource(R.string.quiz_generator_creating_five_arg1_questions_from, difficulty)
                 )
             }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't generate a quiz",
+                    title = stringResource(R.string.quiz_generator_couldn_t_generate_a_quiz),
                     message = it,
-                    recovery = "Shorten the material or load a model, then try again.",
-                    actionLabel = "Try again",
+                    recovery = stringResource(R.string.quiz_generator_shorten_the_material_or_load),
+                    actionLabel = stringResource(R.string.action_try_again),
                     onAction = { generate() },
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             if (submitted) {
                 ToolResultHeader(
-                    title = "Quiz complete",
-                    supportingText = "You answered $score of ${questions.size} correctly."
+                    title = stringResource(R.string.quiz_generator_quiz_complete),
+                    supportingText = stringResource(R.string.quiz_generator_you_answered_arg1_of_arg2, score, questions.size)
                 )
                 Card(
                     Modifier.fillMaxWidth().padding(top = Space.lg),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) { Text("Score: $score / ${questions.size}", Modifier.padding(Space.md), style = MaterialTheme.typography.titleMedium) }
+                ) { Text(stringResource(R.string.quiz_generator_score_arg1_arg2, score, questions.size), Modifier.padding(Space.md), style = MaterialTheme.typography.titleMedium) }
             }
             questions.forEachIndexed { i, q ->
                 Card(Modifier.fillMaxWidth().padding(top = Space.md)) {
                     Column(Modifier.padding(Space.md)) {
-                        Text("${i + 1}. ${q.question}", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.quiz_generator_arg1_arg2, i + 1, q.question), style = MaterialTheme.typography.bodyMedium)
                         when (q.type) {
                             "multiple_choice", "true_false" -> {
                                 val opts = q.options.ifEmpty { listOf("True", "False") }
@@ -210,20 +217,20 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
                                 value = answers[i].orEmpty(),
                                 onValueChange = { answers = answers + (i to it.take(1_000)) },
                                 enabled = !submitted,
-                                placeholder = { Text("Your answer") },
+                                placeholder = { Text(stringResource(R.string.quiz_generator_your_answer)) },
                                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                             )
                         }
                         if (submitted) {
                             HorizontalDivider(Modifier.padding(vertical = Space.sm))
-                            Text("Correct answer: ${q.correctAnswer}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.quiz_generator_correct_answer_arg1, q.correctAnswer), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             Text(q.explanation, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
             if (questions.isNotEmpty() && !submitted) {
-                Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) { Text("Submit answers") }
+                Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) { Text(stringResource(R.string.quiz_generator_submit_answers)) }
             }
         }
         }

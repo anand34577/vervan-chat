@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -105,7 +107,7 @@ fun AssistantSubCard(
                 if (collapsible) {
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        contentDescription = if (expanded) stringResource(R.string.assistant_sub_card_collapse) else stringResource(R.string.assistant_sub_card_expand),
                         tint = color,
                         modifier = Modifier.padding(start = Space.sm),
                     )

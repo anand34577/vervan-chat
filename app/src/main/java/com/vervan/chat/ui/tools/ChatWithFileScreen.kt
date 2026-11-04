@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,8 +42,8 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat with a file") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.chat_with_file_chat_with_a_file)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -49,8 +51,8 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
             Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                 ToolIntro(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Ask questions about a document",
-        body = "Choose a PDF, Word, or text file. Answers cite it and stay on-device."
+                    title = stringResource(R.string.chat_with_file_ask_questions_about_a_document),
+        body = stringResource(R.string.chat_with_file_choose_a_pdf_word_or)
                 )
                 Button(
                     onClick = {
@@ -68,7 +70,7 @@ fun ChatWithFileScreen(onBack: () -> Unit, onFileChosen: (Uri) -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = Space.xl)
                 ) {
                     Icon(Icons.Filled.UploadFile, null, Modifier.size(18.dp))
-                    Text("Choose a file", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.chat_with_file_choose_a_file), modifier = Modifier.padding(start = Space.sm))
                 }
             }
         }

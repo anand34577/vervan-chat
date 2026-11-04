@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.models
 
+import androidx.compose.ui.graphics.compositeOver
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -132,11 +135,10 @@ internal fun AvailableForDownloadSection(
     highlightBudgetBytes: Long? = null
 ) {
     var sectionExpanded by rememberSaveable("available_models") { mutableStateOf(highlightBudgetBytes != null) }
-    SectionHeader("Discover models", Icons.Filled.CloudDownload)
     Card(
         onClick = { sectionExpanded = !sectionExpanded },
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
     ) {
@@ -149,16 +151,16 @@ internal fun AvailableForDownloadSection(
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.padding(Space.md).size(24.dp))
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text("Available for download", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.model_download_available_for_download), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "${states.size} curated model${if (states.size == 1) "" else "s"} · Categories stay collapsed until you open them",
+                    androidx.compose.ui.res.pluralStringResource(com.vervan.chat.R.plurals.model_curated_count, states.size, states.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Icon(
                 if (sectionExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                contentDescription = if (sectionExpanded) "Collapse available models" else "Expand available models"
+                contentDescription = if (sectionExpanded) stringResource(R.string.model_download_collapse_available_models) else stringResource(R.string.model_download_expand_available_models)
             )
         }
     }
@@ -191,7 +193,7 @@ internal fun AvailableForDownloadSection(
                     SemanticChip("${entries.size}", ChipTone.Neutral)
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (expanded) "Collapse category" else "Expand category",
+                        contentDescription = if (expanded) stringResource(R.string.model_download_collapse_category) else stringResource(R.string.model_download_expand_category),
                         modifier = Modifier.padding(start = Space.sm)
                     )
                 }
@@ -216,10 +218,11 @@ internal fun categoryIcon(category: ModelRole) = when (category) {
     ModelRole.STT_MODEL -> Icons.Filled.Mic
 }
 
+@androidx.compose.runtime.Composable
 internal fun categoryLabel(category: ModelRole) = when (category) {
-    ModelRole.GENERATION -> "Generation"
-    ModelRole.EMBEDDING -> "Embedding"
-    ModelRole.TTS_VOICE -> "Voice model"
+    ModelRole.GENERATION -> stringResource(R.string.notification_generation_channel)
+    ModelRole.EMBEDDING -> stringResource(R.string.model_download_embedding)
+    ModelRole.TTS_VOICE -> stringResource(R.string.model_download_voice_model)
     ModelRole.STT_MODEL -> "Speech-to-text"
 }
 
@@ -249,10 +252,12 @@ internal fun CatalogEntryCard(
     val accentContainer = categoryAccentContainer(state.category)
     Card(
         Modifier.fillMaxWidth().padding(top = Space.sm),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = accentContainer.copy(alpha = 0.18f)),
+        shape = MaterialTheme.shapes.large,
+        // Opaque on purpose: a translucent container over a shadow shows the shadow through it and
+        // renders as a frame inside a frame.
+        colors = CardDefaults.cardColors(containerColor = accentContainer.copy(alpha = 0.18f).compositeOver(MaterialTheme.colorScheme.surface)),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -264,7 +269,7 @@ internal fun CatalogEntryCard(
                     )
                 }
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
-                    Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(state.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(
                         "v${state.version} · ${categoryLabel(state.category)}",
                         style = MaterialTheme.typography.labelMedium,
@@ -287,7 +292,7 @@ internal fun CatalogEntryCard(
                 verticalArrangement = Arrangement.spacedBy(Space.sm)
             ) {
                 fitsBudget?.let {
-                    SemanticChip(if (it) "Fits your device" else "May be tight", if (it) ChipTone.Success else ChipTone.Warning)
+                    SemanticChip(if (it) stringResource(R.string.model_download_fits_your_device) else stringResource(R.string.model_download_may_be_tight), if (it) ChipTone.Success else ChipTone.Warning)
                 }
                 state.totalBytes?.let { SemanticChip("~${formatModelSize(it)}", ChipTone.Neutral) }
                 state.precision?.let { SemanticChip(it, ChipTone.Neutral) }
@@ -299,17 +304,43 @@ internal fun CatalogEntryCard(
             }
             if (state.sourceName.isNotBlank()) {
                 Text(
-                    "Source: ${state.sourceName}",
+                    stringResource(R.string.model_download_source_arg1, state.sourceName),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
+            // A licence-gated model is only downloaded after the user agrees to its terms here.
+            var confirmLicense by remember { mutableStateOf(false) }
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                Button(onClick = onDownload) {
+                Button(onClick = { if (state.requiresLicenseAcceptance) confirmLicense = true else onDownload() }) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Download", modifier = Modifier.padding(start = 6.dp))
+                    Text(stringResource(R.string.model_download_download), modifier = Modifier.padding(start = 6.dp))
                 }
+            }
+            if (confirmLicense) {
+                val context = LocalContext.current
+                val licenseName = state.licenseName ?: "the publisher's license"
+                AlertDialog(
+                    onDismissRequest = { confirmLicense = false },
+                    title = { Text(stringResource(R.string.model_download_accept_the_license)) },
+                    text = {
+                        Text(stringResource(R.string.model_download_arg1_is_released_under_arg2, state.displayName, licenseName))
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { confirmLicense = false; onDownload() }) { Text(stringResource(R.string.model_download_accept_and_download)) }
+                    },
+                    dismissButton = {
+                        Row {
+                            state.licenseUrl?.let { url ->
+                                TextButton(onClick = {
+                                    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))) }
+                                }) { Text(stringResource(R.string.model_download_read_license)) }
+                            }
+                            TextButton(onClick = { confirmLicense = false }) { Text(stringResource(R.string.action_cancel)) }
+                        }
+                    }
+                )
             }
         }
     }
@@ -342,10 +373,10 @@ internal fun DownloadPackageCard(
 
     Card(
         Modifier.fillMaxWidth().padding(bottom = Space.md),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         border = BorderStroke(1.dp, statusColor.copy(alpha = 0.32f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -361,7 +392,7 @@ internal fun DownloadPackageCard(
                     )
                 }
                 Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                    Text(state.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(state.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(
                         "v${state.version} · ${categoryLabel(state.category)}",
                         style = MaterialTheme.typography.labelSmall,
@@ -372,7 +403,7 @@ internal fun DownloadPackageCard(
                     IconButton(onClick = { expanded = !expanded }) {
                         Icon(
                             if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (expanded) "Hide download details" else "Show download details"
+                            contentDescription = if (expanded) stringResource(R.string.model_download_hide_download_details) else stringResource(R.string.model_download_show_download_details)
                         )
                     }
                 }
@@ -383,7 +414,10 @@ internal fun DownloadPackageCard(
                 verticalAlignment = Alignment.Top
             ) {
                 Column(Modifier.weight(1f).padding(end = Space.md)) {
-                    Text(statusLabel(state), style = MaterialTheme.typography.labelMedium, color = statusColor)
+                    // The chip on the right already says "Queued"/"Paused"; only add the long label when it says more.
+                    if (statusLabel(state) != statusChipLabel(state.status)) {
+                        Text(statusLabel(state), style = MaterialTheme.typography.labelMedium, color = statusColor)
+                    }
                     state.currentFileName?.let {
                         Text(
                             it,
@@ -401,7 +435,8 @@ internal fun DownloadPackageCard(
             // READY means the model is fully installed — there's nothing left to show progress
             // for, so the bar (previously falling into the indeterminate "else" branch below,
             // since READY isn't PAUSED/FAILED either) no longer renders once installed.
-            if (state.status != ModelStatus.QUEUED && state.status != ModelStatus.READY) {
+            // QUEUED can lag behind the first bytes: once bytes are moving, show the real bar.
+            if (state.status != ModelStatus.READY && (state.status != ModelStatus.QUEUED || state.downloadedBytes > 0L)) {
                 if (state.status in setOf(ModelStatus.PREPARING, ModelStatus.DOWNLOADED, ModelStatus.VERIFYING, ModelStatus.IMPORTING, ModelStatus.PAUSING, ModelStatus.CANCELLING, ModelStatus.DELETING)) {
                     LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
@@ -442,9 +477,9 @@ internal fun DownloadPackageCard(
                     if (state.status == ModelStatus.DOWNLOADING) {
                         DownloadFactRow(
                             "Speed",
-                            state.speedBytesPerSecond?.takeIf { it > 0 }?.let { "${formatModelSize(it)}/s" } ?: "Calculating…",
+                            state.speedBytesPerSecond?.takeIf { it > 0 }?.let { "${formatModelSize(it)}/s" } ?: stringResource(R.string.model_download_calculating),
                             "Time left",
-                            state.estimatedRemainingSeconds?.let(::formatEta) ?: "Calculating…"
+                            state.estimatedRemainingSeconds?.let(::formatEta) ?: stringResource(R.string.model_download_calculating)
                         )
                     }
                     if (state.totalFileCount > 1) {
@@ -461,7 +496,7 @@ internal fun DownloadPackageCard(
                 Column(Modifier.padding(top = Space.md)) {
                     HorizontalDivider(color = vervanSubtleDividerColor())
                     Text(
-                        "Package files · ${state.completedFileCount} of ${state.totalFileCount} complete",
+                        stringResource(R.string.model_download_package_files_arg1_of_arg2, state.completedFileCount, state.totalFileCount),
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(top = Space.md, bottom = Space.xs)
                     )
@@ -493,7 +528,7 @@ internal fun DownloadPackageCard(
                 Row(Modifier.padding(top = Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = statusColor)
                     Text(
-                        "Stopping the transfer — this finishes in a moment.",
+                        stringResource(R.string.model_download_stopping_the_transfer_this_finishes),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = Space.sm)
@@ -504,19 +539,19 @@ internal fun DownloadPackageCard(
                 if (ModelAction.PAUSE in state.allowedActions) {
                     TextButton(onClick = onPause) {
                         Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Pause", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.action_pause), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.RESUME in state.allowedActions) {
                     Button(onClick = onResume) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Resume", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.workspace_resume), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.CANCEL in state.allowedActions) {
                     TextButton(onClick = { confirmStop = true }) {
                         Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Stop", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
                 if (ModelAction.DELETE in state.allowedActions) {
@@ -525,7 +560,7 @@ internal fun DownloadPackageCard(
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Delete", modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.library_delete), modifier = Modifier.padding(start = Space.xs))
                     }
                 }
             }
@@ -534,9 +569,9 @@ internal fun DownloadPackageCard(
 
     if (confirmStop) {
         ConfirmDialog(
-            title = "Stop downloading?",
-            body = "This removes the download and partial file. Pause to resume later.",
-            confirmLabel = "Stop",
+            title = stringResource(R.string.model_download_stop_downloading),
+            body = stringResource(R.string.model_download_this_removes_the_download_and),
+            confirmLabel = stringResource(R.string.action_stop),
             destructive = true,
             onConfirm = { confirmStop = false; onStop() },
             onDismiss = { confirmStop = false }
@@ -545,8 +580,8 @@ internal fun DownloadPackageCard(
     if (confirmDelete) {
         ConfirmDialog(
             title = if (state.status == ModelStatus.READY) "Delete downloaded voice?" else "Delete partial download?",
-            body = "Remove downloaded data for \"${state.displayName}\"?",
-            confirmLabel = "Delete",
+            body = stringResource(R.string.model_download_remove_downloaded_data_for_arg1, state.displayName),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },
             onDismiss = { confirmDelete = false }
@@ -578,7 +613,7 @@ private fun InstalledPackageCard(
             ) {
                 Icon(
                     Icons.Filled.CheckCircle,
-                    contentDescription = "Installed",
+                    contentDescription = stringResource(R.string.model_download_installed),
                     modifier = Modifier.padding(10.dp).size(20.dp)
                 )
             }
@@ -604,7 +639,7 @@ private fun InstalledPackageCard(
             IconButton(onClick = { confirmDelete = true }) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "Delete ${state.displayName}",
+                    contentDescription = stringResource(R.string.model_download_delete_arg1, state.displayName),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -613,9 +648,9 @@ private fun InstalledPackageCard(
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete downloaded model?",
-            body = "Remove downloaded data for \"${state.displayName}\"?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.model_download_delete_downloaded_model),
+            body = stringResource(R.string.model_download_remove_downloaded_data_for_arg1, state.displayName),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = {
                 confirmDelete = false
@@ -676,45 +711,48 @@ internal fun downloadStatusIcon(status: ModelStatus) = when (status) {
     else -> Icons.Filled.CloudDownload
 }
 
+@androidx.compose.runtime.Composable
 internal fun fileStatusLabel(file: com.vervan.chat.modeldownload.ModelFileUiState): String = when (file.status) {
-    FileDownloadStatus.COMPLETED -> "Complete"
+    FileDownloadStatus.COMPLETED -> stringResource(R.string.model_download_complete)
     FileDownloadStatus.DOWNLOADING -> "${formatModelSize(file.downloadedBytes)}${file.totalBytes?.let { " / ${formatModelSize(it)}" } ?: ""}"
     FileDownloadStatus.FAILED -> file.errorMessage?.ifBlank { null } ?: "Failed"
-    FileDownloadStatus.PAUSED -> "Paused"
-    FileDownloadStatus.WAITING_FOR_NETWORK -> "Waiting for network"
-    FileDownloadStatus.NOT_STARTED -> "Waiting"
+    FileDownloadStatus.PAUSED -> stringResource(R.string.model_download_paused)
+    FileDownloadStatus.WAITING_FOR_NETWORK -> stringResource(R.string.model_download_waiting_for_network)
+    FileDownloadStatus.NOT_STARTED -> stringResource(R.string.model_download_waiting)
 }
 
+@androidx.compose.runtime.Composable
 internal fun statusChipLabel(status: ModelStatus): String = when (status) {
-    ModelStatus.WAITING_FOR_NETWORK -> "No network"
-    ModelStatus.WAITING_FOR_WIFI -> "Wi-Fi needed"
-    ModelStatus.WAITING_FOR_STORAGE -> "Storage needed"
-    ModelStatus.DOWNLOADED -> "Downloaded"
-    ModelStatus.VERIFYING -> "Verifying"
-    ModelStatus.IMPORTING -> "Installing"
+    ModelStatus.WAITING_FOR_NETWORK -> stringResource(R.string.model_download_no_network)
+    ModelStatus.WAITING_FOR_WIFI -> stringResource(R.string.model_download_wi_fi_needed)
+    ModelStatus.WAITING_FOR_STORAGE -> stringResource(R.string.model_download_storage_needed)
+    ModelStatus.DOWNLOADED -> stringResource(R.string.model_download_downloaded)
+    ModelStatus.VERIFYING -> stringResource(R.string.model_download_verifying)
+    ModelStatus.IMPORTING -> stringResource(R.string.model_download_installing)
     else -> status.name.lowercase().replaceFirstChar(Char::titlecase)
 }
 
+@androidx.compose.runtime.Composable
 internal fun statusLabel(state: ModelUiState): String = when (state.status) {
-    ModelStatus.QUEUED -> "Queued"
-    ModelStatus.PREPARING -> "Preparing…"
-    ModelStatus.WAITING_FOR_NETWORK -> "Waiting for network"
-    ModelStatus.WAITING_FOR_WIFI -> "Waiting for Wi-Fi"
-    ModelStatus.WAITING_FOR_STORAGE -> "Waiting for storage"
+    ModelStatus.QUEUED -> stringResource(R.string.model_download_queued)
+    ModelStatus.PREPARING -> stringResource(R.string.model_download_preparing)
+    ModelStatus.WAITING_FOR_NETWORK -> stringResource(R.string.model_download_waiting_for_network)
+    ModelStatus.WAITING_FOR_WIFI -> stringResource(R.string.model_download_waiting_for_wi_fi)
+    ModelStatus.WAITING_FOR_STORAGE -> stringResource(R.string.model_download_waiting_for_storage)
     ModelStatus.DOWNLOADING -> if (state.totalFileCount > 1) {
         "Downloading file ${state.completedFileCount + 1} of ${state.totalFileCount}"
     } else "Downloading"
-    ModelStatus.PAUSING -> "Pausing…"
-    ModelStatus.PAUSED -> "Paused"
-    ModelStatus.DOWNLOADED -> "Download complete — preparing verification"
-    ModelStatus.VERIFYING -> "Verifying…"
-    ModelStatus.IMPORTING -> "Importing…"
-    ModelStatus.READY -> "Ready"
-    ModelStatus.CANCELLING -> "Cancelling…"
-    ModelStatus.CANCELLED -> "Cancelled"
-    ModelStatus.FAILED -> "Failed"
-    ModelStatus.DELETING -> "Deleting…"
-    ModelStatus.NOT_DOWNLOADED -> "Not downloaded"
+    ModelStatus.PAUSING -> stringResource(R.string.model_download_pausing)
+    ModelStatus.PAUSED -> stringResource(R.string.model_download_paused)
+    ModelStatus.DOWNLOADED -> stringResource(R.string.model_download_download_complete_preparing_verification)
+    ModelStatus.VERIFYING -> stringResource(R.string.notification_verifying)
+    ModelStatus.IMPORTING -> stringResource(R.string.notification_importing)
+    ModelStatus.READY -> stringResource(R.string.chat_screen_ready)
+    ModelStatus.CANCELLING -> stringResource(R.string.model_download_cancelling)
+    ModelStatus.CANCELLED -> stringResource(R.string.model_download_cancelled)
+    ModelStatus.FAILED -> stringResource(R.string.message_bubble_failed)
+    ModelStatus.DELETING -> stringResource(R.string.model_download_deleting)
+    ModelStatus.NOT_DOWNLOADED -> stringResource(R.string.voice_settings_not_downloaded)
 }
 
 internal fun formatEta(seconds: Long): String = when {
@@ -729,7 +767,7 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
     Card(
         onClick = onOpenStore,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Row(
@@ -748,9 +786,9 @@ internal fun StoreEntryCard(onOpenStore: () -> Unit) {
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                Text("Model Store", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.model_download_model_store), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Curated models with device-aware options",
+                    stringResource(R.string.model_download_curated_models_with_device_aware),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )

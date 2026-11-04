@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.knowledge
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -56,8 +58,8 @@ fun KnowledgeTwoPaneScreen(onOpenDocument: (String) -> Unit) {
             } else {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Pick a knowledge base",
-                    body = "Choose a source collection on the left to view its documents.",
+                    title = stringResource(R.string.knowledge_two_pane_pick_a_knowledge_base),
+                    body = stringResource(R.string.knowledge_two_pane_choose_a_source_collection_on),
                     modifier = Modifier.fillMaxSize()
                 )
             }

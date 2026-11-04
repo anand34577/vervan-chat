@@ -309,7 +309,8 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 }
 .row:hover .row-actions { background: var(--surface-alt); box-shadow: -10px 0 10px -5px var(--surface-alt); }
 .row.active .row-actions { background: var(--accent-soft); box-shadow: -10px 0 10px -5px var(--accent-soft); }
-.row:hover .row-actions, .row.active .row-actions { display: flex; }
+.row:hover .row-actions, .row.active .row-actions, .row:focus-within .row-actions { display: flex; }
+.row:focus-within .row-actions { background: var(--surface-alt); box-shadow: -10px 0 10px -5px var(--surface-alt); }
 
 .card {
   background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--border); border-radius: var(--radius);
@@ -502,6 +503,8 @@ button.secondary.busy::after, button.ghost.busy::after, .icon-btn.busy::after {
 .send-btn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; flex: none; display: grid; place-items: center; transition: transform .18s, background .18s; }
 .send-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .send-btn:disabled { opacity: .45; cursor: not-allowed; }
+/* No model installed: muted like the app's composer, but still clickable so a press explains why. */
+.send-btn.unavailable, .send-btn.unavailable:hover { background: var(--surface-alt); color: var(--text-muted, var(--text)); transform: none; opacity: .7; }
 .send-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .generation-state {

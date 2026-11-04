@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.workflows
 
+import com.vervan.chat.R
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +26,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class WorkflowListViewModel(app: VervanApp) : ViewModel() {
+class WorkflowListViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
 
     val workflows: StateFlow<List<Workflow>> = db.workflowDao().observeAll()
@@ -120,12 +121,12 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         val tmp = try {
             File.createTempFile("workflow_input", ".tmp", app.cacheDir)
         } catch (t: Throwable) {
-            _error.value = "Couldn't read file: ${t.toUserMessage()}"
+            _error.value = app.getString(R.string.workflow_couldn_t_read_file_arg1, t.toUserMessage())
             return@withContext null
         }
         try {
             try {
-                (app.contentResolver.openInputStream(uri) ?: error("Couldn't open the selected file")).use { input ->
+                (app.contentResolver.openInputStream(uri) ?: error(app.getString(R.string.workflow_couldn_t_open_the_selected))).use { input ->
                     tmp.outputStream().use { output -> input.copyToLimited(output, ImportLimits.MAX_DOCUMENT_SOURCE_BYTES) }
                 }
                 val name = app.contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -153,16 +154,16 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                         } else {
                             com.vervan.chat.model.OcrExtractor.extractFromImage(tmp)
                         }
-                        text.ifBlank { _error.value = "OCR found no readable text"; null }
+                        text.ifBlank { _error.value = app.getString(R.string.workflow_ocr_found_no_readable_text); null }
                     }
                 }.also { extracted ->
                     if (extracted != null && extracted.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
-                        error("The extracted file is too long for a workflow run (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)")
+                        error(app.getString(R.string.workflow_the_extracted_file_is_too, ValidationLimits.WORKFLOW_RUN_INPUT.toString()))
                     }
                 }
                 extracted
             } catch (t: Throwable) {
-                _error.value = "Couldn't read file: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.workflow_couldn_t_read_file_arg1, t.toUserMessage())
                 null
             }
         } finally {
@@ -174,7 +175,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
         val wf = _workflow.value ?: return
         if (inputText.isBlank() || _running.value) return
         if (inputText.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
-            _error.value = "Workflow input is too long (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)"
+            _error.value = app.getString(R.string.workflow_workflow_input_is_too_long, ValidationLimits.WORKFLOW_RUN_INPUT.toString())
             return
         }
         resumeIndex = 0
@@ -190,7 +191,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 } else inputText
             } else inputText
             if (candidate.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
-                _error.value = "Workflow input plus references is too long (maximum ${ValidationLimits.WORKFLOW_RUN_INPUT} characters)"
+                _error.value = app.getString(R.string.workflow_workflow_input_plus_references_is, ValidationLimits.WORKFLOW_RUN_INPUT.toString())
                 return@launch
             }
             carryText = candidate
@@ -224,7 +225,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
 
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
+                _error.value = app.getString(R.string.workflow_no_model_is_ready_open)
                 _running.value = false
                 return@launch
             }
@@ -247,7 +248,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                         params.minP, params.repetitionPenalty, params.maxOutputTokens, params.stopSequences
                     ).collect { chunk ->
                         if (output.length + chunk.length > ValidationLimits.WORKFLOW_RUN_INPUT) {
-                            throw IllegalStateException("Workflow output exceeded the ${ValidationLimits.WORKFLOW_RUN_INPUT}-character safety limit")
+                            throw IllegalStateException(app.getString(R.string.workflow_workflow_output_exceeded_the_arg1, ValidationLimits.WORKFLOW_RUN_INPUT.toString()))
                         }
                         output += chunk
                         _steps.value = _steps.value.toMutableList().also { it[index] = StepResult(instruction, output, false) }
@@ -260,7 +261,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
                 // Throwable, not just Exception — a multi-step run's accumulated carryText can
                 // grow large enough to OutOfMemoryError on a low-RAM device; unlike ChatViewModel
                 // this runner had no outer Throwable safety net at all.
-                _error.value = "Workflow failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.workflow_workflow_failed_arg1, t.toUserMessage())
                 _running.value = false
                 return@launch
             }
@@ -270,7 +271,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
 
     fun saveAsLibraryOutput(content: String) {
         if (content.length > ValidationLimits.NOTE_CONTENT) {
-            _error.value = "This workflow output is too large to save (maximum ${ValidationLimits.NOTE_CONTENT} characters)"
+            _error.value = app.getString(R.string.workflow_this_workflow_output_is_too, ValidationLimits.NOTE_CONTENT.toString())
             return
         }
         viewModelScope.launch {
@@ -280,7 +281,7 @@ class WorkflowRunViewModel(private val app: VervanApp, private val workflowId: S
 
     fun saveAsNote(content: String) {
         if (content.length > ValidationLimits.NOTE_CONTENT) {
-            _error.value = "This workflow output is too large to save as a note (maximum ${ValidationLimits.NOTE_CONTENT} characters)"
+            _error.value = app.getString(R.string.workflow_this_workflow_output_is_too_2, ValidationLimits.NOTE_CONTENT.toString())
             return
         }
         viewModelScope.launch {
@@ -315,6 +316,11 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
     private val _recordFound = MutableStateFlow(workflowId == null)
     val recordFound: StateFlow<Boolean> = _recordFound
 
+    private var savedSnapshot: List<Any?> = snapshot()
+    private fun snapshot(): List<Any?> = listOf(_name.value, _description.value, _steps.value)
+    /** True when Back would throw away edits (compared with what was loaded or last saved). */
+    fun hasUnsavedChanges(): Boolean = !_isLoading.value && _recordFound.value && snapshot() != savedSnapshot
+
     init {
         load()
     }
@@ -341,6 +347,7 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
                     _steps.value = wf.steps
                     _isBuiltIn.value = wf.isBuiltIn
                 }
+                savedSnapshot = snapshot()
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 _recordFound.value = false
@@ -390,6 +397,7 @@ class WorkflowEditorViewModel(private val app: VervanApp, private val workflowId
             isBuiltIn = false
         )
         db.workflowDao().upsert(workflow)
+        savedSnapshot = snapshot()
         return true
     }
 

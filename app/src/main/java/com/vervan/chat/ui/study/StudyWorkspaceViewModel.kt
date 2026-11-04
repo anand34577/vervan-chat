@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.study
 
+import com.vervan.chat.R
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -70,13 +71,13 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
         onDone: () -> Unit
     ) {
         if (setName.isBlank() || sourceText.isBlank() || _generating.value) return
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             _generating.value = true
             _error.value = null
-            _generationStage.value = "Preparing the local model"
+            _generationStage.value = app.getString(R.string.study_workspace_preparing_the_local_model)
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
+                _error.value = app.getString(R.string.study_workspace_no_model_is_ready_open)
                 _generating.value = false
                 return@launch
             }
@@ -88,19 +89,23 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                 "Respond with ONLY a JSON array where each item is {\"q\":\"question\",\"a\":\"answer\"}.\n\nSource:\n$sourceText"
             var raw = ""
             try {
-                _generationStage.value = "Creating $cardCount focused cards"
+                _generationStage.value = app.getString(R.string.study_workspace_creating_arg1_focused_cards, cardCount.toString())
                 com.vervan.chat.llm.OneShotLlm.stream(app, prompt)?.collect { raw += it }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // User pressed Stop: leave the form as it was, no error banner.
+                _generating.value = false
+                throw e
             } catch (t: Throwable) {
                 Log.e(TAG, "generateSet($setName) failed", t)
-                _error.value = "Generation failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.study_workspace_generation_failed_arg1, t.toUserMessage())
                 _generating.value = false
                 return@launch
             }
             val cards = parseCards(raw, setName)
             if (cards.isEmpty()) {
-                    _error.value = "Could not create the cards. Shorten the text, then try again."
+                    _error.value = app.getString(R.string.study_workspace_could_not_create_the_cards)
             } else {
-                _generationStage.value = "Saving your deck"
+                _generationStage.value = app.getString(R.string.study_workspace_saving_your_deck)
                 db.withTransaction {
                     db.studyCardDao().deleteSet(setName)
                     db.studyCardDao().insertAll(cards)
@@ -115,6 +120,15 @@ class StudyWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
             }
             _generating.value = false
         }
+    }
+
+    private var generationJob: kotlinx.coroutines.Job? = null
+
+    /** Stops a running deck generation (the model call is cancelled with the coroutine). */
+    fun cancelGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        _generating.value = false
     }
 
     private fun parseCards(raw: String, setName: String): List<StudyCard> {

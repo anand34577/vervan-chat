@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,7 +61,7 @@ fun SectionLabel(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                "$count",
+                stringResource(R.string.section_label_arg1, count),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )

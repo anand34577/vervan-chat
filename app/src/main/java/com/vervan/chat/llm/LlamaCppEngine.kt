@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * being readable. All defaults match llama.cpp's own CLI/library defaults (see `llama.h`), except
  * [nBatch]/[nUbatch]/[flashAttention] which follow this app's own already-shipped choices. */
 data class LlamaLoadOptions(
-    val cpuThreads: Int = 0, // 0 = auto (Runtime.getRuntime().availableProcessors())
+    val cpuThreads: Int = 0, // 0 = auto (performance cores, see CpuTopology)
     val nBatch: Int = 2048,
     val nUbatch: Int = 512,
     val useMlock: Boolean = false,
@@ -81,6 +81,11 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
     ): LlmEngine.LoadResult {
         check(BuildConfig.LLAMA_CPP_AVAILABLE) {
             "This app build does not include the llama.cpp native runtime. Install a build with GGUF support."
+        }
+        // The 64-bit llama.cpp build targets API 28 (its Vulkan backend needs Vulkan 1.1 symbols),
+        // so its libraries can't load on Android 8.x; 32-bit builds target the app's minSdk.
+        check(android.os.Build.SUPPORTED_64_BIT_ABIS.isEmpty() || android.os.Build.VERSION.SDK_INT >= 28) {
+            "GGUF models need Android 9 or newer on this phone. Use a LiteRT model instead."
         }
         require(File(modelPath).isFile) { "GGUF model file does not exist: $modelPath" }
         if (mmprojPath != null) require(File(mmprojPath).isFile) { "Vision projector does not exist: $mmprojPath" }
@@ -163,7 +168,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
     ): LlmEngine.LoadResult {
         val mmprojPath = pendingMmprojPath
         val options = pendingOptions
-        val nThreads = options.cpuThreads.takeIf { it > 0 } ?: Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val nThreads = options.cpuThreads.takeIf { it > 0 } ?: com.vervan.chat.system.CpuTopology.recommendedInferenceThreads
         if (backendPreference == LlmEngine.BackendPreference.NPU_ONLY) {
             throw IllegalArgumentException("llama.cpp does not support Android NPU execution. Choose Auto, GPU, or CPU.")
         }
@@ -259,7 +264,7 @@ class LlamaCppEngine(private val context: Context) : GenerationLoadable {
         awaitClose { LlamaCppJni.nativeCancelGeneration(activeHandle) }
         // Same reasoning as LlmEngine.generate(): callbackFlow's default 64-slot buffer lets
         // trySend silently drop tokens when the native producer outruns the collector.
-    }.buffer(kotlinx.coroutines.channels.Channel.BUFFERED)
+    }.buffer(kotlinx.coroutines.channels.Channel.UNLIMITED)
 
     // handle is a plain Long read/written on whichever thread calls load()/close(); the native
     // flag it signals is a std::atomic<bool> safe to set from any thread (see

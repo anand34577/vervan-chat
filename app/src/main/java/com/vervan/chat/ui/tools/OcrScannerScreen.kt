@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -32,7 +35,7 @@ import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.rememberManagedImagePath
 import com.vervan.chat.ui.common.rememberThumbnail
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.system.toUserMessage
 import androidx.compose.runtime.Composable
@@ -72,7 +75,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
 
     val managedImagePath = rememberManagedImagePath()
     val imagePath = managedImagePath.path
-    var extractedText by remember { mutableStateOf("") }
+    var extractedText by rememberSaveable { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -111,7 +114,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             } else runOcr(file)
         } else file?.delete()
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = newImageFile()
             pendingCameraFile = file
@@ -138,8 +141,8 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("OCR scanner") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.ocr_scanner_ocr_scanner)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -150,29 +153,24 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
         ) {
             ToolIntro(
                 icon = Icons.Filled.DocumentScanner,
-                title = "Turn a photo into editable text",
-                body = "Choose an image, review its text, then copy or save it."
+                title = stringResource(R.string.ocr_scanner_turn_a_photo_into_editable),
+                body = stringResource(R.string.ocr_scanner_choose_an_image_review_its)
             )
-            Text(
-                "Extract editable text from an image on-device.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            ResponsiveActions(Modifier.padding(top = Space.md)) {
+            ResponsiveActions {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }) {
                     Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text("From files", modifier = Modifier.padding(start = Space.sm))
+                    Text(stringResource(R.string.ocr_scanner_from_files), modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
                 val bitmap = rememberThumbnail(path, 800)
                 bitmap?.let {
                     Image(
-                        it, contentDescription = "Scanned image",
+                        it, contentDescription = stringResource(R.string.ocr_scanner_scanned_image),
                         modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = Space.md),
                         contentScale = ContentScale.Fit
                     )
@@ -180,40 +178,40 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
             }
             if (isProcessing) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Recognizing text",
-                    body = "Reading text from the image on this device."
+                    title = stringResource(R.string.ocr_scanner_recognizing_text),
+                    body = stringResource(R.string.ocr_scanner_reading_text_from_the_image)
                 )
             }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Text recognition failed",
+                    title = stringResource(R.string.ocr_scanner_text_recognition_failed),
                     message = it,
-                    recovery = "Use a clear JPG or PNG image, then try again."
+                    recovery = stringResource(R.string.ocr_scanner_use_a_clear_jpg_or)
                 )
             }
             if (!isProcessing && imagePath != null && errorText == null) {
                 ToolResultHeader(
-                    title = if (extractedText.isBlank()) "No text detected" else "Text recognized",
-                    supportingText = if (extractedText.isBlank()) "Try a sharper, evenly lit image." else "Review and correct the result before using it."
+                    title = if (extractedText.isBlank()) stringResource(R.string.ocr_scanner_no_text_detected) else stringResource(R.string.ocr_scanner_text_recognized),
+                    supportingText = if (extractedText.isBlank()) stringResource(R.string.ocr_scanner_try_a_sharper_evenly_lit) else stringResource(R.string.ocr_scanner_review_and_correct_the_result)
                 )
                 OutlinedTextField(
                     value = extractedText,
                     onValueChange = { extractedText = it.take(InputLimits.OCR_TEXT_CHARS) },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                     minLines = 6,
-                    label = { Text("Recognized text") },
-                    placeholder = { Text("No text found") }
+                    label = { Text(stringResource(R.string.ocr_scanner_recognized_text)) },
+                    placeholder = { Text(stringResource(R.string.ocr_scanner_no_text_found)) }
                 )
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     OutlinedButton(
                         onClick = {
                             val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                            clipboard.setSensitiveText(extractedText, scope, "OCR text")
+                            clipboard.copyText(extractedText, scope, "OCR text")
                         },
                         enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp))
-                        Text("Copy", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm))
                     }
                     Button(
                         onClick = {
@@ -235,7 +233,7 @@ fun OcrScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit = {}) 
                         enabled = extractedText.isNotBlank()
                     ) {
                         Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
-                        Text("Save as document", modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.ocr_scanner_save_as_document), modifier = Modifier.padding(start = Space.sm))
                     }
                 }
                 savedMessage?.let {

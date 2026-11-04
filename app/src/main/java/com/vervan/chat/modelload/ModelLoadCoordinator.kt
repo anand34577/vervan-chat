@@ -468,6 +468,37 @@ class ModelLoadCoordinator(
         publishUnloaded(role)
     }
 
+    /** Frees resident models only if nothing is using them right now — for the "app has been in
+     * the background a while" path, which must never interrupt a response (voice, API server,
+     * bubble) that is still streaming. Returns the roles actually unloaded. */
+    suspend fun unloadIdleModels(): List<ModelRole> {
+        val unloaded = mutableListOf<ModelRole>()
+        for (role in listOf(ModelRole.GENERATION, ModelRole.EMBEDDING)) {
+            if (isRoleBusy(role)) continue
+            val resident = when (role) {
+                ModelRole.GENERATION -> litertEngine.loadedModelPath != null || llamaCppEngine.loadedModelPath != null
+                else -> embeddingEngine.loadedModelPath != null
+            }
+            if (!resident) continue
+            when (role) {
+                ModelRole.GENERATION -> {
+                    if (!litertMutex.tryLock()) continue
+                    try { if (litertEngine.loadedModelPath != null) litertEngine.close() } finally { litertMutex.unlock() }
+                    if (!llamaCppMutex.tryLock()) continue
+                    try { if (llamaCppEngine.loadedModelPath != null) llamaCppEngine.close() } finally { llamaCppMutex.unlock() }
+                }
+                else -> {
+                    if (!embeddingMutex.tryLock()) continue
+                    try { embeddingEngine.close() } finally { embeddingMutex.unlock() }
+                }
+            }
+            ttlDeadlines.remove(role)
+            publishUnloaded(role)
+            unloaded += role
+        }
+        return unloaded
+    }
+
     /** Native generation may outlive coroutine cancellation until its runtime is explicitly
      * signalled, so every UI stop action must hit both possible generation backends. */
     fun cancelActiveGeneration() {
@@ -787,7 +818,14 @@ class ModelLoadCoordinator(
             ModelBackend.NPU -> LlmEngine.ModelBackend.NPU
             else -> null
         }
-        val useMtp = model.mtpEnabled
+        // mtpEnabled defaults to on for every model, so an unchecked model (mtpSupported == null)
+        // is checked against its own metadata here. Trying MTP on a package without a drafter
+        // fails inside Engine.initialize only after the full GPU compile (~1 min on first load).
+        val useMtp = model.mtpEnabled && when (model.mtpSupported) {
+            true -> true
+            false -> false
+            null -> model.engine != ModelEngine.LITERT_LM || (litertEngine as? LlmEngine)?.detectSpeculativeDecodingSupport(model.filePath) ?: true
+        }
         val result = try {
             engine.loadModel(model.filePath, requestedContext, maxNumImages, backendPreference, backendHint, useMtp)
         } catch (first: Throwable) {

@@ -75,11 +75,13 @@ class RealtimeVoiceController(
     private val audioCapture = ContinuousAudioCapture()
     private val vad = VoiceActivityDetector(app)
     private val whisperCppStt: SttEngine = WhisperCppSttEngine(app, app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
+    private val shrutiStt: SttEngine = ShrutiSttEngine(app, app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
     private val engineSelector = TtsEngineSelector(
         app.container.settingsRepository,
         PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
         KokoroTtsEngine(app.container.db.ttsVoiceModelDao()),
-        SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
+        SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository),
+        com.vervan.chat.omni.OmniTtsEngine(app)
     )
     private lateinit var playbackQueue: TtsPlaybackQueue
     private var controllerScope: CoroutineScope? = null
@@ -234,6 +236,7 @@ class RealtimeVoiceController(
             audioCapture.stop()
             vad.release()
             whisperCppStt.release()
+            shrutiStt.release()
             engineSelector.releaseAll()
         }
     }
@@ -462,6 +465,9 @@ class RealtimeVoiceController(
                     _liveTranscript.value = ""
                     transcript = when (candidate) {
                         SttEngineChoice.MODEL_AUDIO -> transcribeAudio(wavFile.absolutePath)
+                        SttEngineChoice.SHRUTI -> shrutiStt.takeIf { it.isReady() }
+                            ?.also { _sttLabel.value = it.label }
+                            ?.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
                         SttEngineChoice.WHISPER_CPP -> pickInbuiltStt()
                             ?.transcribe(captured.pcm, VoiceActivityDetector.SAMPLE_RATE_HZ)
                         SttEngineChoice.ANDROID -> null

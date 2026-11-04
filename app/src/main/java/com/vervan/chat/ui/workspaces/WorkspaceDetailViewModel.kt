@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.workspaces
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -114,7 +116,7 @@ class WorkspaceDetailViewModel(private val app: VervanApp, private val workspace
         viewModelScope.launch {
             workspace.value?.let {
                 workspaceManager.setActive(it)
-                _confirmationMessage.value = "${it.name} is now active"
+                _confirmationMessage.value = app.getString(R.string.workspace_detail_arg1_is_now_active, it.name)
             }
         }
     }

@@ -1,0 +1,19 @@
+# Baseline Profile: classes and methods on the cold-start path, compiled ahead of time at install
+# (via androidx.profileinstaller) instead of being interpreted on first launch. Compose, Room and
+# the other AndroidX libraries ship their own profiles; these rules cover this app's own code on
+# the way to the first Home/Chat frame. Regenerate with a Macrobenchmark BaselineProfileRule when
+# the startup path changes substantially.
+HSPLcom/vervan/chat/VervanApp;->**(**)**
+HSPLcom/vervan/chat/AppContainer;->**(**)**
+HSPLcom/vervan/chat/MainActivity;->**(**)**
+HSPLcom/vervan/chat/data/settings/SettingsRepository;->**(**)**
+HSPLcom/vervan/chat/data/db/AppDatabase_Impl;->**(**)**
+HSPLcom/vervan/chat/data/db/dao/**;->**(**)**
+HSPLcom/vervan/chat/ui/nav/**;->**(**)**
+HSPLcom/vervan/chat/ui/theme/**;->**(**)**
+HSPLcom/vervan/chat/ui/home/**;->**(**)**
+HSPLcom/vervan/chat/ui/common/**;->**(**)**
+HSPLcom/vervan/chat/ui/chat/ChatScreen*;->**(**)**
+HSPLcom/vervan/chat/ui/chat/ChatViewModel*;->**(**)**
+HSPLcom/vervan/chat/ui/chat/MessageBubble*;->**(**)**
+HSPLcom/vervan/chat/modelload/**;->**(**)**
