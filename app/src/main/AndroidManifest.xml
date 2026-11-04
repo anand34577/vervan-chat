@@ -82,6 +82,7 @@
          http://. See RemoteOpenAiEngine.baseUrlError. -->
     <application
         android:name=".VervanApp"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -104,6 +105,12 @@
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+        <!-- LiteRT NPU dispatch: MediaTek NeuroPilot and Google Tensor vendor runtimes. Only
+             grants linker access when the phone has them; required=false keeps install open to
+             every device. -->
+        <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false" />
+        <uses-native-library android:name="libneuron_runtime.so" android:required="false" />
+        <uses-native-library android:name="libedgetpu_util.so" android:required="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -178,10 +185,10 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.Vervan">
+            android:theme="@style/Theme.Vervan.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.projects
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -63,11 +64,11 @@ fun ProjectDashboardScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: ProjectDashboardViewModel = viewModel(factory = viewModelFactory { initializer { ProjectDashboardViewModel(app, projectId) } })
-    val project by vm.project.collectAsState()
-    val chats by vm.chats.collectAsState()
-    val notes by vm.notes.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val project by vm.project.collectAsStateWithLifecycle()
+    val chats by vm.chats.collectAsStateWithLifecycle()
+    val notes by vm.notes.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var instructions by remember { mutableStateOf("") }

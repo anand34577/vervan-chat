@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.ui.theme.vervanWarning
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.os.StatFs
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -198,31 +201,31 @@ fun StorageDataSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Storage & backup") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.storage_data_settings_storage_backup)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         ScrollablePage(padding) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Storage details unavailable",
+                    title = stringResource(R.string.storage_data_settings_storage_details_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your files are safe. Retry reading storage details.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.storage_data_settings_your_files_are_safe_retry),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retry
                 )
                 isLoading -> OperationProgressCard(
-                    title = "Reading storage",
-                    body = "Calculating model, document, cache, and database usage."
+                    title = stringResource(R.string.storage_data_settings_reading_storage),
+                    body = stringResource(R.string.storage_data_settings_calculating_model_document_cache_and)
                 )
                 else -> {
             StorageHero(overview)
-            Text("App data", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+            Text(stringResource(R.string.storage_data_settings_app_data), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
             StorageBreakdown(overview)
             ContentCard {
                 Column(Modifier.fillMaxWidth().padding(Space.lg)) {
-                    Text("Where your data lives", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.storage_data_settings_where_your_data_lives), style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Chats, settings, imported documents, and models are stored in Vervan's private app storage. " +
                             "Other apps cannot browse it. Uninstalling Vervan removes this local data because Android system backup is disabled. " +
@@ -237,18 +240,18 @@ fun StorageDataSettingsScreen(
                 Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
-                        Text("Temporary files", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.storage_data_settings_temporary_files), style = MaterialTheme.typography.titleSmall)
                         Text(
                             if (overview.cache == 0L) "Cache is already clear" else "${formatBytes(overview.cache)} can be removed safely",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = vm::clearCache, enabled = overview.cache > 0L && !clearing) { Text(if (clearing) "Clearing…" else "Clear") }
+                    TextButton(onClick = vm::clearCache, enabled = overview.cache > 0L && !clearing) { Text(if (clearing) stringResource(R.string.storage_data_settings_clearing) else stringResource(R.string.action_clear)) }
                 }
             }
 
-            Text("Data tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+            Text(stringResource(R.string.storage_data_settings_data_tools), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
             SettingsRow(Icons.Filled.ImportExport, "Backup & restore", "Export or restore your data", onOpenBackup)
             SettingsRow(Icons.Filled.DeleteOutline, "Recycle bin", "Restore items or delete them forever", onOpenRecycleBin)
             SettingsRow(Icons.AutoMirrored.Filled.ListAlt, "Background jobs", "View, stop, or clear work", onOpenJobs)
@@ -282,13 +285,13 @@ private fun StorageHero(stats: StorageOverview) {
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("${(usedFraction * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("device used", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.storage_data_settings_device_used), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Column(Modifier.weight(1f).padding(start = Space.lg)) {
                     Text("${formatBytes(stats.deviceFree)} free", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                    Text("of ${formatBytes(stats.deviceTotal)} device storage", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Vervan uses ${formatBytes(stats.appTotal)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
+                    Text(stringResource(R.string.storage_of_device_total, formatBytes(stats.deviceTotal)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.storage_app_uses, formatBytes(stats.appTotal)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
                 }
             }
         }
@@ -301,7 +304,7 @@ private data class StoragePart(val label: String, val bytes: Long, val color: Co
 private fun StorageBreakdown(stats: StorageOverview) {
     val parts = listOf(
         StoragePart("Models", stats.models, MaterialTheme.colorScheme.primary),
-        StoragePart("Documents", stats.documents, MaterialTheme.colorScheme.tertiary),
+        StoragePart("Documents", stats.documents, MaterialTheme.colorScheme.vervanWarning),
         StoragePart("Database", stats.database, MaterialTheme.colorScheme.secondary),
         StoragePart("Cache", stats.cache, MaterialTheme.colorScheme.error),
         StoragePart("Other", stats.other, MaterialTheme.colorScheme.outline)
@@ -325,7 +328,7 @@ private fun StorageBreakdown(stats: StorageOverview) {
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(formatBytes(stats.appTotal), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("app data", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.storage_data_settings_app_data_2), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Column(Modifier.weight(1f).padding(start = Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {

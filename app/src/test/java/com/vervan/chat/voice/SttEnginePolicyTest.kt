@@ -14,7 +14,9 @@ class SttEnginePolicyTest {
         whisperEnabled: Boolean = true,
         whisperAvailable: Boolean = false,
         androidEnabled: Boolean = true,
-        androidAvailable: Boolean = true
+        androidAvailable: Boolean = true,
+        shrutiEnabled: Boolean = false,
+        shrutiAvailable: Boolean = false
     ) = SttAvailability(
         speechInputEnabled = true,
         preference = preference,
@@ -24,8 +26,29 @@ class SttEnginePolicyTest {
         whisperEnabled = whisperEnabled,
         whisperAvailable = whisperAvailable,
         androidEnabled = androidEnabled,
-        androidAvailable = androidAvailable
+        androidAvailable = androidAvailable,
+        shrutiEnabled = shrutiEnabled,
+        shrutiAvailable = shrutiAvailable
     )
+
+    @Test
+    fun downloadedShrutiComesBeforeWhisperInAuto() {
+        val result = SttEnginePolicy.resolve(availability(shrutiEnabled = true, shrutiAvailable = true, whisperAvailable = true))
+        assertEquals(listOf(SttEngineChoice.SHRUTI, SttEngineChoice.WHISPER_CPP, SttEngineChoice.ANDROID), result.candidates)
+    }
+
+    @Test
+    fun pinnedShrutiWithoutModelIsUnavailable() {
+        val result = SttEnginePolicy.resolve(availability(preference = "SHRUTI", fallback = false, shrutiEnabled = true))
+        assertFalse(result.isAvailable)
+        assertEquals(SttEngineChoice.SHRUTI, result.requested)
+    }
+
+    @Test
+    fun disabledShrutiIsSkipped() {
+        val result = SttEnginePolicy.resolve(availability(shrutiEnabled = false, shrutiAvailable = true))
+        assertEquals(listOf(SttEngineChoice.ANDROID), result.candidates)
+    }
 
     @Test
     fun autoFallsBackFromUnsupportedModelAndMissingWhisperToAndroid() {

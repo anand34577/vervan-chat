@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -99,7 +100,7 @@ class RecycleBinViewModel(private val app: VervanApp) : ViewModel() {
         .catch { throwable ->
             if (throwable is CancellationException) throw throwable
             _isLoading.value = false
-            _error.value = throwable.message ?: "Recycle bin could not be loaded."
+            _error.value = throwable.message ?: app.getString(R.string.recycle_bin_recycle_bin_could_not_be)
             emit(RecycleBinState())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecycleBinState())

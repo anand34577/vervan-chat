@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -53,7 +56,7 @@ import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.common.rememberManagedImagePath
 import com.vervan.chat.ui.common.rememberThumbnail
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -75,6 +78,7 @@ private val CAPTION_MODES = listOf(
 @Composable
 fun ImageCaptionScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
 
@@ -85,7 +89,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
 
     val managedImagePath = rememberManagedImagePath()
     val imagePath = managedImagePath.path
-    var output by remember { mutableStateOf("") }
+    var output by rememberSaveable { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var activeMode by remember { mutableStateOf<String?>(null) }
     var isRunning by remember { mutableStateOf(false) }
@@ -149,7 +153,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
             else { errorText = "The captured image is too large or could not be read. Please use a smaller image."; file.delete() }
         } else file?.delete()
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) { val (file, uri) = newImageFile(); pendingFile = file; takePicture.launch(uri) }
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -171,8 +175,8 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Image caption & alt text") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.image_caption_image_caption_alt_text)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -184,21 +188,21 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         ) {
             ToolIntro(
                 icon = Icons.Filled.ImageSearch,
-                title = "Describe an image for any audience",
-                body = "Create alt text, captions, or image descriptions on-device."
+                title = stringResource(R.string.image_caption_describe_an_image_for_any),
+                body = stringResource(R.string.image_caption_create_alt_text_captions_or)
             )
             if (visionAvailable == false) {
                 Text(
-                    "Load a vision-capable model to use this tool.",
+                    stringResource(R.string.image_caption_load_a_vision_capable_model),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error
                 )
             }
             ResponsiveActions {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text("Camera", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                 }
                 OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text("From files", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text(stringResource(R.string.image_caption_from_files), modifier = Modifier.padding(start = Space.sm))
                 }
             }
             imagePath?.let { path ->
@@ -214,15 +218,15 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                 isRunning && output.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Creating ${activeMode?.lowercase() ?: "description"}",
-                        body = "Analyzing the image with the active model; review the privacy status before sending sensitive images.",
-                        actionLabel = "Stop",
+                        body = stringResource(R.string.image_caption_analyzing_the_image_with_the),
+                        actionLabel = stringResource(R.string.action_stop),
                         onAction = { genJob?.cancel(); isRunning = false }
                     )
                 }
                 output.isNotBlank() -> {
                     ToolResultHeader(
-                        title = activeMode?.takeIf { it.isNotBlank() } ?: "Description ready",
-                        supportingText = if (isRunning) "Generating with the active model…" else "Ready to copy and use"
+                        title = activeMode?.takeIf { it.isNotBlank() } ?: stringResource(R.string.image_caption_description_ready),
+                        supportingText = if (isRunning) stringResource(R.string.text_action_generating_with_the_active_model) else stringResource(R.string.image_caption_ready_to_copy_and_use)
                     )
                     Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         Column(Modifier.padding(Space.md)) {
@@ -231,20 +235,20 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                                 OutlinedButton(
                                     onClick = {
                                         context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .setSensitiveText(output, scope, "Caption")
-                                        scope.launch { snackbarHostState.showSnackbar("Copied") }
+                                            .copyText(output, scope, "Caption")
+                                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
                                     },
                                     modifier = Modifier.padding(top = Space.sm)
-                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
+                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
                             }
                         }
                     }
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't generate a caption",
+                        title = stringResource(R.string.image_caption_couldn_t_generate_a_caption),
                         message = errorText!!,
-                        recovery = "Load a vision model or choose a clearer image, then try again.",
+                        recovery = stringResource(R.string.image_caption_load_a_vision_model_or),
                         actionLabel = lastMode?.let { "Try again" },
                         onAction = lastMode?.let { mode -> { runMode(mode) } },
                         modifier = Modifier.padding(top = Space.lg)

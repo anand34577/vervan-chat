@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.home
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.Image
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -20,6 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.widthIn
+import com.vervan.chat.ui.theme.vervanWarning
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -136,15 +140,15 @@ fun HomeScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(app) } })
-    val recentChats by vm.recentChats.collectAsState()
-    val latestMessagesByChat by vm.latestMessagesByChat.collectAsState()
-    val projects by vm.projects.collectAsState()
-    val recentNotes by vm.recentNotes.collectAsState()
-    val recentToolRuns by vm.recentToolRuns.collectAsState()
-    val activeModel by vm.activeModel.collectAsState()
-    val indexingDocuments by vm.indexingDocuments.collectAsState()
-    val activeWorkspaceName by vm.activeWorkspaceName.collectAsState()
-    val thermalLevel by app.container.thermalMonitor.level.collectAsState()
+    val recentChats by vm.recentChats.collectAsStateWithLifecycle()
+    val latestMessagesByChat by vm.latestMessagesByChat.collectAsStateWithLifecycle()
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val recentNotes by vm.recentNotes.collectAsStateWithLifecycle()
+    val recentToolRuns by vm.recentToolRuns.collectAsStateWithLifecycle()
+    val activeModel by vm.activeModel.collectAsStateWithLifecycle()
+    val indexingDocuments by vm.indexingDocuments.collectAsStateWithLifecycle()
+    val activeWorkspaceName by vm.activeWorkspaceName.collectAsStateWithLifecycle()
+    val thermalLevel by app.container.thermalMonitor.level.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     fun startNewChat() {
@@ -183,19 +187,20 @@ fun HomeScreen(
                         ) {
                             Image(
                                 painter = painterResource(R.drawable.ic_launcher_foreground),
-                                contentDescription = "Vervan",
+                                // Decorative: the "Vervan" text beside it is the accessible name.
+                                contentDescription = null,
                                 modifier = Modifier.size(40.dp)
                             )
                         }
                         // The active workspace name already appears right below in the hero (with
                         // richer privacy context) — repeating it here duplicated the
                         // same fact twice on one screen for no added information.
-                        Text("Vervan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
+                        Text(stringResource(R.string.home_vervan), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Space.md))
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, "Search workspace") }
-                    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, "Settings") }
+                    IconButton(onClick = onOpenSearch) { Icon(Icons.Filled.Search, stringResource(R.string.home_search_workspace)) }
+                    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.home_settings)) }
                 }
             )
         }
@@ -207,8 +212,8 @@ fun HomeScreen(
                 // made the layout flip too early in split-screen and on compact tablets.
                 val expanded = maxWidth >= VervanBreakpoints.expanded
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.sm, bottom = Space.md),
-                    verticalArrangement = Arrangement.spacedBy(Space.sm)
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Space.sm, bottom = Space.xxl),
+                    verticalArrangement = Arrangement.spacedBy(Space.xl)
                 ) {
                     HomeHero(
                         workspaceName = activeWorkspaceName,
@@ -219,7 +224,11 @@ fun HomeScreen(
                         onOpenKnowledge = onOpenKnowledge
                     )
 
-                    HomePrivacyStatus(model = activeModel, onOpenPrivacy = onOpenPrivacy)
+                    // The full privacy card only shows when something needs attention (no model, or
+                    // a remote one); the on-device case is already stated by the hero's badge.
+                    if (activeModel?.traits?.runsOnDevice == false) {
+                        HomePrivacyStatus(model = activeModel, onOpenPrivacy = onOpenPrivacy)
+                    }
 
                     HomeAlert(
                         thermalLevel = thermalLevel,
@@ -257,16 +266,9 @@ fun HomeScreen(
                             recentChats, latestMessagesByChat, projects, recentNotes, recentToolRuns,
                             onOpenChat, onOpenProject, onOpenNote, onOpenToolRun, ::startNewChat, onOpenChats
                         )
+                        // Phones: chat-first. Workspaces, projects and folders stay one tap away in
+                        // Library rather than stacking another panel under the tools.
                         ToolsSection(onOpenVoiceChat, onOpenWritingAssistant, onOpenDocScanner, onOpenTranslate, onOpenAllTools)
-                        WorkspaceStatusSection(
-                            model = activeModel,
-                            workspaceName = activeWorkspaceName,
-                            indexingCount = indexingDocuments.size,
-                            onOpenModels = onOpenModels,
-                            onOpenWorkspaces = onOpenWorkspaces,
-                            onOpenProjects = onOpenProjects,
-                            onOpenFolders = onOpenFolders,
-                        )
                     }
                 }
             }
@@ -342,7 +344,7 @@ private fun HomePrivacyStatus(model: ModelInfo?, onOpenPrivacy: () -> Unit) {
                         stringResource(R.string.privacy_review),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -372,111 +374,98 @@ private fun HomeHero(
     onOpenModels: () -> Unit,
     onOpenKnowledge: () -> Unit
 ) {
-    val heroFg = MaterialTheme.colorScheme.onPrimary
     val remoteModel = model?.traits?.runsOnDevice == false
     // Not remembered — an app left open across a time boundary should not greet
     // "Good morning" all evening. Recomputing on recomposition is trivially cheap.
     val greeting =
         when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
-            in 0..4 -> "Working late"
-            in 5..11 -> "Good morning"
-            in 12..16 -> "Good afternoon"
-            else -> "Good evening"
+            in 0..4 -> stringResource(R.string.home_greeting_late)
+            in 5..11 -> stringResource(R.string.home_greeting_morning)
+            in 12..16 -> stringResource(R.string.home_greeting_afternoon)
+            else -> stringResource(R.string.home_greeting_evening)
         }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(VervanExtraShapes.hero)
-            .background(com.vervan.chat.ui.theme.vervanBrandGradient())
-            .animateContentSize()
-            .padding(if (compact) Space.md else Space.lg)
+    // Flat and quiet on purpose: the greeting and the ask field are the page's one primary
+    // action, so they sit on the page itself rather than inside a loud coloured banner.
+    Column(
+        Modifier.fillMaxWidth().padding(top = if (compact) Space.sm else Space.xl),
+        verticalArrangement = Arrangement.spacedBy(Space.md)
     ) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text(
+                greeting,
+                style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() }
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        greeting,
-                        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
-                        color = heroFg,
-                    )
-                    Text(
-                        workspaceName?.let {
-                            when {
-                                remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, it)
-                                model == null -> stringResource(R.string.privacy_hero_no_model_suffix, it)
-                                else -> stringResource(R.string.privacy_hero_local_suffix, it)
-                            }
-                        } ?: when {
-                            remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, "Workspace")
-                            model == null -> stringResource(R.string.privacy_hero_no_model_suffix, "Workspace")
-                            else -> stringResource(R.string.privacy_hero_local_suffix, "Workspace")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = heroFg.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = Space.xs)
-                    )
-                }
-                // Privacy badge — the visual anchor for the app's core promise.
-                Box(
-                    Modifier.size(40.dp).background(heroFg.copy(alpha = 0.18f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (remoteModel) Icons.Filled.LockOpen else Icons.Filled.Lock,
-                        contentDescription = stringResource(
-                            when {
-                                remoteModel -> R.string.privacy_remote_icon_description
-                                model == null -> R.string.privacy_no_model_icon_description
-                                else -> R.string.privacy_local_icon_description
-                            }
-                        ),
-                        tint = heroFg,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    if (remoteModel) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                    contentDescription = stringResource(
+                        when {
+                            remoteModel -> R.string.privacy_remote_icon_description
+                            model == null -> R.string.privacy_no_model_icon_description
+                            else -> R.string.privacy_local_icon_description
+                        }
+                    ),
+                    tint = if (remoteModel) MaterialTheme.colorScheme.vervanWarning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                val label = workspaceName ?: stringResource(R.string.chat_info_workspace)
+                Text(
+                    when {
+                        remoteModel -> stringResource(R.string.privacy_hero_remote_suffix, label)
+                        model == null -> stringResource(R.string.privacy_hero_no_model_suffix, label)
+                        else -> stringResource(R.string.privacy_hero_local_suffix, label)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = Space.xs)
+                )
             }
-            Spacer(Modifier.height(if (compact) Space.sm else Space.md))
-            if (model != null) {
-                QuickAskField(fg = heroFg, onAsk = onAsk)
-                Spacer(Modifier.height(Space.md))
-                ResponsiveActions {
-                    HeroChip(Icons.Outlined.Memory, "Model ready", heroFg, onOpenModels)
-                    HeroChip(Icons.Filled.Description, "Ask documents", heroFg, onOpenKnowledge)
-                }
-            } else {
-                Surface(
-                    onClick = onOpenModels,
-                    shape = VervanExtraShapes.pill,
-                    color = heroFg,
-                    contentColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = Space.lg, vertical = Space.md),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Space.sm)
-                    ) {
-                        Icon(Icons.Outlined.Memory, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Text(stringResource(R.string.home_choose_local_model), style = MaterialTheme.typography.titleSmall)
+        }
+        if (model != null) {
+            QuickAskField(onAsk = onAsk)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                // Names the actual model instead of claiming "Model ready": installed is not the
+                // same as loaded, and the model screen is where both are managed.
+                HeroChip(Icons.Outlined.Memory, model.displayName, onOpenModels, Modifier.widthIn(max = 240.dp))
+                // Opens the sources list (where documents are added and chatted with), so the
+                // label says that rather than promising an answer straight away.
+                HeroChip(Icons.Filled.Description, stringResource(R.string.home_your_documents), onOpenKnowledge)
+            }
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = SurfaceRole.Raised.cardColors(),
+                border = SurfaceRole.Raised.border()
+            ) {
+                Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                    Text(
+                        stringResource(R.string.home_local_model_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.Button(onClick = onOpenModels) {
+                        Icon(Icons.Outlined.Memory, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(Space.sm))
+                        Text(stringResource(R.string.home_choose_local_model))
                     }
                 }
-                Text(
-                    stringResource(R.string.home_local_model_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = heroFg.copy(alpha = 0.85f),
-                    modifier = Modifier.padding(top = Space.sm)
-                )
             }
         }
     }
 }
 
-/** Frosted single-line composer on the hero. Send (button or IME action) opens a new chat and
- * immediately submits this text — generation is already underway by the time the chat screen
- * appears. Blank send just opens an empty chat. */
+/** Single-line composer. Send (button or IME action) opens a new chat and immediately submits
+ * this text — generation is already underway by the time the chat screen appears. Blank send
+ * just opens an empty chat. Styled like the chat composer so the two read as the same control. */
 @Composable
-private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String) -> Unit) {
+private fun QuickAskField(onAsk: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     val askContentDescription = stringResource(R.string.home_ask_content_description)
     fun submit() {
@@ -484,7 +473,12 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
         text = ""
         onAsk(t)
     }
-    Surface(shape = VervanExtraShapes.pill, color = fg.copy(alpha = 0.16f)) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = VervanExtraShapes.composer,
+        color = SurfaceRole.Floating.containerColor(),
+        border = SurfaceRole.Floating.border()
+    ) {
         Row(
             Modifier.padding(start = Space.lg, end = Space.xs).heightIn(min = 56.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -492,16 +486,22 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
             BasicTextField(
                 value = text,
                 onValueChange = { text = it.take(InputLimits.CHAT_TEXT_CHARS) },
-                modifier = Modifier.weight(1f).semantics { contentDescription = askContentDescription },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = fg),
-                cursorBrush = SolidColor(fg),
-                singleLine = true,
+                modifier = Modifier.weight(1f).padding(vertical = Space.md).semantics { contentDescription = askContentDescription },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                cursorBrush = SolidColor(scheme.primary),
+                maxLines = 4,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit() }),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (text.isEmpty()) {
-                            Text(stringResource(R.string.home_ask_hint), style = MaterialTheme.typography.bodyLarge, color = fg.copy(alpha = 0.7f))
+                            Text(
+                                stringResource(R.string.home_ask_hint),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = scheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                         inner()
                     }
@@ -509,17 +509,17 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
             )
             Box(
                 Modifier
-                    .padding(vertical = Space.xs)
+                    .padding(start = Space.sm, top = Space.xs, bottom = Space.xs)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(fg)
+                    .background(scheme.primary)
                     .clickable(onClick = ::submit, role = Role.Button),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = stringResource(R.string.home_start_chat_question),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = scheme.onPrimary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -531,17 +531,23 @@ private fun QuickAskField(fg: androidx.compose.ui.graphics.Color, onAsk: (String
 private fun HeroChip(
     icon: ImageVector,
     label: String,
-    fg: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(onClick = onClick, shape = VervanExtraShapes.pill, color = fg.copy(alpha = 0.14f), contentColor = fg, modifier = modifier) {
+    Surface(
+        onClick = onClick,
+        shape = VervanExtraShapes.pill,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = SurfaceRole.Card.border(),
+        modifier = modifier.heightIn(min = 40.dp)
+    ) {
         Row(
             Modifier.padding(horizontal = Space.md, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs)
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -578,6 +584,9 @@ private sealed interface HomeRecentItem {
     data class ToolRunItem(val value: ToolRun) : HomeRecentItem { override val timestamp = value.updatedAt }
 }
 
+/** Home is a launch pad, not an archive: the full history lives in Chats and Library. */
+private const val HOME_CONTINUE_LIMIT = 4
+
 @Composable
 private fun ContinueCarousel(
     chats: List<Chat>,
@@ -597,7 +606,7 @@ private fun ContinueCarousel(
         projects.forEach { add(HomeRecentItem.ProjectItem(it)) }
         notes.forEach { add(HomeRecentItem.NoteItem(it)) }
         toolRuns.forEach { add(HomeRecentItem.ToolRunItem(it)) }
-    }.sortedByDescending { it.timestamp }
+    }.sortedByDescending { it.timestamp }.take(HOME_CONTINUE_LIMIT)
 
     Column {
         VervanSectionHeader(
@@ -712,7 +721,7 @@ private fun ContinueRow(
                         text = timeLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         softWrap = false,
                         modifier = Modifier.padding(start = Space.sm),
                     )
@@ -814,11 +823,12 @@ private fun WorkspaceStatusSection(
     }
 }
 
+@androidx.compose.runtime.Composable
 private fun statusLabel(tone: StatusTone): String = when (tone) {
-    StatusTone.Ready -> "Selected"
-    StatusTone.Running -> "Working"
-    StatusTone.Warning -> "Setup"
-    else -> "Open"
+    StatusTone.Ready -> stringResource(R.string.home_selected)
+    StatusTone.Running -> stringResource(R.string.home_working)
+    StatusTone.Warning -> stringResource(R.string.home_setup)
+    else -> stringResource(R.string.action_open)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -841,22 +851,11 @@ private fun ToolsSection(
     Column {
         VervanSectionHeader(
             "Quick tools",
-            actionLabel = "See all",
+            actionLabel = stringResource(R.string.home_see_all),
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )
-        Text(
-            "Start a task, or browse all tools.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        toolGroups.forEach { (group, tools) ->
-            Text(
-                group,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.md, bottom = Space.sm).semantics { heading() },
-            )
+        toolGroups.forEach { (_, tools) ->
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -887,9 +886,10 @@ private data class ModernHomeTool(
     val onClick: () -> Unit,
 )
 
+@androidx.compose.runtime.Composable
 private fun ModelBackend.label(): String = when (this) {
-    ModelBackend.NPU -> "NPU backend"
-    ModelBackend.GPU -> "GPU backend"
-    ModelBackend.CPU -> "CPU backend"
-    ModelBackend.UNVERIFIED -> "Setup not checked"
+    ModelBackend.NPU -> stringResource(R.string.home_npu_backend)
+    ModelBackend.GPU -> stringResource(R.string.home_gpu_backend)
+    ModelBackend.CPU -> stringResource(R.string.home_cpu_backend)
+    ModelBackend.UNVERIFIED -> stringResource(R.string.home_setup_not_checked)
 }

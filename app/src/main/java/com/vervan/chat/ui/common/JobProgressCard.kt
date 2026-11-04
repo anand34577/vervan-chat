@@ -51,7 +51,7 @@ fun JobProgressCard(
                         text = it,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         softWrap = false,
                         modifier = Modifier.padding(start = Space.sm),
                     )

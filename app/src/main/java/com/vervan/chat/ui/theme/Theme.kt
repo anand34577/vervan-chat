@@ -21,10 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Fixed "Aurora" palette — deep indigo-ink neutrals with vivid electric accents in dark mode,
- * cool porcelain neutrals in light mode. Not Material You dynamic color. No bundled display
- * font (offline-first app, nothing is fetched from Google Fonts) — system sans-serif for body,
- * system monospace for metadata/labels carries the technical texture instead.
+ * Fixed palette: calm graphite neutrals in dark mode and soft paper neutrals in light mode, so
+ * the conversation (not the chrome) carries the colour, with one accent for actions. Not
+ * Material You dynamic colour unless the user turns it on. Typography uses the bundled Manrope
+ * variable font (OFL, see assets/licenses) so the app looks the same on every phone without
+ * fetching anything; system monospace carries metadata.
  */
 private val DangerRed = Color(0xFFFF6B7A)
 
@@ -57,7 +58,7 @@ private data class AccentPair(
 private val DarkAccents = mapOf(
     com.vervan.chat.data.settings.AccentTheme.AMBER to AccentPair(Color(0xFFF6B24E), Color(0xFF221402), Color(0xFF503A12), Color(0xFFFFE1B0), Color(0xFF7C9AFF), Color(0xFF0A1030), Color(0xFF1D2A52), Color(0xFFA9BDFF)),
     com.vervan.chat.data.settings.AccentTheme.BLUE to AccentPair(Color(0xFF7C9AFF), Color(0xFF0A1030), Color(0xFF24356B), Color(0xFFDDE4FF), Color(0xFFF6B24E), Color(0xFF221402), Color(0xFF503A12), Color(0xFFFFD9A0)),
-    com.vervan.chat.data.settings.AccentTheme.GREEN to AccentPair(Color(0xFF53E88B), Color(0xFF04240E), Color(0xFF14532D), Color(0xFFBFF2D4), Color(0xFF7C9AFF), Color(0xFF0A1030), Color(0xFF1D2A52), Color(0xFFA9BDFF)),
+    com.vervan.chat.data.settings.AccentTheme.GREEN to AccentPair(Color(0xFF5FD69C), Color(0xFF03291A), Color(0xFF1A4D35), Color(0xFFC4F1DA), Color(0xFF7C9AFF), Color(0xFF0A1030), Color(0xFF1D2A52), Color(0xFFA9BDFF)),
     com.vervan.chat.data.settings.AccentTheme.VIOLET to AccentPair(Color(0xFFA78BFA), Color(0xFF190E33), Color(0xFF3C2A6E), Color(0xFFE5DBFF), Color(0xFF53E88B), Color(0xFF04240E), Color(0xFF14532D), Color(0xFFA7F3C4)),
     com.vervan.chat.data.settings.AccentTheme.ROSE to AccentPair(Color(0xFFFB7185), Color(0xFF33060E), Color(0xFF6B1D2C), Color(0xFFFFD7E2), Color(0xFF7C9AFF), Color(0xFF0A1030), Color(0xFF1D2A52), Color(0xFFA9BDFF))
 )
@@ -83,21 +84,21 @@ private fun darkSchemeFor(accent: AccentPair) = darkColorScheme(
     onTertiary = Color(0xFF04240E),
     tertiaryContainer = Color(0xFF14532D),
     onTertiaryContainer = Color(0xFFA7F3C4),
-    background = Color(0xFF0A0D14),
-    onBackground = Color(0xFFEDF0F7),
-    surface = Color(0xFF0A0D14),
-    onSurface = Color(0xFFEDF0F7),
-    surfaceVariant = Color(0xFF39415A),
-    onSurfaceVariant = Color(0xFFC7CEDE),
-    surfaceContainerLowest = Color(0xFF060810),
-    surfaceContainerLow = Color(0xFF10141F),
-    surfaceContainer = Color(0xFF161B29),
-    surfaceContainerHigh = Color(0xFF1E2434),
-    surfaceContainerHighest = Color(0xFF283042),
-    surfaceDim = Color(0xFF060810),
-    surfaceBright = Color(0xFF303950),
-    outline = Color(0xFF545E78),
-    outlineVariant = Color(0xFF3B4359),
+    background = Color(0xFF0E1013),
+    onBackground = Color(0xFFECEEF2),
+    surface = Color(0xFF0E1013),
+    onSurface = Color(0xFFECEEF2),
+    surfaceVariant = Color(0xFF353A44),
+    onSurfaceVariant = Color(0xFFBFC4CE),
+    surfaceContainerLowest = Color(0xFF08090B),
+    surfaceContainerLow = Color(0xFF15171B),
+    surfaceContainer = Color(0xFF1A1D22),
+    surfaceContainerHigh = Color(0xFF22262C),
+    surfaceContainerHighest = Color(0xFF2B3038),
+    surfaceDim = Color(0xFF08090B),
+    surfaceBright = Color(0xFF33383F),
+    outline = Color(0xFF5B616D),
+    outlineVariant = Color(0xFF353A44),
     inverseSurface = Color(0xFFEDF0F7),
     inverseOnSurface = Color(0xFF171A21),
     inversePrimary = accent.primaryContainer,
@@ -146,36 +147,38 @@ private fun lightSchemeFor(accent: AccentPair) = lightColorScheme(
     scrim = Color.Black
 )
 
-// Deliberately tighter than the M3 Expressive scale this app used to carry (10/12/16/24/32):
-// at that size every surface — cards, sheets, dialogs, menus — read as visibly bubbly, and the
-// roundness stopped distinguishing anything because it was on everything. This sits close to
-// Material 3's own defaults: still soft, but corners now read as a finish rather than a feature.
-// Chips/badges stay full pills (see VervanExtraShapes.pill) so they remain distinct from cards.
+// One proportional corner scale: the radius grows with the element, so a small thing inside a
+// bigger thing always reads as nested rather than as a competing shape.
+//   extraSmall  6  tags, badges, inline code, small thumbnails (≤ 24dp tall)
+//   small      10  icon tiles, text fields, menus, inner tiles that sit inside a card
+//   medium     16  every content card (Material's default Card shape)
+//   large      16  custom cards that ask for "large"; the same 16 so all cards match
+//   extraLarge 28  dialogs, bottom sheets
+// Controls people press (buttons, chips, the composer, segmented filters) are full pills, which
+// is radius = height / 2 and so proportional by definition. Nested rule: an element inset by
+// padding p inside a container of radius r uses roughly r - p, which is why inner tiles are 10.
 private val VervanShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp)
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
-/** Shapes outside Material3's fixed five-token [Shapes] scale (+ M3 Expressive additions).
- *  - hero/composer surfaces read as one deliberate size, distinct from both cards and dialogs
- *  - message bubbles get an asymmetric "tail" shape instead of every screen hand-rolling one
- *  - pill/full shape for chips, suggestion replies, model-switcher, quick-action pills
- *  - extra-extra-large (48dp) is the M3 Expressive max — used for hero gradients and big FABs. */
+/** Shapes outside Material3's five-token [Shapes] scale, on the same proportional rules. */
 object VervanExtraShapes {
+    /** Large standalone panels (empty states, previews); one step above a card. */
     val hero = RoundedCornerShape(20.dp)
-    val composer = RoundedCornerShape(20.dp)
-    // The 4dp "tail" corner stays proportionally smaller than the other three so the bubble keeps
-    // its direction cue — it scaled down with the rest (was 20/6) rather than being left behind.
-    val userBubble = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 4.dp)
-    val assistantBubble = RoundedCornerShape(14.dp)
-    /** Perfect pill — `CircleShape` is its own thing in Compose; this is the M3 "full" shape.
-     *  Intentionally NOT scaled down with the rest: chips/badges staying pill-shaped is what
-     *  keeps them readable as chips now that cards are square-ish. */
+    /** The composer is a pill at its resting 56dp height and keeps that radius as it grows. */
+    val composer = RoundedCornerShape(28.dp)
+    // The small "tail" corner keeps the bubble's direction cue; the rest match a card's radius
+    // plus a little, since bubbles are the conversation's primary surface.
+    val userBubble = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp)
+    val assistantBubble = RoundedCornerShape(16.dp)
+    /** Full pill for chips, quick replies, filters, and pressable controls. */
     val pill = RoundedCornerShape(100.dp)
     val datePill = RoundedCornerShape(100.dp)
+    /** Same as dialogs and sheets. */
     val extraExtraLarge = RoundedCornerShape(28.dp)
 }
 
@@ -200,7 +203,33 @@ object Space {
     val huge = 48.dp
 }
 
-private val VervanTypography = Typography().let { base ->
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun manrope(weight: Int) = androidx.compose.ui.text.font.Font(
+    com.vervan.chat.R.font.manrope_variable,
+    weight = FontWeight(weight),
+    variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(androidx.compose.ui.text.font.FontVariation.weight(weight))
+)
+
+val VervanSans = FontFamily(manrope(400), manrope(500), manrope(600), manrope(700), manrope(800))
+
+private val VervanTypography = Typography().let { base0 ->
+    val base = Typography(
+        displayLarge = base0.displayLarge.copy(fontFamily = VervanSans),
+        displayMedium = base0.displayMedium.copy(fontFamily = VervanSans),
+        displaySmall = base0.displaySmall.copy(fontFamily = VervanSans),
+        headlineLarge = base0.headlineLarge.copy(fontFamily = VervanSans),
+        headlineMedium = base0.headlineMedium.copy(fontFamily = VervanSans),
+        headlineSmall = base0.headlineSmall.copy(fontFamily = VervanSans),
+        titleLarge = base0.titleLarge.copy(fontFamily = VervanSans),
+        titleMedium = base0.titleMedium.copy(fontFamily = VervanSans),
+        titleSmall = base0.titleSmall.copy(fontFamily = VervanSans),
+        bodyLarge = base0.bodyLarge.copy(fontFamily = VervanSans, lineHeight = 26.sp),
+        bodyMedium = base0.bodyMedium.copy(fontFamily = VervanSans, lineHeight = 22.sp),
+        bodySmall = base0.bodySmall.copy(fontFamily = VervanSans),
+        labelLarge = base0.labelLarge.copy(fontFamily = VervanSans),
+        labelMedium = base0.labelMedium.copy(fontFamily = VervanSans),
+        labelSmall = base0.labelSmall.copy(fontFamily = VervanSans)
+    )
     // A more confident, high-contrast type scale: headlines get heavier weight and tighter
     // tracking so titles read as *display* type rather than large body text, while body/label
     // roles keep comfortable spacing for readability. This is what makes screens feel designed
@@ -214,7 +243,7 @@ private val VervanTypography = Typography().let { base ->
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.Bold),
         titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
         labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        labelSmall = base.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp)
+        labelSmall = base.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)
     )
 }
 

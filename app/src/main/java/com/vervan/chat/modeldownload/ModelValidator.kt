@@ -1,7 +1,7 @@
 package com.vervan.chat.modeldownload
 
 import android.util.Log
-import com.google.ai.edge.litertlm.Capabilities
+import com.google.ai.edge.litertlm.ModelInfo
 import com.vervan.chat.data.db.entities.ModelErrorCode
 import com.vervan.chat.retrieval.tokenizer.SentencePieceTokenizer
 import com.vervan.chat.model.readBytesLimited
@@ -36,12 +36,12 @@ class ModelValidator {
         }
     }
 
-    /** Opens the model's metadata via LiteRT-LM's [Capabilities] API without loading it for
+    /** Opens the model's metadata via LiteRT-LM's [ModelInfo] API without loading it for
      * inference — the same safe-probe [com.vervan.chat.llm.LlmEngine] already uses to detect
      * MTP support, reused here purely to confirm the file isn't truncated/corrupt. */
     fun validateLitertlm(file: File) {
         try {
-            Capabilities(file.absolutePath).use { }
+            ModelInfo.from(file.absolutePath).use { }
         } catch (t: Throwable) {
             Log.w(TAG, "validateLitertlm() failed for ${file.name}: ${t.message}")
             throw ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "${file.name} could not be opened as a LiteRT model", t)

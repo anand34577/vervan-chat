@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.writing
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -43,7 +45,7 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
     fun run(action: WritingAction, originalText: String, targetLanguage: String = "") {
         if (originalText.isBlank() || _running.value) return
         if (action == WritingAction.TRANSLATE && targetLanguage.isBlank()) {
-            _error.value = "Enter a target language first"
+            _error.value = app.getString(R.string.writing_workspace_enter_a_target_language_first)
             return
         }
         viewModelScope.launch {
@@ -52,7 +54,7 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
             _revision.value = ""
             val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
             if (model == null) {
-                _error.value = "No model is ready. Open Settings → AI models, then import or activate one."
+                _error.value = app.getString(R.string.writing_workspace_no_model_is_ready_open)
                 _running.value = false
                 return@launch
             }
@@ -62,7 +64,7 @@ class WritingWorkspaceViewModel(private val app: VervanApp) : ViewModel() {
                     ?.collect { chunk -> _revision.value += chunk }
             } catch (t: Throwable) {
                 Log.e(TAG, "run(${action.name}) failed", t)
-                _error.value = "Generation failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.writing_workspace_generation_failed_arg1, t.toUserMessage())
             }
             _running.value = false
         }

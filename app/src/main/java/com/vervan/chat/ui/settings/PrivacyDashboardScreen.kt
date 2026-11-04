@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.settings
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,20 +65,20 @@ fun PrivacyDashboardScreen(
         factory = viewModelFactory { initializer { PrivacyDashboardViewModel(app) } }
     )
 
-    val models by dashboardVm.models.collectAsState()
-    val activeModel by dashboardVm.activeModel.collectAsState()
-    val documents by dashboardVm.documents.collectAsState()
-    val chats by dashboardVm.chats.collectAsState()
-    val memories by dashboardVm.memories.collectAsState()
-    val knowledgeBases by dashboardVm.knowledgeBases.collectAsState()
-    val totalChunks by dashboardVm.totalChunks.collectAsState()
-    val embeddedChunks by dashboardVm.embeddedChunks.collectAsState()
-    val networkEntries by dashboardVm.networkEntries.collectAsState()
+    val models by dashboardVm.models.collectAsStateWithLifecycle()
+    val activeModel by dashboardVm.activeModel.collectAsStateWithLifecycle()
+    val documents by dashboardVm.documents.collectAsStateWithLifecycle()
+    val chats by dashboardVm.chats.collectAsStateWithLifecycle()
+    val memories by dashboardVm.memories.collectAsStateWithLifecycle()
+    val knowledgeBases by dashboardVm.knowledgeBases.collectAsStateWithLifecycle()
+    val totalChunks by dashboardVm.totalChunks.collectAsStateWithLifecycle()
+    val embeddedChunks by dashboardVm.embeddedChunks.collectAsStateWithLifecycle()
+    val networkEntries by dashboardVm.networkEntries.collectAsStateWithLifecycle()
 
-    val calendarOn by vm.calendarToolEnabled.collectAsState()
-    val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsState()
-    val apiServerOn by vm.apiServerEnabled.collectAsState()
-    val apiServerAuthOn by vm.apiServerRequireAuth.collectAsState()
+    val calendarOn by vm.calendarToolEnabled.collectAsStateWithLifecycle()
+    val deviceStatusOn by vm.deviceStatusToolEnabled.collectAsStateWithLifecycle()
+    val apiServerOn by vm.apiServerEnabled.collectAsStateWithLifecycle()
+    val apiServerAuthOn by vm.apiServerRequireAuth.collectAsStateWithLifecycle()
 
     // The server always binds every network interface while it's on (see ApiServerService) —
     // there's no longer a separate "allow LAN" toggle gating that. The only thing standing
@@ -91,7 +92,7 @@ fun PrivacyDashboardScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.privacy_dashboard_title)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->

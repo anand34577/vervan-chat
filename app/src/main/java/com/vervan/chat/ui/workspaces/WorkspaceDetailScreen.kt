@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.workspaces
 
+import androidx.compose.foundation.selection.toggleable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,15 +91,15 @@ fun WorkspaceDetailScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: WorkspaceDetailViewModel = viewModel(factory = viewModelFactory { initializer { WorkspaceDetailViewModel(app, workspaceId) } })
-    val workspace by vm.workspace.collectAsState()
-    val personas by vm.personas.collectAsState()
-    val activeWorkspaceId by vm.activeWorkspaceId.collectAsState()
-    val chats by vm.chats.collectAsState()
-    val folders by vm.folders.collectAsState()
-    val projects by vm.projects.collectAsState()
-    val activeChatCount by vm.activeChatCount.collectAsState()
-    val folderCount by vm.folderCount.collectAsState()
-    val documentCount by vm.documentCount.collectAsState()
+    val workspace by vm.workspace.collectAsStateWithLifecycle()
+    val personas by vm.personas.collectAsStateWithLifecycle()
+    val activeWorkspaceId by vm.activeWorkspaceId.collectAsStateWithLifecycle()
+    val chats by vm.chats.collectAsStateWithLifecycle()
+    val folders by vm.folders.collectAsStateWithLifecycle()
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val activeChatCount by vm.activeChatCount.collectAsStateWithLifecycle()
+    val folderCount by vm.folderCount.collectAsStateWithLifecycle()
+    val documentCount by vm.documentCount.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     // same CreateDocument/export pattern as BackupScreen.kt, scoped to this
@@ -106,7 +109,7 @@ fun WorkspaceDetailScreen(
     }
     var exportResult by remember { mutableStateOf<String?>(null) }
     var showExportPassword by remember { mutableStateOf(false) }
-    var exportPassword by remember { mutableStateOf("") }
+    var exportPassword by remember { mutableStateOf("") } // secret: never written to saved state
     var exportPasswordConfirmation by remember { mutableStateOf("") }
     val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
@@ -140,8 +143,8 @@ fun WorkspaceDetailScreen(
     var selectedChatIds by remember { mutableStateOf(setOf<String>()) }
     var showBatchTitleOptions by remember { mutableStateOf(false) }
     var batchPaused by remember { mutableStateOf(false) }
-    val batchProgress by vm.batchProgress.collectAsState()
-    val confirmationMessage by vm.confirmationMessage.collectAsState()
+    val batchProgress by vm.batchProgress.collectAsStateWithLifecycle()
+    val confirmationMessage by vm.confirmationMessage.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(exportResult) {
         exportResult?.let { snackbarHostState.showSnackbar(it); exportResult = null }
@@ -161,7 +164,7 @@ fun WorkspaceDetailScreen(
             text = {
                 Column {
                     Text(
-                        "Use at least 8 characters. You will need this password to restore the export; Vervan cannot recover it.",
+                        stringResource(R.string.workspace_detail_use_at_least_8_characters),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -212,19 +215,19 @@ fun WorkspaceDetailScreen(
     // the app-wide lock if that was separately active, which is fine: either way the user just
     // proved presence).
     var pendingUnlockForActivate by remember { mutableStateOf(false) }
-    val isAppLocked by app.container.appLockManager.isLocked.collectAsState()
+    val isAppLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
     LaunchedEffect(isAppLocked) {
         if (pendingUnlockForActivate && !isAppLocked) {
             pendingUnlockForActivate = false
             vm.setActive()
         }
     }
-    val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsState(initial = "BIOMETRIC")
+    val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { OverflowTooltipText(ws?.name ?: "Workspace") },
+                title = { OverflowTooltipText(ws?.name ?: stringResource(R.string.chat_info_workspace)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.workspace_menu)) }
@@ -264,7 +267,7 @@ fun WorkspaceDetailScreen(
             }
             Text(
                 buildString {
-                    append(personaNamesById[ws.personaId] ?: "No persona")
+                    append(personaNamesById[ws.personaId] ?: stringResource(R.string.chat_no_persona))
                     if (isActive) append(" · Active")
                     if (ws.archived) append(" · Archived")
                 },
@@ -272,7 +275,7 @@ fun WorkspaceDetailScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "Workspace → projects and folders → chats, notes, and knowledge",
+                stringResource(R.string.workspace_detail_workspace_projects_and_folders_chats),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.xs),
@@ -280,7 +283,7 @@ fun WorkspaceDetailScreen(
             ContextGuideCard(
                 icon = Icons.AutoMirrored.Filled.Chat,
             title = stringResource(R.string.workspace_one_space),
-                body = "New chats inherit this space's persona, response profile, and knowledge sources.",
+                body = stringResource(R.string.workspace_detail_new_chats_inherit_this_space),
                 modifier = Modifier.padding(top = Space.md),
                 accentIndex = 2,
             )
@@ -301,7 +304,7 @@ fun WorkspaceDetailScreen(
             val newChat: () -> Unit = { scope.launch { onOpenChat(vm.createChat()) } }
             if (ws.archived) {
                 Text(
-                    "This workspace is archived — restore it from the menu to start new chats.",
+                    stringResource(R.string.workspace_detail_this_workspace_is_archived_restore),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error
                 )
             } else {
@@ -310,18 +313,18 @@ fun WorkspaceDetailScreen(
 
             // Chat Screen — workspace-scoped auto title generation toggle.
             Row(
-                Modifier.fillMaxWidth().padding(top = Space.md),
+                Modifier.fillMaxWidth().toggleable(value = ws.autoTitleGeneration, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setAutoTitleGeneration(it) }).heightIn(min = 48.dp).padding(top = Space.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.workspace_auto_titles), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Applies to every chat in this workspace; manually renamed titles are never overwritten.",
+                        stringResource(R.string.workspace_detail_applies_to_every_chat_in),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                androidx.compose.material3.Switch(checked = ws.autoTitleGeneration, onCheckedChange = { vm.setAutoTitleGeneration(it) })
+                androidx.compose.material3.Switch(checked = ws.autoTitleGeneration, onCheckedChange = null)
             }
 
             // per-workspace lock (e.g. a "Personal" workspace kept separate from
@@ -339,11 +342,12 @@ fun WorkspaceDetailScreen(
                 Text(stringResource(R.string.workspace_lock), style = MaterialTheme.typography.bodyMedium)
                     Text(
                         if (lockCredentialsExist) "Requires biometrics or your PIN to switch into this workspace."
-                        else "Set up app lock in Settings → Privacy & security first.",
+                        else stringResource(R.string.workspace_detail_set_up_app_lock_in),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                androidx.compose.material3.Switch(
+                com.vervan.chat.ui.common.LabeledSwitch(
+                    label = stringResource(R.string.workspace_lock),
                     checked = ws.lockEnabled,
                     enabled = lockCredentialsExist || ws.lockEnabled,
                     onCheckedChange = { vm.setLockEnabled(it) }
@@ -396,7 +400,7 @@ fun WorkspaceDetailScreen(
 
             Column(Modifier.fillMaxWidth().padding(top = Space.sm)) {
                 Text(
-                    if (selectionMode) "${selectedChatIds.size} selected" else "Recent chats (${chats.size})",
+                    if (selectionMode) "${selectedChatIds.size} selected" else stringResource(R.string.workspace_detail_recent_chats_arg1, chats.size),
                     style = MaterialTheme.typography.titleSmall
                 )
                 if (selectionMode) {
@@ -418,7 +422,7 @@ fun WorkspaceDetailScreen(
                     Column(Modifier.padding(start = Space.md)) {
                 Text(stringResource(R.string.workspace_empty_chats), style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Tap to start the first chat in this workspace.",
+                            stringResource(R.string.workspace_detail_tap_to_start_the_first),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -467,7 +471,7 @@ fun WorkspaceDetailScreen(
     if (pendingDelete && ws != null) {
         ConfirmDialog(
             title = stringResource(R.string.workspace_delete_title),
-            body = "Permanently delete \"${ws.name}\" and all its content?",
+            body = stringResource(R.string.workspace_detail_permanently_delete_arg1_and_all, ws.name),
             confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = { scope.launch { vm.delete(); pendingDelete = false; onBack() } },
@@ -529,13 +533,16 @@ fun WorkspaceDetailScreen(
 
     // Rendered via Dialog (its own window) rather than a plain sibling composable, so it
     // overlays full-screen regardless of how the NavHost lays out this route's content.
-    if (pendingUnlockForActivate) {
+    // Resolved outside the Dialog: inside it, LocalContext is the dialog's own context wrapper,
+    // not the Activity, so casting it crashed the unlock prompt.
+    val hostActivity = androidx.activity.compose.LocalActivity.current as? androidx.fragment.app.FragmentActivity
+    if (pendingUnlockForActivate && hostActivity != null) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { pendingUnlockForActivate = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             com.vervan.chat.ui.lock.LockScreen(
-                activity = LocalContext.current as androidx.fragment.app.FragmentActivity,
+                activity = hostActivity,
                 appLockManager = app.container.appLockManager,
                 method = runCatching { com.vervan.chat.security.AppLockMethod.valueOf(appLockMethodName) }
                     .getOrDefault(com.vervan.chat.security.AppLockMethod.BIOMETRIC)
@@ -586,7 +593,7 @@ private fun WorkspaceChatCard(
                 Modifier
                     .padding(end = Space.md)
                     .size(44.dp)
-                    .background(accent.container, MaterialTheme.shapes.medium),
+                    .background(accent.container, MaterialTheme.shapes.small),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -609,7 +616,7 @@ private fun WorkspaceChatCard(
                     Text(
                         relativeTime(chat.updatedAt), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         softWrap = false,
                         modifier = Modifier.padding(start = Space.sm),
                     )
@@ -705,7 +712,7 @@ private fun EditWorkspaceDialog(
                     )
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         personas.forEach { persona ->
-                            DropdownMenuItem(text = { Text(persona.name) }, onClick = { selectedPersona = persona; expanded = false })
+                            DropdownMenuItem(text = { Text(persona.name, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, onClick = { selectedPersona = persona; expanded = false })
                         }
                     }
                 }
@@ -732,7 +739,7 @@ private fun WorkspaceKbPickerDialog(
     onConfirm: (Set<String>) -> Unit
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val kbs by app.container.db.knowledgeBaseDao().observeAll().collectAsState(initial = emptyList())
+    val kbs by app.container.db.knowledgeBaseDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
     var selected by remember { mutableStateOf(initiallySelected) }
     AlertDialog(
         onDismissRequest = onDismiss,

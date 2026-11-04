@@ -266,6 +266,9 @@
   var openSelect = null;
   function upgradeSelect(select) {
     if (!select) return;
+    // A select hidden in the markup is a value holder for some other control (Library's kind
+    // tabs), not a dropdown — upgrading it put a second, duplicate "Notes ▾" picker on screen.
+    if (select.hidden) return;
     var wrap = select.parentNode;
     if (!wrap || !wrap.classList.contains("xselect")) {
       wrap = document.createElement("div");
@@ -492,10 +495,18 @@
         });
         el("homeNotes").innerHTML = (data.recent_notes || []).length
           ? (data.recent_notes).map(function (n) {
-              return '<div class="row"><div class="row-title">' + esc(n.title) +
+              return '<div class="row" data-note="' + esc(n.id) + '"><div class="row-title">' + esc(n.title) +
                 '</div><div class="row-sub">' + relativeTime(n.updated_at) + "</div></div>";
             }).join("")
           : '<div class="empty-note">No notes yet.</div>';
+        // These rows looked clickable (pointer cursor, hover state) but had no handler at all.
+        Array.prototype.forEach.call(el("homeNotes").querySelectorAll("[data-note]"), function (row) {
+          row.addEventListener("click", function () {
+            Library.pendingKind = "notes";
+            Library.activeId = row.getAttribute("data-note");
+            go("library");
+          });
+        });
       }).catch(function (err) {
         setStatus(/API key/.test(err.message) ? "auth" : "err");
         showLoadError("homeStats", "Home is unavailable", err, Home.load);
@@ -550,7 +561,12 @@
             var type = row.getAttribute("data-type"), id = row.getAttribute("data-id");
             if (type === "chat") { Chat.pendingOpen = id; go("chats"); }
             else if (type === "knowledge_base" || type === "document") { Knowledge.pendingOpen = id; go("knowledge"); }
-            else { Library.pendingKind = type === "memory" ? "memories" : type + "s"; go("library"); }
+            else {
+              // Open the item that matched, not just the tab it lives in.
+              Library.pendingKind = type === "memory" ? "memories" : type + "s";
+              Library.activeId = id;
+              go("library");
+            }
           });
         });
       }).catch(fail);
@@ -652,6 +668,9 @@
     loadModels: function () {
       return api("/v1/models").then(function (data) {
         Chat.models = (data.data || []).filter(function (m) { return m.role !== "embedding"; });
+        Chat.modelsLoaded = true;
+        el("sendBtn").classList.toggle("unavailable", !Chat.models.length);
+        el("sendBtn").title = Chat.models.length ? "Send message" : "Install a model in the app to chat";
         var select = el("modelSelect");
         select.innerHTML = Chat.models.map(function (m) {
           return '<option value="' + esc(m.id) + '"' + (m.active ? " selected" : "") + ">" + esc(m.id) + "</option>";
@@ -1103,6 +1122,12 @@
       var text = el("input").value.trim();
       if (!text && !Chat.attachments.length) return;
       if (Chat.abort) return;
+      // Same rule as the app's composer: with nothing to run, don't create a chat that can only
+      // hold an unanswered message. The text stays in the box for when a model is installed.
+      if (Chat.modelsLoaded && !Chat.models.length) {
+        toast("No chat model is installed yet. Download or import one in the Vervan app on your phone, then send again.", true);
+        return;
+      }
       setGenerationState(true, "Preparing your request…", "The model is getting ready on this device.");
       setStatus("busy", "Preparing…");
 
@@ -2472,6 +2497,38 @@
       el("ramChip").title = "Free memory on the device serving this page";
     }).catch(function () { el("ramChip").hidden = true; });
   }
+  /**
+   * Keyboard access for list rows.
+   *
+   * Every list (chats, library, knowledge bases, documents, tools, search, home) renders rows as
+   * clickable <div>s, which a keyboard or screen-reader user can't reach or activate. Rather than
+   * patch a dozen render sites, rows that are interactive (pointer cursor, i.e. not the
+   * `cursor:default` info rows) are made focusable as they appear, and Enter/Space on a focused
+   * row does what a click does. Rows that hold their own buttons stay plain focusable groups, since
+   * role="button" may not contain other buttons.
+   */
+  function enhanceRows(root) {
+    Array.prototype.forEach.call((root || document).querySelectorAll(".row:not([tabindex])"), function (row) {
+      if (row.style.cursor === "default") return;
+      row.tabIndex = 0;
+      if (!row.querySelector("button, a, input, select, textarea")) row.setAttribute("role", "button");
+    });
+  }
+  enhanceRows(document);
+  new MutationObserver(function (mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      if (mutations[i].addedNodes.length) { enhanceRows(document); return; }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("keydown", function (e) {
+    var row = e.target;
+    if (!row.classList || !row.classList.contains("row") || row.tabIndex < 0) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      row.click();
+    }
+  });
+
   refreshSystem();
   setInterval(refreshSystem, 15000);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshSystem(); });

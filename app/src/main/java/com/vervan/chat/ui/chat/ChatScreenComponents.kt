@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.chat
 
+import androidx.compose.foundation.selection.toggleable
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -198,7 +199,7 @@ import com.vervan.chat.ui.common.ThinkingIndicator
 import com.vervan.chat.ui.common.VoiceWaveform
 import com.vervan.chat.ui.common.defaultQuickReplies
 import com.vervan.chat.ui.common.formatRelativeDay
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
@@ -295,7 +296,9 @@ internal fun ModelReadinessPanel(
     onLoad: () -> Unit,
     onOpenModels: () -> Unit
 ) {
-    if (state is ChatViewModel.ModelLoadState.Ready) return
+    // Ready needs no panel, and neither does NotLoaded: sending loads the model, and the title
+    // already names it, so a full card here only pushed the conversation down.
+    if (state is ChatViewModel.ModelLoadState.Ready || state is ChatViewModel.ModelLoadState.NotLoaded) return
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Card(
             Modifier.widthIn(max = VervanContentWidth.standard).fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs),
@@ -317,21 +320,21 @@ internal fun ModelReadinessPanel(
                     Column(Modifier.weight(1f).padding(start = Space.md)) {
                         Text(
                             when (state) {
-                                ChatViewModel.ModelLoadState.NoModel -> "A model is required"
+                                ChatViewModel.ModelLoadState.NoModel -> stringResource(R.string.chat_no_model_title)
                                 is ChatViewModel.ModelLoadState.NotLoaded ->
                                     if (modelRunsOnDevice) "${state.modelName} is not loaded" else "${state.modelName} is not confirmed yet"
-                                is ChatViewModel.ModelLoadState.Loading -> "Loading ${state.modelName}"
-                                is ChatViewModel.ModelLoadState.Failed -> "Could not load ${state.modelName}"
-                                is ChatViewModel.ModelLoadState.Ready -> "Ready"
+                                is ChatViewModel.ModelLoadState.Loading -> stringResource(R.string.chat_screen_loading_arg1, state.modelName)
+                                is ChatViewModel.ModelLoadState.Failed -> stringResource(R.string.chat_screen_could_not_load_arg1, state.modelName)
+                                is ChatViewModel.ModelLoadState.Ready -> stringResource(R.string.chat_screen_ready)
                             },
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
                             when (state) {
-                                ChatViewModel.ModelLoadState.NoModel -> "Import or select a generation model to enable the composer."
+                                ChatViewModel.ModelLoadState.NoModel -> stringResource(R.string.chat_screen_import_or_select_a_generation)
                                 is ChatViewModel.ModelLoadState.NotLoaded ->
-                                    if (modelRunsOnDevice) "Load it now, or enable automatic loading in Generation settings."
-                                    else "Confirm its endpoint now, or enable automatic loading in Generation settings."
+                                    if (modelRunsOnDevice) "It loads when you send a message, or tap Load to get it ready now."
+                                    else stringResource(R.string.chat_screen_it_connects_when_you_send)
                                 is ChatViewModel.ModelLoadState.Loading -> state.stage
                                 is ChatViewModel.ModelLoadState.Failed -> state.reason
                                 is ChatViewModel.ModelLoadState.Ready -> ""
@@ -347,7 +350,7 @@ internal fun ModelReadinessPanel(
                 when (state) {
                     ChatViewModel.ModelLoadState.NoModel -> {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onOpenModels) { Text(stringResource(R.string.chat_models)) }
+            TextButton(onClick = onOpenModels) { Text(stringResource(R.string.chat_get_a_model)) }
                         }
                     }
                     is ChatViewModel.ModelLoadState.NotLoaded,
@@ -376,7 +379,7 @@ internal fun ThermalNotice(severe: Boolean) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
                 Text(
-                    if (severe) "Running much slower — device is very warm" else "Running slower due to device temperature",
+                    if (severe) stringResource(R.string.chat_screen_running_much_slower_device_is) else stringResource(R.string.chat_screen_running_slower_due_to_device),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.padding(start = Space.sm)
@@ -450,7 +453,7 @@ internal fun ChatMoreOptionsSheet(
         ) {
             Text(stringResource(R.string.chat_options), style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Manage this conversation",
+                stringResource(R.string.chat_screen_manage_this_conversation),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -459,7 +462,7 @@ internal fun ChatMoreOptionsSheet(
             MoreOptionRow(Icons.Filled.Edit, "Rename", onClick = onRename)
             MoreOptionRow(
                 Icons.Filled.AutoAwesome,
-                if (hasAssistantReply) "Regenerate title" else "Generate title with AI",
+                if (hasAssistantReply) stringResource(R.string.chat_screen_regenerate_title) else stringResource(R.string.chat_screen_generate_title_with_ai),
                 enabled = canGenerateTitle,
                 onClick = onGenerateTitle
             )
@@ -468,7 +471,7 @@ internal fun ChatMoreOptionsSheet(
             MoreSheetSection("Explore")
             MoreOptionRow(
                 Icons.Filled.Bookmark, "Saved responses",
-                subtitle = if (savedResponsesCount > 0) "$savedResponsesCount saved" else "None yet",
+                subtitle = if (savedResponsesCount > 0) "$savedResponsesCount saved" else stringResource(R.string.privacy_none_yet),
                 onClick = onSavedResponses
             )
             MoreOptionRow(Icons.Filled.AccountTree, "Branch tree", onClick = onBranchTree)
@@ -563,7 +566,7 @@ internal fun ChatEmptyState(
     ) {
         Surface(
             modifier = Modifier.size(60.dp),
-            shape = VervanExtraShapes.extraExtraLarge,
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
@@ -572,7 +575,7 @@ internal fun ChatEmptyState(
             }
         }
         Text(
-            "NEW CONVERSATION",
+            stringResource(R.string.chat_screen_new_conversation),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(top = Space.md),
@@ -585,7 +588,7 @@ internal fun ChatEmptyState(
         )
         Text(
             if (modelName == null) {
-                "No generation model selected. Choose one before sending."
+                stringResource(R.string.chat_empty_no_model_body)
             } else if (modelRunsOnDevice) {
                 "Private on this device. Type, speak, or add a file."
             } else {
@@ -603,13 +606,14 @@ internal fun ChatEmptyState(
             ChatStarter(Icons.Filled.Description, "Summarize a document", "Summarize the key points of this: "),
             ChatStarter(Icons.Filled.Edit, "Draft something", "Help me draft ")
         )
-        Row(
+        // Wraps rather than scrolls: a horizontal scroller clipped the second chip mid-word on a
+        // phone and hid the third entirely, with nothing hinting that the row could be swiped.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 520.dp)
-                .padding(top = Space.lg)
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                .padding(top = Space.lg),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.CenterHorizontally),
         ) {
             starters.forEach { starter ->
                 AssistChip(
@@ -620,7 +624,7 @@ internal fun ChatEmptyState(
             }
         }
         Text(
-            "Type a message, attach a file, or use voice input.",
+            stringResource(R.string.chat_screen_type_a_message_attach_a),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -672,6 +676,9 @@ internal fun ChatContextProgressBar(
     }
 }
 
+/** The context chip appears once the conversation is close enough to the window to matter. */
+private const val CONTEXT_CHIP_THRESHOLD_PERCENT = 70
+
 /**
  * Chat context controls. Each piece of context is independently visible and tappable so users
  * can understand and change the current chat setup without opening a generic settings surface.
@@ -696,20 +703,19 @@ internal fun ChatContextStrip(
     onContextClick: () -> Unit
 ) {
     var showDetails by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xs)) {
+    // Only context that differs from a plain chat earns a chip. The workspace and model used to
+    // be chips on every chat, which pushed the conversation down for information that never
+    // changed; the model now lives in the title and the workspace in chat details.
+    val showContext = contextPercent >= CONTEXT_CHIP_THRESHOLD_PERCENT
+    if (folderName != null || personaName != null || thinkingMode != null || sourceCount != null || showContext) {
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = Space.lg, vertical = Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            workspaceName?.let {
-                ChatContextChip(
-                    icon = Icons.Filled.AccountTree,
-                    label = stringResource(R.string.chat_scope_workspace, it),
-                    contentDescription = stringResource(R.string.chat_scope_workspace_description, it),
-                    onClick = onWorkspaceClick,
-                )
-            }
             folderName?.let {
                 ChatContextChip(
                     icon = Icons.Filled.Folder,
@@ -718,13 +724,6 @@ internal fun ChatContextStrip(
                     onClick = onFolderClick,
                 )
             }
-            ChatContextChip(
-                icon = Icons.Filled.Bolt,
-                label = modelName?.let { stringResource(R.string.chat_model_chip, it) } ?: stringResource(R.string.chat_choose_model),
-                contentDescription = modelName?.let { stringResource(R.string.chat_model_description, it) } ?: stringResource(R.string.chat_choose_model_description),
-                onClick = onModelClick,
-                iconTint = if (modelName == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            )
             personaName?.let {
                 ChatContextChip(
                     icon = Icons.Filled.Psychology,
@@ -749,17 +748,15 @@ internal fun ChatContextStrip(
                     onClick = onSourcesClick,
                 )
             }
-            ChatContextChip(
-                icon = Icons.Filled.Info,
-                label = stringResource(R.string.chat_scope_context, contextPercent),
-                contentDescription = stringResource(R.string.chat_context_usage, contextTokens, contextLimit, contextPercent),
-                onClick = { showDetails = true },
-                iconTint = when {
-                    contextPercent >= 90 -> MaterialTheme.colorScheme.error
-                    contextPercent > 80 -> MaterialTheme.colorScheme.vervanWarning
-                    else -> MaterialTheme.colorScheme.primary
-                },
-            )
+            if (showContext) {
+                ChatContextChip(
+                    icon = Icons.Filled.Info,
+                    label = stringResource(R.string.chat_scope_context, contextPercent),
+                    contentDescription = stringResource(R.string.chat_context_usage, contextTokens, contextLimit, contextPercent),
+                    onClick = { showDetails = true },
+                    iconTint = if (contextPercent >= 90) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.vervanWarning,
+                )
+            }
         }
     }
     if (showDetails) {
@@ -833,7 +830,7 @@ internal fun ChatContextDetailsSheet(
         ) {
             Text(stringResource(R.string.chat_context), style = MaterialTheme.typography.headlineSmall)
             Text(
-                "What this chat is currently using",
+                stringResource(R.string.chat_screen_what_this_chat_is_currently),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Space.sm)
@@ -845,7 +842,7 @@ internal fun ChatContextDetailsSheet(
                 Icons.Filled.Bolt, "Model",
                 subtitle = modelName?.let {
                     if (thinkingMode != null) "$it · Thinking: ${thinkingMode.lowercase().replaceFirstChar { c -> c.uppercase() }}" else it
-                } ?: "None selected — tap to choose one",
+                } ?: stringResource(R.string.chat_screen_none_selected_tap_to_choose),
                 danger = modelName == null,
                 onClick = onModelClick
             )
@@ -881,7 +878,7 @@ internal fun ArchivedWorkspaceBanner(onRestore: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.chat_archived_workspace), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Restore this workspace to send new messages.",
+                    stringResource(R.string.chat_screen_restore_this_workspace_to_send),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -950,13 +947,13 @@ internal fun CompareDialog(siblings: List<Message>, onDismiss: () -> Unit, onUse
             val stacked = maxWidth < VervanBreakpoints.medium
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
+                shape = MaterialTheme.shapes.large,
                 colors = SurfaceRole.Overlay.cardColors(),
                 border = SurfaceRole.Overlay.border()
             ) {
                 Column(Modifier.padding(Space.md)) {
                     Text(
-                        "Compare branches",
+                        stringResource(R.string.chat_screen_compare_branches),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = Space.sm).semantics { heading() }
                     )
@@ -1149,7 +1146,7 @@ internal fun SourcePickerDialog(
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.chat_use_selected_sources), modifier = Modifier.weight(1f))
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.chat_use_selected_sources), checked = enabled, onCheckedChange = { enabled = it })
                 }
                 HorizontalDivider(Modifier.padding(vertical = Space.sm))
                 if (kbs.isEmpty()) {
@@ -1163,7 +1160,7 @@ internal fun SourcePickerDialog(
                                 selected = if (checked) selected + kb.id else selected - kb.id
                             }
                         )
-                        Text(kb.name)
+                        Text(kb.name, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -1195,7 +1192,7 @@ internal fun ChatToolsDialog(
                 // The per-tool overrides below only take effect once tools are actually turned
                 // on for this chat — without this switch there was no way to flip that master
                 // flag on at all, so every chat silently stayed toolless regardless of overrides.
-                Row(Modifier.fillMaxWidth().padding(bottom = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().toggleable(value = toolsEnabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onSetToolsEnabled).heightIn(min = 48.dp).padding(bottom = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.chat_tools_for_chat), style = MaterialTheme.typography.bodyMedium)
                         Text(
@@ -1205,7 +1202,7 @@ internal fun ChatToolsDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = toolsEnabled, onCheckedChange = onSetToolsEnabled)
+                    Switch(checked = toolsEnabled, onCheckedChange = null)
                 }
                 HorizontalDivider(Modifier.padding(bottom = Space.sm))
                 Text(
@@ -1218,12 +1215,12 @@ internal fun ChatToolsDialog(
                     val override = overrides[tool.name]
                     val effectivelyOn = override ?: (tool.name !in globallyDisabled)
                     Column(Modifier.padding(vertical = Space.sm)) {
-                        Text(tool.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(tool.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         Row(Modifier.padding(top = Space.xs)) {
                             VervanFilterChip(
                                 selected = override == null,
                                 onClick = { onSetOverride(tool.name, null) },
-                                label = { Text(if (tool.name in globallyDisabled) "Inherit (off)" else "Inherit (on)") }
+                                label = { Text(if (tool.name in globallyDisabled) stringResource(R.string.chat_screen_inherit_off) else stringResource(R.string.chat_screen_inherit_on), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                             )
                             VervanFilterChip(
                                 selected = override == true,
@@ -1240,7 +1237,7 @@ internal fun ChatToolsDialog(
                         }
                         if (!effectivelyOn) {
                             Text(
-                                "Disabled for this chat",
+                                stringResource(R.string.chat_screen_disabled_for_this_chat),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -1330,14 +1327,14 @@ internal fun WorkspaceOptionsDialog(
     val isChatWorkspaceActive = workspace.id == activeWorkspaceId
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(workspace.name) },
+        title = { Text(workspace.name, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         text = {
             Column {
-                Text(stringResource(R.string.chat_open_workspace), modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = Space.md))
+                Text(stringResource(R.string.chat_open_workspace), modifier = Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onOpen).heightIn(min = 48.dp).padding(vertical = Space.md))
                 if (!isChatWorkspaceActive) {
                     Text(
-                        "Set as active workspace",
-                        modifier = Modifier.fillMaxWidth().clickable(onClick = onSetActive).padding(vertical = Space.md)
+                        stringResource(R.string.chat_screen_set_as_active_workspace),
+                        modifier = Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onSetActive).heightIn(min = 48.dp).padding(vertical = Space.md)
                     )
                 }
                 HorizontalDivider()
@@ -1345,7 +1342,8 @@ internal fun WorkspaceOptionsDialog(
                 otherWorkspaces.filter { it.id != workspace.id }.forEach { ws ->
                     Text(
                         ws.name,
-                        modifier = Modifier.fillMaxWidth().clickable { onMoveTo(ws) }.padding(vertical = Space.md)
+                        modifier = Modifier.fillMaxWidth().clickable { onMoveTo(ws) }.padding(vertical = Space.md),
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1427,7 +1425,8 @@ internal fun AddToKnowledgeBaseDialog(knowledgeBases: List<KnowledgeBase>, onDis
                 knowledgeBases.forEach { kb ->
                     Text(
                         kb.name,
-                        modifier = Modifier.fillMaxWidth().clickable { onSelect(kb.id) }.padding(vertical = Space.md)
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(kb.id) }.padding(vertical = Space.md),
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1505,7 +1504,7 @@ internal fun ContextBreakdownDialog(breakdown: ContextBreakdown, onDismiss: () -
                 )
                 if (breakdown.estimatedTotalTokens > breakdown.recommendedLimit) {
                     Text(
-                        "Over the recommended limit. Older context will be trimmed before sending.",
+                        stringResource(R.string.chat_screen_over_the_recommended_limit_older),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = Space.sm)
@@ -1572,8 +1571,10 @@ internal fun rememberChatVmState(vm: ChatViewModel, app: VervanApp): ChatVmState
     val confirmationMessage by vm.confirmationMessage.collectAsState()
     val pendingDocument by vm.pendingDocument.collectAsState()
     val attachEmbedProgress by app.container.documentImportManager.embedProgress.collectAsState()
-    val documents by app.container.db.documentDao().observeAll().collectAsState(initial = emptyList())
-    val savedOutputs by app.container.db.savedOutputDao().observeAll().collectAsState(initial = emptyList())
+    // Scoped to this chat: loading every document and saved response in the app here made each
+    // chat slower to open (and re-render while streaming) as the library grew.
+    val documents by remember(vm.chatId) { app.container.db.documentDao().observeForChat(vm.chatId) }.collectAsState(initial = emptyList())
+    val savedOutputs by remember(vm.chatId) { app.container.db.savedOutputDao().observeForChat(vm.chatId) }.collectAsState(initial = emptyList())
     val persona by vm.persona.collectAsState()
     val personas by vm.personas.collectAsState()
     val activeModelName by vm.activeModelName.collectAsState()
@@ -1684,7 +1685,7 @@ internal fun rememberVoiceControllerUiState(voiceController: com.vervan.chat.voi
 
 internal data class ImageAttachLaunchers(
     val pickImage: androidx.activity.compose.ManagedActivityResultLauncher<androidx.activity.result.PickVisualMediaRequest, Uri?>,
-    val requestCameraPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>
+    val requestCameraPermission: com.vervan.chat.ui.common.PermissionRequester
 )
 
 @Composable
@@ -1713,7 +1714,7 @@ internal fun rememberImageAttachLaunchers(
         }
         pendingCameraFile = null
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = vm.newCameraImageFile()
             pendingCameraFile = file
@@ -1727,7 +1728,7 @@ internal fun rememberImageAttachLaunchers(
 
 internal data class OcrAttachLaunchers(
     val pickOcrImage: androidx.activity.compose.ManagedActivityResultLauncher<androidx.activity.result.PickVisualMediaRequest, Uri?>,
-    val requestOcrCameraPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>
+    val requestOcrCameraPermission: com.vervan.chat.ui.common.PermissionRequester
 )
 
 @Composable
@@ -1755,7 +1756,7 @@ internal fun rememberOcrAttachLaunchers(
             file?.delete()
         }
     }
-    val requestOcrCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestOcrCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = vm.newCameraImageFile()
             pendingOcrCameraFile = file

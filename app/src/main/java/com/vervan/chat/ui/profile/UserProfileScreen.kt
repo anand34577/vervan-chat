@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.profile
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -52,14 +55,14 @@ import com.vervan.chat.ui.theme.Space
 fun UserProfileScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: UserProfileViewModel = viewModel(factory = viewModelFactory { initializer { UserProfileViewModel(app) } })
-    val name by vm.name.collectAsState()
-    val occupation by vm.occupation.collectAsState()
-    val expertise by vm.expertise.collectAsState()
-    val interests by vm.interests.collectAsState()
-    val languages by vm.languages.collectAsState()
-    val units by vm.units.collectAsState()
-    val avoid by vm.avoid.collectAsState()
-    val goals by vm.goals.collectAsState()
+    val name by vm.name.collectAsStateWithLifecycle()
+    val occupation by vm.occupation.collectAsStateWithLifecycle()
+    val expertise by vm.expertise.collectAsStateWithLifecycle()
+    val interests by vm.interests.collectAsStateWithLifecycle()
+    val languages by vm.languages.collectAsStateWithLifecycle()
+    val units by vm.units.collectAsStateWithLifecycle()
+    val avoid by vm.avoid.collectAsStateWithLifecycle()
+    val goals by vm.goals.collectAsStateWithLifecycle()
     val filledFields = listOf(name, occupation, expertise, interests, languages, units, avoid, goals).count { value ->
         when (value) {
             is String -> value.isNotBlank()
@@ -71,8 +74,8 @@ fun UserProfileScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("User profile") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.user_profile_user_profile)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -84,32 +87,32 @@ fun UserProfileScreen(onBack: () -> Unit) {
             FeatureHero(
                 icon = Icons.Filled.Person,
                 eyebrow = "Personal context",
-                title = "Make replies feel like yours",
-                body = "Optional details help Vervan tailor responses. They are added to prompts only when you fill them in and are never inferred from chats.",
+                title = stringResource(R.string.user_profile_make_replies_feel_like_yours),
+                body = stringResource(R.string.user_profile_optional_details_help_vervan_tailor),
                 trailing = {
                     Text(
-                        "$filledFields filled",
+                        stringResource(R.string.user_profile_arg1_filled, filledFields),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
             )
 
-            VervanSectionHeader("About you", topPadding = Space.xs)
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_user_profile_about_you), topPadding = Space.xs)
             ProfileField("Preferred name", name, maxLength = ValidationLimits.USER_PREFERRED_NAME, onChange = vm::setName)
             ProfileField("Occupation", occupation, "e.g. mobile engineer", maxLength = ValidationLimits.USER_OCCUPATION, onChange = vm::setOccupation)
             ProfileField("Expertise level", expertise, "e.g. advanced", maxLength = ValidationLimits.USER_EXPERTISE, onChange = vm::setExpertise)
             ChipInputField(
                 items = interests.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { vm.setInterests(it.joinToString(",")) },
-                label = "Interests",
+                label = stringResource(R.string.user_profile_interests),
                 maxItemLength = ValidationLimits.USER_INTEREST_ITEM,
                 maxItemCount = ValidationLimits.USER_INTEREST_COUNT
             )
 
-            VervanSectionHeader("Preferences", topPadding = Space.xs)
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_user_profile_preferences), topPadding = Space.xs)
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text("Languages", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.user_profile_languages), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     LanguageOptions.common.forEach { lang ->
                         VervanFilterChip(
@@ -122,7 +125,7 @@ fun UserProfileScreen(onBack: () -> Unit) {
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text("Units", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.user_profile_units), style = MaterialTheme.typography.labelMedium)
                 SingleChoiceSegmentedButtonRow {
                     listOf("metric" to "Metric", "imperial" to "Imperial").forEachIndexed { i, (id, label) ->
                         SegmentedButton(
@@ -134,11 +137,11 @@ fun UserProfileScreen(onBack: () -> Unit) {
                 }
             }
 
-            VervanSectionHeader("Conversation context", topPadding = Space.xs)
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_user_profile_conversation_context), topPadding = Space.xs)
             ChipInputField(
                 items = avoid.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 onItemsChange = { vm.setAvoid(it.joinToString(",")) },
-                label = "Topics to avoid",
+                label = stringResource(R.string.user_profile_topics_to_avoid),
                 maxItemLength = ValidationLimits.USER_AVOID_TOPIC_ITEM,
                 maxItemCount = ValidationLimits.USER_AVOID_TOPIC_COUNT
             )

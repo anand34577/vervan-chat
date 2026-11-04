@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -56,6 +58,8 @@ fun ThinkingIndicator(
     modifier: Modifier = Modifier
 ) {
     val reducedMotion = rememberReducedMotion()
+    // Resolved here: semantics {} is not a composable scope.
+    val thinkingDescription = stringResource(R.string.thinking_indicator_description)
     AnimatedVisibility(visible = visible, enter = androidx.compose.animation.fadeIn(VervanMotion.emphasizedDecelerate(220)), exit = androidx.compose.animation.fadeOut(VervanMotion.emphasizedAccelerate(160))) {
         Row(
             modifier = modifier
@@ -63,7 +67,7 @@ fun ThinkingIndicator(
                 .padding(vertical = Space.xs)
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
-                    contentDescription = "Vervan is thinking"
+                    contentDescription = thinkingDescription
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm)

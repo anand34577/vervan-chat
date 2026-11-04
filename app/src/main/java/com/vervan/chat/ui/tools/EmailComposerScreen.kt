@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,7 +52,7 @@ import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResponsiveActions
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -65,18 +68,19 @@ private val LENGTHS = listOf("Short", "Medium", "Long")
 @Composable
 fun EmailComposerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var originalMessage by remember { mutableStateOf("") }
-    var relationship by remember { mutableStateOf("") }
-    var keyPoints by remember { mutableStateOf("") }
+    var originalMessage by rememberSaveable { mutableStateOf("") }
+    var relationship by rememberSaveable { mutableStateOf("") }
+    var keyPoints by rememberSaveable { mutableStateOf("") }
     var tone by remember { mutableStateOf("Friendly") }
     var length by remember { mutableStateOf("Medium") }
     var toneMenuOpen by remember { mutableStateOf(false) }
     var lengthMenuOpen by remember { mutableStateOf(false) }
-    var output by remember { mutableStateOf("") }
+    var output by rememberSaveable { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
     var genJob by remember { mutableStateOf<Job?>(null) }
@@ -128,8 +132,8 @@ fun EmailComposerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Email & message composer") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.email_composer_email_message_composer)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -138,31 +142,33 @@ fun EmailComposerScreen(onBack: () -> Unit) {
             FeatureHero(
                 icon = Icons.Filled.Mail,
                 eyebrow = "On-device assistant",
-                title = "Email & message composer",
-                body = "Draft an email from a few key points. No account access needed."
+                // The app bar already names this screen.
+                title = null,
+                dismissKey = stringResource(R.string.email_composer_email_message_composer),
+                body = stringResource(R.string.email_composer_draft_an_email_from_a)
             )
             OutlinedTextField(
                 value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 3,
                 shape = MaterialTheme.shapes.large,
-                label = { Text("Original message (optional)") }
+                label = { Text(stringResource(R.string.email_composer_original_message_optional)) }
             )
             OutlinedTextField(
                 value = keyPoints, onValueChange = { keyPoints = it.take(12_000) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm), minLines = 2,
                 shape = MaterialTheme.shapes.large,
-                label = { Text("Key points to include") }
+                label = { Text(stringResource(R.string.email_composer_key_points_to_include)) }
             )
             OutlinedTextField(
                 value = relationship, onValueChange = { relationship = it.take(200) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 shape = MaterialTheme.shapes.large,
-                label = { Text("Relationship to recipient (optional)") }
+                label = { Text(stringResource(R.string.email_composer_relationship_to_recipient_optional)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { toneMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Tone: $tone", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.email_composer_tone_arg1, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(expanded = toneMenuOpen, onDismissRequest = { toneMenuOpen = false }) {
                         TONES.forEach { t -> DropdownMenuItem(text = { Text(t) }, onClick = { tone = t; toneMenuOpen = false }) }
@@ -170,7 +176,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 }
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { lengthMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Length: $length", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.email_composer_length_arg1, length), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(expanded = lengthMenuOpen, onDismissRequest = { lengthMenuOpen = false }) {
                         LENGTHS.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { length = l; lengthMenuOpen = false }) }
@@ -179,21 +185,21 @@ fun EmailComposerScreen(onBack: () -> Unit) {
             }
             if (isGenerating) {
                 OutlinedButton(onClick = { genJob?.cancel(); isGenerating = false }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) {
-                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text("Stop", modifier = Modifier.padding(start = Space.sm))
+                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
                 }
             } else {
                 Button(
                     onClick = ::generate,
                     enabled = keyPoints.isNotBlank() || originalMessage.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                ) { Text("Draft reply") }
+                ) { Text(stringResource(R.string.email_composer_draft_reply)) }
             }
 
             when {
                 isGenerating && output.isBlank() -> {
                     Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("Drafting…", modifier = Modifier.padding(start = Space.md))
+                        Text(stringResource(R.string.email_composer_drafting), modifier = Modifier.padding(start = Space.md))
                     }
                 }
                 output.isNotBlank() -> {
@@ -204,13 +210,13 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                                 ResponsiveActions(Modifier.padding(top = Space.md)) {
                                     OutlinedButton(onClick = {
                                         context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .setSensitiveText(output, scope, "Draft")
-                                        scope.launch { snackbarHostState.showSnackbar("Copied") }
-                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text("Copy", modifier = Modifier.padding(start = Space.sm)) }
+                                            .copyText(output, scope, "Draft")
+                                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
+                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
                                     OutlinedButton(onClick = {
                                         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, output) }
                                         context.startActivity(Intent.createChooser(send, "Share draft"))
-                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text("Share", modifier = Modifier.padding(start = Space.sm)) }
+                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_share), modifier = Modifier.padding(start = Space.sm)) }
                                 }
                             }
                         }
@@ -218,10 +224,10 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't draft a reply",
+                        title = stringResource(R.string.email_composer_couldn_t_draft_a_reply),
                         message = errorText!!,
-                        recovery = "Your notes are safe. Check the model or shorten the input, then try again.",
-                        actionLabel = "Try again",
+                        recovery = stringResource(R.string.email_composer_your_notes_are_safe_check),
+                        actionLabel = stringResource(R.string.action_try_again),
                         onAction = { generate() },
                         modifier = Modifier.padding(top = Space.lg)
                     )

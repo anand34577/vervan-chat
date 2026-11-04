@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chats
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction

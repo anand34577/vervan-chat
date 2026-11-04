@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -156,52 +159,52 @@ class IndexMaintenanceViewModel(private val app: VervanApp) : ViewModel() {
 fun IndexMaintenanceScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: IndexMaintenanceViewModel = viewModel(factory = viewModelFactory { initializer { IndexMaintenanceViewModel(app) } })
-    val documents by vm.documents.collectAsState()
-    val status by vm.status.collectAsState()
-    val busy by vm.busy.collectAsState()
-    val busyDocumentId by vm.busyDocumentId.collectAsState()
-    val error by vm.error.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
+    val documents by vm.documents.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    val busyDocumentId by vm.busyDocumentId.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Search index") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.index_maintenance_search_index)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
           Column(Modifier.fillMaxSize().padding(vertical = Space.sm)) {
-            Text("Rebuild after changing the embedding model or when document search is wrong.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
+            Text(stringResource(R.string.index_maintenance_rebuild_after_changing_the_embedding), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = Space.sm))
             Button(onClick = { vm.reindexAll() }, enabled = !busy, modifier = Modifier.padding(bottom = Space.sm)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = Space.sm))
-                Text("Re-index all documents")
+                Text(stringResource(R.string.index_maintenance_re_index_all_documents))
             }
             if (busy && busyDocumentId == null) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Rebuilding the search index",
-                    body = status ?: "Preparing documents. Keep this screen open.",
+                    title = stringResource(R.string.index_maintenance_rebuilding_the_search_index),
+                    body = status ?: stringResource(R.string.index_maintenance_preparing_documents_keep_this_screen),
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             loadError?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Documents unavailable",
+                    title = stringResource(R.string.knowledge_documents_unavailable),
                     message = it,
-                    recovery = "Your indexed content is safe. Retry loading the document list.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.index_maintenance_your_indexed_content_is_safe),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retryLoad,
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Index rebuild failed",
+                    title = stringResource(R.string.index_maintenance_index_rebuild_failed),
                     message = it,
-                    recovery = "Documents are safe. Check the model and free storage, then try again.",
-                    actionLabel = "Retry all",
+                    recovery = stringResource(R.string.index_maintenance_documents_are_safe_check_the),
+                    actionLabel = stringResource(R.string.index_maintenance_retry_all),
                     onAction = vm::reindexAll,
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
@@ -216,14 +219,14 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            Text("Documents (${documents.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = Space.sm))
+            Text(stringResource(R.string.index_maintenance_documents_arg1, documents.size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = Space.sm))
             when {
                 loadError != null -> Unit
                 isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.weight(1f))
                 documents.isEmpty() -> EmptyState(
                     icon = Icons.Filled.Description,
-                    title = "No documents to index",
-                    body = "Import a document into a knowledge base before rebuilding search.",
+                    title = stringResource(R.string.index_maintenance_no_documents_to_index),
+                    body = stringResource(R.string.index_maintenance_import_a_document_into_a),
                     modifier = Modifier.weight(1f)
                 )
                 else -> LazyColumn(Modifier.weight(1f)) {
@@ -251,7 +254,7 @@ fun IndexMaintenanceScreen(onBack: () -> Unit) {
                                         onClick = { vm.reindexOne(doc.id) },
                                         enabled = !busy,
                                         modifier = Modifier.padding(start = Space.sm),
-                                    ) { Text("Re-index") }
+                                    ) { Text(stringResource(R.string.index_maintenance_re_index)) }
                                 }
                             }
                         }

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.tools
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -77,17 +79,23 @@ private fun queryDisplayName(context: android.content.Context, uri: Uri): String
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TranscriptionScreen(onBack: () -> Unit) {
+fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     val vm: TranscriptionViewModel = viewModel(factory = viewModelFactory { initializer { TranscriptionViewModel(app) } })
 
-    val projects by vm.projects.collectAsState()
-    val current by vm.current.collectAsState()
-    val phase by vm.phase.collectAsState()
-    val installedModels by vm.installedModelVariants.collectAsState()
-    val installedWhisperVariants = installedModels.filter { it.engine.equals("WHISPER_CPP", ignoreCase = true) && it.isReady }
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val current by vm.current.collectAsStateWithLifecycle()
+    val phase by vm.phase.collectAsStateWithLifecycle()
+    val installedModels by vm.installedModelVariants.collectAsStateWithLifecycle()
+    // whisper.cpp sizes and Shruti languages share one picker; a Shruti choice is keyed
+    // "shruti:<lang>" (see TranscriptionViewModel.SHRUTI_PREFIX).
+    val installedWhisperVariants = installedModels.filter {
+        (it.engine.equals("WHISPER_CPP", ignoreCase = true) ||
+            (it.engine.equals(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, ignoreCase = true) && com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE)) &&
+            it.isReady
+    }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -95,7 +103,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
             vm.importFile(uri, queryDisplayName(context, uri))
         }
     }
-    val requestMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestMicPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) vm.startRecording()
     }
 
@@ -114,12 +122,26 @@ fun TranscriptionScreen(onBack: () -> Unit) {
             PageContainer(Modifier.padding(padding)) {
                 Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
                     Text(
-                        "Import an audio or video file, or record directly. Transcription runs fully offline with whisper.cpp.",
+                        stringResource(R.string.transcription_import_an_audio_or_video),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Prerequisite first, with the way out: the old order offered Import/Record
+                    // (which then failed) above a red card that only said "go to Model Manager".
+                    val hasSpeechModel = installedWhisperVariants.isNotEmpty()
+                    if (!hasSpeechModel) {
+                        com.vervan.chat.ui.common.SystemStatusStrip(
+                            title = stringResource(R.string.transcription_no_model),
+                            body = stringResource(R.string.transcription_download_one_in_model_manager),
+                            tone = com.vervan.chat.ui.common.StatusTone.Warning,
+                            actionLabel = stringResource(R.string.transcription_get_model),
+                            onAction = onOpenModels,
+                            modifier = Modifier.padding(top = Space.md)
+                        )
+                    }
                     ResponsiveActions(Modifier.padding(top = Space.md)) {
                         Button(
-                            onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) }
+                            onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) },
+                            enabled = hasSpeechModel
                         ) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                     Text(stringResource(R.string.transcription_import_file))
@@ -129,23 +151,17 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                             onClick = {
                                 if (recording) vm.stopRecording()
                                 else requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                            }
+                            },
+                            enabled = hasSpeechModel || recording
                         ) {
                             Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                             Text(
                                 if (recording) {
                                     val ms = (phase as TranscriptionViewModel.Phase.Recording).elapsedMs
                                     "Stop (%d:%02d)".format(ms / 60000, (ms / 1000) % 60)
-                                } else "Record"
+                                } else stringResource(R.string.media_record)
                             )
                         }
-                    }
-                    if (installedWhisperVariants.isEmpty()) {
-                        ErrorCard(
-                        title = stringResource(R.string.transcription_no_model),
-                            body = "Download one in Model Manager before transcribing.",
-                            modifier = Modifier.padding(top = Space.sm)
-                        )
                     }
                     (phase as? TranscriptionViewModel.Phase.Failed)?.let {
                         ErrorCard(
@@ -160,7 +176,7 @@ fun TranscriptionScreen(onBack: () -> Unit) {
                         EmptyState(
                             icon = Icons.Filled.Mic,
                     title = stringResource(R.string.transcription_empty),
-                            body = "Import an audio file or record directly to get started."
+                            body = stringResource(R.string.transcription_import_an_audio_file_or)
                         )
                     } else {
                         LazyColumn(Modifier.weight(1f, fill = false)) {
@@ -220,12 +236,13 @@ fun TranscriptionScreen(onBack: () -> Unit) {
     }
 }
 
+@androidx.compose.runtime.Composable
 private fun statusLabel(p: TranscriptionProject): String = when (p.status) {
-    "DONE" -> "Transcribed with ${p.modelVariant}"
-    "TRANSCRIBING" -> "Transcribing…"
+    "DONE" -> stringResource(R.string.transcription_transcribed_with_arg1, p.modelVariant)
+    "TRANSCRIBING" -> stringResource(R.string.transcription_running)
     "FAILED" -> p.errorMessage ?: "Failed"
-    "CANCELLED" -> "Cancelled"
-    else -> "Not transcribed yet"
+    "CANCELLED" -> stringResource(R.string.transcription_cancelled)
+    else -> stringResource(R.string.transcription_not_transcribed_yet)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -245,8 +262,8 @@ private fun TranscriptionDetail(
     LaunchedEffect(project.transcript) { if (project.transcript != text) text = project.transcript }
     var variantMenuOpen by remember { mutableStateOf(false) }
     var selectedVariant by remember(project.id) { mutableStateOf(project.modelVariant) }
-    val aiActionState by vm.aiActionState.collectAsState()
-    val saveState by vm.saveState.collectAsState()
+    val aiActionState by vm.aiActionState.collectAsStateWithLifecycle()
+    val saveState by vm.saveState.collectAsStateWithLifecycle()
     var showSaveDialog by remember { mutableStateOf(false) }
 
     // Snapshot-based undo: not every keystroke (BasicTextField gives no cheap per-keystroke undo
@@ -256,31 +273,36 @@ private fun TranscriptionDetail(
     fun pushUndo() { undoStack.add(text) }
     fun applyMutation(newText: String) { pushUndo(); text = newText; onEdit(newText) }
 
-    var searchQuery by remember { mutableStateOf("") }
-    var replaceWith by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var replaceWith by rememberSaveable { mutableStateOf("") }
     val matchCount = if (searchQuery.isEmpty()) 0 else Regex(Regex.escape(searchQuery), RegexOption.IGNORE_CASE).findAll(text).count()
 
     val segments = remember(project.segmentsJson) { vm.parseSegments(project) }
 
     PageContainer(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
-            Text(project.fileName, style = MaterialTheme.typography.titleMedium)
+            Text(project.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(statusLabel(project), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+            fun variantKey(m: com.vervan.chat.data.db.entities.TtsVoiceModel) =
+                if (m.engine.equals(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, ignoreCase = true)) TranscriptionViewModel.SHRUTI_PREFIX + m.language else m.language
+            fun variantLabel(key: String) = if (key.startsWith(TranscriptionViewModel.SHRUTI_PREFIX)) {
+                "Shruti " + (com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[key.removePrefix(TranscriptionViewModel.SHRUTI_PREFIX)] ?: key)
+            } else "Whisper $key"
             if (installedVariants.size > 1) {
                 ExposedDropdownMenuBox(
                     expanded = variantMenuOpen, onExpandedChange = { variantMenuOpen = it },
                     modifier = Modifier.padding(top = Space.sm)
                 ) {
                     OutlinedTextField(
-                        value = selectedVariant, onValueChange = {}, readOnly = true,
+                        value = variantLabel(selectedVariant), onValueChange = {}, readOnly = true,
                     label = { Text(stringResource(R.string.transcription_model)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = variantMenuOpen) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
                     androidx.compose.material3.DropdownMenu(expanded = variantMenuOpen, onDismissRequest = { variantMenuOpen = false }) {
                         installedVariants.forEach { m ->
-                            DropdownMenuItem(text = { Text(m.language) }, onClick = { selectedVariant = m.language; variantMenuOpen = false })
+                            DropdownMenuItem(text = { Text(variantLabel(variantKey(m))) }, onClick = { selectedVariant = variantKey(m); variantMenuOpen = false })
                         }
                     }
                 }
@@ -393,7 +415,7 @@ private fun TranscriptionDetail(
             when (val save = saveState) {
                 TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
             title = stringResource(R.string.transcription_saved),
-                    body = "The transcript was saved to your knowledge base.",
+                    body = stringResource(R.string.transcription_the_transcript_was_saved_to),
                     tone = com.vervan.chat.ui.common.StatusTone.Ready,
                     modifier = Modifier.padding(top = Space.sm)
                 )
@@ -426,9 +448,9 @@ private val AI_ACTIONS: List<Pair<String, (String) -> String>> = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SaveToKnowledgeBaseDialog(vm: TranscriptionViewModel, onDismiss: () -> Unit, onSave: (kbId: String?, newName: String?) -> Unit) {
-    val knowledgeBases by vm.knowledgeBases.collectAsState()
+    val knowledgeBases by vm.knowledgeBases.collectAsStateWithLifecycle()
     var selectedKbId by remember { mutableStateOf<String?>(knowledgeBases.firstOrNull()?.id) }
-    var newName by remember { mutableStateOf("") }
+    var newName by rememberSaveable { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     val defaultTitle = stringResource(R.string.transcription_default_title)
     val newKnowledgeBaseLabel = stringResource(R.string.transcription_new_knowledge_base)
@@ -449,7 +471,7 @@ private fun SaveToKnowledgeBaseDialog(vm: TranscriptionViewModel, onDismiss: () 
                         )
                         androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             knowledgeBases.forEach { kb ->
-                                DropdownMenuItem(text = { Text(kb.name) }, onClick = { selectedKbId = kb.id; menuOpen = false })
+                                DropdownMenuItem(text = { Text(kb.name, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, onClick = { selectedKbId = kb.id; menuOpen = false })
                             }
             DropdownMenuItem(text = { Text(stringResource(R.string.transcription_new_knowledge_base)) }, onClick = { selectedKbId = null; menuOpen = false })
                         }
@@ -514,7 +536,7 @@ private fun TimestampedPlaybackCard(
                 }) {
                     Icon(
                         if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play"
+                        contentDescription = if (isPlaying) stringResource(R.string.action_pause) else stringResource(R.string.transcription_play)
                     )
                 }
             Text(stringResource(R.string.transcription_timestamps), style = MaterialTheme.typography.bodyMedium)

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -35,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -129,12 +130,13 @@ private fun WaveformBars(
     } else 0f
 
     val playedColor = MaterialTheme.colorScheme.primary
+    val waveformDescription = stringResource(R.string.voice_waveform_description)
     val unplayedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
     Canvas(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .semantics { contentDescription = "Audio waveform" }
+            .semantics { contentDescription = waveformDescription }
     ) {
         val totalWidth = size.width
         val barCount = amplitudes.size

@@ -195,7 +195,7 @@ import com.vervan.chat.ui.common.ThinkingIndicator
 import com.vervan.chat.ui.common.VoiceWaveform
 import com.vervan.chat.ui.common.defaultQuickReplies
 import com.vervan.chat.ui.common.formatRelativeDay
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
@@ -260,6 +260,8 @@ internal fun MessageBubble(
     /** From [com.vervan.chat.data.db.entities.EngineTraits] — false means inference is leaving
      *  the device, so the streaming indicator must not claim otherwise. */
     modelRunsOnDevice: Boolean = true,
+    /** Short confirmation (e.g. "Copied", "Added to notes") shown by the screen's snackbar. */
+    onShowMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
@@ -299,7 +301,19 @@ internal fun MessageBubble(
     // Actions (edit/speak/save/remember/regenerate/more) used to render permanently on every
     // bubble — busy and "congested" with a full conversation on screen. Tap the bubble to
     // reveal them instead, matching the tap-to-reveal pattern most chat apps use.
-    var showActions by remember(message.id) { mutableStateOf(false) }
+    // The latest finished reply shows its actions without a tap — that's the one people copy,
+    // regenerate or read aloud, and a hidden row there was easy to miss entirely. Older bubbles
+    // stay quiet until tapped.
+    val actionsVisibleByDefault = isLastAssistant && message.state == MessageState.COMPLETE
+    var showActions by remember(message.id, actionsVisibleByDefault) { mutableStateOf(actionsVisibleByDefault) }
+    var showSelectText by remember(message.id) { mutableStateOf(false) }
+    val copiedLabel = stringResource(R.string.chat_copied)
+    val addedToNotesLabel = stringResource(R.string.chat_added_to_notes)
+    fun copyMessage() {
+        // The visible answer, not raw content: no <think> blocks or tool-call markup.
+        clipboard.copyText(quotableText, scope, "Message")
+        if (com.vervan.chat.ui.common.needsCopyConfirmation) onShowMessage(copiedLabel)
+    }
     // Long-press opens the modern context-menu sheet (reactions + actions) — the standard
     // pattern in WhatsApp/Telegram/iMessage. Kept alongside the legacy tap-to-reveal row so
     // users who learned the old gesture aren't broken; long-press is the discoverable one.
@@ -320,7 +334,7 @@ internal fun MessageBubble(
     // scrolling the list vertically would engage it. Require a real, clearly-horizontal swipe
     // before committing to drag mode at all.
     val swipeEngagePx = remember(density) { with(density) { 24.dp.toPx() } }
-    Box(modifier.fillMaxWidth()) {
+    Box(modifier.neverShrinkWhile(message.state == MessageState.STREAMING, message.id).fillMaxWidth()) {
         Icon(
             Icons.AutoMirrored.Filled.Reply,
             contentDescription = null,
@@ -347,7 +361,7 @@ internal fun MessageBubble(
                 .graphicsLayer { alpha = 1f }
                 .then(
                     if (isUser) Modifier.background(
-                        com.vervan.chat.ui.theme.vervanBrandGradient(),
+                        com.vervan.chat.ui.theme.vervanBrandFill(),
                         com.vervan.chat.ui.theme.VervanExtraShapes.userBubble
                     ) else Modifier
                 )
@@ -479,7 +493,7 @@ internal fun MessageBubble(
                         Box(
                             Modifier
                                 .size(30.dp)
-                                .background(com.vervan.chat.ui.theme.vervanBrandGradient(), androidx.compose.foundation.shape.CircleShape),
+                                .background(com.vervan.chat.ui.theme.vervanBrandFill(), androidx.compose.foundation.shape.CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -490,7 +504,7 @@ internal fun MessageBubble(
                             )
                         }
                         Text(
-                            "Vervan",
+                            stringResource(R.string.message_bubble_vervan),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(start = Space.sm)
@@ -498,11 +512,11 @@ internal fun MessageBubble(
                         Spacer(Modifier.weight(1f))
                         Text(
                             when (message.state) {
-                                MessageState.STREAMING -> "Responding"
-                                MessageState.INTERRUPTED -> "Interrupted"
-                                MessageState.FAILED -> "Failed"
-                                MessageState.CANCELLED -> "Stopped"
-                                MessageState.AWAITING_CONFIRMATION -> "Needs approval"
+                                MessageState.STREAMING -> stringResource(R.string.message_bubble_responding)
+                                MessageState.INTERRUPTED -> stringResource(R.string.message_bubble_interrupted)
+                                MessageState.FAILED -> stringResource(R.string.message_bubble_failed)
+                                MessageState.CANCELLED -> stringResource(R.string.message_bubble_stopped)
+                                MessageState.AWAITING_CONFIRMATION -> stringResource(R.string.message_bubble_needs_approval)
                                 MessageState.COMPLETE -> timeLabel
                             },
                             style = MaterialTheme.typography.labelSmall,
@@ -575,14 +589,14 @@ internal fun MessageBubble(
                             }
                             Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
                                 Text(
-                                    attachedDocument?.displayName ?: "Attached document",
+                                    attachedDocument?.displayName ?: stringResource(R.string.message_bubble_attached_document),
                                     style = MaterialTheme.typography.labelLarge,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
                                 documentPreview.pageCount?.let { pages ->
                                     Text(
-                                        "$pages pages",
+                                        stringResource(R.string.message_bubble_arg1_pages, pages),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -665,12 +679,12 @@ internal fun MessageBubble(
                             }
                             Text(
                                 when (message.inputModality) {
-                                    "HANDS_FREE" -> "Hands-free"
-                                    "PUSH_TO_TALK" -> "Push to talk"
-                                    "VOICE_DICTATION" -> "Dictated"
-                                    "MIXED" -> "Typed + dictated"
-                                    "IMAGE_AUDIO" -> "Image + audio"
-                                    else -> "Voice"
+                                    "HANDS_FREE" -> stringResource(R.string.voice_hands_free)
+                                    "PUSH_TO_TALK" -> stringResource(R.string.voice_push_to_talk)
+                                    "VOICE_DICTATION" -> stringResource(R.string.message_bubble_dictated)
+                                    "MIXED" -> stringResource(R.string.message_bubble_typed_dictated)
+                                    "IMAGE_AUDIO" -> stringResource(R.string.message_bubble_image_audio)
+                                    else -> stringResource(R.string.text_action_voice)
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
@@ -716,7 +730,7 @@ internal fun MessageBubble(
                     if (!isUser && parsed.hasThinking) {
                         val thinkingTitle = if (thinkingActive) {
                             val elapsed = (thinkingNow - (thinkingStartedAt ?: message.createdAt)).coerceAtLeast(0L)
-                            if (elapsed < 2_000L) "Thinking…" else "Thinking for ${formatThinkingDuration(elapsed)}"
+                            if (elapsed < 2_000L) stringResource(R.string.turn_based_chat_thinking) else "Thinking for ${formatThinkingDuration(elapsed)}"
                         } else {
                             // A reasoning block that produced no measurable duration means the
                             // timing was genuinely lost (a pre-fix cancelled row, or a message
@@ -734,7 +748,7 @@ internal fun MessageBubble(
                                 MarkdownLiteText(it, isStreaming = message.state == MessageState.STREAMING)
                             }
                                 ?: Text(
-                                    "Reasoning is still in progress…",
+                                    stringResource(R.string.message_bubble_reasoning_is_still_in_progress),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -772,7 +786,7 @@ internal fun MessageBubble(
                         timeLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         softWrap = false,
                         modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
                     )
@@ -791,7 +805,7 @@ internal fun MessageBubble(
                         Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             Text(
-                                if (modelRunsOnDevice) "Generating on device" else "Generating via remote model",
+                                if (modelRunsOnDevice) stringResource(R.string.message_bubble_generating_on_device) else stringResource(R.string.message_bubble_generating_via_remote_model),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(start = Space.sm)
@@ -835,7 +849,7 @@ internal fun MessageBubble(
                         IconButton(onClick = { onSwitchBranch(-1) }, enabled = siblingPosition.first > 1) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.chat_previous_branch), modifier = Modifier.size(16.dp))
                         }
-                        Text("${siblingPosition.first}/${siblingPosition.second}", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.message_bubble_arg1_arg2, siblingPosition.first, siblingPosition.second), style = MaterialTheme.typography.labelSmall)
                         IconButton(onClick = { onSwitchBranch(1) }, enabled = siblingPosition.first < siblingPosition.second) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.chat_next_branch), modifier = Modifier.size(16.dp))
                         }
@@ -851,24 +865,23 @@ internal fun MessageBubble(
                 }
             }
         }
-        // Quick reply suggestions under the *last* completed assistant message — mirrors
-        // ChatGPT/Gemini's "Continue / Summarize / Make shorter / Regenerate" follow-up row.
-        // Renders *outside* the bubble so it doesn't inherit its surface treatment and the
-        // chips read as actions on the conversation, not as part of the answer.
-        if (isLastAssistant && !editing && !isGenerating) {
-            QuickReplyChips(
-                suggestions = defaultQuickReplies(),
-                onClick = onQuickReply,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+        // One quiet metadata line (model, mode, speed) instead of two stacked lines: who answered
+        // and how fast are one fact about this response.
         if (!isUser && message.modelName != null && !editing) {
             val provenance = buildList {
                 add(message.modelName)
                 message.profile?.lowercase()?.replaceFirstChar { it.titlecase() }?.let(::add)
                 message.thinkingMode?.takeIf { it != "OFF" }?.lowercase()
                     ?.replaceFirstChar { it.titlecase() }?.let { add("$it thinking") }
-                if (showGenerationStats) message.backend?.let(::add)
+                if (showGenerationStats) {
+                    message.backend?.let(::add)
+                    if (message.state == MessageState.COMPLETE && message.generationMs != null) {
+                        val seconds = message.generationMs / 1000f
+                        val tokens = message.tokenCount ?: 0
+                        if (seconds > 0f && tokens > 0) add("%.1f tok/s".format(tokens / seconds))
+                        add("%.1fs".format(seconds))
+                    }
+                }
             }.joinToString(" · ")
             Text(
                 provenance,
@@ -879,25 +892,14 @@ internal fun MessageBubble(
                 modifier = Modifier.padding(start = Space.xs, top = Space.xs),
             )
         }
-        // Stats + actions live below the bubble, outside its card — this is the response's
-        // metadata/toolbar, not part of the response itself, and keeping it out of the Card
-        // means the bubble's background/border doesn't stretch to fit five icon buttons.
-        // Stats get their own full-width line above the buttons. Sharing the action Row meant the
-        // text carried weight(1f, fill = false) next to a Spacer(weight(1f)) — the two split the
-        // leftover space 50/50, and with six 48dp icon buttons there is barely any leftover on a
-        // phone, so the line ellipsized down to "36.4…" and the numbers were unreadable. On its own
-        // row it can't be squeezed no matter how many actions the bubble ends up with.
-        if (showGenerationStats && !isUser && !editing && message.state == MessageState.COMPLETE && message.generationMs != null) {
-            val seconds = message.generationMs / 1000f
-            val tokens = message.tokenCount ?: 0
-            val tps = if (seconds > 0f) tokens / seconds else 0f
-            Text(
-                "%.1fs · ~%d tokens · %.1f tok/s".format(seconds, tokens, tps),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = Space.xs, top = Space.xs)
+        // Quick reply suggestions under the *last* completed assistant message — mirrors
+        // ChatGPT/Gemini's "Continue / Summarize / Make shorter / Regenerate" follow-up row.
+        // Renders *outside* the bubble so the chips read as actions on the conversation.
+        if (isLastAssistant && !editing && !isGenerating) {
+            QuickReplyChips(
+                suggestions = defaultQuickReplies(),
+                onClick = onQuickReply,
+                modifier = Modifier.fillMaxWidth()
             )
         }
         if (showActions && !editing) {
@@ -935,6 +937,9 @@ internal fun MessageBubble(
                                         SavedOutput(
                                             content = message.content,
                                             sourceChatId = message.chatId,
+                                            // The label links the bookmark back to its message
+                                            // (ChatScreen looks bookmarks up by it); lists show a
+                                            // readable title via displaySavedOutputTitle().
                                             label = message.id
                                         )
                                     )
@@ -968,7 +973,7 @@ internal fun MessageBubble(
                     IconButton(
                         // Clipboard hygiene — auto-clears after 30s if
                         // nothing else has overwritten it since.
-                        onClick = { clipboard.setSensitiveText(message.content, scope) }
+                        onClick = { copyMessage() }
                     ) {
                         Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(18.dp))
                     }
@@ -991,6 +996,13 @@ internal fun MessageBubble(
                                     onClick = { showRememberDialog = true; showMessageMenu = false }
                                 )
                             }
+                            // Partial selection: the bubble's own tap/swipe/long-press gestures
+                            // can't share a touch stream with text selection, so selection opens
+                            // in its own sheet.
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_select_text)) }, onClick = {
+                                showSelectText = true
+                                showMessageMenu = false
+                            })
                             DropdownMenuItem(text = { Text(stringResource(R.string.chat_save_template)) }, onClick = {
                                 showSaveAsPromptDialog = true
                                 showMessageMenu = false
@@ -999,10 +1011,11 @@ internal fun MessageBubble(
                                 scope.launch {
                                     app.container.db.noteDao().upsert(
                                         com.vervan.chat.data.db.entities.Note(
-                                            title = message.content.take(60),
-                                            content = message.content
+                                            title = savedOutputTitle(quotableText),
+                                            content = quotableText
                                         )
                                     )
+                                    onShowMessage(addedToNotesLabel)
                                 }
                                 showMessageMenu = false
                             })
@@ -1014,6 +1027,10 @@ internal fun MessageBubble(
         }
     }
 
+    if (showSelectText) {
+        SelectTextSheet(text = quotableText, onDismiss = { showSelectText = false })
+    }
+
     if (showRememberDialog) {
         var text by remember { mutableStateOf(message.content) }
         AlertDialog(
@@ -1022,7 +1039,7 @@ internal fun MessageBubble(
             text = {
                 Column {
                     Text(
-                    "Saved to Memory for future chats.",
+                    stringResource(R.string.message_bubble_saved_to_memory_for_future),
                         style = MaterialTheme.typography.bodySmall
                     )
                     OutlinedTextField(value = text, onValueChange = { text = it.take(1_000) }, modifier = Modifier.padding(top = Space.sm))
@@ -1044,7 +1061,7 @@ internal fun MessageBubble(
     // chat-level delete lives in the chat overflow and avoids accidental deletes mid-typing).
     if (showActionsSheet) {
         val (primaryActions, secondaryActions) = com.vervan.chat.ui.common.standardMessageActions(
-            onCopy = { clipboard.setSensitiveText(message.content, scope) },
+            onCopy = { copyMessage() },
             onSpeak = { onReadAloud(if (isUser) message.content else assistantSpokenText(message.content), message.id) },
             onBookmark = {
                 scope.launch {
@@ -1077,20 +1094,22 @@ internal fun MessageBubble(
         )
         // Filter out actions that don't apply to this message's role/state so the sheet doesn't
         // show inert buttons. Edits are user-only; regenerate is assistant-COMPLETE-only.
-        val applicablePrimary = primaryActions.filter { action ->
-            when (action.label) {
-                "Edit & resend" -> isUser
-                "Try again" -> !isUser && message.state in setOf(MessageState.COMPLETE, MessageState.INTERRUPTED, MessageState.FAILED)
-                else -> true
-            }
+        // Filter by id across *both* lists — Edit and Try again live in the secondary list, so
+        // filtering only the primary one (by English label) left them on every message.
+        fun applies(action: com.vervan.chat.ui.common.MessageAction) = when (action.id) {
+            com.vervan.chat.ui.common.MessageActionId.EDIT -> isUser
+            com.vervan.chat.ui.common.MessageActionId.RETRY -> !isUser && message.state in setOf(MessageState.COMPLETE, MessageState.INTERRUPTED, MessageState.FAILED)
+            else -> true
         }
+        val applicablePrimary = primaryActions.filter(::applies)
+        val applicableSecondary = secondaryActions.filter(::applies)
         MessageActionsSheet(
             onDismiss = { showActionsSheet = false },
             selectedReaction = reactions.firstOrNull { it.mine }?.emoji,
             onReact = { emoji ->
                 onReaction(if (message.reaction == emoji) null else emoji)
             },
-            actions = applicablePrimary + secondaryActions
+            actions = applicablePrimary + applicableSecondary
         )
     }
 
@@ -1129,5 +1148,42 @@ internal fun MessageBubble(
         message.imagePath?.let { path ->
             FullScreenImagePreview(path = path, title = stringResource(R.string.chat_shared_image), onDismiss = { showImagePreview = false })
         }
+    }
+}
+
+
+/** First line of [text], trimmed to a list-friendly length, for bookmark and note titles. */
+fun savedOutputTitle(text: String): String {
+    val firstLine = text.lineSequence().map { it.trim().trimStart('#', '>', '-', '*', ' ') }
+        .firstOrNull { it.isNotBlank() }.orEmpty()
+    return if (firstLine.length <= 60) firstLine else firstLine.take(59).trimEnd() + "…"
+}
+
+/** Full message text in a selectable sheet, for copying just part of a reply. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectTextSheet(text: String, onDismiss: () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(
+            stringResource(R.string.chat_select_text),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = Space.lg)
+        )
+        Text(
+            stringResource(R.string.chat_select_text_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.xs)
+        )
+        androidx.compose.foundation.text.selection.SelectionContainer(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = Space.lg, vertical = Space.md)
+        ) {
+            Text(text, style = MaterialTheme.typography.bodyLarge)
+        }
+        Spacer(Modifier.height(Space.xl))
     }
 }

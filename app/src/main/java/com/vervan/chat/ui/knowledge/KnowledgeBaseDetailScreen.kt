@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.knowledge
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -97,12 +98,17 @@ fun KnowledgeBaseDetailScreen(
     val vm: KnowledgeBaseDetailViewModel = viewModel(factory = viewModelFactory {
         initializer { KnowledgeBaseDetailViewModel(app, kbId) }
     })
-    val documents by vm.documents.collectAsState()
-    val documentsLoading by vm.documentsLoading.collectAsState()
-    val documentsLoadError by vm.documentsLoadError.collectAsState()
-    val importing by vm.importing.collectAsState()
-    val error by vm.error.collectAsState()
-    val pendingVersionConflict by vm.pendingVersionConflict.collectAsState()
+    val documents by vm.documents.collectAsStateWithLifecycle()
+    // The screen is titled with the base's own name so people always know which collection they
+    // are in; "Documents" alone says nothing.
+    val kbName by androidx.compose.runtime.produceState<String?>(null, kbId) {
+        value = runCatching { app.container.db.knowledgeBaseDao().get(kbId)?.name }.getOrNull()
+    }
+    val documentsLoading by vm.documentsLoading.collectAsStateWithLifecycle()
+    val documentsLoadError by vm.documentsLoadError.collectAsStateWithLifecycle()
+    val importing by vm.importing.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val pendingVersionConflict by vm.pendingVersionConflict.collectAsStateWithLifecycle()
     var confirmDeleteKb by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(DocFilter.ALL) }
     val visibleDocuments = remember(documents, filter) { documents.filter { it.status.matchesFilter(filter) } }
@@ -134,25 +140,25 @@ fun KnowledgeBaseDetailScreen(
                                 selectionMode = false
                             },
                             enabled = selected.isNotEmpty()
-                        ) { Icon(Icons.Filled.Refresh, contentDescription = "Re-index selected documents") }
+                        ) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.knowledge_base_detail_re_index_selected_documents)) }
                     }
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Documents") },
+                    title = { Text(kbName ?: stringResource(R.string.privacy_documents), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     navigationIcon = {
                         if (showBackButton) {
                             IconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                             }
                         }
                     },
                     actions = {
                         IconButton(onClick = { selectionMode = true }) {
-                            Icon(Icons.Filled.Checklist, contentDescription = "Select documents")
+                            Icon(Icons.Filled.Checklist, contentDescription = stringResource(R.string.knowledge_base_detail_select_documents))
                         }
                         IconButton(onClick = { confirmDeleteKb = true }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete knowledge base")
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.knowledge_base_detail_delete_knowledge_base))
                         }
                     }
                 )
@@ -164,8 +170,8 @@ fun KnowledgeBaseDetailScreen(
             FeatureHero(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 eyebrow = "Document collection",
-                title = "Build a searchable source of truth",
-                body = "Import documents, watch indexing progress, and keep every source ready for cited answers."
+                title = stringResource(R.string.knowledge_base_detail_build_a_searchable_source_of),
+                body = stringResource(R.string.knowledge_base_detail_import_documents_watch_indexing_progre)
             )
             Button(
                 onClick = {
@@ -187,7 +193,7 @@ fun KnowledgeBaseDetailScreen(
                 enabled = !importing
             ) {
                 if (importing) CircularProgressIndicator(Modifier.size(18.dp).padding(end = Space.xs), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                Text(if (importing) "Importing…" else "Import document")
+                Text(if (importing) stringResource(R.string.notification_importing) else stringResource(R.string.knowledge_base_detail_import_document))
             }
             error?.let { ErrorCard("Couldn't import this document", it, Modifier.padding(top = Space.sm)) }
 
@@ -203,7 +209,8 @@ fun KnowledgeBaseDetailScreen(
             } else if (documentsLoading) {
                 LoadingSkeletonList(rows = 7, modifier = Modifier.padding(top = Space.md))
             } else {
-            Row(
+            // Filters only help once there is something to filter.
+            if (documents.isNotEmpty()) Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = Space.sm),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
             ) {
@@ -219,11 +226,11 @@ fun KnowledgeBaseDetailScreen(
             if (visibleDocuments.isEmpty()) {
                 com.vervan.chat.ui.common.EmptyState(
                     icon = Icons.Filled.Description,
-                    title = if (documents.isEmpty()) "No documents yet" else "No ${filter.label.lowercase()} documents",
-                    body = if (documents.isEmpty()) "Import a file to make it searchable in chat." else "Try a different filter."
+                    title = if (documents.isEmpty()) stringResource(R.string.knowledge_base_detail_no_documents_yet) else "No ${filter.label.lowercase()} documents",
+                    body = if (documents.isEmpty()) stringResource(R.string.knowledge_base_detail_import_a_file_to_make) else stringResource(R.string.knowledge_base_detail_try_a_different_filter)
                 )
             } else {
-                val embedProgress by app.container.documentImportManager.embedProgress.collectAsState()
+                val embedProgress by app.container.documentImportManager.embedProgress.collectAsStateWithLifecycle()
                 LazyColumn(Modifier.fillMaxSize().padding(top = Space.sm)) {
                     items(visibleDocuments, key = { it.id }) { doc ->
                         DocumentRow(
@@ -248,23 +255,23 @@ fun KnowledgeBaseDetailScreen(
     pendingVersionConflict?.let { conflict ->
         AlertDialog(
             onDismissRequest = { vm.dismissVersionConflict() },
-            title = { Text("\"${conflict.existing.displayName}\" already exists") },
+            title = { Text(stringResource(R.string.knowledge_base_detail_arg1_already_exists, conflict.existing.displayName), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             text = {
                 Text(
                     "A document with this name is already in this knowledge base, but the content is different. " +
                         "Replace the old version, or keep both?"
                 )
             },
-            confirmButton = { TextButton(onClick = { vm.resolveVersionConflict(replace = true) }) { Text("Replace") } },
-            dismissButton = { TextButton(onClick = { vm.resolveVersionConflict(replace = false) }) { Text("Keep both") } }
+            confirmButton = { TextButton(onClick = { vm.resolveVersionConflict(replace = true) }) { Text(stringResource(R.string.action_replace)) } },
+            dismissButton = { TextButton(onClick = { vm.resolveVersionConflict(replace = false) }) { Text(stringResource(R.string.memory_keep_both)) } }
         )
     }
 
     if (confirmDeleteKb) {
         ConfirmDialog(
-            title = "Delete knowledge base?",
-            body = "Permanently remove this base and its imported documents?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.knowledge_base_detail_delete_knowledge_base_2),
+            body = stringResource(R.string.knowledge_base_detail_permanently_remove_this_base_and),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { confirmDeleteKb = false; vm.deleteKnowledgeBase(onBack) },
             onDismiss = { confirmDeleteKb = false }
@@ -274,9 +281,9 @@ fun KnowledgeBaseDetailScreen(
     if (confirmBulkDeleteDocs) {
         val count = selected.size
         ConfirmDialog(
-            title = "Delete selected documents?",
+            title = stringResource(R.string.knowledge_base_detail_delete_selected_documents),
             body = "Remove $count document${if (count == 1) "" else "s"} and their search index?",
-            confirmLabel = "Delete",
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = {
                 vm.deleteDocuments(selected)
@@ -359,8 +366,8 @@ private fun DocumentRow(
                 val failed = document.status == DocumentStatus.FAILED || document.status == DocumentStatus.UNSUPPORTED
                 val statusText = when (document.status) {
                     DocumentStatus.READY -> document.failureReason
-                        ?: if (document.ocrApplied) "Ready (OCR text) — tap to view" else "Ready — tap to view"
-                    DocumentStatus.OCR_RUNNING -> "Running OCR (scanned PDF)…"
+                        ?: if (document.ocrApplied) stringResource(R.string.knowledge_base_detail_ready_ocr_text_tap_to) else stringResource(R.string.knowledge_base_detail_ready_tap_to_view)
+                    DocumentStatus.OCR_RUNNING -> stringResource(R.string.knowledge_base_detail_running_ocr_scanned_pdf)
                     DocumentStatus.FAILED -> "Failed. ${document.failureReason.toUserMessage()}"
                     DocumentStatus.UNSUPPORTED -> "Unsupported. ${document.failureReason.toUserMessage()}"
                     else -> document.status.name.lowercase().replaceFirstChar { it.uppercase() } + "…"
@@ -373,20 +380,20 @@ private fun DocumentRow(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 if (failed && !selectionMode) {
-                    TextButton(onClick = onRetry, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Retry", style = MaterialTheme.typography.labelSmall) }
+                    TextButton(onClick = onRetry, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text(stringResource(R.string.action_retry), style = MaterialTheme.typography.labelSmall) }
                 }
             }
             if (!selectionMode) {
                 androidx.compose.foundation.layout.Box {
-                    IconButton(onClick = { showActions = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Document actions") }
+                    IconButton(onClick = { showActions = true }) { Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.knowledge_base_detail_document_actions)) }
                     DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                         DropdownMenuItem(
-                            text = { Text("Re-index") },
+                            text = { Text(stringResource(R.string.knowledge_base_detail_re_index)) },
                             leadingIcon = { Icon(Icons.Filled.Refresh, null) },
                             onClick = { showActions = false; onRetry() }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete") },
+                            text = { Text(stringResource(R.string.library_delete)) },
                             leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                             onClick = { showActions = false; confirmDelete = true }
                         )
@@ -398,9 +405,9 @@ private fun DocumentRow(
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete \"${document.displayName}\"?",
-            body = "Remove this document and its search index?",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.knowledge_base_detail_delete_arg1, document.displayName),
+            body = stringResource(R.string.knowledge_base_detail_remove_this_document_and_its),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { confirmDelete = false; onDelete() },
             onDismiss = { confirmDelete = false }

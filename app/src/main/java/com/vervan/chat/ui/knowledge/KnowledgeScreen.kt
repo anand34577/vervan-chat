@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.knowledge
 
+import com.vervan.chat.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,12 +70,12 @@ import com.vervan.chat.system.toUserMessage
 fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: KnowledgeViewModel = viewModel(factory = viewModelFactory { initializer { KnowledgeViewModel(app) } })
-    val kbs by vm.knowledgeBases.collectAsState()
-    val kbsLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
-    val kbStats by vm.kbStats.collectAsState()
-    val indexing by vm.indexingDocuments.collectAsState()
-    val recentDocuments by vm.recentDocuments.collectAsState()
+    val kbs by vm.knowledgeBases.collectAsStateWithLifecycle()
+    val kbsLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val kbStats by vm.kbStats.collectAsStateWithLifecycle()
+    val indexing by vm.indexingDocuments.collectAsStateWithLifecycle()
+    val recentDocuments by vm.recentDocuments.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     val totalDocuments = kbStats.values.sumOf { it.first }
     val readyBases = kbStats.values.count { it.second }
@@ -83,35 +85,25 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             MediumTopAppBar(
                 title = {
                     Column {
-                        Text("Knowledge")
-                        Text("Searchable, cited, on-device", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.knowledge_knowledge))
+                        Text(stringResource(R.string.knowledge_searchable_cited_on_device), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = "New knowledge base") } }
+                actions = { IconButton(onClick = { showCreate = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.knowledge_new_knowledge_base)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding)) {
           Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                eyebrow = "Grounded answers",
-                title = "Your private knowledge",
-                body = "Organize documents for private search and cited answers.",
-                trailing = {
-                    SemanticChip(
-                        text = if (indexing.isEmpty()) "On-device" else "Processing",
-                        tone = if (indexing.isEmpty()) ChipTone.Success else ChipTone.Warning
-                    )
-                }
-            )
-            KnowledgeSnapshotCard(
-                knowledgeBaseCount = kbs.size,
-                documentCount = totalDocuments,
-                readyBaseCount = readyBases,
-                indexingCount = indexing.size
-            )
-            VervanSectionHeader("Knowledge bases", count = kbs.size, actionLabel = "New", onAction = { showCreate = true })
+            if (kbs.isNotEmpty()) {
+                KnowledgeSnapshotCard(
+                    knowledgeBaseCount = kbs.size,
+                    documentCount = totalDocuments,
+                    readyBaseCount = readyBases,
+                    indexingCount = indexing.size
+                )
+                VervanSectionHeader(stringResource(R.string.knowledge_section_bases), count = kbs.size)
+            }
             if (error != null) {
                 OperationErrorCard(
                     title = stringResource(com.vervan.chat.R.string.knowledge_unavailable),
@@ -128,9 +120,9 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             } else if (kbs.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.MenuBook,
-                    title = "Build your first knowledge base",
-                    body = "Group documents so chats can find and cite exact passages.",
-                    actionLabel = "Create knowledge base",
+                    title = stringResource(R.string.knowledge_build_your_first_knowledge_base),
+                    body = stringResource(R.string.knowledge_group_documents_so_chats_can),
+                    actionLabel = stringResource(R.string.knowledge_create_knowledge_base),
                     onAction = { showCreate = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp)
                 )
@@ -139,7 +131,7 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             AdaptiveCardFlow {
                 kbs.forEach { kb ->
                     val stats = kbStats[kb.id]
-                    Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                    Box(Modifier.weight(1f)) {
                         KbCard(
                             kb,
                             docCount = stats?.first ?: 0,
@@ -149,11 +141,11 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                     }
                 }
                 if (kbs.isNotEmpty()) {
-                    Box(Modifier.weight(1f).heightIn(min = 132.dp)) {
+                    Box(Modifier.weight(1f)) {
                         ActionTile(
                             icon = Icons.Filled.Add,
-                            title = "New knowledge base",
-                            body = "Create a document collection",
+                            title = stringResource(R.string.knowledge_new_knowledge_base),
+                            body = stringResource(R.string.knowledge_create_a_document_collection),
                             onClick = { showCreate = true },
                             modifier = Modifier.fillMaxSize(),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -163,10 +155,10 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (indexing.isNotEmpty()) {
-                VervanSectionHeader("Indexing queue", count = indexing.size)
+                VervanSectionHeader(stringResource(R.string.knowledge_section_queue), count = indexing.size)
                 Card(
                     Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = MaterialTheme.shapes.large,
                     colors = SurfaceRole.Card.cardColors(),
                     border = SurfaceRole.Card.border()
                 ) {
@@ -178,10 +170,10 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
             }
 
             if (recentDocuments.isNotEmpty()) {
-                VervanSectionHeader("Recent documents", count = recentDocuments.size)
+                VervanSectionHeader(stringResource(R.string.knowledge_section_recent), count = recentDocuments.size)
                 Card(
                     Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = MaterialTheme.shapes.large,
                     colors = SurfaceRole.Card.cardColors(),
                     border = SurfaceRole.Card.border()
                 ) {
@@ -200,10 +192,10 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreate = false },
-            title = { Text("New knowledge base") },
+            title = { Text(stringResource(R.string.knowledge_new_knowledge_base)) },
             text = {
                 com.vervan.chat.ui.common.BoundedTextField(
-                    value = name, onValueChange = { name = it }, placeholder = "Name",
+                    value = name, onValueChange = { name = it }, placeholder = stringResource(R.string.workspace_name),
                     singleLine = true, maxLength = com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
                 )
             },
@@ -211,9 +203,9 @@ fun KnowledgeScreen(onOpenKb: (String) -> Unit) {
                 TextButton(
                     onClick = { if (name.isNotBlank()) { vm.createKnowledgeBase(name.trim()); showCreate = false } },
                     enabled = name.isNotBlank() && name.length <= com.vervan.chat.ui.common.ValidationLimits.KNOWLEDGE_BASE_NAME
-                ) { Text("Create") }
+                ) { Text(stringResource(R.string.action_create)) }
             },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showCreate = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 }
@@ -223,33 +215,33 @@ private fun KbCard(kb: KnowledgeBase, docCount: Int, allReady: Boolean, onClick:
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border()
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(48.dp).clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.secondaryContainer),
+                    Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.MenuBook,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
                 Column(Modifier.weight(1f).padding(start = Space.md)) {
                     OverflowTooltipText(text = kb.name, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "$docCount ${if (docCount == 1) "document" else "documents"}",
+                        androidx.compose.ui.res.pluralStringResource(R.plurals.knowledge_documents_count, docCount, docCount),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 SemanticChip(
-                    text = if (allReady) "Ready" else "Indexing",
+                    text = if (allReady) stringResource(R.string.knowledge_ready) else stringResource(R.string.knowledge_indexing),
                     tone = if (allReady) ChipTone.Success else ChipTone.Warning
                 )
             }
@@ -268,17 +260,17 @@ private fun KnowledgeSnapshotCard(
         modifier = Modifier.fillMaxWidth().padding(top = Space.md),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.md),
             horizontalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
-            KnowledgeMetric(knowledgeBaseCount.toString(), "Bases", Modifier.weight(1f))
-            KnowledgeMetric(documentCount.toString(), "Documents", Modifier.weight(1f))
+            KnowledgeMetric(knowledgeBaseCount.toString(), stringResource(R.string.knowledge_metric_bases), Modifier.weight(1f))
+            KnowledgeMetric(documentCount.toString(), stringResource(R.string.knowledge_metric_documents), Modifier.weight(1f))
             KnowledgeMetric(
                 if (indexingCount == 0) "$readyBaseCount" else "$indexingCount",
-                if (indexingCount == 0) "Ready" else "Indexing",
+                stringResource(if (indexingCount == 0) R.string.knowledge_ready else R.string.knowledge_indexing),
                 Modifier.weight(1f),
                 accent = if (indexingCount == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
             )
@@ -311,20 +303,21 @@ private fun DocRow(doc: Document) {
                 text = doc.displayName,
                 style = MaterialTheme.typography.bodyMedium
             )
-            Text(
-                if (doc.status in setOf(DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)) {
-                    doc.failureReason.toUserMessage()
-                } else {
-                    doc.failureReason ?: doc.status.name.lowercase().replaceFirstChar { it.uppercase() }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // The chip on the right already names the status; the second line is only for the
+            // reason a document failed, which the chip cannot carry.
+            if (doc.status in setOf(DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED)) {
+                Text(
+                    doc.failureReason.toUserMessage(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
         }
         val (label, tone) = when (doc.status) {
-            DocumentStatus.READY -> "Ready" to ChipTone.Success
-            DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED -> "Failed" to ChipTone.Error
-            else -> "Indexing" to ChipTone.Warning
+            DocumentStatus.READY -> stringResource(R.string.knowledge_ready) to ChipTone.Success
+            DocumentStatus.FAILED, DocumentStatus.UNSUPPORTED -> stringResource(R.string.knowledge_failed) to ChipTone.Error
+            else -> stringResource(R.string.knowledge_indexing) to ChipTone.Warning
         }
         SemanticChip(label, tone)
     }

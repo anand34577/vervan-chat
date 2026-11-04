@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.notes
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,13 +62,13 @@ import com.vervan.chat.ui.theme.Space
 fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: NoteEditorViewModel = viewModel(factory = viewModelFactory { initializer { NoteEditorViewModel(app, noteId) } })
-    val note by vm.note.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
-    val recordFound by vm.recordFound.collectAsState()
-    val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
-    val saving by vm.saving.collectAsState()
+    val note by vm.note.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val recordFound by vm.recordFound.collectAsStateWithLifecycle()
+    val running by vm.running.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val saving by vm.saving.collectAsStateWithLifecycle()
 
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
@@ -73,7 +76,9 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(note) {
         if (note != null && !loaded) {
-            title = note!!.title
+            // A brand-new note carries the stored default name; show the empty field with its
+            // placeholder instead of pre-filled text the user would have to delete first.
+            title = note!!.title.takeUnless { it == "Untitled note" }.orEmpty()
             content = note!!.content
             tags = note!!.tags
             loaded = true
@@ -85,17 +90,22 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     var previewMode by remember { mutableStateOf(false) }
     var pendingResult by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val knowledgeBases by vm.knowledgeBases.collectAsState()
+    val knowledgeBases by vm.knowledgeBases.collectAsStateWithLifecycle()
+    // System back / predictive back saves exactly like the toolbar arrow does.
+    androidx.activity.compose.BackHandler(enabled = loaded) {
+        vm.save(title, content, tags)
+        onBack()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Note")
+                        Text(stringResource(R.string.entity_note))
                         if (loaded) {
                             Text(
-                                if (saving) "Saving…" else "Saved on this device",
+                                if (saving) stringResource(R.string.document_scanner_saving) else stringResource(R.string.note_editor_saved_on_this_device),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -104,15 +114,15 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 },
                 navigationIcon = {
                     IconButton(onClick = { vm.save(title, content, tags); onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { previewMode = !previewMode }) {
-                        Icon(Icons.Filled.Preview, contentDescription = if (previewMode) "Edit" else "Preview markdown")
+                        Icon(Icons.Filled.Preview, contentDescription = if (previewMode) stringResource(R.string.library_edit) else stringResource(R.string.note_editor_preview_markdown))
                     }
                     IconButton(onClick = { showActions = true }, enabled = !running) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "AI actions")
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = stringResource(R.string.note_editor_ai_actions))
                     }
                     DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                         NoteAction.entries.forEach { action ->
@@ -126,10 +136,10 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                         }
                     }
                     IconButton(onClick = { vm.save(title, content, tags); showKbPicker = true }) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Add to knowledge base")
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = stringResource(R.string.chat_add_to_knowledge))
                     }
                     IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.library_delete))
                     }
                 }
             )
@@ -138,19 +148,19 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
         PageContainer(Modifier.padding(padding).imePadding(), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Note unavailable",
+                title = stringResource(R.string.note_editor_note_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your other notes are safe. Retry the lookup or return to the notes list.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.note_editor_your_other_notes_are_safe),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             !recordFound -> EmptyState(
                 icon = Icons.Filled.Preview,
-                title = "Note not found",
-                body = "This note may have been deleted or moved to the recycle bin.",
-                actionLabel = "Back",
+                title = stringResource(R.string.note_editor_note_not_found),
+                body = stringResource(R.string.note_editor_this_note_may_have_been),
+                actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
@@ -160,19 +170,19 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                 maxLength = ValidationLimits.NOTE_TITLE,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = "Title"
+                placeholder = stringResource(R.string.note_editor_title)
             )
             if (running) {
                 Row(Modifier.padding(top = Space.sm), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                    Text("Updating the note on this device…")
+                    Text(stringResource(R.string.note_editor_updating_the_note_on_this))
                 }
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't complete the note action",
+                    title = stringResource(R.string.note_editor_couldn_t_complete_the_note),
                     message = it,
-                    recovery = "Your note is safe. Check the model or shorten the selection, then try again.",
+                    recovery = stringResource(R.string.note_editor_your_note_is_safe_check),
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
@@ -183,7 +193,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     tags = joined
                     vm.scheduleSave(title, content, joined)
                 },
-                label = "Tags",
+                label = stringResource(R.string.note_editor_tags),
                 maxItemLength = ValidationLimits.NOTE_TAG,
                 maxItemCount = ValidationLimits.NOTE_TAG_COUNT,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
@@ -200,7 +210,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                     maxLength = ValidationLimits.NOTE_CONTENT,
                     maxLines = Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm).weight(1f),
-                    placeholder = "Write here… Markdown is supported"
+                    placeholder = stringResource(R.string.note_editor_write_here_markdown_is_supported)
                 )
             }
             pendingResult?.let { result ->
@@ -220,31 +230,32 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     if (showKbPicker) {
         AlertDialog(
             onDismissRequest = { showKbPicker = false },
-            title = { Text("Add to knowledge base") },
+            title = { Text(stringResource(R.string.chat_add_to_knowledge)) },
             text = {
                 Column {
                     if (knowledgeBases.isEmpty()) {
-                        Text("No knowledge bases yet. Create one in Knowledge.")
+                        Text(stringResource(R.string.chat_no_sources_create))
                     }
                     knowledgeBases.forEach { kb ->
                         Text(
                             kb.name,
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { vm.addToKnowledgeBase(kb.id); showKbPicker = false }
-                                .padding(vertical = Space.md)
-                        )
+                                .padding(vertical = Space.md),
+                                maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showKbPicker = false }) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = { showKbPicker = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     if (confirmDelete) {
         ConfirmDialog(
-            title = "Delete note?",
+            title = stringResource(R.string.note_editor_delete_note),
             body = "\"${title.ifBlank { "Untitled note" }}\" will be moved to the recycle bin.",
-            confirmLabel = "Delete",
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { confirmDelete = false; vm.delete(); onDeleted() },
             onDismiss = { confirmDelete = false }

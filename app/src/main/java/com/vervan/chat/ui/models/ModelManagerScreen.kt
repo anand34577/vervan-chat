@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.models
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -220,25 +222,25 @@ fun ModelManagerScreen(
         topBar = {
             if (selectionMode) {
                 TopAppBar(
-                    title = { Text("${selectedIds.size} selected") },
+                    title = { Text(stringResource(R.string.model_manager_arg1_selected, selectedIds.size)) },
                     navigationIcon = {
-                        IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+                        IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.model_manager_cancel_selection)) }
                     },
                     actions = {
-                        IconButton(onClick = { confirmBulkDelete = true }) { Icon(Icons.Filled.Delete, contentDescription = "Delete selected") }
+                        IconButton(onClick = { confirmBulkDelete = true }) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.library_delete_selected)) }
                     }
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Model manager") },
+                    title = { Text(stringResource(R.string.model_manager_model_manager)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                     },
                     actions = {
                         IconButton(onClick = { showImportOptions = true }) {
-                            Icon(Icons.Filled.Add, contentDescription = "Import a model")
+                            Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.model_manager_import_a_model))
                         }
-                        IconButton(onClick = onOpenCalculator) { Icon(Icons.Filled.Calculate, contentDescription = "Model calculator") }
+                        IconButton(onClick = onOpenCalculator) { Icon(Icons.Filled.Calculate, contentDescription = stringResource(R.string.model_manager_model_calculator)) }
                     }
                 )
             }
@@ -246,19 +248,6 @@ fun ModelManagerScreen(
     ) { padding ->
       PageContainer(Modifier.padding(padding)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = Space.sm)) {
-            FeatureHero(
-                icon = Icons.Filled.Bolt,
-                eyebrow = "Private runtime",
-                title = "Make the right model choice",
-                body = "Install, import, and tune the models that power chat, search, and voice on this device.",
-                trailing = {
-                    SemanticChip(
-                        text = if (generationLoadInfo.currentModelId != null) "Ready" else "Setup",
-                        tone = if (generationLoadInfo.currentModelId != null) ChipTone.Success else ChipTone.Warning
-                    )
-                },
-                modifier = Modifier.padding(bottom = Space.lg)
-            )
             // readiness summary — the model manager used to open straight into the
             // import card with no at-a-glance answer to "is anything actually usable right now."
             run {
@@ -266,20 +255,20 @@ fun ModelManagerScreen(
                 val embeddingReady = embeddingLoadInfo.currentModelId != null
                 val (tone, title, body) = when {
                     generationReady && embeddingReady -> Triple(
-                        com.vervan.chat.ui.common.StatusTone.Ready, "Ready",
-                        "A generation model and an embedding model are both loaded."
+                        com.vervan.chat.ui.common.StatusTone.Ready, stringResource(R.string.mm_status_ready),
+                        stringResource(R.string.mm_status_ready_body)
                     )
                     generationReady -> Triple(
-                        com.vervan.chat.ui.common.StatusTone.Ready, "Chat ready",
-                        "No embedding model loaded. Search is using keywords."
+                        com.vervan.chat.ui.common.StatusTone.Ready, stringResource(R.string.mm_status_chat_ready),
+                        stringResource(R.string.mm_status_chat_ready_body)
                     )
                     generationModels.isEmpty() -> Triple(
-                        com.vervan.chat.ui.common.StatusTone.Warning, "No generation model",
-                        "Import a generation model below before starting a chat."
+                        com.vervan.chat.ui.common.StatusTone.Warning, stringResource(R.string.mm_status_no_model),
+                        stringResource(R.string.mm_status_no_model_body)
                     )
                     else -> Triple(
-                        com.vervan.chat.ui.common.StatusTone.Info, "Not loaded",
-                        "${generationModels.size} generation model(s) installed. Load one to chat."
+                        com.vervan.chat.ui.common.StatusTone.Info, stringResource(R.string.mm_status_not_loaded),
+                        androidx.compose.ui.res.pluralStringResource(R.plurals.mm_status_not_loaded_body, generationModels.size, generationModels.size)
                     )
                 }
                 com.vervan.chat.ui.common.SystemStatusStrip(
@@ -294,17 +283,17 @@ fun ModelManagerScreen(
             // model didn't work.
             generationLoadInfo.error?.let { err ->
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Generation model load failed",
+                    title = stringResource(R.string.model_manager_generation_model_load_failed),
                     message = err.errorMessage.toUserMessage(),
-                    recovery = "Retry from the model card, or use a smaller model or another runtime.",
+                    recovery = stringResource(R.string.model_manager_retry_from_the_model_card),
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
             embeddingLoadInfo.error?.let { err ->
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Embedding model load failed",
+                    title = stringResource(R.string.model_manager_embedding_model_load_failed),
                     message = err.errorMessage.toUserMessage(),
-                    recovery = "Retry the model. Keyword search still works without it.",
+                    recovery = stringResource(R.string.model_manager_retry_the_model_keyword_search),
                     modifier = Modifier.padding(bottom = Space.sm)
                 )
             }
@@ -336,7 +325,7 @@ fun ModelManagerScreen(
             }
 
             if (downloadingStates.isNotEmpty()) {
-                SectionHeader("Active downloads", Icons.Filled.CloudDownload)
+                SectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_manager_active_downloads), Icons.Filled.CloudDownload)
                 downloadingStates.forEach { state ->
                     DownloadPackageCard(
                         state = state,
@@ -390,8 +379,8 @@ fun ModelManagerScreen(
             } else {
                 if (importing) {
                     com.vervan.chat.ui.common.OperationProgressCard(
-                        title = busyLabel ?: "Importing model",
-                        body = "Copying and checking the model. Keep the app open.",
+                        title = busyLabel ?: stringResource(R.string.model_manager_importing_model),
+                        body = stringResource(R.string.model_manager_copying_and_checking_the_model),
                         modifier = Modifier.padding(top = Space.sm)
                     )
                 }
@@ -413,7 +402,7 @@ fun ModelManagerScreen(
                     )
                 } else {
                     if (generationModels.isNotEmpty()) {
-                        SectionHeader("For chat", Icons.Filled.Bolt)
+                        SectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_manager_for_chat), Icons.Filled.Bolt)
                         generationModels.forEach { model ->
                             ModelCard(
                                 model,
@@ -435,9 +424,9 @@ fun ModelManagerScreen(
                     }
 
                     if (embeddingModels.isNotEmpty()) {
-                        SectionHeader("For search", Icons.Outlined.Storage)
+                        SectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_manager_for_search), Icons.Outlined.Storage)
                         Text(
-                            "Used automatically for semantic search.",
+                            stringResource(R.string.model_manager_used_automatically_for_semantic_search),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = Space.sm)
@@ -463,7 +452,7 @@ fun ModelManagerScreen(
                     }
 
                     if (downloadedVoiceStates.isNotEmpty()) {
-                        SectionHeader("Voice & speech", Icons.Filled.GraphicEq)
+                        SectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_model_manager_voice_speech), Icons.Filled.GraphicEq)
                         downloadedVoiceStates.forEach { state ->
                             DownloadPackageCard(
                                 state = state,
@@ -593,9 +582,9 @@ fun ModelManagerScreen(
 
     if (confirmBulkDelete) {
         ConfirmDialog(
-            title = "Delete selected models?",
+            title = stringResource(R.string.model_manager_delete_selected_models),
             body = "Remove ${selectedIds.size} model file${if (selectedIds.size == 1) "" else "s"} permanently?",
-            confirmLabel = "Delete forever",
+            confirmLabel = stringResource(R.string.action_delete_forever),
             destructive = true,
             onConfirm = {
                     models.filter { it.id in selectedIds }.forEach { vm.delete(it) }
@@ -609,7 +598,7 @@ fun ModelManagerScreen(
     pendingAcknowledgment?.let { model ->
         AlertDialog(
             onDismissRequest = { vm.dismissAcknowledgment() },
-            title = { Text("Before you activate this model") },
+            title = { Text(stringResource(R.string.model_manager_before_you_activate_this_model)) },
             text = {
                 Text(
                     "This model came from your file, so Vervan cannot verify its license. " +
@@ -617,10 +606,10 @@ fun ModelManagerScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { vm.acknowledgeAndActivate(model) }) { Text("I understand, activate") }
+                TextButton(onClick = { vm.acknowledgeAndActivate(model) }) { Text(stringResource(R.string.model_manager_i_understand_activate)) }
             },
             dismissButton = {
-                TextButton(onClick = { vm.dismissAcknowledgment() }) { Text("Cancel") }
+                TextButton(onClick = { vm.dismissAcknowledgment() }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -628,7 +617,7 @@ fun ModelManagerScreen(
     pendingMigration?.let { (newModel, previous) ->
         AlertDialog(
             onDismissRequest = { vm.dismissMigration() },
-            title = { Text("New version detected") },
+            title = { Text(stringResource(R.string.model_manager_new_version_detected)) },
             text = {
                 Text(
                     "Use \"${newModel.displayName}\" as the default and update folders using the old default? " +
@@ -636,10 +625,10 @@ fun ModelManagerScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { vm.relinkToNewVersion(newModel, previous) }) { Text("Use new version") }
+                TextButton(onClick = { vm.relinkToNewVersion(newModel, previous) }) { Text(stringResource(R.string.model_manager_use_new_version)) }
             },
             dismissButton = {
-                TextButton(onClick = { vm.dismissMigration() }) { Text("Keep old one") }
+                TextButton(onClick = { vm.dismissMigration() }) { Text(stringResource(R.string.model_manager_keep_old_one)) }
             }
         )
     }

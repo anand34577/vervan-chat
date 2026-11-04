@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -150,7 +152,7 @@ private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExi
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        modelName ?: "Local model",
+                        modelName ?: stringResource(R.string.immersive_voice_local_model),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -159,7 +161,7 @@ private fun VoiceChatHeader(conversationTitle: String, modelName: String?, onExi
                 }
                 if (!compact) LiveVoicePill() else LiveStatusDot()
                 IconButton(onClick = onExitImmersive, modifier = Modifier.padding(start = Space.xs)) {
-                    Icon(Icons.Filled.CloseFullscreen, contentDescription = "Exit full screen")
+                    Icon(Icons.Filled.CloseFullscreen, contentDescription = stringResource(R.string.immersive_voice_exit_full_screen))
                 }
             }
         }
@@ -206,7 +208,7 @@ private fun LiveVoicePill() {
                     .background(MaterialTheme.colorScheme.onTertiaryContainer, CircleShape)
             )
             Text(
-                "LIVE",
+                stringResource(R.string.immersive_voice_live),
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(start = Space.xs)
             )
@@ -304,7 +306,7 @@ private fun LiveCaptionBubble(liveTranscript: String) {
             contentColor = MaterialTheme.colorScheme.onSurface
         ) {
             Column(Modifier.padding(Space.md)) {
-                Text("YOU · LIVE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.immersive_voice_you_live), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 Text(liveTranscript, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = Space.xs))
             }
         }
@@ -358,7 +360,7 @@ private fun ThinkingDots(modifier: Modifier = Modifier) {
 // Kept local rather than folded into VervanExtraShapes: these mirror the tail to the opposite
 // corner per speaker, which the chat bubbles don't do. Radii track VervanExtraShapes.userBubble.
 private fun bubbleShape(isUser: Boolean) = if (isUser) {
-    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
+    com.vervan.chat.ui.theme.VervanExtraShapes.userBubble
 } else {
-    androidx.compose.foundation.shape.RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp)
+    androidx.compose.foundation.shape.RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp)
 }

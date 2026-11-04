@@ -19,6 +19,10 @@ interface DocumentDao : BaseDao<Document> {
     @Query("SELECT * FROM documents WHERE deletedAt IS NULL")
     fun observeAll(): Flow<List<Document>>
 
+    /** Documents attached to messages in one chat, so a chat screen doesn't load the library. */
+    @Query("SELECT * FROM documents WHERE deletedAt IS NULL AND id IN (SELECT documentId FROM messages WHERE chatId = :chatId AND documentId IS NOT NULL)")
+    fun observeForChat(chatId: String): Flow<List<Document>>
+
     @Query("SELECT * FROM documents WHERE id = :id")
     suspend fun get(id: String): Document?
 

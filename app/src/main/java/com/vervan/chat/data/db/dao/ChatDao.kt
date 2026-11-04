@@ -72,6 +72,11 @@ interface ChatDao : BaseDao<Chat> {
     @Query("SELECT * FROM chats WHERE deletedAt IS NULL AND title LIKE '%' || :q || '%' ORDER BY updatedAt DESC LIMIT 20")
     suspend fun search(q: String): List<Chat>
 
+    /** Chats created by "New chat"/share/shortcut that never got a message or draft — normally
+     * removed when the chat screen closes, but a process death in between leaves them behind. */
+    @Query("DELETE FROM chats WHERE draft = '' AND pinned = 0 AND updatedAt < :before AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.chatId = chats.id)")
+    suspend fun deleteEmptyChatsBefore(before: Long): Int
+
     @Query("SELECT id FROM chats WHERE isTemporary = 1 AND deletedAt IS NULL")
     suspend fun getTemporaryChatIds(): List<String>
 

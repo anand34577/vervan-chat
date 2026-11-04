@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.workflows
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -61,62 +64,63 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
     val vm: WorkflowEditorViewModel = viewModel(factory = viewModelFactory {
         initializer { WorkflowEditorViewModel(app, workflowId) }
     })
-    val name by vm.name.collectAsState()
-    val description by vm.description.collectAsState()
-    val steps by vm.steps.collectAsState()
-    val isBuiltIn by vm.isBuiltIn.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
-    val recordFound by vm.recordFound.collectAsState()
+    val name by vm.name.collectAsStateWithLifecycle()
+    val description by vm.description.collectAsStateWithLifecycle()
+    val steps by vm.steps.collectAsStateWithLifecycle()
+    val isBuiltIn by vm.isBuiltIn.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val recordFound by vm.recordFound.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val guardedBack = com.vervan.chat.ui.common.rememberUnsavedChangesGuard(vm::hasUnsavedChanges, onBack)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (workflowId == null) "New workflow" else "Edit workflow") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                navigationIcon = { IconButton(onClick = guardedBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Workflow unavailable",
+                title = stringResource(R.string.workflow_editor_workflow_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your other workflows are safe. Retry the lookup or return to the library.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.workflow_editor_your_other_workflows_are_safe),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 6, modifier = Modifier.padding(Space.md))
             workflowId != null && !recordFound -> EmptyState(
                 icon = Icons.Filled.Description,
-                title = "Workflow not found",
-                body = "This workflow may have been deleted or moved to the recycle bin.",
-                actionLabel = "Back",
+                title = stringResource(R.string.workflow_editor_workflow_not_found),
+                body = stringResource(R.string.workflow_editor_this_workflow_may_have_been),
+                actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             BoundedTextField(
-                value = name, onValueChange = vm::setName, label = "Name",
+                value = name, onValueChange = vm::setName, label = stringResource(R.string.workspace_name),
                 maxLength = ValidationLimits.WORKFLOW_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
             BoundedTextField(
-                value = description, onValueChange = vm::setDescription, label = "Description",
+                value = description, onValueChange = vm::setDescription, label = stringResource(R.string.workspace_description),
                 maxLength = ValidationLimits.WORKFLOW_DESCRIPTION,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             if (isBuiltIn) {
                 Text(
-                "Saving creates an editable copy. The built-in stays unchanged.",
+                stringResource(R.string.persona_copy_hint),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = Space.sm)
                 )
             }
             Text(
-                "Steps (${steps.size}/${ValidationLimits.WORKFLOW_STEP_COUNT})",
+                stringResource(R.string.workflow_editor_steps_arg1_arg2, steps.size, ValidationLimits.WORKFLOW_STEP_COUNT),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(top = Space.lg, bottom = Space.xs)
             )
@@ -125,30 +129,30 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
                     BoundedTextField(
                         value = step,
                         onValueChange = { vm.setStep(index, it) },
-                        label = "Step ${index + 1} instruction",
+                        label = stringResource(R.string.workflow_editor_step_arg1_instruction, index + 1),
                         maxLength = ValidationLimits.WORKFLOW_STEP,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = { vm.moveStep(index, -1) }, enabled = index > 0) {
-                        Icon(Icons.Filled.ArrowUpward, contentDescription = "Move step up")
+                        Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.workflow_editor_move_step_up))
                     }
                     IconButton(onClick = { vm.moveStep(index, 1) }, enabled = index < steps.lastIndex) {
-                        Icon(Icons.Filled.ArrowDownward, contentDescription = "Move step down")
+                        Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.workflow_editor_move_step_down))
                     }
                     IconButton(onClick = { vm.removeStep(index) }, enabled = steps.size > 1) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove step")
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.workflow_editor_remove_step))
                     }
                 }
             }
-            OutlinedButton(onClick = { vm.addStep() }, enabled = steps.size < ValidationLimits.WORKFLOW_STEP_COUNT) { Text("Add step") }
+            OutlinedButton(onClick = { vm.addStep() }, enabled = steps.size < ValidationLimits.WORKFLOW_STEP_COUNT) { Text(stringResource(R.string.workflow_editor_add_step)) }
 
             val withinLimits = name.length <= ValidationLimits.WORKFLOW_NAME &&
                 description.length <= ValidationLimits.WORKFLOW_DESCRIPTION &&
                 steps.all { it.length <= ValidationLimits.WORKFLOW_STEP }
             ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text("Save") }
+                Button(enabled = withinLimits, onClick = { scope.launch { if (vm.save()) onBack() } }) { Text(stringResource(R.string.action_save)) }
                 if (workflowId != null && !isBuiltIn) {
-                    TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }
+                    TextButton(onClick = { showDeleteConfirm = true }) { Text(stringResource(R.string.library_delete)) }
                 }
             }
             }
@@ -157,9 +161,9 @@ fun WorkflowEditorScreen(workflowId: String?, onBack: () -> Unit) {
     }
     if (showDeleteConfirm) {
         ConfirmDialog(
-            title = "Delete workflow?",
-            body = "\"$name\" and its steps will move to the recycle bin and can be restored.",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.workflow_editor_delete_workflow),
+            body = stringResource(R.string.workflow_editor_arg1_and_its_steps_will, name),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
             onDismiss = { showDeleteConfirm = false }

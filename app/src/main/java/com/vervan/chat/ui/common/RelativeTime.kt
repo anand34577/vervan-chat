@@ -1,4 +1,6 @@
 package com.vervan.chat.ui.common
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * "Just now / 5m ago / 3h ago / 2d ago / 12/31/25" — the one relative-timestamp treatment for

@@ -1,5 +1,9 @@
 package com.vervan.chat.ui.writing
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,23 +57,25 @@ import com.vervan.chat.ui.theme.Space
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WritingWorkspaceScreen(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
+    val app = context.applicationContext as VervanApp
     val vm: WritingWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { WritingWorkspaceViewModel(app) } })
-    val revision by vm.revision.collectAsState()
-    val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
+    val revision by vm.revision.collectAsStateWithLifecycle()
+    val running by vm.running.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
-    var original by remember { mutableStateOf("") }
-    var targetLanguage by remember { mutableStateOf("") }
+    var original by rememberSaveable { mutableStateOf("") }
+    var targetLanguage by rememberSaveable { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Writing workspace") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.writing_workspace_writing_workspace)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -77,12 +83,12 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
         ScrollablePage(contentPadding = padding, modifier = Modifier.imePadding(), maxContentWidth = 840.dp) {
             BoundedTextField(
                 value = original, onValueChange = { original = it },
-                label = "Your text", minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
+                label = stringResource(R.string.writing_workspace_your_text), minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = targetLanguage, onValueChange = { targetLanguage = it.take(80) },
-                label = { Text("Target language (for Translate)") }, singleLine = true,
+                label = { Text(stringResource(R.string.writing_workspace_target_language_for_translate)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
             )
             Row(
@@ -95,39 +101,39 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
             }
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Preparing the revision",
-                    body = "Rewriting locally. Your original stays unchanged.",
+                    title = stringResource(R.string.writing_workspace_preparing_the_revision),
+                    body = stringResource(R.string.writing_workspace_rewriting_locally_your_original_stays),
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't complete the writing action",
+                    title = stringResource(R.string.writing_workspace_couldn_t_complete_the_writing),
                     message = it,
-                    recovery = "Your text is safe. Shorten it or check the model, then try again.",
+                    recovery = stringResource(R.string.writing_workspace_your_text_is_safe_shorten),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (revision.isNotBlank()) {
-                Text("Revision", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+                Text(stringResource(R.string.writing_workspace_revision), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
                 DiffViewer(
                     original = original,
                     transformed = revision,
                     onReplace = { original = revision },
                     onCopy = {
                         clipboard.setText(revision, scope)
-                        scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.writing_workspace_copied_to_clipboard)) }
                     }
                 )
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     TextButton(onClick = {
                         vm.saveAsNote(original.take(60))
-                        scope.launch { snackbarHostState.showSnackbar("Added to notes") }
-                    }) { Text("Add to note") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_added_to_notes)) }
+                    }) { Text(stringResource(R.string.chat_add_note)) }
                     TextButton(onClick = {
                         vm.saveToLibrary()
-                        scope.launch { snackbarHostState.showSnackbar("Saved to library") }
-                    }) { Text("Save to library") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.writing_workspace_saved_to_library)) }
+                    }) { Text(stringResource(R.string.writing_workspace_save_to_library)) }
                 }
             }
         }

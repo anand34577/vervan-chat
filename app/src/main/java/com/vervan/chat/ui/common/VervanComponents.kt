@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +47,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -169,7 +173,7 @@ fun VervanSearchField(
         trailingIcon = if (value.isNotEmpty()) {
             {
                 androidx.compose.material3.IconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.vervan_clear_search))
                 }
             }
         } else null,
@@ -189,39 +193,72 @@ fun VervanSearchField(
 @Composable
 fun FeatureHero(
     icon: ImageVector,
-    eyebrow: String,
-    title: String,
+    @Suppress("UNUSED_PARAMETER") eyebrow: String,
+    title: String?,
     body: String,
     modifier: Modifier = Modifier,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    dismissible: Boolean = true,
+    /** Persists the dismissal. Defaults to [title]; pass the old title when dropping a title that
+     * only repeated the app bar, so cards people already closed stay closed. */
+    dismissKey: String = title ?: body
 ) {
+    // Orientation is for the first visits. Once dismissed it stays gone, so people who know the
+    // screen get their space back instead of scrolling past the same card.
+    //
+    // Deliberately compact: one small icon, an optional short title, two lines of body. The old
+    // version (eyebrow + title + body + large icon) took ~120dp on every tool screen, and its
+    // title usually repeated the app bar right above it. The eyebrow parameter is kept so the 28
+    // call sites didn't all have to change, but it isn't drawn: its wording varied screen to
+    // screen ("On-device assistant", "Scan and extract", ...) without telling the user anything.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = androidx.compose.runtime.remember { context.getSharedPreferences("ui_hints", android.content.Context.MODE_PRIVATE) }
+    val hintKey = "hero_dismissed_" + dismissKey
+    var dismissed by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(runCatching { prefs.getBoolean(hintKey, false) }.getOrDefault(false))
+    }
+    if (dismissible && dismissed) return
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Card.cardColors(),
         border = SurfaceRole.Card.border()
     ) {
-        Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = Space.md, top = Space.sm, bottom = Space.sm, end = if (dismissible) Space.xs else Space.md), verticalAlignment = Alignment.CenterVertically) {
             IconAffordance(
                 icon = icon,
-                size = IconAffordanceSize.Default,
+                size = IconAffordanceSize.Compact,
                 tint = MaterialTheme.colorScheme.primary,
                 containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
             )
             Column(
                 Modifier.weight(1f).padding(start = Space.md),
-                verticalArrangement = Arrangement.spacedBy(Space.xs)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (!title.isNullOrBlank()) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                }
                 Text(
                     body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             trailing?.invoke()
+            if (dismissible) {
+                androidx.compose.material3.IconButton(onClick = {
+                    dismissed = true
+                    runCatching { prefs.edit().putBoolean(hintKey, true).apply() }
+                }) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.guide_dismiss),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -269,7 +306,7 @@ fun VervanSectionHeader(
             )
             count?.let {
                 Text(
-                    "$it",
+                    stringResource(R.string.vervan_arg1, it),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = Space.sm)
@@ -280,7 +317,7 @@ fun VervanSectionHeader(
             TextButton(
                 onClick = onAction,
                 modifier = Modifier.padding(start = Space.sm)
-            ) { Text(actionLabel, maxLines = 1) }
+            ) { Text(actionLabel, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
         }
     }
 }
@@ -374,6 +411,7 @@ fun ActionTile(
                 OverflowTooltipText(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
                 )
                 Text(
                     body,
@@ -449,7 +487,12 @@ fun OperationProgressCard(
     }
 }
 
-/** A failure message that explains both what happened and the next safe action. */
+/** Set by the navigation shell so any error card can send the user straight to the Models
+ * screen instead of telling them (in prose) to go and find it. */
+val LocalOpenModels = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** A failure message that explains both what happened and the next safe action. When the failure is
+ * "no model is ready" and the app can navigate there, the fix is one tap away. */
 @Composable
 fun OperationErrorCard(
     title: String,
@@ -459,12 +502,16 @@ fun OperationErrorCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
+    val openModels = LocalOpenModels.current
+    val noModel = message.startsWith("No model is ready") || message.startsWith("No vision model is ready") ||
+        message == stringResource(R.string.error_no_model)
+    val useModelsAction = noModel && openModels != null
     ErrorCard(
         title = title,
-        body = "$message\n$recovery",
+        body = stringResource(R.string.vervan_arg1_arg2, message, recovery),
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
-        actionLabel = actionLabel,
-        onAction = onAction
+        actionLabel = if (useModelsAction) stringResource(R.string.vervan_open_ai_models) else actionLabel,
+        onAction = if (useModelsAction) openModels else onAction
     )
 }
 
@@ -549,15 +596,19 @@ fun BoundedTextField(
         maxLines = maxLines,
         keyboardOptions = keyboardOptions,
         textStyle = textStyle,
-        supportingText = {
+        // No supporting row at all when there is nothing to say: an empty one still reserves
+        // a line of height under the field.
+        supportingText = if (!supportingText.isNullOrEmpty() || nearLimit) {{
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (atLimit) "Limit reached. Shorten this text before saving or sending." else supportingText.orEmpty(),
+                    if (atLimit) stringResource(R.string.vervan_limit_reached_shorten_this_text) else supportingText.orEmpty(),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (atLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
-                Text(
+                // A counter is only useful when the limit is close; showing "0 / 60" under every
+                // field is visual noise on forms.
+                if (nearLimit) Text(
                     "${compactCount(count)} / ${compactCount(maxLength)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = counterColor,
@@ -567,6 +618,6 @@ fun BoundedTextField(
                     }
                 )
             }
-        }
+        }} else null
     )
 }

@@ -1,11 +1,15 @@
 package com.vervan.chat.ui.nav
 
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
@@ -71,6 +75,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -155,6 +162,18 @@ private data class PendingChatAttachment(
     val showPreview: Boolean,
 )
 
+private val PendingChatAttachmentSaver = Saver<PendingChatAttachment?, List<Any>>(
+    save = { it?.let { a -> listOf(a.chatId, a.uri.toString(), a.asImage, a.showPreview) } ?: emptyList() },
+    restore = { v ->
+        if (v.size < 4) null else PendingChatAttachment(
+            chatId = v[0] as String,
+            uri = android.net.Uri.parse(v[1] as String),
+            asImage = v[2] as Boolean,
+            showPreview = v[3] as Boolean,
+        )
+    }
+)
+
 private val tabs = listOf(
     Tab(AppRoutes.HOME, R.string.nav_home, Icons.Outlined.Home, Icons.Filled.Home),
     Tab(AppRoutes.CHATS, R.string.nav_chats, Icons.AutoMirrored.Outlined.Chat, Icons.AutoMirrored.Filled.Chat)
@@ -173,6 +192,7 @@ fun VervanNavGraph(
     incomingShare: IncomingShare? = null,
     onShareConsumed: () -> Unit = {},
     shortcut: String? = null,
+    onShortcutConsumed: () -> Unit = {},
     intentVersion: Int = 0,
     windowSizeClass: WindowSizeClass? = null,
 ) {
@@ -218,11 +238,13 @@ fun VervanNavGraph(
     }
     val onboarded = legacyOnboarded || storedOnboarded == true
     val startDestination = if (onboarded) AppRoutes.HOME else AppRoutes.ONBOARDING
-    var pendingStudyMaterialText by remember { mutableStateOf<String?>(null) }
+    // Saveable so a configuration change or process restore between "navigate" and "the target
+    // screen consumed it" can't silently drop the scanned text, the shared file or the jump.
+    var pendingStudyMaterialText by rememberSaveable { mutableStateOf<String?>(null) }
     // Targeted by chat ID so a share received while another chat is open cannot attach to the
     // old composer during the navigation frame.
-    var pendingChatAttachment by remember { mutableStateOf<PendingChatAttachment?>(null) }
-    var pendingMessageJump by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pendingChatAttachment by rememberSaveable(stateSaver = PendingChatAttachmentSaver) { mutableStateOf<PendingChatAttachment?>(null) }
+    var pendingMessageJump by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -236,6 +258,7 @@ fun VervanNavGraph(
         // "Open in Vervan" from the screen-assist overlay deep-links straight to the saved chat.
         if (shortcut.startsWith("open_chat:")) {
             navController.navigate(AppRoutes.chat(shortcut.removePrefix("open_chat:")))
+            onShortcutConsumed()
             return@LaunchedEffect
         }
         when (shortcut) {
@@ -248,13 +271,18 @@ fun VervanNavGraph(
                 )
             }
             "capture" -> {
-                val note = Note(title = "Quick note")
+                // Blank title: the editor shows its own placeholder, and an untouched blank note
+                // is cleaned up on leave instead of piling up as "Quick note" entries.
+                val note = Note()
                 app.container.db.noteDao().upsert(note)
                 navController.navigate("note/${note.id}")
             }
-            "search" -> navController.navigate(AppRoutes.SEARCH)
+            "search" -> navController.navigate(AppRoutes.SEARCH) { launchSingleTop = true }
             "settings" -> navController.navigatePrimaryRoot(AppRoutes.SETTINGS)
         }
+        // Consumed only after the work is done: the shortcut is this effect's key, so clearing it
+        // earlier would cancel the chat/note creation above mid-flight.
+        onShortcutConsumed()
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -304,6 +332,9 @@ fun VervanNavGraph(
     val createLabel = stringResource(R.string.action_create)
     val reducedMotion = rememberReducedMotion()
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.vervan.chat.ui.common.LocalOpenModels provides { navController.navigate("models") { launchSingleTop = true } }
+    ) {
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
             NavigationRail(
@@ -317,7 +348,8 @@ fun VervanNavGraph(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Vervan", modifier = Modifier.size(20.dp))
+                        // Decorative brand mark; the rail items carry their own labels.
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
                     }
                 }
                 FloatingActionButton(
@@ -342,7 +374,22 @@ fun VervanNavGraph(
             // stacking two status-bar-height gaps above every screen's title.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                if (!useRail && showBottomBar) {
+                // Shown and hidden by animating its height on the same 300ms curve as the screen
+                // transition. Dropping it instantly resized the screen mid-transition, so opening
+                // a chat (or coming back) made the content jump by the bar's height.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !useRail && showBottomBar,
+                    enter = if (reducedMotion) androidx.compose.animation.EnterTransition.None
+                    else androidx.compose.animation.expandVertically(
+                        tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        expandFrom = Alignment.Top
+                    ),
+                    exit = if (reducedMotion) androidx.compose.animation.ExitTransition.None
+                    else androidx.compose.animation.shrinkVertically(
+                        tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        shrinkTowards = Alignment.Top
+                    )
+                ) {
                     VervanNavigationBar(
                         leading = tabs,
                         trailing = trailingTabs,
@@ -354,70 +401,95 @@ fun VervanNavGraph(
             }
         ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
+        val axisOffsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { 30.dp.roundToPx() }
+        fun isTab(destination: NavDestination) =
+            allTabs.any { tab -> destination.hierarchy.any { it.route == tab.route } }
+        fun isTabSwitch(from: NavDestination, to: NavDestination) = isTab(from) && isTab(to)
         NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize(),
-            // Compose Navigation's default transition is a plain crossfade — both the outgoing
-            // and incoming screen are partially transparent at the same time mid-animation, which
-            // reads as a jumbled "overlay" flash rather than one screen replacing another
-            // (most visible navigating into a screen with very different content density, e.g.
-            // Home's hero card -> Model Manager's warning/empty-state cards). A slide keeps both
-            // screens fully opaque throughout — offset, not blended — so nothing double-exposes.
+            // Two Material motion patterns, the same ones Google's own apps use:
+            //  - Shared axis X for going deeper and coming back: the new screen slides 30dp while
+            //    fading in, the old one fades out early, so the pair never double-exposes and the
+            //    direction of travel stays readable without a full-width shove.
+            //  - Fade through between bottom-bar tabs: tabs are peers, not a stack, so they swap
+            //    in place (quick fade out, then fade + slight scale in) rather than sliding.
+            // Back runs the same motion in reverse; with predictive back enabled the system drives
+            // it from the gesture. Reduced motion falls back to a short plain fade.
             enterTransition = {
-                if (reducedMotion) androidx.compose.animation.EnterTransition.None
-                else androidx.compose.animation.slideInHorizontally(initialOffsetX = { it })
+                when {
+                    reducedMotion -> fadeIn(tween(MotionSpec.REDUCED_MS))
+                    isTabSwitch(initialState.destination, targetState.destination) -> MotionSpec.fadeThroughIn()
+                    else -> MotionSpec.sharedAxisIn(axisOffsetPx)
+                }
             },
             exitTransition = {
-                if (reducedMotion) androidx.compose.animation.ExitTransition.None
-                else androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it / 4 })
+                when {
+                    reducedMotion -> fadeOut(tween(MotionSpec.REDUCED_MS))
+                    isTabSwitch(initialState.destination, targetState.destination) -> MotionSpec.fadeThroughOut()
+                    else -> MotionSpec.sharedAxisOut(-axisOffsetPx)
+                }
             },
             popEnterTransition = {
-                if (reducedMotion) androidx.compose.animation.EnterTransition.None
-                else androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it / 4 })
+                when {
+                    reducedMotion -> fadeIn(tween(MotionSpec.REDUCED_MS))
+                    isTabSwitch(initialState.destination, targetState.destination) -> MotionSpec.fadeThroughIn()
+                    else -> MotionSpec.sharedAxisIn(-axisOffsetPx)
+                }
             },
             popExitTransition = {
-                if (reducedMotion) androidx.compose.animation.ExitTransition.None
-                else androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it })
+                when {
+                    reducedMotion -> fadeOut(tween(MotionSpec.REDUCED_MS))
+                    isTabSwitch(initialState.destination, targetState.destination) -> MotionSpec.fadeThroughOut()
+                    else -> MotionSpec.sharedAxisOut(axisOffsetPx)
+                }
+            },
+            // Back *gesture*: the default here shrinks the page to ~90% as you swipe, which read
+            // as the screen collapsing. Instead the page tracks the finger and slides away whole,
+            // with the previous screen easing in from slightly behind — the swipe-back people
+            // know from iOS, WhatsApp and Telegram. Button / 3-button back keeps the shared axis.
+            predictivePopEnterTransition = { swipeEdge ->
+                if (reducedMotion) fadeIn(tween(MotionSpec.REDUCED_MS))
+                else MotionSpec.swipeBackIn(fromRightEdge = swipeEdge == androidx.activity.BackEventCompat.EDGE_RIGHT)
+            },
+            predictivePopExitTransition = { swipeEdge ->
+                if (reducedMotion) fadeOut(tween(MotionSpec.REDUCED_MS))
+                else MotionSpec.swipeBackOut(fromRightEdge = swipeEdge == androidx.activity.BackEventCompat.EDGE_RIGHT)
             }
         ) {
             composable(AppRoutes.ONBOARDING) {
                 OnboardingScreen(
-                    onDone = { intent ->
+                    onDone = {
                         scope.launch {
                             app.container.settingsRepository.setOnboarded(true)
-                            intent.route?.let { route ->
-                                val current = app.container.settingsRepository.toolFavorites.first()
-                                app.container.settingsRepository.setToolFavorites(current + route)
-                            }
                             navController.navigate(AppRoutes.HOME) {
                                 popUpTo(AppRoutes.ONBOARDING) { inclusive = true }
                             }
-                            intent.route?.let { navController.navigate(it) }
                         }
                     },
-                    onImportModel = { navController.navigate("models") }
+                    onImportModel = { navController.navigate("models") { launchSingleTop = true } }
                 )
             }
             composable(AppRoutes.HOME) {
                 HomeScreen(
                     onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
-                    onOpenModels = { navController.navigate("models") },
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } },
                     onOpenChats = { navController.navigatePrimaryRoot(AppRoutes.CHATS) },
-                    onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) },
+                    onOpenSettings = { navController.navigate(AppRoutes.SETTINGS) { launchSingleTop = true } },
                     onOpenProject = { projectId -> navController.navigate("project/$projectId") },
                     onOpenNote = { noteId -> navController.navigate("note/$noteId") },
                     onOpenToolRun = { runId -> navController.navigate("tools/runs?highlightId=$runId") },
-                    onOpenKnowledge = { navController.navigate("knowledge") },
-                    onOpenSearch = { navController.navigate(AppRoutes.SEARCH) },
-                    onOpenPrivacy = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) },
-                    onOpenWorkspaces = { navController.navigate("workspaces") },
-                    onOpenProjects = { navController.navigate("projects") },
-                    onOpenFolders = { navController.navigate("folders") },
-                    onOpenDocScanner = { navController.navigate("tools/document-scanner") },
-                    onOpenVoiceChat = { navController.navigate("tools/voice-chat") },
-                    onOpenTranslate = { navController.navigate("tools/translate") },
-                    onOpenWritingAssistant = { navController.navigate("tools/writing-assistant") },
+                    onOpenKnowledge = { navController.navigate("knowledge") { launchSingleTop = true } },
+                    onOpenSearch = { navController.navigate(AppRoutes.SEARCH) { launchSingleTop = true } },
+                    onOpenPrivacy = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) { launchSingleTop = true } },
+                    onOpenWorkspaces = { navController.navigate("workspaces") { launchSingleTop = true } },
+                    onOpenProjects = { navController.navigate("projects") { launchSingleTop = true } },
+                    onOpenFolders = { navController.navigate("folders") { launchSingleTop = true } },
+                    onOpenDocScanner = { navController.navigate("tools/document-scanner") { launchSingleTop = true } },
+                    onOpenVoiceChat = { navController.navigate("tools/voice-chat") { launchSingleTop = true } },
+                    onOpenTranslate = { navController.navigate("tools/translate") { launchSingleTop = true } },
+                    onOpenWritingAssistant = { navController.navigate("tools/writing-assistant") { launchSingleTop = true } },
                     onOpenAllTools = { navController.navigatePrimaryRoot(AppRoutes.TOOLS) }
                 )
             }
@@ -425,7 +497,7 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.tools.DocumentScannerScreen(
                     onBack = { navController.popBackStack() },
                     onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
-                    onProcessAsStudyMaterial = { text -> pendingStudyMaterialText = text; navController.navigate("tools/study-material") }
+                    onProcessAsStudyMaterial = { text -> pendingStudyMaterialText = text; navController.navigate("tools/study-material") { launchSingleTop = true } }
                 )
             }
             composable("tools/ocr-scanner") {
@@ -446,8 +518,14 @@ fun VervanNavGraph(
                     androidx.compose.material3.CircularProgressIndicator()
                 }
             }
-            composable("tools/transcribe") { com.vervan.chat.ui.tools.TranscriptionScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/text-to-speech") { com.vervan.chat.ui.tools.TextToSpeechScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/transcribe") { com.vervan.chat.ui.tools.TranscriptionScreen(onBack = { navController.popBackStack() }, onOpenModels = { navController.navigate("models") { launchSingleTop = true } }) }
+            composable("tools/text-to-speech") { com.vervan.chat.ui.tools.TextToSpeechScreen(onBack = { navController.popBackStack() }, onOpenModels = { navController.navigate("models") { launchSingleTop = true } }) }
+            composable("tools/omni-studio") {
+                com.vervan.chat.ui.omni.OmniStudioScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } }
+                )
+            }
             composable("tools/translate") { com.vervan.chat.ui.tools.TranslationScreen(onBack = { navController.popBackStack() }) }
             composable("tools/writing-assistant") { com.vervan.chat.ui.tools.WritingAssistantScreen(onBack = { navController.popBackStack() }) }
             composable("tools/smart-notes") { com.vervan.chat.ui.tools.SmartNotesScreen(onBack = { navController.popBackStack() }) }
@@ -536,10 +614,14 @@ fun VervanNavGraph(
             composable("tools/document-comparison") { com.vervan.chat.ui.tools.DocumentComparisonScreen(onBack = { navController.popBackStack() }) }
             composable("tools/email-composer") { com.vervan.chat.ui.tools.EmailComposerScreen(onBack = { navController.popBackStack() }) }
             composable("tools/model-dashboard") { com.vervan.chat.ui.tools.ModelCapabilityDashboardScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/study-material") {
+            composable("tools/study-material") { entry ->
                 val text = pendingStudyMaterialText
                 if (text == null) {
-                    navController.popBackStack()
+                    // Never pop during composition: a recomposition would pop a second time and
+                    // take the previous screen with it. Pop once, only while this entry is current.
+                    androidx.compose.runtime.LaunchedEffect(entry) {
+                        if (navController.currentBackStackEntry?.id == entry.id) navController.popBackStack()
+                    }
                 } else {
                     com.vervan.chat.ui.tools.StudyMaterialScreen(onBack = { navController.popBackStack() }, scannedText = text)
                 }
@@ -563,7 +645,7 @@ fun VervanNavGraph(
                     onOpenFolder = { id -> navController.navigate("folder/$id") },
                     onOpenTemplate = { id -> navController.navigate("template/$id/edit") },
                     onOpenWorkflow = { id -> navController.navigate("workflow/$id") },
-                    onOpenSavedOutput = { _ -> navController.navigate(AppRoutes.LIBRARY) },
+                    onOpenSavedOutput = { _ -> navController.navigate(AppRoutes.LIBRARY) { launchSingleTop = true } },
                     onOpenTool = { route -> navController.navigate(route) },
                     onOpenToolRun = { id -> navController.navigate("tools/runs?highlightId=$id") },
                 )
@@ -613,13 +695,13 @@ fun VervanNavGraph(
             composable(AppRoutes.LIBRARY) {
                 LibraryScreen(
                     onOpenPersona = { id -> navController.navigate("persona/$id/edit") },
-                    onNewPersona = { navController.navigate("persona-new") },
+                    onNewPersona = { navController.navigate("persona-new") { launchSingleTop = true } },
                     onOpenWorkflow = { id -> navController.navigate("workflow/$id") },
-                    onNewWorkflow = { navController.navigate("workflow-new") },
+                    onNewWorkflow = { navController.navigate("workflow-new") { launchSingleTop = true } },
                     onEditWorkflow = { id -> navController.navigate("workflow/$id/edit") },
                     onOpenTemplate = { id -> navController.navigate("template/$id/edit") },
-                    onNewTemplate = { navController.navigate("template-new") },
-                    onOpenNotes = { navController.navigate("notes") }
+                    onNewTemplate = { navController.navigate("template-new") { launchSingleTop = true } },
+                    onOpenNotes = { navController.navigate("notes") { launchSingleTop = true } }
                 )
             }
             composable("template-new") {
@@ -647,7 +729,7 @@ fun VervanNavGraph(
             ) { entry ->
                 com.vervan.chat.ui.memory.MemoryScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenSuggestions = { navController.navigate("memory-suggestions") },
+                    onOpenSuggestions = { navController.navigate("memory-suggestions") { launchSingleTop = true } },
                     highlightMemoryId = entry.arguments?.getString("highlightId")
                 )
             }
@@ -688,10 +770,19 @@ fun VervanNavGraph(
                         onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
                         onOpenChatInfo = { chatId -> navController.navigate("chat/$chatId/info") },
                         onOpenDocument = { documentId -> navController.navigate("document/$documentId") },
-                        onOpenModels = { navController.navigate("models") }
+                        onOpenModels = { navController.navigate("models") { launchSingleTop = true } }
                     )
                 } else {
-                    ChatListScreen(onOpenChat = { chatId -> navController.navigate("chat/$chatId") })
+                    ChatListScreen(
+                        onOpenChat = { chatId -> navController.navigate("chat/$chatId") },
+                        onNewChat = {
+                            scope.launch {
+                                val chat = Chat(workspaceId = app.container.settingsRepository.activeWorkspaceId.first())
+                                app.container.db.chatDao().upsert(chat)
+                                navController.navigate(AppRoutes.chat(chat.id))
+                            }
+                        }
+                    )
                 }
             }
             composable(AppRoutes.CHAT) { backStackEntry2 ->
@@ -713,9 +804,9 @@ fun VervanNavGraph(
                     onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
-                    onOpenFolders = { navController.navigate("folders") },
-                    onOpenModels = { navController.navigate("models") },
-                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
+                    onOpenFolders = { navController.navigate("folders") { launchSingleTop = true } },
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") { launchSingleTop = true } },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     // Forking replaces this chat in the back stack instead of stacking on top of
                     // it — otherwise forking twice then pressing Back walks back through each
@@ -738,9 +829,9 @@ fun VervanNavGraph(
                     onOpenBranchTree = { navController.navigate(AppRoutes.chatTree(chatId)) },
                     onOpenPassage = { chunkId -> navController.navigate("passage/$chunkId") },
                     onOpenPdfPage = { documentId, page -> navController.navigate("document/$documentId/page/$page") },
-                    onOpenFolders = { navController.navigate("folders") },
-                    onOpenModels = { navController.navigate("models") },
-                    onOpenVoiceSettings = { navController.navigate("settings/voice") },
+                    onOpenFolders = { navController.navigate("folders") { launchSingleTop = true } },
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } },
+                    onOpenVoiceSettings = { navController.navigate("settings/voice") { launchSingleTop = true } },
                     onOpenWorkspace = { workspaceId -> navController.navigate("workspace/$workspaceId") },
                     onForkChat = { forkedChatId ->
                         navController.navigate(AppRoutes.chat(forkedChatId)) {
@@ -776,9 +867,9 @@ fun VervanNavGraph(
             }
             composable("models") {
                 ModelManagerScreen(
-                    onOpenStore = { navController.navigate("models/store") },
+                    onOpenStore = { navController.navigate("models/store") { launchSingleTop = true } },
                     onBack = { navController.popBackStack() },
-                    onOpenCalculator = { navController.navigate("models/calculator") }
+                    onOpenCalculator = { navController.navigate("models/calculator") { launchSingleTop = true } }
                 )
             }
             composable("models/calculator") {
@@ -796,31 +887,31 @@ fun VervanNavGraph(
             composable(AppRoutes.SETTINGS) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenModels = { navController.navigate("models") },
-                    onOpenMemory = { navController.navigate("memory") },
-                    onOpenProfile = { navController.navigate("profile") },
-                    onOpenMemorySuggestions = { navController.navigate("memory-suggestions") },
-                    onOpenAppearance = { navController.navigate("settings/appearance") },
-                    onOpenExperience = { navController.navigate("settings/experience") },
-                    onOpenAccessibility = { navController.navigate("settings/accessibility") },
-                    onOpenGeneration = { navController.navigate("settings/generation") },
-                    onOpenVoice = { navController.navigate("settings/voice") },
-                    onOpenStorage = { navController.navigate("settings/storage") },
-                    onOpenSecurity = { navController.navigate("settings/security") },
-                    onOpenTools = { navController.navigate("settings/tools") },
-                    onOpenHelp = { navController.navigate("settings/help") }
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } },
+                    onOpenMemory = { navController.navigate("memory") { launchSingleTop = true } },
+                    onOpenProfile = { navController.navigate("profile") { launchSingleTop = true } },
+                    onOpenMemorySuggestions = { navController.navigate("memory-suggestions") { launchSingleTop = true } },
+                    onOpenAppearance = { navController.navigate("settings/appearance") { launchSingleTop = true } },
+                    onOpenExperience = { navController.navigate("settings/experience") { launchSingleTop = true } },
+                    onOpenAccessibility = { navController.navigate("settings/accessibility") { launchSingleTop = true } },
+                    onOpenGeneration = { navController.navigate("settings/generation") { launchSingleTop = true } },
+                    onOpenVoice = { navController.navigate("settings/voice") { launchSingleTop = true } },
+                    onOpenStorage = { navController.navigate("settings/storage") { launchSingleTop = true } },
+                    onOpenSecurity = { navController.navigate("settings/security") { launchSingleTop = true } },
+                    onOpenTools = { navController.navigate("settings/tools") { launchSingleTop = true } },
+                    onOpenHelp = { navController.navigate("settings/help") { launchSingleTop = true } }
                 )
             }
             composable("settings/help") {
                 com.vervan.chat.ui.settings.HelpSupportScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenModels = { navController.navigate("models") },
-                    onOpenKnowledge = { navController.navigate("knowledge") },
-                    onOpenGeneration = { navController.navigate("settings/generation") },
-                    onOpenPermissions = { navController.navigate("settings/permissions") },
-                    onOpenJobs = { navController.navigate("jobs") },
-                    onOpenStorage = { navController.navigate("settings/storage") },
-                    onOpenDiagnostics = { navController.navigate("diagnostics") }
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } },
+                    onOpenKnowledge = { navController.navigate("knowledge") { launchSingleTop = true } },
+                    onOpenGeneration = { navController.navigate("settings/generation") { launchSingleTop = true } },
+                    onOpenPermissions = { navController.navigate("settings/permissions") { launchSingleTop = true } },
+                    onOpenJobs = { navController.navigate("jobs") { launchSingleTop = true } },
+                    onOpenStorage = { navController.navigate("settings/storage") { launchSingleTop = true } },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") { launchSingleTop = true } }
                 )
             }
             composable("settings/tools") { com.vervan.chat.ui.settings.ToolsScreen(onBack = { navController.popBackStack() }) }
@@ -828,29 +919,37 @@ fun VervanNavGraph(
             composable("settings/experience") {
                 ExperienceControlsSettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenGeneration = { navController.navigate("settings/generation") },
-                    onOpenModels = { navController.navigate("models") }
+                    onOpenGeneration = { navController.navigate("settings/generation") { launchSingleTop = true } },
+                    onOpenModels = { navController.navigate("models") { launchSingleTop = true } }
                 )
             }
             composable("settings/accessibility") { AccessibilitySettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/generation") { GenerationRetrievalSettingsScreen(onBack = { navController.popBackStack() }) }
             composable("settings/voice") {
-                VoiceSettingsScreen(onBack = { navController.popBackStack() }, onOpenModelManager = { navController.navigate("models") })
+                VoiceSettingsScreen(onBack = { navController.popBackStack() }, onOpenModelManager = { navController.navigate("models") { launchSingleTop = true } })
             }
             composable("settings/security") {
                 com.vervan.chat.ui.settings.SecuritySettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenPermissions = { navController.navigate("settings/permissions") },
-                    onOpenApiServer = { navController.navigate("settings/api-server") },
-                    onOpenPrivacyDashboard = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) }
+                    onOpenPermissions = { navController.navigate("settings/permissions") { launchSingleTop = true } },
+                    onOpenApiServer = { navController.navigate("settings/api-server") { launchSingleTop = true } },
+                    onOpenPrivacyDashboard = { navController.navigate(AppRoutes.PRIVACY_DASHBOARD) { launchSingleTop = true } }
                 )
             }
             composable(AppRoutes.PRIVACY_DASHBOARD) {
                 com.vervan.chat.ui.settings.PrivacyDashboardScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenSecurity = { navController.popBackStack() },
-                    onOpenApiServer = { navController.navigate("settings/api-server") },
-                    onOpenDiagnostics = { navController.navigate("diagnostics") }
+                    // Back only when we actually came from Security; from Home (or anywhere else)
+                    // "Security" must open Security, not return to the previous screen.
+                    onOpenSecurity = {
+                        if (navController.previousBackStackEntry?.destination?.route == "settings/security") {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate("settings/security") { launchSingleTop = true }
+                        }
+                    },
+                    onOpenApiServer = { navController.navigate("settings/api-server") { launchSingleTop = true } },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") { launchSingleTop = true } }
                 )
             }
             composable("settings/permissions") { com.vervan.chat.ui.settings.PermissionsScreen(onBack = { navController.popBackStack() }) }
@@ -858,12 +957,12 @@ fun VervanNavGraph(
             composable("settings/storage") {
                 StorageDataSettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBackup = { navController.navigate("backup") },
-                    onOpenRecycleBin = { navController.navigate("recycle-bin") },
-                    onOpenDiagnostics = { navController.navigate("diagnostics") },
-                    onOpenJobs = { navController.navigate("jobs") },
-                    onOpenIndexMaintenance = { navController.navigate("index-maintenance") },
-                    onOpenModelCalculator = { navController.navigate("models/calculator") }
+                    onOpenBackup = { navController.navigate("backup") { launchSingleTop = true } },
+                    onOpenRecycleBin = { navController.navigate("recycle-bin") { launchSingleTop = true } },
+                    onOpenDiagnostics = { navController.navigate("diagnostics") { launchSingleTop = true } },
+                    onOpenJobs = { navController.navigate("jobs") { launchSingleTop = true } },
+                    onOpenIndexMaintenance = { navController.navigate("index-maintenance") { launchSingleTop = true } },
+                    onOpenModelCalculator = { navController.navigate("models/calculator") { launchSingleTop = true } }
                 )
             }
             composable("backup") { BackupScreen(onBack = { navController.popBackStack() }) }
@@ -871,7 +970,7 @@ fun VervanNavGraph(
             composable("diagnostics") {
                 DiagnosticsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenPermissions = { navController.navigate("settings/permissions") }
+                    onOpenPermissions = { navController.navigate("settings/permissions") { launchSingleTop = true } }
                 )
             }
             composable("jobs") { JobQueueScreen(onBack = { navController.popBackStack() }) }
@@ -936,33 +1035,50 @@ fun VervanNavGraph(
                 com.vervan.chat.ui.knowledge.PdfPageViewerScreen(documentId = documentId, initialPage = page, onBack = { navController.popBackStack() })
             }
         }
-        if (activeJobs.isNotEmpty() || loadingModels > 0 || activeDownloads > 0) {
-            val count = activeJobs.size + loadingModels + activeDownloads
+        // The chat screen already says "loading…" under its title, so a second indicator there is
+        // noise; everywhere else the pill sits bottom-centre, clear of the bottom-end add buttons
+        // and FABs it used to cover.
+        // Chat screens are excluded: bottom-centre there is the composer and Send button, and the
+        // chat already shows model state under its title. Elsewhere the pill can be dismissed; it
+        // comes back only when the set of running activities changes.
+        val onChatRoute = currentRoute?.route?.startsWith("chat/") == true
+        val activityCount = activeJobs.size + loadingModels + activeDownloads
+        val activitySignature = "${activeJobs.map { it.id }}|$loadingModels|$activeDownloads"
+        var dismissedActivitySignature by rememberSaveable { mutableStateOf<String?>(null) }
+        if (activityCount > 0 && !onChatRoute && dismissedActivitySignature != activitySignature) {
             val label = when {
-                activeJobs.size == 1 && loadingModels == 0 -> activeJobs.first().label
-                loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> "Loading model"
-                activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> "Downloading model"
-                else -> "$count activities running"
+                activeJobs.size == 1 && loadingModels == 0 && activeDownloads == 0 -> activeJobs.first().label
+                loadingModels == 1 && activeJobs.isEmpty() && activeDownloads == 0 -> stringResource(R.string.activity_loading_model)
+                activeDownloads == 1 && activeJobs.isEmpty() && loadingModels == 0 -> stringResource(R.string.activity_downloading_model)
+                else -> androidx.compose.ui.res.pluralStringResource(R.plurals.activity_running_count, activityCount, activityCount)
             }
             Surface(
-                onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.md),
+                onClick = { navController.navigate(if (activeJobs.isNotEmpty()) "jobs" else "models") { launchSingleTop = true } },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(Space.md),
                 shape = VervanExtraShapes.pill,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shadowElevation = 6.dp,
             ) {
                 Row(
-                    Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                    Modifier.padding(start = Space.md),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = Space.sm))
+                    androidx.compose.material3.IconButton(onClick = { dismissedActivitySignature = activitySignature }) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.activity_hide),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
         }
         }
+    }
     }
 
     if (showCreateSheet) {
@@ -990,8 +1106,10 @@ fun VervanNavGraph(
                 // "Import document" were two near-duplicate entries to the same "knowledge" route
                 // (now merged into one), and "New workspace"/"New folder" sat under the generic
                 // "Organize" label instead of the "Space" concept users are actually taught.
-                CreateAction(Icons.AutoMirrored.Filled.Chat, "New chat", "Open an empty composer with keyboard focus", "Start") { newChat() },
-                CreateAction(Icons.Filled.Edit, "New note", "Capture long-form local writing", "Start") {
+                // Start/Sources/Library create something right here; Browse only opens the list where
+                // that kind of item is managed, and is labelled that way.
+                CreateAction(Icons.AutoMirrored.Filled.Chat, stringResource(R.string.create_new_chat), stringResource(R.string.create_new_chat_desc), stringResource(R.string.create_group_start), quick = true) { newChat() },
+                CreateAction(Icons.Filled.Edit, stringResource(R.string.create_new_note), stringResource(R.string.create_new_note_desc), stringResource(R.string.create_group_start), quick = true) {
                     showCreateSheet = false
                     scope.launch {
                         val note = Note()
@@ -999,17 +1117,17 @@ fun VervanNavGraph(
                         navController.navigate("note/${note.id}")
                     }
                 },
-                CreateAction(Icons.Filled.Workspaces, "Projects", "Open projects to create or manage grouped work", "Organize") { go("projects") },
-                CreateAction(Icons.AutoMirrored.Filled.MenuBook, "Add source", "Create a source collection or import a document for grounded answers", "Sources") { go("knowledge") },
-                CreateAction(Icons.Outlined.Person, "New persona", "Save reusable behavior and style", "Library") { go("persona-new") },
-                CreateAction(Icons.Filled.Extension, "Prompt template", "Create slash-command reusable prompts", "Library") { go("template-new") },
-                CreateAction(Icons.Filled.Widgets, "New workflow", "Chain repeatable AI steps", "Library") { go("workflow-new") },
-                CreateAction(Icons.Filled.Dashboard, "Spaces", "Open spaces to create or manage separate contexts", "Organize") { go("workspaces") },
-                CreateAction(Icons.Filled.Folder, "Folders", "Open folders to create or manage manual filing", "Organize") { go("folders") },
-                CreateAction(Icons.Filled.Collections, "Collections", "Browse saved smart filters over chats, notes, and sources", "Organize") { go("collections") },
-                CreateAction(Icons.Filled.AutoAwesome, "Import model", "Prepare local AI generation", "Import") { go("models") },
-                CreateAction(Icons.Filled.PhotoCamera, "Scan image", "Start a chat with an image attachment", "Capture") { newChat("image") },
-                CreateAction(Icons.Filled.Mic, "Voice note", "Record audio into a new chat", "Capture") { newChat("voice") }
+                CreateAction(Icons.Filled.PhotoCamera, stringResource(R.string.create_photo_chat), stringResource(R.string.create_photo_chat_desc), stringResource(R.string.create_group_start), quick = true) { newChat("image") },
+                CreateAction(Icons.Filled.Mic, stringResource(R.string.create_voice_message), stringResource(R.string.create_voice_message_desc), stringResource(R.string.create_group_start), quick = true) { newChat("voice") },
+                CreateAction(Icons.AutoMirrored.Filled.MenuBook, stringResource(R.string.create_add_source), stringResource(R.string.create_add_source_desc), stringResource(R.string.create_group_sources)) { go("knowledge") },
+                CreateAction(Icons.Outlined.Person, stringResource(R.string.create_new_persona), stringResource(R.string.create_new_persona_desc), stringResource(R.string.create_group_library)) { go("persona-new") },
+                CreateAction(Icons.Filled.Extension, stringResource(R.string.create_prompt_template), stringResource(R.string.create_prompt_template_desc), stringResource(R.string.create_group_library)) { go("template-new") },
+                CreateAction(Icons.Filled.Widgets, stringResource(R.string.create_new_workflow), stringResource(R.string.create_new_workflow_desc), stringResource(R.string.create_group_library)) { go("workflow-new") },
+                CreateAction(Icons.Filled.AutoAwesome, stringResource(R.string.create_import_model), stringResource(R.string.create_import_model_desc), stringResource(R.string.create_group_library)) { go("models") },
+                CreateAction(Icons.Filled.Workspaces, stringResource(R.string.create_browse_projects), stringResource(R.string.create_browse_projects_desc), stringResource(R.string.create_group_browse)) { go("projects") },
+                CreateAction(Icons.Filled.Dashboard, stringResource(R.string.create_browse_spaces), stringResource(R.string.create_browse_spaces_desc), stringResource(R.string.create_group_browse)) { go("workspaces") },
+                CreateAction(Icons.Filled.Folder, stringResource(R.string.create_browse_folders), stringResource(R.string.create_browse_folders_desc), stringResource(R.string.create_group_browse)) { go("folders") },
+                CreateAction(Icons.Filled.Collections, stringResource(R.string.create_browse_collections), stringResource(R.string.create_browse_collections_desc), stringResource(R.string.create_group_browse)) { go("collections") }
             ),
             onDismiss = { showCreateSheet = false }
         )
@@ -1044,14 +1162,18 @@ private fun VervanNavigationBar(
                     selected = false,
                     onClick = onCreate,
                     icon = {
-                        Surface(
-                            modifier = Modifier.size(32.dp),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                        // Same 24dp slot as the other tabs' icons so the "Create" label shares their
+                        // baseline; the 32dp disc overflows the slot instead of pushing the label down.
+                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            Surface(
+                                modifier = Modifier.requiredSize(32.dp),
+                                shape = MaterialTheme.shapes.large,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                }
                             }
                         }
                     },

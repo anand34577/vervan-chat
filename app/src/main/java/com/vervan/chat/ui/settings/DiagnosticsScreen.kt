@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.app.ActivityManager
 import android.os.Build
 import android.os.StatFs
@@ -53,11 +56,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val vm: DiagnosticsViewModel = viewModel(factory = viewModelFactory {
         initializer { DiagnosticsViewModel(app) }
     })
-    val state by vm.state.collectAsState()
+    val state by vm.state.collectAsStateWithLifecycle()
     val models = state.models
     val active = state.activeModel
     val documents = state.documents
@@ -65,14 +69,14 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     val notes = state.notes
     val thermal = state.thermal
     val networkEntries = state.networkEntries
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.error.collectAsState()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
     val memory = ActivityManager.MemoryInfo().also(context.getSystemService(ActivityManager::class.java)::getMemoryInfo)
     val free = StatFs(context.filesDir.path).availableBytes
     val sections = listOf(
         "Runtime" to listOf(
-            "Active model" to (active?.displayName ?: "None"),
-            "Verified backend" to (active?.lastWorkingBackend?.name ?: "Not tested"),
+            "Active model" to (active?.displayName ?: stringResource(R.string.privacy_none)),
+            "Verified backend" to (active?.lastWorkingBackend?.name ?: stringResource(R.string.diagnostics_not_tested)),
             "Vision / audio" to "${app.container.llmEngine.visionEnabled} / ${app.container.llmEngine.audioEnabled}",
             "Thermal" to thermal.name
         ),
@@ -107,17 +111,17 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.diagnostics_diagnostics)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
                 actions = {
                     IconButton(onClick = {
                         val text = sections.joinToString("\n\n") { (title, rows) ->
                             (listOf(title) + rows.map { (label, value) -> "$label: $value" }).joinToString("\n")
                         }
                         clipboard.setText(text, scope)
-                        scope.launch { snackbarHostState.showSnackbar("Copied diagnostics") }
-                    }) { Icon(Icons.Filled.ContentCopy, "Copy all") }
-                    IconButton(onClick = onOpenPermissions) { Icon(Icons.Filled.Shield, "Permissions") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.diagnostics_copied_diagnostics)) }
+                    }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.diagnostics_copy_all)) }
+                    IconButton(onClick = onOpenPermissions) { Icon(Icons.Filled.Shield, stringResource(R.string.diagnostics_permissions)) }
                 }
             )
         },
@@ -126,10 +130,10 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
         ScrollablePage(padding) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Diagnostics unavailable",
+                    title = stringResource(R.string.diagnostics_diagnostics_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your local data is safe. Retry loading the diagnostic snapshot.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.diagnostics_your_local_data_is_safe),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retry,
                     modifier = Modifier.padding(bottom = Space.md)
                 )
@@ -150,11 +154,11 @@ fun DiagnosticsScreen(onBack: () -> Unit, onOpenPermissions: () -> Unit = {}) {
                         onClear = {
                             app.crashLogManager.clear()
                             crashLogs = emptyList()
-                            scope.launch { snackbarHostState.showSnackbar("Crash reports cleared") }
+                            scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.diagnostics_crash_reports_cleared)) }
                         }
                     )
                     Text(
-                        "Compatibility is tested during import, not guessed from filenames.",
+                        stringResource(R.string.diagnostics_compatibility_is_tested_during_import),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.sm)
@@ -174,14 +178,14 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
     Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Crash reports", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.diagnostics_crash_reports), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (logs.isNotEmpty()) {
-                    TextButton(onClick = onClear) { Text("Clear") }
+                    TextButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
                 }
             }
             if (logs.isEmpty()) {
                 Text(
-                    "No crashes recorded. New crash reports will appear here.",
+                    stringResource(R.string.diagnostics_no_crashes_recorded_new_crash),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.sm)
@@ -205,7 +209,7 @@ private fun CrashReportsCard(logs: List<java.io.File>, onShare: (java.io.File) -
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = Space.sm)
                         )
-                        TextButton(onClick = { onShare(file) }) { Text("Share") }
+                        TextButton(onClick = { onShare(file) }) { Text(stringResource(R.string.library_share)) }
                     }
                 }
             }
@@ -218,7 +222,7 @@ private fun DiagnosticCard(title: String, rows: List<Pair<String, String>>) {
     Card(Modifier.fillMaxWidth().padding(bottom = Space.sm)) {
         Column(Modifier.padding(Space.lg)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            rows.forEach { (label, value) -> Text("$label: $value", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm)) }
+            rows.forEach { (label, value) -> Text(stringResource(R.string.diagnostics_arg1_arg2, label, value), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm)) }
         }
     }
 }

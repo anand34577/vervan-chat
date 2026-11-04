@@ -1,5 +1,10 @@
 package com.vervan.chat.ui.tools
 
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Info
+import com.vervan.chat.ui.theme.vervanWarning
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,7 +70,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +112,7 @@ private val categories = listOf(
         Icons.Filled.RecordVoiceOver,
         listOf(
             ToolEntry(Icons.Filled.Mic, "Voice chat", "Have a hands-free local conversation.", "tools/voice-chat"),
+            ToolEntry(Icons.Filled.RecordVoiceOver, "Omni Studio", "LFM3 Omni: spoken replies, photo and video questions, its own voice.", "tools/omni-studio"),
             ToolEntry(Icons.Filled.Mic, "Transcribe", "Turn a recording or audio/video file into editable text.", "tools/transcribe"),
             ToolEntry(Icons.Filled.RecordVoiceOver, "Text to speech", "Convert text into spoken audio you can export.", "tools/text-to-speech"),
             ToolEntry(Icons.Filled.Translate, "Translate", "Translate typed text or text from a photo.", "tools/translate"),
@@ -188,6 +193,11 @@ private val categories = listOf(
         "Manage the local knowledge, models, and reusable context behind your work.",
         Icons.Filled.Psychology,
         listOf(
+            ToolEntry(Icons.Filled.Description, "Knowledge", "Add documents, then ask questions and get cited answers.", "knowledge"),
+            ToolEntry(Icons.Filled.AutoAwesome, "AI models", "Download, import, and switch the models you use.", "models"),
+            ToolEntry(Icons.Filled.Psychology, "Memory", "Review what the assistant remembers about you.", "memory"),
+            ToolEntry(Icons.Filled.Dashboard, "Workspaces", "Keep different areas of your work separate.", "workspaces"),
+            ToolEntry(Icons.Filled.Folder, "Projects", "Group chats, notes, and documents for one goal.", "projects"),
             ToolEntry(Icons.Filled.History, "Run history", "Resume, save, share, or repeat recent tool results.", "tools/runs"),
             ToolEntry(Icons.Filled.AutoAwesome, "Model capabilities", "See what each installed model can use.", "tools/model-dashboard"),
             ToolEntry(Icons.Filled.AccountTree, "Knowledge graph", "See how your chats, notes, documents, and memories connect.", "graph"),
@@ -229,7 +239,9 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
-    var expandedCategories by remember { mutableStateOf(emptySet<String>()) }
+    // Categories start open: the page's job is to show tools, and a first view made only of
+    // collapsed headings with "Show" links gave people nothing to tap.
+    var collapsedCategories by remember { mutableStateOf(emptySet<String>()) }
     // Pinned tools, in the catalog's own order, shown only in the unfiltered default view so the
     // section doesn't fight an active search or category filter.
     val pinnedEntries = remember(favorites) {
@@ -244,7 +256,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
     fun readiness(entry: ToolEntry): String {
         val noModelNeeded = setOf(
             "tools/document-scanner", "tools/ocr-scanner", "tools/chat-with-file", "study",
-            "knowledge", "models", "memory", "collections", "tools/runs",
+            "knowledge", "models", "memory", "collections", "tools/runs", "workspaces", "projects", "folders",
         )
         if (entry.route in noModelNeeded) return "Ready"
         val model = activeModel ?: return "Needs model"
@@ -252,7 +264,14 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             "tools/image-caption", "tools/receipt-scanner", "tools/table-scanner",
             "tools/smart-form-filler", "tools/flashcards-photo",
         )
-        return if (needsVision && model.supportsVision == false) "Needs vision model" else "Ready"
+        // supportsVision == null means "not tested yet" — saying "Ready" there over-promised and
+        // the tool then failed on a text-only model.
+        return when {
+            !needsVision -> "Ready"
+            model.supportsVision == true -> "Ready"
+            model.supportsVision == false -> "Needs vision model"
+            else -> "Vision not confirmed"
+        }
     }
     // Stable per-category color so a tool's icon is the same hue wherever it appears (grid or
     // pinned), turning a wall of identical amber chips into a scannable, colorful directory.
@@ -278,9 +297,9 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Tools")
+                        Text(stringResource(R.string.nav_tools))
                         Text(
-                            "Common tasks, one tap away",
+                            stringResource(R.string.all_tools_common_tasks_one_tap_away),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -289,13 +308,14 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                         }
                     }
                 },
             )
         },
     ) { padding ->
+        val openModels = com.vervan.chat.ui.common.LocalOpenModels.current
         PageContainer(Modifier.padding(padding)) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = VervanGridMinWidth.standardCard),
@@ -308,7 +328,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     VervanSearchField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = "Search tools and outcomes",
+                        placeholder = stringResource(R.string.all_tools_search_tools_and_outcomes),
                     )
                 }
                 item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
@@ -324,7 +344,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 VervanFilterChip(
                                     selected = selectedCategory == null,
                                     onClick = { selectedCategory = null },
-                                    label = { Text("All") },
+                                    label = { Text(stringResource(R.string.search_scope_all)) },
                                 )
                             }
                             items(categories, key = { it.title }) { category ->
@@ -342,13 +362,8 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            0f to MaterialTheme.colorScheme.surface.copy(alpha = 0f),
-                                            0.45f to MaterialTheme.colorScheme.surface,
-                                        ),
-                                    )
-                                    .padding(start = Space.lg),
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .padding(start = Space.xs),
                             ) {
                                 IconButton(
                                     onClick = {
@@ -361,7 +376,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = "Show more tool categories",
+                                        contentDescription = stringResource(R.string.all_tools_show_more_tool_categories),
                                     )
                                 }
                             }
@@ -369,6 +384,17 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     }
                 }
 
+                if (activeModel == null && openModels != null && query.isBlank()) {
+                    item(key = "no-model", span = { GridItemSpan(maxLineSpan) }) {
+                        com.vervan.chat.ui.common.SystemStatusStrip(
+                            title = stringResource(R.string.all_tools_no_model_title),
+                            body = stringResource(R.string.all_tools_no_model_body),
+                            tone = com.vervan.chat.ui.common.StatusTone.Info,
+                            actionLabel = stringResource(R.string.vervan_open_ai_models),
+                            onAction = openModels
+                        )
+                    }
+                }
                 if (dataError != null) {
                     item(key = "status-error", span = { GridItemSpan(maxLineSpan) }) {
                         OperationErrorCard(
@@ -385,7 +411,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                 if (showPinned) {
                     item(key = "pinned-header", span = { GridItemSpan(maxLineSpan) }) {
                         VervanSectionHeader(
-                            title = "Pinned",
+                            title = stringResource(R.string.chat_filter_pinned),
                             count = pinnedEntries.size,
                             topPadding = 0.dp,
                         )
@@ -405,7 +431,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
 
                 if (showRecent) {
                     item(key = "recent-header", span = { GridItemSpan(maxLineSpan) }) {
-                        VervanSectionHeader("Recent", count = recentEntries.size, topPadding = if (showPinned) Space.lg else 0.dp)
+                        VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_all_tools_recent), count = recentEntries.size, topPadding = if (showPinned) Space.lg else 0.dp)
                     }
                     items(recentEntries, key = { "recent-${it.route}" }) { entry ->
                         ToolCard(
@@ -424,30 +450,31 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                         EmptyState(
                             icon = Icons.Filled.GridView,
-                            title = "No tools found",
-                            body = "Try another term or choose All.",
+                            title = stringResource(R.string.all_tools_no_tools_found),
+                            body = stringResource(R.string.all_tools_try_another_term_or_choose),
                             modifier = Modifier.padding(vertical = Space.xxl),
                         )
                     }
                 } else {
                     visibleCategories.forEachIndexed { index, category ->
                         val browsingCatalog = query.isBlank() && selectedCategory == null
-                        val expanded = !browsingCatalog || category.title in expandedCategories
-                        val categoryEntries = if (showPinned) {
-                            category.entries.filterNot { it.route in favorites }
-                        } else category.entries
+                        val expanded = !browsingCatalog || category.title !in collapsedCategories
+                        // Pinned tools stay in their own category too (Pinned is a shortcut row,
+                        // not a move) — otherwise pinning made a tool vanish from where people
+                        // had learned to find it.
+                        val categoryEntries = category.entries
                         item(key = "header-${category.title}", span = { GridItemSpan(maxLineSpan) }) {
                             Column {
                                 VervanSectionHeader(
                                     title = category.title,
                                     count = categoryEntries.size,
-                                    actionLabel = if (browsingCatalog) if (expanded) "Hide" else "Show" else null,
+                                    actionLabel = if (browsingCatalog) if (expanded) stringResource(R.string.workspace_hide) else stringResource(R.string.workspace_show) else null,
                                     onAction = if (browsingCatalog) {
                                         {
-                                        expandedCategories = if (expanded) {
-                                            expandedCategories - category.title
+                                        collapsedCategories = if (expanded) {
+                                            collapsedCategories + category.title
                                         } else {
-                                            expandedCategories + category.title
+                                            collapsedCategories - category.title
                                         }
                                         }
                                     } else null,
@@ -477,7 +504,7 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
                     }
                     item(key = "end", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
-                            "$visibleCount local tools",
+                            androidx.compose.ui.res.pluralStringResource(R.plurals.all_tools_local_tools_count, visibleCount, visibleCount),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(top = Space.sm, bottom = Space.xxl),
@@ -503,7 +530,10 @@ private fun ToolCard(
     val onContainer = accent?.onContainer ?: MaterialTheme.colorScheme.onPrimaryContainer
     // A faint wash of the category accent over the surface — cards stay calm but each category
     // reads as its own colour family, matching the icon chip.
-    val cardContainer = accent?.container?.copy(alpha = 0.16f)
+    // Light-theme accent containers are dark; even a 16% wash of them turns the card a dull grey
+    // that reads as "disabled". Keep the wash very light there.
+    val isLight = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val cardContainer = accent?.container?.copy(alpha = if (isLight) 0.05f else 0.16f)
         ?.compositeOver(MaterialTheme.colorScheme.surfaceContainerLow)
         ?: MaterialTheme.colorScheme.surfaceContainerLow
     Card(
@@ -515,7 +545,7 @@ private fun ToolCard(
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = MaterialTheme.shapes.medium,
+                    shape = MaterialTheme.shapes.small,
                     color = container,
                     contentColor = onContainer,
                 ) {
@@ -531,7 +561,7 @@ private fun ToolCard(
                 IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
                     Icon(
                         if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                        contentDescription = if (isFavorite) "Unpin ${entry.label}" else "Pin ${entry.label}",
+                        contentDescription = if (isFavorite) stringResource(R.string.all_tools_unpin_arg1, entry.label) else stringResource(R.string.all_tools_pin_arg1, entry.label),
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
@@ -548,12 +578,19 @@ private fun ToolCard(
             // Positive readiness is the normal state and does not need repeating on every card.
             // Keep only the exceptions, where the label tells the user what must change.
             if (readiness != "Ready") {
-                Text(
-                    readiness,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = Space.xs),
-                )
+                // Needing a model is a setup step, not a failure: warning tone, not error red.
+                Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Filled.Info, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.vervanWarning, modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        readiness,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.vervanWarning,
+                        modifier = Modifier.padding(start = Space.xs),
+                    )
+                }
             }
         }
     }

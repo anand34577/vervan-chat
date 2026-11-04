@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.knowledge
 
+import com.vervan.chat.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -71,14 +72,14 @@ class DocumentViewerViewModel(private val app: VervanApp, private val documentId
                 val doc = document.value ?: return@launch
                 val file = java.io.File(doc.filePath)
                 if (!file.exists()) {
-                    _error.value = "The original file is no longer available. Re-import it to rebuild the index."
+                    _error.value = app.getString(R.string.document_viewer_the_original_file_is_no)
                     return@launch
                 }
                 db.chunkDao().deleteForDocument(documentId)
                 db.documentDao().update(doc.copy(status = com.vervan.chat.data.db.entities.DocumentStatus.EXTRACTING))
                 app.container.documentImportManager.reindexLocal(documentId)
             } catch (t: Throwable) {
-                _error.value = "Re-indexing failed: ${t.toUserMessage()}"
+                _error.value = app.getString(R.string.document_viewer_re_indexing_failed_arg1, t.toUserMessage())
             } finally {
                 _reindexing.value = false
             }

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.workspaces
 
+import com.vervan.chat.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vervan.chat.VervanApp
@@ -19,7 +20,7 @@ import kotlinx.coroutines.launch
 import com.vervan.chat.system.toUserMessage
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class WorkspacesViewModel(app: VervanApp) : ViewModel() {
+class WorkspacesViewModel(private val app: VervanApp) : ViewModel() {
     private val db = app.container.db
     private val workspaceManager = app.container.workspaceManager
     private val settingsRepository = app.container.settingsRepository
@@ -76,7 +77,7 @@ class WorkspacesViewModel(app: VervanApp) : ViewModel() {
     fun setActive(workspace: Workspace) {
         viewModelScope.launch {
             workspaceManager.setActive(workspace)
-            _confirmationMessage.value = "${workspace.name} is now active"
+            _confirmationMessage.value = app.getString(R.string.workspaces_arg1_is_now_active, workspace.name)
         }
     }
 

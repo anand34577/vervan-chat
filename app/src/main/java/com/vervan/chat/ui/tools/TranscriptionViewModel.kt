@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -51,6 +52,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
     private val voiceModelDao = app.container.db.ttsVoiceModelDao()
     private val settings = app.container.settingsRepository
     private val whisperEngine = WhisperCppSttEngine(app, voiceModelDao, settings)
+    private val shrutiEngine = com.vervan.chat.voice.ShrutiSttEngine(app, voiceModelDao, settings)
 
     val projects: StateFlow<List<TranscriptionProject>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -101,10 +103,10 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 }.getOrDefault(false)
             }
             if (!copied || dest.length() == 0L) {
-                _phase.value = Phase.Failed("Could not read that file — it may be corrupted or an unsupported format.")
+                _phase.value = Phase.Failed(app.getString(R.string.transcription_could_not_read_that_file))
                 return@launch
             }
-            val variant = settings.whisperModelVariant.first()
+            val variant = defaultVariant()
             dao.upsert(
                 TranscriptionProject(
                     id = id, fileName = dest.name, audioPath = dest.absolutePath,
@@ -123,7 +125,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
             recorder = rec
             _currentId.value = id
             runCatching { rec.start() }.onFailure {
-                _phase.value = Phase.Failed("Could not start recording — check the microphone permission.")
+                _phase.value = Phase.Failed(app.getString(R.string.transcription_could_not_start_recording_check))
                 recorder = null
                 return@launch
             }
@@ -142,7 +144,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
         _phase.value = Phase.Idle
         val id = _currentId.value ?: return
         viewModelScope.launch {
-            val variant = settings.whisperModelVariant.first()
+            val variant = defaultVariant()
             dao.upsert(
                 TranscriptionProject(
                     id = id, fileName = "Recording", audioPath = rec.outputFile.absolutePath,
@@ -171,34 +173,44 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
             dao.upsert(project.copy(status = "TRANSCRIBING", errorMessage = null, updatedAt = System.currentTimeMillis()))
             _phase.value = Phase.Transcribing
             val requestedVariant = variant ?: project.modelVariant
-            val previousDefault = settings.whisperModelVariant.first()
-            val overriding = requestedVariant != previousDefault
-            if (overriding) settings.setWhisperModelVariant(requestedVariant)
+            val useShruti = requestedVariant.startsWith(SHRUTI_PREFIX)
+            val shrutiLanguage = requestedVariant.removePrefix(SHRUTI_PREFIX)
+            val previousDefault = if (useShruti) settings.shrutiModelVariant.first() else settings.whisperModelVariant.first()
+            val target = if (useShruti) shrutiLanguage else requestedVariant
+            val overriding = target != previousDefault
+            if (overriding) {
+                if (useShruti) settings.setShrutiModelVariant(target) else settings.setWhisperModelVariant(target)
+            }
             try {
                 val file = File(project.audioPath)
                 val (pcm, durationMs) = withContext(Dispatchers.Default) {
                     if (file.extension.equals("wav", ignoreCase = true)) {
-                        require(file.length() <= 50L * 1024 * 1024) { "Audio file exceeds the 50 MB limit" }
+                        require(file.length() <= 50L * 1024 * 1024) { app.getString(R.string.transcription_audio_file_exceeds_the_50) }
                         val audio = file.inputStream().use { WavPcmDecoder.decode(it.readBytesLimited(50L * 1024 * 1024)) }
                         val duration = audio.samples.size * 1000L / audio.sampleRateHz
-                        require(duration <= InputLimits.MAX_AUDIO_DURATION_MS) { "Audio must be 30 minutes or shorter" }
-                        audio.samples to duration
+                        require(duration <= InputLimits.MAX_AUDIO_DURATION_MS) { app.getString(R.string.transcription_audio_must_be_30_minutes) }
+                        val samples = if (audio.sampleRateHz == 16_000) audio.samples
+                        else com.vervan.chat.voice.ShrutiSttEngine.resampleTo16k(audio.samples, audio.sampleRateHz)
+                        samples to duration
                     } else {
                         AudioDecoder.decodeToPcm16k(file)
                     }
                 }
-                if (!whisperEngine.isReady()) {
+                val ready = if (useShruti) shrutiEngine.isReady() else whisperEngine.isReady()
+                if (!ready) {
+                    val name = if (useShruti) "Shruti ${com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[shrutiLanguage] ?: shrutiLanguage}"
+                    else "\"$requestedVariant\" whisper.cpp"
                     dao.upsert(
                         project.copy(
                             status = "FAILED", durationMs = durationMs,
-                            errorMessage = "The \"$requestedVariant\" whisper.cpp model isn't downloaded. Download it in Model Manager first.",
+                            errorMessage = "The $name model isn't downloaded. Download it in Model Manager first.",
                             updatedAt = System.currentTimeMillis()
                         )
                     )
-                    _phase.value = Phase.Failed("Model not downloaded")
+                    _phase.value = Phase.Failed(app.getString(R.string.transcription_model_not_downloaded))
                     return@launch
                 }
-                val segments = whisperEngine.transcribeWithTimestamps(pcm)
+                val segments = if (useShruti) shrutiEngine.transcribeWithTimestamps(pcm) else whisperEngine.transcribeWithTimestamps(pcm)
                 val text = segments?.joinToString(" ") { it.text }
                 val segmentsJson = segments?.let { list ->
                     org.json.JSONArray().apply {
@@ -213,11 +225,12 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                         transcript = text ?: project.transcript,
                         segmentsJson = segmentsJson ?: project.segmentsJson,
                         durationMs = durationMs, modelVariant = requestedVariant,
+                        engine = if (useShruti) com.vervan.chat.voice.ShrutiSttEngine.ENGINE else "WHISPER_CPP",
                         errorMessage = if (text == null) "Transcription produced no text — the audio may be silent or unclear." else null,
                         updatedAt = System.currentTimeMillis()
                     )
                 )
-                _phase.value = if (text != null) Phase.Idle else Phase.Failed("No speech detected")
+                _phase.value = if (text != null) Phase.Idle else Phase.Failed(app.getString(R.string.transcription_no_speech_detected))
             } catch (c: kotlinx.coroutines.CancellationException) {
                 dao.upsert(project.copy(status = "CANCELLED", updatedAt = System.currentTimeMillis()))
                 throw c
@@ -228,9 +241,11 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                         updatedAt = System.currentTimeMillis()
                     )
                 )
-                _phase.value = Phase.Failed(t.message ?: "Transcription failed")
+                _phase.value = Phase.Failed(t.message ?: app.getString(R.string.transcription_failed))
             } finally {
-                if (overriding) settings.setWhisperModelVariant(previousDefault)
+                if (overriding) {
+                    if (useShruti) settings.setShrutiModelVariant(previousDefault) else settings.setWhisperModelVariant(previousDefault)
+                }
             }
         }
     }
@@ -285,7 +300,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 )
             }.onFailure { Log.e(TAG, "runAiAction($label) failed", it) }.getOrNull()
             if (result.isNullOrBlank()) {
-                _aiActionState.value = AiActionState.Failed("Could not generate \"$label\" — no active model, or it produced nothing.")
+                _aiActionState.value = AiActionState.Failed(app.getString(R.string.transcription_could_not_generate_arg1_no, label))
                 return@launch
             }
             val updated = project.transcript.trimEnd() + "\n\n## $label\n\n${result.trim()}\n"
@@ -335,7 +350,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "saveToKnowledgeBase failed for project=$id", t)
-                _saveState.value = SaveState.Failed(t.message ?: "Could not save to Knowledge Base.")
+                _saveState.value = SaveState.Failed(t.message ?: app.getString(R.string.transcription_could_not_save_to_knowledge))
             }
         }
     }
@@ -390,12 +405,27 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
 
     private fun safeName(name: String) = name.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 _.-]"), "").trim().ifEmpty { "transcript" }.take(60)
 
+    /** The model a new project starts with: Shruti when the user prefers it (or has no whisper.cpp
+     *  model but does have Shruti), otherwise the whisper.cpp default. */
+    private suspend fun defaultVariant(): String {
+        val whisper = settings.whisperModelVariant.first()
+        val shruti = settings.shrutiModelVariant.first()
+        val hasShruti = com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE &&
+            voiceModelDao.getByEngine(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, shruti)?.isReady == true
+        val hasWhisper = voiceModelDao.getByEngine(WhisperCppSttEngine.ENGINE, whisper)?.isReady == true
+        val prefersShruti = settings.sttEnginePreference.first() == "SHRUTI"
+        return if (hasShruti && (prefersShruti || !hasWhisper)) SHRUTI_PREFIX + shruti else whisper
+    }
+
     override fun onCleared() {
         recorder?.cancel()
         whisperEngine.release()
+        shrutiEngine.release()
     }
 
     companion object {
+        /** Variant key prefix for a Shruti language model in the shared model picker. */
+        const val SHRUTI_PREFIX = "shruti:"
         private const val TAG = "TranscriptionViewModel"
     }
 }

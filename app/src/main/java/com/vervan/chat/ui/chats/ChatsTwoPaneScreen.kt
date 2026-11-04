@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chats
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -84,8 +86,8 @@ fun ChatsTwoPaneScreen(
             } else {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Chat,
-                    title = "Pick a conversation",
-                    body = "Choose a chat on the left. New chats also open here.",
+                    title = stringResource(R.string.chats_two_pane_pick_a_conversation),
+                    body = stringResource(R.string.chats_two_pane_choose_a_chat_on_the),
                     modifier = Modifier.fillMaxSize()
                 )
             }

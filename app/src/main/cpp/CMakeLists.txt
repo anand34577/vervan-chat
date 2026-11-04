@@ -217,3 +217,34 @@ if(VERVAN_BUILD_WHISPER)
     find_library(log-lib-whisper log)
     target_link_libraries(vervan_whisper_jni whisper ${log-lib-whisper})
 endif() # VERVAN_BUILD_WHISPER
+
+# --- Cactus needle engine (Shruti / Whistle speech-to-text) ------------------------------------
+# NEEDLE_DIR is passed in from app/build.gradle.kts: the cache directory that Gradle's
+# `fetchNeedleEngine` task fills with the pinned, sha256-checked prebuilt engine from
+# huggingface.co/Cactus-Compute/needle3 (<abi>/libneedle.a + <abi>/needle.h). The engine is a plain
+# static library that depends only on libc/libm and the NDK's libc++, so it links straight into
+# the JNI bridge with the app's c++_shared STL.
+set(VERVAN_BUILD_NEEDLE FALSE)
+if(DEFINED NEEDLE_DIR AND NOT NEEDLE_DIR STREQUAL "")
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(VERVAN_NEEDLE_ABI_DIR "${NEEDLE_DIR}/android-arm64")
+    elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+        set(VERVAN_NEEDLE_ABI_DIR "${NEEDLE_DIR}/android-armv7")
+    endif()
+    if(DEFINED VERVAN_NEEDLE_ABI_DIR AND EXISTS "${VERVAN_NEEDLE_ABI_DIR}/libneedle.a" AND EXISTS "${VERVAN_NEEDLE_ABI_DIR}/needle.h")
+        set(VERVAN_BUILD_NEEDLE TRUE)
+    else()
+        message(WARNING "No needle engine for ${ANDROID_ABI} in ${NEEDLE_DIR}; the Shruti speech-to-text bridge is skipped for this ABI.")
+    endif()
+endif()
+
+if(VERVAN_BUILD_NEEDLE)
+    message(STATUS "needle engine for ${ANDROID_ABI}: ${VERVAN_NEEDLE_ABI_DIR}")
+    add_library(needle STATIC IMPORTED)
+    set_target_properties(needle PROPERTIES IMPORTED_LOCATION "${VERVAN_NEEDLE_ABI_DIR}/libneedle.a")
+    add_library(vervan_needle_jni SHARED needle_bridge.cpp)
+    target_include_directories(vervan_needle_jni PRIVATE "${VERVAN_NEEDLE_ABI_DIR}")
+    target_compile_features(vervan_needle_jni PRIVATE cxx_std_17)
+    find_library(log-lib-needle log)
+    target_link_libraries(vervan_needle_jni needle ${log-lib-needle} m)
+endif() # VERVAN_BUILD_NEEDLE

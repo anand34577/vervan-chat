@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.SolidColor
 
 /**
  * A categorical accent palette for icon tiles so a grid of tools/actions reads as a colorful,
@@ -32,17 +32,10 @@ fun vervanAccentFor(index: Int): VervanAccent = AccentPalette[((index % AccentPa
 val vervanAccentCount: Int get() = AccentPalette.size
 
 /**
- * The Aurora brand gradient — the one gradient in the app. Runs from the active accent's primary
- * into a hue-shifted companion (primary blended toward secondary), so it always harmonizes with
- * whatever accent theme the user picked instead of being a fixed two-color stamp. Used sparingly:
- * the Create button in the nav dock, the user's chat bubbles, and the assistant avatar — the three
- * places that carry the product's identity.
+ * The one brand fill: the active accent as a flat colour. The app deliberately uses no gradients;
+ * identity comes from the accent itself, applied to the few places that carry it (send button,
+ * the user's bubbles, the assistant mark). Returned as a [Brush] so it drops into `background()`.
  */
 @Composable
 @ReadOnlyComposable
-fun vervanBrandGradient(): Brush {
-    val scheme = MaterialTheme.colorScheme
-    return Brush.linearGradient(
-        listOf(scheme.primary, lerp(scheme.primary, scheme.secondary, 0.55f))
-    )
-}
+fun vervanBrandFill(): Brush = SolidColor(MaterialTheme.colorScheme.primary)

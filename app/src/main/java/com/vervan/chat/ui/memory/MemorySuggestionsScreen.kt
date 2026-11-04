@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.memory
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,7 +64,7 @@ import com.vervan.chat.R
 fun MemorySuggestionsScreen(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: MemorySuggestionsViewModel = viewModel(factory = viewModelFactory { initializer { MemorySuggestionsViewModel(app) } })
-    val pending by vm.pending.collectAsState()
+    val pending by vm.pending.collectAsStateWithLifecycle()
     var conflictDialog by remember { mutableStateOf<Pair<MemorySuggestion, com.vervan.chat.data.db.entities.Memory>?>(null) }
     var editDialog by remember { mutableStateOf<MemorySuggestion?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
@@ -108,7 +109,7 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
                         Modifier.fillMaxWidth(),
                         colors = SurfaceRole.Card.cardColors(),
                         border = SurfaceRole.Card.border(),
-                        shape = MaterialTheme.shapes.extraLarge
+                        shape = MaterialTheme.shapes.large
                     ) {
                         Column(Modifier.padding(Space.lg)) {
                             Text(suggestion.text, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -160,9 +161,9 @@ fun MemorySuggestionsScreen(onBack: () -> Unit) {
             text = {
                 Column {
                     Text(stringResource(R.string.memory_conflict_exists, suggestion.key.orEmpty()))
-                    Text("\"${conflict.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
+                    Text(stringResource(R.string.memory_suggestions_arg1, conflict.text), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
                     Text(stringResource(R.string.memory_suggested_value))
-                    Text("\"${suggestion.text}\"", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
+                    Text(stringResource(R.string.memory_suggestions_arg1, suggestion.text), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = Space.sm))
                     Text(stringResource(R.string.memory_conflict_choice))
                 }
             },

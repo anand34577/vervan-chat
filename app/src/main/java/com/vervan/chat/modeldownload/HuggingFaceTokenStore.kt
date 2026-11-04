@@ -13,7 +13,9 @@ import com.vervan.chat.security.createEncryptedPrefs
  * all the two built-in catalogue entries need.
  */
 class HuggingFaceTokenStore(context: Context) {
-    private val prefs: SharedPreferences = createEncryptedPrefs(context, "vervan_hf_token")
+    // Lazy: opening Keystore-backed prefs costs a Keystore round-trip, and this object is
+    // built during Application.onCreate on the main thread, before the first frame.
+    private val prefs: SharedPreferences by lazy { createEncryptedPrefs(context, "vervan_hf_token") }
 
     fun get(): String? = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
 

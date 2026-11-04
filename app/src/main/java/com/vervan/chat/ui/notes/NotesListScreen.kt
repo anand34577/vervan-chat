@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.notes
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -71,9 +72,9 @@ import kotlinx.coroutines.launch
 fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: NotesListViewModel = viewModel(factory = viewModelFactory { initializer { NotesListViewModel(app) } })
-    val notes by vm.notes.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val notes by vm.notes.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectionMode by remember { mutableStateOf(false) }
@@ -105,9 +106,9 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Notes") },
+                    title = { Text(stringResource(R.string.folder_notes)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                     }
                     // Long-press a row to enter selection mode — no separate top-bar entry
                     // point, matching every other list screen in the app.
@@ -116,7 +117,7 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { scope.launch { onOpenNote(vm.createNote()) } }) {
-                Icon(Icons.Filled.Add, contentDescription = "New note")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.widget_new_note))
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -136,15 +137,15 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
             } else if (notes.isEmpty()) {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.Note,
-                    title = "No notes yet",
-                    body = "Capture ideas, meeting notes, and anything worth keeping.",
-                    actionLabel = "Write a note",
+                    title = stringResource(R.string.notes_list_no_notes_yet),
+                    body = stringResource(R.string.notes_list_capture_ideas_meeting_notes_and),
+                    actionLabel = stringResource(R.string.notes_list_write_a_note),
                     onAction = { scope.launch { onOpenNote(vm.createNote()) } }
                 )
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Space.sm)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = Space.sm, bottom = 88.dp)
                 ) {
                     items(notes, key = { it.id }) { note ->
                         NoteRow(
@@ -203,7 +204,7 @@ private fun NoteRow(
                     if (note.pinned) {
                         Icon(
                             Icons.Filled.PushPin,
-                            contentDescription = "Pinned",
+                            contentDescription = stringResource(R.string.chat_filter_pinned),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = Space.sm).size(14.dp)
                         )
@@ -224,7 +225,7 @@ private fun NoteRow(
                         relativeTime(note.updatedAt),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         softWrap = false,
                     )
                     note.tags.split(',').map { it.trim() }.filter { it.isNotEmpty() }.take(3).forEach { tag ->

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.knowledge
 
+import com.vervan.chat.R
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -133,12 +134,12 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                 ensureEmbeddingModelLoaded()
                 when (val result = docImport.import(kbId, uri)) {
                     is com.vervan.chat.model.DocumentImportOutcome.VersionConflict -> _pendingVersionConflict.value = result
-                    is com.vervan.chat.model.DocumentImportOutcome.Duplicate -> _error.value = "\"${result.existing.displayName}\" is already imported with identical content."
+                    is com.vervan.chat.model.DocumentImportOutcome.Duplicate -> _error.value = app.getString(R.string.knowledge_arg1_is_already_imported_with, result.existing.displayName)
                     is com.vervan.chat.model.DocumentImportOutcome.Imported -> { /* observed via documents Flow */ }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "importDocument failed for kb=$kbId uri=$uri", e)
-                _error.value = "Import failed. ${e.toUserMessage()}"
+                _error.value = app.getString(R.string.knowledge_import_failed_arg1, e.toUserMessage())
             }
             _importing.value = false
         }
@@ -155,7 +156,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                 db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING))
                 docImport.reindexLocal(document.id)
             } catch (e: Exception) {
-                _error.value = "Re-indexing failed. ${e.toUserMessage()}"
+                _error.value = app.getString(R.string.knowledge_re_indexing_failed_arg1, e.toUserMessage())
             }
         }
     }
@@ -169,7 +170,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                 ensureEmbeddingModelLoaded()
                 docImport.resolveVersionConflict(conflict.existing, conflict.tempFilePath, conflict.mimeType, conflict.newHash, replace)
             } catch (e: Exception) {
-                _error.value = "Import failed. ${e.toUserMessage()}"
+                _error.value = app.getString(R.string.knowledge_import_failed_arg1, e.toUserMessage())
             }
             _importing.value = false
         }
@@ -188,7 +189,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
         )
         if (!result.success) {
             // Import still proceeds — chunks are keyword-searchable without embeddings.
-                _error.value = "Semantic search is unavailable. Keyword search still works."
+                _error.value = app.getString(R.string.knowledge_semantic_search_is_unavailable_keyword)
         }
     }
 
@@ -211,7 +212,7 @@ class KnowledgeBaseDetailViewModel(private val app: VervanApp, private val kbId:
                     db.documentDao().update(document.copy(status = DocumentStatus.EXTRACTING, failureReason = null))
                     docImport.reindexLocal(document.id)
                 } catch (e: Exception) {
-                    _error.value = "Could not re-index ${document.displayName}. ${e.toUserMessage()}"
+                    _error.value = app.getString(R.string.knowledge_could_not_re_index_arg1, document.displayName, e.toUserMessage())
                 }
             }
         }

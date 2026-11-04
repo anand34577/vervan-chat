@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -87,6 +89,7 @@ import com.vervan.chat.ui.theme.vervanAccentFor
 @Composable
 fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) -> Unit) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val vm: ChatInfoViewModel = viewModel(factory = viewModelFactory {
         initializer { ChatInfoViewModel(app, chatId) }
@@ -138,7 +141,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     val workspace = workspaces.find { it.id == chat?.workspaceId }
     val explicitPersona = personas.find { it.id == chat?.personaId }
     val workspacePersona = personas.find { it.id == workspace?.personaId }
-    val persona = (explicitPersona ?: workspacePersona)?.name ?: "Persona unavailable"
+    val persona = (explicitPersona ?: workspacePersona)?.name ?: stringResource(R.string.persona_unavailable)
     val model = (models.find { it.id == chat?.modelId } ?: activeModel)?.displayName ?: "No generation model"
     val selectedModel = models.find { it.id == chat?.modelId } ?: activeModel
     val modelRunsOnDevice = selectedModel?.traits?.runsOnDevice != false
@@ -150,27 +153,27 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat info") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.chat_info_chat_info)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             when {
                 loadError != null -> OperationErrorCard(
-                    title = "Chat information unavailable",
+                    title = stringResource(R.string.chat_info_chat_information_unavailable),
                     message = loadError.orEmpty(),
-                    recovery = "Your conversation is safe. Retry loading its details or return to the chat.",
-                    actionLabel = "Retry",
+                    recovery = stringResource(R.string.chat_info_your_conversation_is_safe_retry),
+                    actionLabel = stringResource(R.string.action_retry),
                     onAction = vm::retry,
                     modifier = Modifier.padding(Space.md)
                 )
                 isLoading -> LoadingSkeletonList(rows = 8, modifier = Modifier.padding(Space.md))
                 chat == null -> EmptyState(
                     icon = Icons.AutoMirrored.Filled.Chat,
-                    title = "Chat not found",
-                    body = "This conversation may have been deleted or moved to the recycle bin.",
-                    actionLabel = "Back",
+                    title = stringResource(R.string.chat_info_chat_not_found),
+                    body = stringResource(R.string.chat_info_this_conversation_may_have_been),
+                    actionLabel = stringResource(R.string.action_back),
                     onAction = onBack
                 )
                 else -> LazyColumn(
@@ -192,7 +195,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
-                                .background(com.vervan.chat.ui.theme.vervanBrandGradient()),
+                                .background(com.vervan.chat.ui.theme.vervanBrandFill()),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -203,14 +206,14 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                             )
                         }
                         Text(
-                            chat?.title ?: "Chat",
+                            chat?.title ?: stringResource(R.string.entity_chat),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
-                        val subtitle = "$persona · ${latestResponseModel ?: model}"
+                        val subtitle = stringResource(R.string.chat_info_arg1_arg2, persona, latestResponseModel ?: model)
                         Text(
                             subtitle,
                             style = MaterialTheme.typography.bodyMedium,
@@ -230,9 +233,9 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         ) {
                             StatusPill(
                                 when {
-                                    selectedModel == null -> "No generation model"
-                                    modelRunsOnDevice -> "Private · on device"
-                                    else -> "Remote model · data may leave device"
+                                    selectedModel == null -> stringResource(R.string.home_no_generation_model)
+                                    modelRunsOnDevice -> stringResource(R.string.chat_info_private_on_device)
+                                    else -> stringResource(R.string.chat_info_remote_model_data_may_leave)
                                 },
                                 if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.LockOpen
                             )
@@ -262,7 +265,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Conversation insights")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_chat_info_conversation_insights))
                         ConversationInsightsCard(
                             userMessages = userCount,
                             assistantMessages = aiCount,
@@ -278,14 +281,14 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Last 7 days")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_chat_info_last_7_days))
                         ActivityChart(activity)
                     }
                 }
 
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Shared items")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_chat_info_shared_items))
                         AttachmentOverview(imagePaths.size, sharedDocuments.size, audioCount, links.size)
                     }
                 }
@@ -293,34 +296,34 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 // ── Configuration ─────────────────────────────────────────────
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Configuration")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_chat_info_configuration))
                         SectionCard(
                             items = listOf<@Composable () -> Unit>(
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Dashboard,
-                                        title = "Workspace",
-                                        subtitle = workspace?.name ?: "Workspace unavailable"
+                                        title = stringResource(R.string.chat_info_workspace),
+                                        subtitle = workspace?.name ?: stringResource(R.string.chat_info_workspace_unavailable)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Latest response model",
-                                        subtitle = latestResponseModel ?: "No generated response yet"
+                                        title = stringResource(R.string.chat_info_latest_response_model),
+                                        subtitle = latestResponseModel ?: stringResource(R.string.chat_info_no_generated_response_yet)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.AutoAwesome,
-                                        title = "Model setting",
+                                        title = stringResource(R.string.chat_info_model_setting),
                                         subtitle = if (chat?.modelId != null) "$model · selected for this chat" else "$model · app default"
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
-                                        title = "Persona",
+                                        title = stringResource(R.string.chat_persona),
                                         subtitle = if (chat?.personaId != null) "$persona · selected for this chat"
                                         else "$persona · inherited from ${workspace?.name ?: "space"}"
                                     )
@@ -328,7 +331,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Response profile",
+                                        title = stringResource(R.string.chat_info_response_profile),
                                         subtitle = (chat?.profile ?: "BALANCED").lowercase().replaceFirstChar { it.uppercase() }
                                     )
                                 },
@@ -340,7 +343,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                     val modeLabel = mode.lowercase().replaceFirstChar { it.uppercase() }
                                     SectionRow(
                                         icon = Icons.Filled.Psychology,
-                                        title = "Thinking",
+                                        title = stringResource(R.string.chat_thinking),
                                         subtitle = if (chat?.thinkingMode == null) "$modeLabel · model default" else modeLabel
                                     )
                                 },
@@ -348,11 +351,11 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                     val count = chat?.kbIdList()?.size ?: 0
                                     SectionRow(
                                         icon = Icons.AutoMirrored.Filled.MenuBook,
-                                        title = "Sources",
+                                        title = stringResource(R.string.chat_sources),
                                         subtitle = if (chat?.sourceGrounded == true && count > 0)
                                             sourceNames.takeIf { it.isNotEmpty() }?.joinToString(", ")
                                                 ?: "$count source${if (count == 1) "" else "s"} · grounded"
-                                        else "Not grounded"
+                                        else stringResource(R.string.chat_info_not_grounded)
                                     )
                                 }
                             )
@@ -363,28 +366,28 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                 // ── Timeline ──────────────────────────────────────────────────
                 item {
                     Column(Modifier.padding(horizontal = Space.lg)) {
-                        SectionLabel("Timeline")
+                        SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_chat_info_timeline))
                         SectionCard(
                             items = listOf<@Composable () -> Unit>(
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.CalendarToday,
-                                        title = "Created",
+                                        title = stringResource(R.string.chat_info_created),
                                         subtitle = chat?.createdAt?.let { dateFmt.format(java.util.Date(it)) } ?: "—"
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Schedule,
-                                        title = "Last activity",
-                                        subtitle = lastActivity?.let { dateFmt.format(java.util.Date(it)) } ?: "No messages yet"
+                                        title = stringResource(R.string.chat_info_last_activity),
+                                        subtitle = lastActivity?.let { dateFmt.format(java.util.Date(it)) } ?: stringResource(R.string.chat_info_no_messages_yet)
                                     )
                                 },
                                 {
                                     SectionRow(
                                         icon = Icons.Filled.Bolt,
-                                        title = "Local generation",
-                                        subtitle = if (generatedReplies.isEmpty()) "No measured replies yet" else
+                                        title = stringResource(R.string.chat_info_local_generation),
+                                        subtitle = if (generatedReplies.isEmpty()) stringResource(R.string.chat_info_no_measured_replies_yet) else
                                             "${generatedReplies.size} replies · ${formatDuration(generationMs)} total"
                                     )
                                 }
@@ -412,7 +415,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                                 if (bitmap != null) {
                                     Image(bitmap, "Shared image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                 } else {
-                                    Icon(Icons.Filled.Image, "Shared image", Modifier.fillMaxSize().padding(Space.xxl))
+                                    Icon(Icons.Filled.Image, stringResource(R.string.chat_shared_image), Modifier.fillMaxSize().padding(Space.xxl))
                                 }
                             }
                         }
@@ -442,7 +445,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
                         onClick = {
                             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
                                 .onFailure {
-                                    android.widget.Toast.makeText(context, "No app can open this link.", android.widget.Toast.LENGTH_LONG).show()
+                                    android.widget.Toast.makeText(context, localResources.getString(R.string.chat_info_no_app_can_open_this), android.widget.Toast.LENGTH_LONG).show()
                                 }
                         }
                     )
@@ -452,7 +455,7 @@ fun ChatInfoScreen(chatId: String, onBack: () -> Unit, onOpenDocument: (String) 
         }
     }
     previewPath?.let { path ->
-        FullScreenImagePreview(path = path, title = "Shared image", onDismiss = { previewPath = null })
+        FullScreenImagePreview(path = path, title = stringResource(R.string.chat_shared_image), onDismiss = { previewPath = null })
     }
 }
 
@@ -470,18 +473,18 @@ private fun RowScope.StatCell(icon: ImageVector, value: String, label: String, a
             horizontalArrangement = Arrangement.spacedBy(Space.md)
         ) {
             Box(
-                Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(accent.container),
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.small).background(accent.container),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = accent.onContainer, modifier = Modifier.size(20.dp))
             }
             Column {
-                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text(
                     label,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }
@@ -529,7 +532,7 @@ private fun BalanceRow(label: String, user: Int, assistant: Int) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(
-                "You $user · AI $assistant",
+                stringResource(R.string.chat_info_you_arg1_ai_arg2, user, assistant),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -547,8 +550,8 @@ private fun BalanceRow(label: String, user: Int, assistant: Int) {
 @Composable
 private fun InsightMetric(value: String, label: String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -629,7 +632,7 @@ private fun AttachmentMetric(icon: ImageVector, value: Int, label: String, color
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
         Text(value.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -671,7 +674,7 @@ private fun StatusPill(text: String, icon: ImageVector) {
             horizontalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
             Icon(icon, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-            Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }

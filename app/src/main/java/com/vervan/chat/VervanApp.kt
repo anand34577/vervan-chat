@@ -204,7 +204,7 @@ class AppContainer(app: Application) {
                     // is not exposed by any runtime here yet, so claiming it would wrongly mark
                     // NPU-requiring variants installable.
                     hasGpuDelegate = com.vervan.chat.BuildConfig.LLAMA_CPP_AVAILABLE,
-                    hasNpuDelegate = false
+                    hasNpuDelegate = com.vervan.chat.system.DeviceSoc.hasLiteRtNpu
                 )
             )
         },
@@ -402,8 +402,30 @@ class VervanApp : Application() {
         }
     }
 
+    private var backgroundUnloadJob: kotlinx.coroutines.Job? = null
+
+    /** Frees idle on-device models after the configured time in the background. Skipped while
+     * the local API server or the floating bubble may still need the model. */
+    private fun scheduleBackgroundUnload() {
+        backgroundUnloadJob?.cancel()
+        backgroundUnloadJob = applicationScope.launch(Dispatchers.Default) {
+            val minutes = runCatching { container.settingsRepository.backgroundUnloadMinutes.first() }.getOrDefault(10)
+            if (minutes <= 0) return@launch
+            kotlinx.coroutines.delay(minutes * 60_000L)
+            val settings = container.settingsRepository
+            val needsModelInBackground = runCatching {
+                settings.apiServerEnabled.first() || settings.quickActionBubbleEnabled.first()
+            }.getOrDefault(true)
+            if (needsModelInBackground) return@launch
+            val unloaded = container.modelLoadCoordinator.unloadIdleModels()
+            if (unloaded.isNotEmpty()) Log.i(TAG, "Freed idle models after $minutes min in background: $unloaded")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        // Lets toUserMessage() return error text in the user's language.
+        com.vervan.chat.system.UserMessageText.context = this
         // First thing, before any other init: container construction itself (Room migrations,
         // native lib loading) is a realistic crash site, and an offline app has no remote
         // reporter — an uninstalled handler here means an invisible field failure.
@@ -417,6 +439,7 @@ class VervanApp : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 container.appLockManager.onAppBackgrounded()
+                scheduleBackgroundUnload()
                 // Quick stays available while the app process is running, in foreground or background.
                 applicationScope.launch(Dispatchers.IO) {
                     runCatching {
@@ -433,6 +456,8 @@ class VervanApp : Application() {
                 }
             }
             override fun onStart(owner: LifecycleOwner) {
+                backgroundUnloadJob?.cancel()
+                backgroundUnloadJob = null
                 applicationScope.launch(Dispatchers.IO) {
                     runCatching {
                         if (container.settingsRepository.quickActionBubbleEnabled.first() &&
@@ -492,6 +517,13 @@ class VervanApp : Application() {
                     container.db.chatDao().delete(chat)
                 }
             }.onFailure { Log.e(TAG, "Cold-start housekeeping: temporary-chat purge failed", it) }
+
+            // Ghost chats: rows created before the user typed anything, orphaned by a process
+            // death before ChatViewModel's leave-cleanup ran. Hidden from every list, so nothing
+            // else would ever remove them. The age floor keeps a chat that's open right now safe.
+            runCatching {
+                container.db.chatDao().deleteEmptyChatsBefore(System.currentTimeMillis() - 60L * 60 * 1000)
+            }.onFailure { Log.e(TAG, "Cold-start housekeeping: empty-chat sweep failed", it) }
 
             // Retention policy — soft-deletes (not hard-deletes) chats older than the
             // configured window, same reversible-first pattern as every other delete path in

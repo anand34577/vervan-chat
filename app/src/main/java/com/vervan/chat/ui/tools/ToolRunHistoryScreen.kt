@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.tools
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,7 @@ import com.vervan.chat.ui.common.OperationErrorCard
 import com.vervan.chat.ui.common.PageContainer
 import com.vervan.chat.ui.common.VervanSearchField
 import com.vervan.chat.ui.common.VervanTopAppBar
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
@@ -71,11 +72,12 @@ fun ToolRunHistoryScreen(
     highlightId: String? = null,
 ) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val vm: ToolRunHistoryViewModel = viewModel(factory = viewModelFactory { initializer { ToolRunHistoryViewModel(app) } })
-    val runs by vm.runs.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val runs by vm.runs.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var expandedId by remember(highlightId) { mutableStateOf(highlightId) }
     var pendingDelete by remember { mutableStateOf<ToolRun?>(null) }
@@ -94,8 +96,8 @@ fun ToolRunHistoryScreen(
     Scaffold(
         topBar = {
             VervanTopAppBar(
-                title = { Text("Run history") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text(stringResource(R.string.tool_run_history_run_history)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -126,8 +128,8 @@ fun ToolRunHistoryScreen(
                                 onCopy = {
                                     val content = run.output.ifBlank { run.input }
                                     context.getSystemService(android.content.ClipboardManager::class.java)
-                                        .setSensitiveText(content, scope, run.toolName)
-                                    scope.launch { snackbarHostState.showSnackbar("Copied") }
+                                        .copyText(content, scope, run.toolName)
+                                    scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
                                 },
                                 onSave = {
                                     scope.launch {
@@ -155,9 +157,9 @@ fun ToolRunHistoryScreen(
 
     pendingDelete?.let { run ->
         ConfirmDialog(
-            title = "Remove this run?",
-            body = "It will move to the recycle bin.",
-            confirmLabel = "Remove",
+            title = stringResource(R.string.tool_run_history_remove_this_run),
+            body = stringResource(R.string.tool_run_history_it_will_move_to_the),
+            confirmLabel = stringResource(R.string.action_remove),
             destructive = true,
             onConfirm = {
                 pendingDelete = null
@@ -187,7 +189,7 @@ private fun ToolRunCard(
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             Row(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text(run.toolName, style = MaterialTheme.typography.titleSmall)
+                    Text(run.toolName, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(
                         run.state.name.lowercase().replaceFirstChar { it.titlecase() } +
                             (run.modelName?.let { " · $it" } ?: ""),
@@ -203,7 +205,7 @@ private fun ToolRunCard(
                     Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(run.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (expanded) "Collapse run" else "Expand run",
+                        contentDescription = if (expanded) stringResource(R.string.tool_run_history_collapse_run) else stringResource(R.string.tool_run_history_expand_run),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = Space.xs).size(20.dp)
                     )
@@ -224,8 +226,8 @@ private fun ToolRunCard(
                     RunAction(Icons.Filled.Share, "Share", onShare)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    AssistChip(onClick = onRerun, label = { Text("Re-run") })
-                    AssistChip(onClick = onDelete, label = { Text("Remove") }, leadingIcon = { Icon(Icons.Filled.Delete, null, Modifier.size(16.dp)) })
+                    AssistChip(onClick = onRerun, label = { Text(stringResource(R.string.tool_run_history_re_run)) })
+                    AssistChip(onClick = onDelete, label = { Text(stringResource(R.string.action_remove)) }, leadingIcon = { Icon(Icons.Filled.Delete, null, Modifier.size(16.dp)) })
                 }
             }
         }

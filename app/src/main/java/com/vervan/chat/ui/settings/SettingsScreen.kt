@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.settings
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
@@ -133,77 +136,78 @@ fun SettingsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val sections = listOf(
         SettingsSection(
-            "Personalize",
+            stringResource(R.string.st_personalize),
             listOf(
                 SettingsDestination(
-                    Icons.Filled.Palette, "Appearance", "Theme, colors, and dark mode",
+                    Icons.Filled.Palette, stringResource(R.string.st_appearance), stringResource(R.string.st_appearance_sub),
                     listOf("dark", "light", "OLED", "Material You", "display"), onOpenAppearance
                 ),
                 SettingsDestination(
-                    Icons.Filled.Accessibility, "Accessibility", "Text, contrast, motion, and touch size",
+                    Icons.Filled.Accessibility, stringResource(R.string.st_accessibility), stringResource(R.string.st_accessibility_sub),
                     listOf("TalkBack", "screen reader", "vibration"), onOpenAccessibility
                 )
             )
         ),
         SettingsSection(
-            "AI & chat",
+            stringResource(R.string.st_ai_chat),
             listOf(
                 SettingsDestination(
-                    Icons.Filled.AutoAwesome, "AI models",
-                    "${modelCount.size} installed · ${activeModel?.displayName ?: "none active"}",
+                    Icons.Filled.AutoAwesome, stringResource(R.string.st_ai_models),
+                    if (modelCount.isEmpty()) stringResource(R.string.st_ai_models_none)
+                    else stringResource(R.string.st_ai_models_sub, modelCount.size, activeModel?.displayName ?: stringResource(R.string.st_none_active)),
                     listOf("download", "import", "load", "active model", "GGUF"), onOpenModels
                 ),
                 SettingsDestination(
-                    Icons.Filled.Tune, "Chat behavior", "Model choice, presets, and device performance",
+                    Icons.Filled.Tune, stringResource(R.string.st_chat_behavior), stringResource(R.string.st_chat_behavior_sub),
                     listOf("interaction", "expert mode", "automatic", "battery", "thermal"), onOpenExperience
                 ),
                 SettingsDestination(
-                    Icons.Filled.AutoAwesome, "Responses & search", "Reply style, context, and document search",
+                    Icons.Filled.FindInPage, stringResource(R.string.st_responses), stringResource(R.string.st_responses_sub),
                     listOf("generation", "sampling", "temperature", "top p", "semantic", "keyword", "summary"), onOpenGeneration
                 ),
                 SettingsDestination(
-                    Icons.Filled.Mic, "Voice & speech", "Dictation, spoken replies, voice models",
+                    Icons.Filled.Mic, stringResource(R.string.st_voice), stringResource(R.string.st_voice_sub),
                     listOf("microphone", "speech to text", "text to speech", "read aloud", "Whisper", "Piper", "Kokoro"), onOpenVoice
                 ),
                 SettingsDestination(
-                    Icons.AutoMirrored.Filled.List, "Tools", "Choose what AI can use in chats",
+                    Icons.AutoMirrored.Filled.List, stringResource(R.string.st_tools), stringResource(R.string.st_tools_sub),
                     listOf("model tools", "calculator", "date", "time"), onOpenTools
                 )
             )
         ),
         SettingsSection(
-            "Memory & personalization",
+            stringResource(R.string.st_memory_section),
             listOf(
                 SettingsDestination(
-                    Icons.Filled.Psychology, "Memory", "${memoryCount.size} saved",
+                    Icons.Filled.Psychology, stringResource(R.string.st_memory), stringResource(R.string.st_memory_sub, memoryCount.size),
                     listOf("personal memory", "remember", "facts"), onOpenMemory
                 ),
                 SettingsDestination(
-                    Icons.Filled.Lightbulb, "Memory suggestions", "$pendingSuggestions to review",
+                    Icons.Filled.Lightbulb, stringResource(R.string.st_memory_suggestions), stringResource(R.string.st_suggestions_sub, pendingSuggestions),
                     listOf("pending", "learned"), onOpenMemorySuggestions
                 )
             )
         ),
         SettingsSection(
-            "Privacy & data",
+            stringResource(R.string.st_privacy_data),
             listOf(
                 SettingsDestination(
-                    Icons.Filled.Lock, "Privacy & security", "App lock, permissions, and local access",
+                    Icons.Filled.Lock, stringResource(R.string.st_privacy_security), stringResource(R.string.st_privacy_sub),
                     listOf("biometrics", "PIN", "auto lock", "screenshots", "API server", "panic wipe"), onOpenSecurity
                 ),
                 SettingsDestination(
-                    Icons.Filled.Storage, "Storage & backup", "Space, backups, deleted items, diagnostics",
+                    Icons.Filled.Storage, stringResource(R.string.st_storage), stringResource(R.string.st_storage_sub),
                     listOf("export", "restore", "recycle bin", "jobs", "index", "cache"), onOpenStorage
                 )
             )
         ),
         SettingsSection(
-            "Help & support",
+            stringResource(R.string.st_help_section),
             listOf(
                 SettingsDestination(
                     Icons.AutoMirrored.Filled.Help,
-                    "Help & troubleshooting",
-                    "Guides, fixes, and diagnostics",
+                    stringResource(R.string.st_help),
+                    stringResource(R.string.st_help_sub),
                     listOf("problem", "error", "failed", "stuck", "support", "guide", "how to"),
                     onOpenHelp
                 )
@@ -223,9 +227,9 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.home_settings)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         }
@@ -241,7 +245,7 @@ fun SettingsScreen(
             Card(
                 onClick = onOpenProfile,
                 modifier = Modifier.fillMaxWidth(),
-                shape = com.vervan.chat.ui.theme.VervanExtraShapes.hero,
+                shape = MaterialTheme.shapes.large,
                 colors = com.vervan.chat.ui.theme.SurfaceRole.Raised.cardColors(),
                 border = com.vervan.chat.ui.theme.SurfaceRole.Raised.border()
             ) {
@@ -249,7 +253,7 @@ fun SettingsScreen(
                     Box(
                         Modifier
                             .size(56.dp)
-                            .background(com.vervan.chat.ui.theme.vervanBrandGradient(), CircleShape),
+                            .background(com.vervan.chat.ui.theme.vervanBrandFill(), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         val initial = userName.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
@@ -261,11 +265,11 @@ fun SettingsScreen(
                     }
                     Column(Modifier.weight(1f).padding(start = Space.lg)) {
                         OverflowTooltipText(
-                            text = userName.trim().ifBlank { "Set up your profile" },
+                            text = userName.trim().ifBlank { stringResource(R.string.st_profile_setup) },
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            userOccupation.trim().ifBlank { "Add details for more relevant replies" },
+                            userOccupation.trim().ifBlank { stringResource(R.string.st_profile_hint) },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
@@ -282,21 +286,22 @@ fun SettingsScreen(
             VervanSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search settings",
+                placeholder = stringResource(R.string.settings_search_settings),
             )
             if (query.isBlank()) {
                 SettingsSetupCard(
                     activeModelName = activeModel?.displayName,
                     modelCount = modelCount.size,
                     memoryCount = memoryCount.size,
-                    pendingSuggestions = pendingSuggestions
+                    pendingSuggestions = pendingSuggestions,
+                    onClick = onOpenModels
                 )
             }
             if (visibleSections.isEmpty()) {
                 EmptyState(
                     icon = Icons.Filled.Tune,
-                    title = "No settings found",
-                    body = "Try a simpler term, such as “voice,” “backup,” or “model.”"
+                    title = stringResource(R.string.settings_no_settings_found),
+                    body = stringResource(R.string.settings_try_a_simpler_term_such)
                 )
             } else {
                 visibleSections.forEach { section ->
@@ -308,20 +313,20 @@ fun SettingsScreen(
             }
             if (query.isBlank()) {
                 Column(Modifier.fillMaxWidth()) {
-                    SectionLabel("About", topPadding = 0.dp, bottomPadding = Space.sm)
+                    SectionLabel(stringResource(R.string.st_about), topPadding = 0.dp, bottomPadding = Space.sm)
                     com.vervan.chat.ui.common.SectionCard(
                         items = listOf(
                         {
                             com.vervan.chat.ui.common.SectionRow(
-                                title = "Vervan Chat",
+                                title = stringResource(R.string.app_name),
                                 icon = Icons.Filled.AutoAwesome,
-                                subtitle = "Private AI workspace with local and remote model options · $versionLabel"
+                                subtitle = stringResource(R.string.settings_private_ai_workspace_with_local, versionLabel)
                             )
                         },
                         {
                             com.vervan.chat.ui.common.SectionRow(
-                                title = "Source code on GitHub",
-                                subtitle = "github.com/anand34577/vervan-chat",
+                                title = stringResource(R.string.settings_source_code_on_github),
+                                subtitle = stringResource(R.string.settings_github_com_anand34577_vervan_chat),
                                 icon = Icons.Filled.Code,
                                 onClick = {
                                     // applicationContext startActivity needs NEW_TASK for an outbound
@@ -345,7 +350,7 @@ fun SettingsScreen(
                         },
                         {
                             Text(
-                                "Chats and documents are stored on this device. A remote model can receive content when you choose to use one.",
+                                stringResource(R.string.settings_chats_and_documents_are_stored),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(Space.lg)
@@ -365,9 +370,12 @@ private fun SettingsSetupCard(
     activeModelName: String?,
     modelCount: Int,
     memoryCount: Int,
-    pendingSuggestions: Int
+    pendingSuggestions: Int,
+    onClick: () -> Unit
 ) {
+    // The whole summary opens the models screen: it is the one place a "no model" state is fixed.
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
@@ -394,9 +402,9 @@ private fun SettingsSetupCard(
                 Modifier.weight(1f).padding(start = Space.md),
                 verticalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
-                Text("Your setup", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.settings_your_setup), style = MaterialTheme.typography.titleSmall)
                 Text(
-                    activeModelName?.takeIf { it.isNotBlank() } ?: "No generation model selected",
+                    activeModelName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.settings_no_generation_model_selected),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -472,7 +480,8 @@ fun GenerationSlider(
 fun formatBytes(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    bytes < 1024L * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    else -> String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
 }
 
 @Composable

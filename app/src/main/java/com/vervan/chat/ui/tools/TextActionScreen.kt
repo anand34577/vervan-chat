@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -62,7 +65,7 @@ import com.vervan.chat.ui.common.OverflowTooltipText
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.common.ResultActions
 import com.vervan.chat.ui.common.VervanSectionHeader
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -97,12 +100,13 @@ fun TextActionScreen(
     requireInput: Boolean = true
 ) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var inputText by remember { mutableStateOf(initialText) }
-    var outputText by remember { mutableStateOf("") }
+    var outputText by rememberSaveable { mutableStateOf("") }
     var activeLabel by remember { mutableStateOf<String?>(null) }
     var lastAction by remember { mutableStateOf<TextAction?>(null) }
     var isRunning by remember { mutableStateOf(false) }
@@ -159,8 +163,8 @@ fun TextActionScreen(
 
     fun copy(text: String) {
         context.getSystemService(android.content.ClipboardManager::class.java)
-            .setSensitiveText(text, scope, title)
-        scope.launch { snackbarHostState.showSnackbar("Copied") }
+            .copyText(text, scope, title)
+        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
     }
 
     fun share(text: String) {
@@ -178,7 +182,7 @@ fun TextActionScreen(
         } else null
         if (!text.isNullOrBlank()) inputText = (if (inputText.isBlank()) text else "$inputText $text").take(InputLimits.GENERAL_TOOL_INPUT_CHARS)
     }
-    val requestMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestMicPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             dictate.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -219,7 +223,7 @@ fun TextActionScreen(
             }
         } else file?.delete()
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = newImageFile()
             pendingFile = file
@@ -231,7 +235,7 @@ fun TextActionScreen(
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(title) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -240,11 +244,13 @@ fun TextActionScreen(
             FeatureHero(
                 icon = Icons.Filled.AutoAwesome,
                 eyebrow = "On-device assistant",
-                title = title,
-                body = "Add text, choose an action, then review the result.",
+                // The app bar already names this screen.
+                title = null,
+                dismissKey = title,
+                body = stringResource(R.string.text_action_add_text_choose_an_action),
             )
 
-            VervanSectionHeader("1 · Add input")
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_1_add_input))
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it.take(InputLimits.GENERAL_TOOL_INPUT_CHARS) },
@@ -254,7 +260,7 @@ fun TextActionScreen(
                 placeholder = { Text(hint) },
                 trailingIcon = {
                     if (inputText.isNotBlank()) {
-                        IconButton(onClick = { copy(inputText) }) { Icon(Icons.Filled.ContentCopy, "Copy input text") }
+                        IconButton(onClick = { copy(inputText) }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.text_action_copy_input_text)) }
                     }
                 }
             )
@@ -263,25 +269,25 @@ fun TextActionScreen(
                     if (allowVoice) {
                         OutlinedButton(onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.Mic, null, Modifier.size(18.dp))
-                            Text("Voice", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
+                            Text(stringResource(R.string.text_action_voice), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                     if (allowImageOcr) {
                         OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                            Text("From photo", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
+                            Text(stringResource(R.string.media_from_photo), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                         }
                     }
                 }
                 AnimatedVisibility(visible = isOcrRunning) {
                     Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text("Recognizing text…", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = Space.sm))
+                        Text(stringResource(R.string.text_action_recognizing_text), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
             }
 
-            VervanSectionHeader("2 · Choose an action")
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_2_choose_an_action))
             androidx.compose.foundation.layout.FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -297,7 +303,7 @@ fun TextActionScreen(
                 }
             }
 
-            VervanSectionHeader("3 · Review result")
+            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_3_review_result))
             when {
                 // Pre-first-token: a spinner is all we can show, but keep the stop control present.
                 isRunning && outputText.isBlank() -> {
@@ -311,10 +317,10 @@ fun TextActionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Text("Generating with the active model…", modifier = Modifier.padding(start = Space.md).weight(1f))
+                            Text(stringResource(R.string.text_action_generating_with_the_active_model), modifier = Modifier.padding(start = Space.md).weight(1f))
                             OutlinedButton(onClick = { stop() }) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text("Stop", modifier = Modifier.padding(start = Space.sm))
+                                Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
                             }
                         }
                     }
@@ -340,7 +346,7 @@ fun TextActionScreen(
                         Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
                             Button(onClick = { stop() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
                                 Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text("Stop", modifier = Modifier.padding(start = Space.sm))
+                                Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
                             }
                         }
                     } else {
@@ -357,7 +363,7 @@ fun TextActionScreen(
                                             content = outputText
                                         )
                                         app.container.db.noteDao().upsert(note)
-                                        snackbarHostState.showSnackbar("Saved to Notes")
+                                        snackbarHostState.showSnackbar(localResources.getString(R.string.text_action_saved_to_notes))
                                     }
                                 }
                             } else null,
@@ -367,9 +373,9 @@ fun TextActionScreen(
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't generate a result",
+                        title = stringResource(R.string.text_action_couldn_t_generate_a_result),
                         message = errorText!!,
-                        recovery = "Your input is safe. Edit it or load a compatible model, then try again.",
+                        recovery = stringResource(R.string.text_action_your_input_is_safe_edit),
                         actionLabel = lastAction?.let { "Try again" },
                         onAction = lastAction?.let { action -> { runAction(action) } }
                     )
@@ -387,9 +393,9 @@ fun TextActionScreen(
                                 modifier = Modifier.size(24.dp),
                             )
                             Column(Modifier.weight(1f).padding(start = Space.md)) {
-                                Text("Ready when you are", style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(R.string.voice_ready), style = MaterialTheme.typography.titleSmall)
                                 Text(
-                                    "Your local result will appear here without replacing the original input.",
+                                    stringResource(R.string.text_action_your_local_result_will_appear),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.chat
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -154,7 +156,7 @@ internal fun VoiceTurnAudioPlayer(
         ) {
             Icon(
                 if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (isPlaying) "Pause recording" else "Play recording",
+                contentDescription = if (isPlaying) stringResource(R.string.voice_turn_audio_player_pause_recording) else stringResource(R.string.voice_turn_audio_player_play_recording),
                 tint = accent,
                 modifier = Modifier.size(20.dp)
             )
@@ -210,7 +212,7 @@ internal fun VoiceTurnAudioPending(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(40.dp))
         Text(
-            "Preparing audio…",
+            stringResource(R.string.voice_turn_audio_player_preparing_audio),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = Space.sm)

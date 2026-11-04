@@ -10,6 +10,10 @@ interface SavedOutputDao : BaseDao<SavedOutput> {
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<SavedOutput>>
 
+    /** Saved responses that came from one chat; the chat screen needs only these. */
+    @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL AND sourceChatId = :chatId ORDER BY createdAt DESC")
+    fun observeForChat(chatId: String): Flow<List<SavedOutput>>
+
     @Query("SELECT * FROM saved_outputs WHERE deletedAt IS NULL AND (label LIKE '%' || :q || '%' OR content LIKE '%' || :q || '%') ORDER BY createdAt DESC LIMIT 20")
     suspend fun search(q: String): List<SavedOutput>
 

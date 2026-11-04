@@ -195,7 +195,7 @@ import com.vervan.chat.ui.common.MessageReaction
 import com.vervan.chat.ui.common.ThinkingIndicator
 import com.vervan.chat.ui.common.defaultQuickReplies
 import com.vervan.chat.ui.common.formatRelativeDay
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.common.setText
 import com.vervan.chat.ui.common.MarkdownLiteText
 import com.vervan.chat.ui.common.VervanSearchField
@@ -297,7 +297,7 @@ internal fun DocumentComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {
@@ -318,7 +318,7 @@ internal fun DocumentComposerPreviewDialog(
                                         contentScale = ContentScale.Fit
                                     )
                                 } ?: Surface(
-                                    shape = MaterialTheme.shapes.extraLarge,
+                                    shape = MaterialTheme.shapes.large,
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 ) {
@@ -341,7 +341,7 @@ internal fun DocumentComposerPreviewDialog(
                             )
                             documentPreview.pageCount?.let { pages ->
                                 Text(
-                                    stringResource(R.string.media_pages, pages),
+                                    androidx.compose.ui.res.pluralStringResource(R.plurals.media_pages, pages, pages),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = Space.xs)
@@ -567,9 +567,9 @@ internal fun VoiceMessageRow(path: String) {
                     else -> Icons.Filled.PlayArrow
                 },
                 contentDescription = when {
-                    loadFailed -> "Voice message failed to load — tap to retry"
-                    isPlaying -> "Pause voice message"
-                    else -> "Play voice message"
+                    loadFailed -> stringResource(R.string.chat_composer_media_voice_message_failed_to_load)
+                    isPlaying -> stringResource(R.string.chat_composer_media_pause_voice_message)
+                    else -> stringResource(R.string.chat_composer_media_play_voice_message)
                 },
                 tint = if (loadFailed) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onPrimaryContainer,
@@ -578,7 +578,7 @@ internal fun VoiceMessageRow(path: String) {
         }
         if (loadFailed) {
             Text(
-                "Couldn't load audio",
+                stringResource(R.string.chat_composer_media_couldn_t_load_audio),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.weight(1f)
@@ -596,7 +596,7 @@ internal fun VoiceMessageRow(path: String) {
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
-                        if (isPlaying) "Playing" else formatMs(positionMs),
+                        if (isPlaying) stringResource(R.string.chat_composer_media_playing) else formatMs(positionMs),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isPlaying) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -625,7 +625,7 @@ internal fun AttachmentCaptionBar(
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
             if (caption.length >= 9_600) {
                 Text(
-                    if (caption.length > 12_000) "Message is over the 12,000 character limit" else "${caption.length} / 12,000",
+                    if (caption.length > 12_000) stringResource(R.string.chat_composer_media_message_is_over_the_12) else "${caption.length} / 12,000",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (caption.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End).padding(horizontal = Space.lg, vertical = Space.xs)
@@ -655,7 +655,7 @@ internal fun AttachmentCaptionBar(
                 Box(
                     Modifier.padding(start = Space.sm).size(52.dp).clip(androidx.compose.foundation.shape.CircleShape)
                         .background(
-                            if (confirmEnabled) com.vervan.chat.ui.theme.vervanBrandGradient()
+                            if (confirmEnabled) com.vervan.chat.ui.theme.vervanBrandFill()
                             else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceContainerHighest)
                         ),
                     contentAlignment = Alignment.Center
@@ -695,7 +695,7 @@ internal fun AudioComposerPreviewDialog(
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
                     ) {

@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.settings
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -104,11 +105,13 @@ private data class BinItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecycleBinScreen(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
+    val app = context.applicationContext as VervanApp
     val vm: RecycleBinViewModel = viewModel(factory = viewModelFactory { initializer { RecycleBinViewModel(app) } })
-    val state by vm.state.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.error.collectAsState()
+    val state by vm.state.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
     var confirmEmptyAll by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf(emptySet<String>()) }
@@ -177,7 +180,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                                 val count = selectedItems.size
                                 selectedItems.forEach { it.restore() }
                                 leaveSelectionMode()
-                                scope.launch { snackbarHostState.showSnackbar(app.getString(R.string.recycle_restored_count, count)) }
+                                scope.launch { snackbarHostState.showSnackbar(app.resources.getQuantityString(R.plurals.recycle_restored_count, count, count)) }
                             }
                         ) { Icon(Icons.Filled.Restore, contentDescription = stringResource(R.string.recycle_restore_selected)) }
                     }
@@ -233,7 +236,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                      totalCount = totalCount,
                     onRestoreAll = {
                         vm.restoreAll()
-                        scope.launch { snackbarHostState.showSnackbar("Restored all $totalCount items") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getQuantityString(R.plurals.recycle_bin_restored_all_arg1_items, totalCount, totalCount)) }
                     },
                      onEmpty = { confirmEmptyAll = true }
                  )
@@ -246,10 +249,10 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                  ) {
                      categories.forEach { category ->
                          val count = if (category == "All") totalCount else binItems.count { it.section == category }
-                         FilterChip(
+                         com.vervan.chat.ui.common.VervanFilterChip(
                              selected = selectedCategory == category,
                              onClick = { selectedCategory = category },
-                             label = { Text("$category · $count", maxLines = 1) }
+                             label = { Text(stringResource(R.string.recycle_bin_arg1_arg2, if (category == "All") stringResource(R.string.chat_filter_all) else category, count), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                          )
                      }
                  }
@@ -279,7 +282,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                         },
                         onRestore = {
                             item.restore()
-                            scope.launch { snackbarHostState.showSnackbar(app.getString(R.string.recycle_restored_count, 1)) }
+                            scope.launch { snackbarHostState.showSnackbar(app.resources.getQuantityString(R.plurals.recycle_restored_count, 1, 1)) }
                         },
                         onRequestDelete = { pendingSingleDelete = item }
                     )
@@ -311,7 +314,7 @@ fun RecycleBinScreen(onBack: () -> Unit) {
                 selectedItems.forEach { it.deleteForever() }
                 confirmDeleteSelection = false
                 leaveSelectionMode()
-                scope.launch { snackbarHostState.showSnackbar(app.getString(R.string.recycle_deleted_count, count)) }
+                scope.launch { snackbarHostState.showSnackbar(app.resources.getQuantityString(R.plurals.recycle_deleted_count, count, count)) }
             },
             onDismiss = { confirmDeleteSelection = false }
         )
@@ -339,7 +342,7 @@ private fun BinSummary(totalCount: Int, onRestoreAll: () -> Unit, onEmpty: () ->
         Modifier.fillMaxWidth().padding(top = Space.md, bottom = Space.sm),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -433,7 +436,7 @@ private fun BinRow(
             containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
         ),
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else SurfaceRole.Card.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Row(
             Modifier

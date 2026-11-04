@@ -1,5 +1,9 @@
 package com.vervan.chat.ui.memory
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -58,8 +62,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, highlightMemoryId: String? = null) {
     val app = LocalContext.current.applicationContext as VervanApp
-    val memories by app.container.db.memoryDao().observeAll().collectAsState(initial = emptyList())
-    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsState(initial = 0)
+    val memories by app.container.db.memoryDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsStateWithLifecycle(initialValue = 0)
     val scope = rememberCoroutineScope()
     var showAdd by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Memory?>(null) }
@@ -74,58 +78,63 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Memory") },
+                title = { Text(stringResource(R.string.memory_memory)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 },
                 actions = {
                     IconButton(onClick = onOpenSuggestions) {
-                        BadgedBox(badge = { if (pendingSuggestions > 0) Badge { Text("$pendingSuggestions") } }) {
-                            Icon(Icons.Filled.Lightbulb, contentDescription = "Suggested memories")
+                        BadgedBox(badge = { if (pendingSuggestions > 0) Badge { Text(stringResource(R.string.memory_arg1, pendingSuggestions)) } }) {
+                            Icon(Icons.Filled.Lightbulb, contentDescription = stringResource(R.string.memory_suggested_title))
                         }
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = "Add memory") }
+            FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.memory_add_memory)) }
         }
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = VervanContentWidth.standard) {
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(vertical = Space.sm),
+            contentPadding = PaddingValues(top = Space.sm, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(Space.sm)
         ) {
             item {
                 FeatureHero(
                     eyebrow = "Private and approved",
-                    title = "What the assistant remembers",
-                    body = "Review details saved for future chats. Vervan uses relevant memories when available.",
+                    title = stringResource(R.string.memory_what_the_assistant_remembers),
+                    body = stringResource(R.string.memory_review_details_saved_for_future),
                     icon = Icons.Filled.Lightbulb
                 )
             }
-            item {
-                MemorySnapshotCard(
-                    total = memories.size,
-                    enabled = memories.count { it.enabled }
-                )
-            }
-            item {
-                VervanSectionHeader(
-                    title = "Saved memories",
-                    count = memories.size,
-                    topPadding = 0.dp,
-                    bottomPadding = 0.dp
-                )
+            // Zeros add nothing on an empty screen; the empty state below says what to do.
+            if (memories.isNotEmpty()) {
+                item {
+                    MemorySnapshotCard(
+                        total = memories.size,
+                        enabled = memories.count { it.enabled }
+                    )
+                }
+                item {
+                    VervanSectionHeader(
+                        title = stringResource(R.string.memory_saved_memories),
+                        count = memories.size,
+                        topPadding = 0.dp,
+                        bottomPadding = 0.dp
+                    )
+                }
             }
             if (memories.isEmpty()) {
                 item {
                     EmptyState(
                         icon = Icons.Filled.Lightbulb,
-                        title = "No memories saved",
-                        body = "Save a preference, fact, or instruction for future chats."
+                        title = stringResource(R.string.memory_no_memories_saved),
+                        body = stringResource(R.string.memory_save_a_preference_fact_or),
+                        actionLabel = stringResource(R.string.memory_add_memory),
+                        onAction = { showAdd = true }
                     )
                 }
             }
@@ -143,7 +152,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                     } else {
                         SurfaceRole.Card.border()
                     },
-                    shape = MaterialTheme.shapes.extraLarge
+                    shape = MaterialTheme.shapes.large
                 ) {
                     Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
@@ -152,10 +161,10 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                                 if (memory.embedding != null) " · Semantic ready" else ""
                             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
-                        Switch(checked = memory.enabled, onCheckedChange = { checked ->
+                        com.vervan.chat.ui.common.LabeledSwitch(label = "Use memory: " + memory.text.take(60), checked = memory.enabled, onCheckedChange = { checked ->
                             scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
                         })
-                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text("Delete") }
+                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text(stringResource(R.string.library_delete)) }
                     }
                 }
             }
@@ -164,24 +173,24 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
     }
 
     if (showAdd) {
-        var text by remember { mutableStateOf("") }
-        var key by remember { mutableStateOf("") }
+        var text by rememberSaveable { mutableStateOf("") }
+        var key by rememberSaveable { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAdd = false },
-            title = { Text("New memory") },
+            title = { Text(stringResource(R.string.memory_new_memory)) },
             text = {
                 androidx.compose.foundation.layout.Column {
                     BoundedTextField(
                         value = text, onValueChange = { text = it },
-                        placeholder = "e.g. Prefers concise answers",
+                        placeholder = stringResource(R.string.memory_e_g_prefers_concise_answers),
                         maxLength = ValidationLimits.MEMORY_TEXT
                     )
                     BoundedTextField(
                         value = key, onValueChange = { key = it },
-                        placeholder = "Key (optional, e.g. \"tone\")",
+                        placeholder = stringResource(R.string.memory_key_optional_e_g_tone),
                         singleLine = true,
                         maxLength = ValidationLimits.MEMORY_KEY,
-                supportingText = "Using the same key replaces its current value",
+                supportingText = stringResource(R.string.memory_using_the_same_key_replaces),
                         modifier = Modifier.padding(top = Space.sm)
                     )
                 }
@@ -205,17 +214,17 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         }
                     }
                     showAdd = false
-                }) { Text("Save") }
+                }) { Text(stringResource(R.string.action_save)) }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
 
     pendingDelete?.let { memory ->
         ConfirmDialog(
-            title = "Delete memory?",
-            body = "\"${memory.text}\" will be permanently deleted.",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.memory_delete_memory),
+            body = stringResource(R.string.memory_arg1_will_be_permanently_deleted, memory.text),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = {
                 pendingDelete = null
@@ -232,7 +241,7 @@ private fun MemorySnapshotCard(total: Int, enabled: Int, modifier: Modifier = Mo
         modifier = modifier.fillMaxWidth(),
         colors = SurfaceRole.Raised.cardColors(),
         border = SurfaceRole.Raised.border(),
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.large
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(Space.lg),

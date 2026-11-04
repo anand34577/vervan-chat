@@ -60,19 +60,20 @@ class ApiServerService : Service() {
                     if (restart) {
                         server?.stop()
                         server = null
+                        _running.value = false
                     }
                     if (server != null) return@runCatching true
 
                     val port = settings.apiServerPort.first()
-                    // Always binds every interface (0.0.0.0) — null is NanoHTTPD's bind-all
-                    // convention — user ask, not gated by the old "Allow other devices on this
-                    // Wi-Fi" toggle anymore (that flag now only affects the exposure copy shown in
-                    // Settings/Privacy Dashboard, not the actual bind address). requireAuth is
-                    // therefore the ONLY thing standing between "on" and "reachable by anyone who
-                    // can route to this device with no key" — it follows the user's own "Require
-                    // an API key" choice directly, with no automatic force-on.
-                    val host: String? = null
-                    val fullMode = settings.apiServerFullMode.first()
+                    // The bind address follows "Allow other devices on this Wi-Fi":
+                    // null = NanoHTTPD's bind-all convention (reachable from the LAN); otherwise
+                    // loopback only, so "off" really means no other device can connect.
+                    val lanAccess = settings.apiServerLanAccess.first()
+                    val host: String? = if (lanAccess) null else "127.0.0.1"
+                    // Full web-app mode exposes chats, documents and attachments. On the LAN it
+                    // requires the API key; without one, the server falls back to inference-only.
+                    val fullMode = settings.apiServerFullMode.first() &&
+                        (settings.apiServerRequireAuth.first() || !lanAccess)
                     // The API key is optional and applies only when the user turns it on — including
                     // in full web app mode. That mode does expose /api/* (chats, messages,
                     // attachments, knowledge bases) rather than only inference, so running it
@@ -94,6 +95,7 @@ class ApiServerService : Service() {
                     false
                 }
 
+                _running.value = started && server != null
                 if (!started || server == null) stopSelfResult(startId)
             }
         }
@@ -105,6 +107,7 @@ class ApiServerService : Service() {
         startJob = null
         server?.stop()
         server = null
+        _running.value = false
         scope.cancel()
         super.onDestroy()
     }
@@ -134,6 +137,14 @@ class ApiServerService : Service() {
         private const val CHANNEL_ID = "vervan_api_server"
         private const val NOTIFICATION_ID = 44
         private const val ACTION_RESTART = "com.vervan.chat.server.RESTART"
+
+        private val _running = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+        /** Whether a server socket is actually open in this process right now. The "enabled"
+         * preference outlives the process (and a failed bind), so it can't answer "is it
+         * listening" — Settings used to show "Listening on port 8080" after a restart while
+         * nothing was. */
+        val running: kotlinx.coroutines.flow.StateFlow<Boolean> = _running
 
         fun start(context: Context) {
             runCatching {

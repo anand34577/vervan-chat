@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,7 +72,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
             .clip(chipShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, chipShape)
-            .clickable(onClick = onClick)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
             .padding(start = Space.sm, end = Space.xs)
             .padding(vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
@@ -101,7 +103,7 @@ private fun AttachmentChip(attachment: PendingAttachment, onDismiss: () -> Unit,
         IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Filled.Close,
-                contentDescription = "Remove ${attachment.label}",
+                contentDescription = stringResource(R.string.compact_attachment_tray_remove_arg1, attachment.label),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )

@@ -2,10 +2,12 @@ import org.gradle.api.tasks.PathSensitivity
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
 import java.util.Properties
+import java.net.HttpURLConnection
+import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
@@ -119,27 +121,52 @@ fun llamaCppLibsDirFor(abi: String): File? {
 }
 val llamaCpp32Available = llamaCppAvailable && llamaCppAbis.contains("armeabi-v7a")
 
+// --- Cactus needle engine (Shruti speech-to-text) ---------------------------------------------
+// The engine ships as a prebuilt static library per ABI (libneedle.a + needle.h) on
+// huggingface.co/Cactus-Compute/needle3, Apache-2.0. `fetchNeedleEngine` downloads the pinned
+// revision below into the Gradle user cache-like folder <root>/.native-cache/needle/<rev>/ and
+// checks every file's sha256, so CI and a fresh checkout build Shruti support with no manual
+// step. `needle.enabled=false` in local.properties (or -Pneedle.enabled=false) turns it off;
+// `needle.dir` points at a local copy laid out the same way (android-arm64/, android-armv7/).
+val needleRevision = "d6c7d6a2e9655505e0f8e23339356dd1705900eb"
+val needleFiles = mapOf(
+    "android-arm64/libneedle.a" to "7aa6de6132a22bf45f5e903425feb66f159ad46f47fa558921bc4fd02c3a2fa0",
+    "android-armv7/libneedle.a" to "9f559a287b201c213e5c753d3cd1076a1849c73f94b445c85d11e4969422a135",
+    "android-arm64/needle.h" to null,
+    "android-armv7/needle.h" to null,
+    "LICENSE" to null,
+)
+val needleEnabled = ((findProperty("needle.enabled") as String?) ?: localProperties.getProperty("needle.enabled"))
+    ?.toBoolean() != false
+val needleDir: File = localProperties.getProperty("needle.dir")?.let(::File)
+    ?: rootProject.file(".native-cache/needle/$needleRevision")
+val needleAvailable = needleEnabled
+
 android {
     namespace = "com.vervan.chat"
-    compileSdk = 35
+    compileSdk = 37
     ndkVersion = "28.1.13356709"
 
     defaultConfig {
         applicationId = "com.vervan.chat"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.1"
+        // Google Play requires the previous year's API level for updates (API 36 since Aug 2026).
+        targetSdk = 36
+        // CI derives both from the release tag (vX.Y.Z -> X*10000 + Y*100 + Z) so every published
+        // build is monotonically newer; local builds fall back to the values below.
+        versionCode = (findProperty("vervan.versionCode") as String?)?.toIntOrNull() ?: 10200
+        versionName = (findProperty("vervan.versionName") as String?) ?: "1.2.0"
 
         buildConfigField("boolean", "LLAMA_CPP_AVAILABLE", llamaCppAvailable.toString())
         buildConfigField("boolean", "LLAMA_CPP_VISION_AVAILABLE", llamaCppVisionAvailable.toString())
         buildConfigField("boolean", "WHISPER_CPP_AVAILABLE", whisperCppAvailable.toString())
+        buildConfigField("boolean", "NEEDLE_AVAILABLE", needleAvailable.toString())
         buildConfigField("String", "CATALOG_PUBLIC_KEYS_BASE64", catalogPublicKeys.asBuildConfigString())
         buildConfigField("String", "CATALOG_ENDPOINTS", catalogEndpoints.asBuildConfigString())
 
         // ABI packaging is controlled by android.splits.abi below. Native bridges still apply
         // their narrower CMake filters when the corresponding local backend source is present.
-        if (llamaCppAvailable || whisperCppAvailable) {
+        if (llamaCppAvailable || whisperCppAvailable || needleAvailable) {
             externalNativeBuild {
                 cmake {
                     // LLAMA_CPP_LIBS_DIR is left to CMake to derive per-ABI from ANDROID_ABI —
@@ -148,18 +175,20 @@ android {
                         "-DLLAMA_CPP_DIR=${llamaCppDir ?: ""}",
                         "-DWHISPER_CPP_AVAILABLE=${whisperCppAvailable}",
                         "-DWHISPER_CPP_DIR=${whisperCppDir ?: ""}",
+                        "-DNEEDLE_DIR=${if (needleAvailable) needleDir.invariantSeparatorsPath else ""}",
                         "-DANDROID_STL=c++_shared"
                     )
                     // The JNI bridges link against native libs for their ABI — only build each
                     // bridge for the ABIs its underlying native lib was actually built for.
-                    abiFilters += (if (llamaCppAvailable) llamaCppAbis else emptyList()) +
-                        (if (whisperCppAvailable) whisperCppAbis else emptyList())
+                    abiFilters += ((if (llamaCppAvailable) llamaCppAbis else emptyList()) +
+                        (if (whisperCppAvailable) whisperCppAbis else emptyList()) +
+                        (if (needleAvailable) listOf("arm64-v8a", "armeabi-v7a") else emptyList())).distinct()
                 }
             }
         }
     }
 
-    if (llamaCppAvailable || whisperCppAvailable) {
+    if (llamaCppAvailable || whisperCppAvailable || needleAvailable) {
         externalNativeBuild {
             cmake {
                 path = file("src/main/cpp/CMakeLists.txt")
@@ -180,6 +209,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Lets a debug build sit next to the Play/GitHub release on the same phone.
+            // -Pvervan.debugIdSuffix=.test installs a second debug copy beside an existing one.
+            applicationIdSuffix = providers.gradleProperty("vervan.debugIdSuffix").orNull ?: ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             // Shrinking only — obfuscation is disabled in proguard-rules.pro because crash
             // reporting is on-device plain text (CrashLogManager) with no retrace step.
@@ -189,6 +224,16 @@ android {
             if (releaseSigningAvailable) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+        // Release code (R8, not debuggable) signed with the debug key, for judging animation
+        // and scrolling on a phone: debug builds of Compose run several times slower and stutter
+        // regardless of the UI code. Installs beside the release like the debug build does.
+        create("preview") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = providers.gradleProperty("vervan.debugIdSuffix").orNull ?: ".preview"
+            versionNameSuffix = "-preview"
+            matchingFallbacks += listOf("release")
         }
     }
 
@@ -229,10 +274,13 @@ android {
             // must be extracted at install time. Legacy packaging also compresses them in direct
             // APK downloads; Play app bundles still deliver ABI-specific native assets.
             useLegacyPackaging = true
-            // LiteRT-LM bundles LiteRT native libs for generation, and the standalone LiteRT
-            // runtime bundles the newer copies needed by raw EmbeddingGemma. Package the first
-            // resolved set; assemble verification checks libLiteRt.so stays the 2.1.6 library.
+            // The GPU accelerators in jniLibs/arm64-v8a come from LiteRT-LM v0.18.1's prebuilt/
+            // directory and must match litertlm-android's version. pickFirst keeps a project copy
+            // over any same-named file a dependency might also carry.
             pickFirsts += "**/libLiteRt*.so"
+            // MediaPipe tasks-text 1.x bundles its on-device summarizer/proofreader LLM runtime;
+            // this app only uses TextEmbedder (libmediapipe_tasks_jni), so drop the 16 MB extra.
+            excludes += "**/libmediapipe_tasks_textgenai_jni.so"
         }
     }
 
@@ -243,7 +291,9 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+            // Also produce one APK that installs on every phone, for people who sideload from
+            // GitHub and don't know their phone's ABI.
+            isUniversalApk = true
         }
     }
 
@@ -324,22 +374,27 @@ ksp {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.02.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-window-size-class")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.1")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.core:core-ktx:1.19.1")
+    // Android 12+ splash screen API (backported): holds the system splash until settings load, so
+    // the first frame already has the right theme and app-lock state.
+    implementation("androidx.core:core-splashscreen:1.2.0")
+    // Applies the Baseline Profile shipped in the APK at install time for faster cold starts.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // Loads the vendored Mermaid 10.9.6 browser bundle from APK assets over a safe local
     // HTTPS origin. Runtime network loads are disabled in OfflineMermaidView.
-    implementation("androidx.webkit:webkit:1.16.0")
+    implementation("androidx.webkit:webkit:1.18.0")
 
     // CommonMark, tables, tasks, links, and LaTeX rendered entirely on-device.
     val markwonVersion = "4.6.2"
@@ -352,9 +407,9 @@ dependencies {
     implementation("io.noties.markwon:linkify:$markwonVersion")
 
     // Local persistence — chats, messages, personas, model registry
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
 
     // On-device Gemma inference runtime (LiteRT-LM based). Bumped 0.10.0 -> 0.13.1 to match
     // a verified-working reference build; the old 0.10.0 + a stray, unused
@@ -363,16 +418,29 @@ dependencies {
     // inference runtimes' .so files in the same APK — a version-skew condition that surfaces
     // as a native crash/UnsatisfiedLinkError at Engine.initialize(), invisible to
     // compileDebugKotlin since it's a runtime linking failure, not a compile error.
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+    // Held at 0.18.1: 0.19.0's LiteRT only accepts compiler plugins built against the new
+    // versioned plugin ABI (LiteRtCompilerPluginQueryInterface), but every published
+    // litert-npu-runtime-* (2.3.2 is the latest) still exports the legacy LiteRtCreateCompilerPlugin,
+    // so on 0.19.0 no NPU plugin loads and on-device NPU compilation is impossible. Move up once
+    // the NPU runtimes ship the new ABI. The GPU accelerators in jniLibs must match this version.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
     // EmbeddingGemma / local text embeddings for semantic retrieval — MediaPipe TextEmbedder
     // only loads Task Bundle-packaged models. A raw exported .tflite graph (no bundled
     // tokenizer/metadata) needs the plain TFLite Interpreter instead, which EmbeddingEngine
     // falls back to (see EmbeddingEngine.kt / RawTfliteEmbedder.kt).
-    implementation("com.google.mediapipe:tasks-text:0.10.35")
+    implementation("com.google.mediapipe:tasks-text:1.2.1")
     // Raw EmbeddingGemma exports use newer TFLite ops (for example EMBEDDING_LOOKUP v4).
     // The legacy org.tensorflow:tensorflow-lite line stops at 2.16.1, which cannot load them,
     // so use the current LiteRT runtime. It preserves the org.tensorflow.lite Java API.
-    implementation("com.google.ai.edge.litert:litert:2.1.6")
+    implementation("com.google.ai.edge.litert:litert:2.3.2")
+    // NPU dispatch for LiteRT-LM's NPU backend, versioned with the LiteRT runtime above instead of
+    // hand-copied .so files. Qualcomm additionally needs the QNN HTP libraries committed under
+    // jniLibs/arm64-v8a (V73-V81 = Snapdragon 8 Gen 2 through 8 Elite Gen 5, ahead-of-time
+    // compiled models; libQnnHtpPrepare.so for on-device JIT compilation is deliberately not
+    // shipped: it is 78 MB and only needed for uncompiled models).
+    implementation("com.google.ai.edge.litert:litert-npu-runtime-qualcomm:2.3.2")
+    implementation("com.google.ai.edge.litert:litert-npu-runtime-mediatek:2.3.2")
+    implementation("com.google.ai.edge.litert:litert-npu-runtime-google-tensor:2.3.2")
 
     // Realtime voice pipeline (see com.vervan.chat.voice) — tiered on-device TTS, all with
     // confirmed Hindi support (Android's own system TTS varies by device/installed voice
@@ -394,7 +462,7 @@ dependencies {
     // (model.onnx + tokens.txt + shared espeak-ng-data/ per voice) — Android has no built-in
     // bzip2 support, and this is exactly commons-compress's job; avoids hand-rolling a bzip2
     // decoder for what TtsModelDownloadManager.downloadArchiveVoice needs.
-    implementation("org.apache.commons:commons-compress:1.26.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
     // Supertonic (github.com/supertone-inc/supertonic) has no official Android SDK, but its
     // Java reference example (java/ExampleONNX.java, java/Helper.java) is plain
     // ai.onnxruntime.* code with no Android-specific dependency — SupertonicTtsEngine.kt ports
@@ -426,7 +494,7 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // HTML extraction with heading/list structure preserved — pure Java, no AWT/StAX, safe on
     // Android (unlike Apache POI's OOXML modules, see below).
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("org.jsoup:jsoup:1.24.1")
     // Legacy binary Office formats (.doc/.xls, pre-2007 OLE2 Compound File format) ONLY —
     // deliberately NOT poi-ooxml (.docx/.xlsx/.pptx): poi-ooxml needs javax.xml.stream (StAX),
     // which Android's core library doesn't ship, and commonly needs java.awt classes Android
@@ -434,11 +502,11 @@ dependencies {
     // `poi-scratchpad` (HWPF, old .doc) only touch POIFS, a self-contained OLE2 reader with no
     // XML/AWT dependency, so they're safe. .docx/.xlsx/.pptx stay on this app's existing
     // hand-rolled zip/XML extraction (TextExtractor.kt) instead of poi-ooxml.
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-scratchpad:5.2.5")
+    implementation("org.apache.poi:poi:6.0.0")
+    implementation("org.apache.poi:poi-scratchpad:6.0.0")
     // EXIF orientation correction for attached photos (Phase 7, spec §13) — many cameras
     // store images "sideways" with an orientation tag rather than actually rotating pixels.
-    implementation("androidx.exifinterface:exifinterface:1.3.2")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 
     // Document Scanner's capture engine — Google ML Kit's own full-screen Document Scanner UI.
     // Its capture/crop/deskew model is trained specifically for this job. Requires Google Play
@@ -449,20 +517,20 @@ dependencies {
     // Android's android.jar ships org.json as a throwing stub (real parsing is stripped out),
     // so plain JVM unit tests that exercise JSONObject parsing (ToolCallParserTest) need the
     // real reference implementation on the test classpath instead.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 
     // Settings storage
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
 
     // App lock (Phase A: privacy hardening) — BiometricPrompt for fingerprint/face, and
     // EncryptedSharedPreferences (Android Keystore-backed) for the PIN hash+salt. Standard
     // AndroidX libraries for this exact job, not custom crypto.
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.biometric:biometric:1.4.0-alpha07")
+    implementation("androidx.security:security-crypto:1.1.0")
     // ProcessLifecycleOwner — detects the whole app going to background/foreground, for
     // auto-lock-on-background instead of a per-Activity onPause (which also fires during
     // in-app navigation, not just when the user actually leaves the app).
-    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
 
     // Local OpenAI-compatible API server (Phase J) — the standard lightweight embedded HTTP
     // server for Android: one small artifact, no transitive networking stack, long track
@@ -607,3 +675,44 @@ tasks.named("preBuild") {
 
 tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
     .configureEach { dependsOn(buildWhisperCppNative) }
+
+// Downloads the pinned needle engine (see needleRevision above) and verifies it. Skipped when
+// every file is already in place, so it costs nothing after the first build.
+val fetchNeedleEngine by tasks.registering {
+    onlyIf { needleAvailable && localProperties.getProperty("needle.dir") == null }
+    outputs.dir(needleDir)
+    doLast {
+        fun sha256(f: File): String {
+            val md = MessageDigest.getInstance("SHA-256")
+            f.inputStream().use { input ->
+                val buf = ByteArray(1 shl 16)
+                while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+        needleFiles.forEach { (path, expected) ->
+            val dst = File(needleDir, path)
+            if (dst.isFile && (expected == null || sha256(dst) == expected)) return@forEach
+            dst.parentFile.mkdirs()
+            val url = "https://huggingface.co/Cactus-Compute/needle3/resolve/$needleRevision/$path"
+            logger.lifecycle("Fetching needle engine file $path")
+            val tmp = File(dst.path + ".part")
+            val conn = URI(url).toURL().openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 60_000
+            conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            if (expected != null) {
+                val actual = sha256(tmp)
+                if (actual != expected) {
+                    tmp.delete()
+                    throw GradleException("needle engine $path: sha256 $actual != $expected")
+                }
+            }
+            if (dst.exists()) dst.delete()
+            if (!tmp.renameTo(dst)) throw GradleException("Could not write $dst")
+        }
+    }
+}
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
+    .configureEach { dependsOn(fetchNeedleEngine) }

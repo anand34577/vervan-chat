@@ -57,6 +57,12 @@ class SettingsRepository(context: Context) {
         val WHISPER_GPU_ENABLED = booleanPreferencesKey("whisper_gpu_enabled")
         val SUPERTONIC_VOICE_VARIANT = stringPreferencesKey("supertonic_voice_variant")
         val WHISPER_MODEL_VARIANT = stringPreferencesKey("whisper_model_variant")
+        val SHRUTI_STT_ENABLED = booleanPreferencesKey("shruti_stt_enabled")
+        val SHRUTI_MODEL_VARIANT = stringPreferencesKey("shruti_model_variant")
+        val SHRUTI_ENGLISH_ONLY = booleanPreferencesKey("shruti_english_only")
+        val SHRUTI_KEYWORDS = stringPreferencesKey("shruti_keywords")
+        val OMNI_TTS_VOICE = stringPreferencesKey("omni_tts_voice")
+        val OMNI_TTS_LANGUAGE = stringPreferencesKey("omni_tts_language")
         val SPEECH_INPUT_ENABLED = booleanPreferencesKey("speech_input_enabled")
         val VOICE_REPLY_MODE = stringPreferencesKey("voice_reply_mode")
         val VOICE_INPUT_METHOD = stringPreferencesKey("voice_input_method")
@@ -143,7 +149,9 @@ class SettingsRepository(context: Context) {
         val API_SERVER_REQUIRE_AUTH = booleanPreferencesKey("api_server_require_auth")
         val API_SERVER_SECURITY_DEFAULTS_APPLIED = booleanPreferencesKey("api_server_security_defaults_applied")
         val API_SERVER_FULL_MODE = booleanPreferencesKey("api_server_full_mode")
+        val API_SERVER_LAN_ACCESS = booleanPreferencesKey("api_server_lan_access")
         val API_SERVER_AUTO_START = booleanPreferencesKey("api_server_auto_start")
+        val BACKGROUND_UNLOAD_MINUTES = intPreferencesKey("background_unload_minutes")
         val API_SERVER_APP_TOOLS = booleanPreferencesKey("api_server_app_tools")
         val API_SERVER_ALLOW_WRITE_TOOLS = booleanPreferencesKey("api_server_allow_write_tools")
         val API_MODEL_TTL_SECONDS = intPreferencesKey("api_model_ttl_seconds")
@@ -171,7 +179,7 @@ class SettingsRepository(context: Context) {
     // Default is dark + green, not system/amber — the app's own "green dark theme" is the
     // intended out-of-the-box look; a user who never opens Settings should already see it.
     val themeMode: Flow<ThemeMode> = store.data.map { prefs ->
-        prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK
+        prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM
     }
     suspend fun setThemeMode(mode: ThemeMode) { store.edit { it[Keys.THEME_MODE] = mode.name } }
 
@@ -323,6 +331,33 @@ class SettingsRepository(context: Context) {
     val whisperModelVariant: Flow<String> = store.data.map { it[Keys.WHISPER_MODEL_VARIANT] ?: "multi" }
     suspend fun setWhisperModelVariant(v: String) { store.edit { it[Keys.WHISPER_MODEL_VARIANT] = v } }
 
+    /** Whether [com.vervan.chat.voice.ShrutiSttEngine] (Udgam Labs' Shruti on Cactus's needle
+     * engine) may be used as a speech-to-text tier. */
+    val shrutiSttEnabled: Flow<Boolean> = store.data.map { it[Keys.SHRUTI_STT_ENABLED] ?: true }
+    suspend fun setShrutiSttEnabled(v: Boolean) { store.edit { it[Keys.SHRUTI_STT_ENABLED] = v } }
+
+    /** Which downloaded Shruti language model to load — the catalog entry's `ttsLanguage`
+     * ("hi", "mr", "ta", "bn", "te"; see [com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES]). */
+    val shrutiModelVariant: Flow<String> = store.data.map { it[Keys.SHRUTI_MODEL_VARIANT] ?: "hi" }
+    suspend fun setShrutiModelVariant(v: String) { store.edit { it[Keys.SHRUTI_MODEL_VARIANT] = v } }
+
+    /** Forces Shruti's decoder to English. The model card recommends leaving detection on (it is
+     * as accurate on Hindi/Hinglish and better on accented English), so this defaults off. */
+    val shrutiEnglishOnly: Flow<Boolean> = store.data.map { it[Keys.SHRUTI_ENGLISH_ONLY] ?: false }
+    suspend fun setShrutiEnglishOnly(v: Boolean) { store.edit { it[Keys.SHRUTI_ENGLISH_ONLY] = v } }
+
+    /** Newline-separated names / product terms Shruti biases recognition toward. */
+    val shrutiKeywords: Flow<String> = store.data.map { it[Keys.SHRUTI_KEYWORDS] ?: "" }
+    suspend fun setShrutiKeywords(v: String) { store.edit { it[Keys.SHRUTI_KEYWORDS] = v.take(4_000) } }
+
+    /** LFM3 Omni's speaking voice ("female"/"male"), used by its speech output. */
+    val omniTtsVoice: Flow<String> = store.data.map { it[Keys.OMNI_TTS_VOICE] ?: "female" }
+    suspend fun setOmniTtsVoice(v: String) { store.edit { it[Keys.OMNI_TTS_VOICE] = v } }
+
+    /** LFM3 Omni's speaking accent, as the model's TTS system prompt names it. */
+    val omniTtsLanguage: Flow<String> = store.data.map { it[Keys.OMNI_TTS_LANGUAGE] ?: "American English" }
+    suspend fun setOmniTtsLanguage(v: String) { store.edit { it[Keys.OMNI_TTS_LANGUAGE] = v } }
+
     // ---- Unified multimodal voice UX ----
     val speechInputEnabled: Flow<Boolean> = store.data.map { it[Keys.SPEECH_INPUT_ENABLED] ?: true }
     suspend fun setSpeechInputEnabled(v: Boolean) { store.edit { it[Keys.SPEECH_INPUT_ENABLED] = v } }
@@ -451,7 +486,7 @@ class SettingsRepository(context: Context) {
     val maxOutputTokens: Flow<Int> = store.data.map { (it[Keys.MAX_OUTPUT_TOKENS] ?: 512).coerceIn(16, 32_768) }
     suspend fun setMaxOutputTokens(value: Int) { store.edit { it[Keys.MAX_OUTPUT_TOKENS] = value.coerceIn(16, 32_768) } }
 
-    /** 0/null means "auto" (`Runtime.getRuntime().availableProcessors()`), llama.cpp-only. */
+    /** 0/null means "auto" (performance cores, see [com.vervan.chat.system.CpuTopology]), llama.cpp-only. */
     val cpuThreads: Flow<Int> = store.data.map { (it[Keys.CPU_THREADS] ?: 0).coerceIn(0, 128) }
     suspend fun setCpuThreads(value: Int) { store.edit { it[Keys.CPU_THREADS] = value.coerceIn(0, 128) } }
 
@@ -540,6 +575,15 @@ class SettingsRepository(context: Context) {
     // server that starts itself is a listening socket the user did not open this time.
     val apiServerAutoStart: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_AUTO_START] ?: false }
     suspend fun setApiServerAutoStart(v: Boolean) { store.edit { it[Keys.API_SERVER_AUTO_START] = v } }
+    /** Minutes in the background before an idle on-device model is freed; 0 = keep it loaded.
+     * A multi-GB native model held while backgrounded is what makes Android kill the whole
+     * process, so freeing it is the default. */
+    val backgroundUnloadMinutes: Flow<Int> = store.data.map { it[Keys.BACKGROUND_UNLOAD_MINUTES] ?: 10 }
+    suspend fun setBackgroundUnloadMinutes(v: Int) { store.edit { it[Keys.BACKGROUND_UNLOAD_MINUTES] = v.coerceIn(0, 240) } }
+    /** Whether the server listens on every interface (reachable from the Wi-Fi network) or only
+     * on 127.0.0.1 (apps on this phone). Off by default: other devices are an explicit opt-in. */
+    val apiServerLanAccess: Flow<Boolean> = store.data.map { it[Keys.API_SERVER_LAN_ACCESS] ?: false }
+    suspend fun setApiServerLanAccess(v: Boolean) { store.edit { it[Keys.API_SERVER_LAN_ACCESS] = v } }
     val apiServerPort: Flow<Int> = store.data.map { it[Keys.API_SERVER_PORT] ?: 8080 }
     suspend fun setApiServerPort(v: Int) { store.edit { it[Keys.API_SERVER_PORT] = v.coerceIn(1024, 65535) } }
     // Authentication is secure by default because the server binds to the LAN when enabled.

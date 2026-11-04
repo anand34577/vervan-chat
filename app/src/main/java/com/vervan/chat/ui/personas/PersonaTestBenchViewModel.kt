@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.personas
 
+import com.vervan.chat.R
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -77,7 +78,7 @@ class PersonaTestBenchViewModel(private val app: VervanApp, private val personaI
             try {
                 val model = db.modelDao().getActiveModel(ModelRole.GENERATION)
                 if (model == null) {
-                    _error.value = "No model is ready. Open Settings → AI models and load one."
+                    _error.value = app.getString(R.string.persona_test_bench_no_model_is_ready_open)
                     return@launch
                 }
                 val prompt = "${p.systemInstruction}\n\nUser: ${_samplePrompt.value}\nAssistant:"

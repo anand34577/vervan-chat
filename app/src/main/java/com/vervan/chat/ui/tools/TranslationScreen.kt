@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.tools
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +55,7 @@ import com.vervan.chat.ui.common.ErrorCard
 import com.vervan.chat.ui.common.FeatureHero
 import com.vervan.chat.ui.common.ResultActions
 import com.vervan.chat.ui.common.ScrollablePage
-import com.vervan.chat.ui.common.setSensitiveText
+import com.vervan.chat.ui.common.copyText
 import com.vervan.chat.ui.theme.Space
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -73,12 +76,13 @@ private val LANGUAGES = listOf(
 @Composable
 fun TranslationScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var sourceText by remember { mutableStateOf("") }
-    var translated by remember { mutableStateOf("") }
+    var sourceText by rememberSaveable { mutableStateOf("") }
+    var translated by rememberSaveable { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var sourceLang by remember { mutableStateOf("Auto-detect") }
     var targetLang by remember { mutableStateOf("English") }
@@ -126,8 +130,8 @@ fun TranslationScreen(onBack: () -> Unit) {
 
     fun copyTranslation() {
         context.getSystemService(android.content.ClipboardManager::class.java)
-            .setSensitiveText(translated, scope, "Translation")
-        scope.launch { snackbarHostState.showSnackbar("Copied") }
+            .copyText(translated, scope, "Translation")
+        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
     }
 
     fun shareTranslation() {
@@ -146,7 +150,7 @@ fun TranslationScreen(onBack: () -> Unit) {
             app.container.db.noteDao().upsert(
                 Note(title = "Translation · $targetLang · $date", content = translated)
             )
-            snackbarHostState.showSnackbar("Saved to Notes")
+            snackbarHostState.showSnackbar(localResources.getString(R.string.translation_saved_to_notes))
         }
     }
 
@@ -189,7 +193,7 @@ fun TranslationScreen(onBack: () -> Unit) {
             }
         } else file?.delete()
     }
-    val requestCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) {
             val (file, uri) = newImageFile()
             pendingFile = file
@@ -200,8 +204,8 @@ fun TranslationScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Translate") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.quick_reply_translate)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -210,19 +214,23 @@ fun TranslationScreen(onBack: () -> Unit) {
             FeatureHero(
                 icon = Icons.Filled.Translate,
                 eyebrow = "On-device translation",
-                title = "Translate",
-                body = "Translate typed or photographed text entirely on your device."
+                // The app bar already names this screen.
+                title = null,
+                dismissKey = stringResource(R.string.quick_reply_translate),
+                body = stringResource(R.string.translation_translate_typed_or_photographed_text)
             )
             // Language selector: each side takes an equal weight so long names like
             // "Chinese (Simplified)" truncate instead of overflowing the row on a narrow phone.
             Row(Modifier.fillMaxWidth().padding(top = Space.lg), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { sourceMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(sourceLang, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // "Auto-detect" is the stored sentinel (also checked when building the
+                        // prompt); only its displayed label is translated.
+                        Text(if (sourceLang == "Auto-detect") stringResource(R.string.translation_auto_detect) else sourceLang, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DropdownMenu(expanded = sourceMenuOpen, onDismissRequest = { sourceMenuOpen = false }) {
                         (listOf("Auto-detect") + LANGUAGES).forEach { lang ->
-                            DropdownMenuItem(text = { Text(lang) }, onClick = { sourceLang = lang; sourceMenuOpen = false })
+                            DropdownMenuItem(text = { Text(if (lang == "Auto-detect") stringResource(R.string.translation_auto_detect) else lang) }, onClick = { sourceLang = lang; sourceMenuOpen = false })
                         }
                     }
                 }
@@ -235,7 +243,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                         sourceText = translated
                         translated = prevText
                     }
-                }) { Icon(Icons.Filled.SwapHoriz, "Swap languages") }
+                }) { Icon(Icons.Filled.SwapHoriz, stringResource(R.string.translation_swap_languages)) }
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { targetMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
                         Text(targetLang, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -253,13 +261,13 @@ fun TranslationScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                 minLines = 4,
                 shape = MaterialTheme.shapes.large,
-                label = { Text("Text to translate") }
+                label = { Text(stringResource(R.string.translation_text_to_translate)) }
             )
             Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = !isOcrRunning, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                     Text(
-                        if (isOcrRunning) "Reading…" else "From photo",
+                        if (isOcrRunning) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(start = Space.xs)
@@ -268,19 +276,19 @@ fun TranslationScreen(onBack: () -> Unit) {
                 if (isTranslating) {
                     OutlinedButton(onClick = { genJob?.cancel(); isTranslating = false }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                        Text("Stop", maxLines = 1, modifier = Modifier.padding(start = Space.xs))
+                        Text(stringResource(R.string.action_stop), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.xs))
                     }
                 } else {
                     Button(onClick = ::translate, enabled = sourceText.isNotBlank(), modifier = Modifier.weight(1f)) {
-                        Text("Translate", maxLines = 1)
+                        Text(stringResource(R.string.quick_reply_translate), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                 }
             }
             when {
                 isTranslating && translated.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(
-                        title = "Translating to $targetLang",
-                        body = "Translating with the selected local model.",
+                        title = stringResource(R.string.translation_translating_to_arg1, targetLang),
+                        body = stringResource(R.string.translation_translating_with_the_selected_local),
                         modifier = Modifier.padding(top = Space.lg)
                     )
                 }
@@ -291,7 +299,7 @@ fun TranslationScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(top = Space.lg),
                         minLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        label = { Text("Translation") }
+                        label = { Text(stringResource(R.string.translation_translation)) }
                     )
                     if (!isTranslating) {
                         ResultActions(
@@ -305,10 +313,10 @@ fun TranslationScreen(onBack: () -> Unit) {
                 }
                 errorText != null -> {
                     com.vervan.chat.ui.common.OperationErrorCard(
-                        title = "Couldn't translate",
+                        title = stringResource(R.string.translation_couldn_t_translate),
                         message = errorText!!,
-                        recovery = "Load a model or shorten the text, then try again.",
-                        actionLabel = "Try again",
+                        recovery = stringResource(R.string.translation_load_a_model_or_shorten),
+                        actionLabel = stringResource(R.string.action_try_again),
                         onAction = { translate() },
                         modifier = Modifier.padding(top = Space.lg)
                     )

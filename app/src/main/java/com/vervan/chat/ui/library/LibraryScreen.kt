@@ -55,6 +55,7 @@ import com.vervan.chat.data.db.entities.Persona
 import com.vervan.chat.data.db.entities.PromptTemplate
 import com.vervan.chat.data.db.entities.Workflow
 import com.vervan.chat.ui.common.EmptyState
+import com.vervan.chat.ui.common.displayTitle
 import com.vervan.chat.ui.common.ContextGuideCard
 import com.vervan.chat.ui.common.LoadingSkeletonList
 import com.vervan.chat.ui.common.OperationErrorCard
@@ -117,6 +118,7 @@ fun LibraryScreen(
     val currentTabLabel = stringResource(libTabs[tab])
     val deleteSavedSuccess = stringResource(R.string.library_delete_saved_success)
     val deleteSavedError = stringResource(R.string.library_delete_saved_error)
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val selectableIds = remember(tab, query, allPersonas, allTemplates, allWorkflows, allOutputs) {
         when (tab) {
             0 -> allPersonas.filter { !it.isBuiltIn && it.name.contains(query, ignoreCase = true) }.map { it.id }.toSet()
@@ -152,9 +154,9 @@ fun LibraryScreen(
                             val result = vm.deleteSelected(targetTab, ids).await()
                             snackbarHostState.showSnackbar(
                                 if (result.isSuccess) {
-                                    "Moved $count item${if (count == 1) "" else "s"} to the recycle bin"
+                                    resources.getQuantityString(R.plurals.library_moved_to_bin, count, count)
                                 } else {
-                                    "Could not move the selected item${if (count == 1) "" else "s"}. Try again."
+                                    resources.getQuantityString(R.plurals.library_move_failed, count, count)
                                 }
                             )
                         }
@@ -193,7 +195,7 @@ fun LibraryScreen(
                 modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
                 accentIndex = 4,
             )
-            androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md) {
+            androidx.compose.material3.SecondaryScrollableTabRow(selectedTabIndex = tab, edgePadding = Space.md, containerColor = androidx.compose.ui.graphics.Color.Transparent) {
                 libTabs.forEachIndexed { index, labelRes ->
                     Tab(
                         selected = tab == index,
@@ -223,8 +225,8 @@ fun LibraryScreen(
                 else -> HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
                     when (page) {
                         0 -> PersonasTab(allPersonas, query, onOpenPersona, onNewPersona, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                        1 -> TemplatesTab(allTemplates, query, onOpenTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
-                        2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                        1 -> TemplatesTab(allTemplates, query, onOpenTemplate, onNewTemplate, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
+                        2 -> WorkflowsTab(allWorkflows, query, onOpenWorkflow, onEditWorkflow, onNewWorkflow, selectionMode, selected, { id -> selected = if (id in selected) selected - id else selected + id }, { id -> selectionMode = true; selected = selected + id })
                         else -> SavedTab(
                             query = query,
                             outputs = allOutputs,
@@ -329,7 +331,7 @@ private fun PersonaCard(
             val emoji = persona.avatarPath?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
             val accent = com.vervan.chat.ui.theme.vervanAccentFor((persona.name.hashCode() and Int.MAX_VALUE) % 6)
             Box(
-                Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(accent.container),
+                Modifier.size(40.dp).clip(MaterialTheme.shapes.small).background(accent.container),
                 contentAlignment = Alignment.Center
             ) {
                 if (avatar != null) {
@@ -337,7 +339,7 @@ private fun PersonaCard(
                         bitmap = avatar,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.medium)
+                        modifier = Modifier.size(40.dp).clip(MaterialTheme.shapes.small)
                     )
                 } else if (emoji != null) {
                     Text(emoji, style = MaterialTheme.typography.titleMedium)
@@ -346,6 +348,7 @@ private fun PersonaCard(
                         persona.name.trim().firstOrNull()?.uppercase() ?: "P",
                         style = MaterialTheme.typography.titleMedium,
                         color = accent.onContainer,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }
@@ -370,6 +373,7 @@ private fun TemplatesTab(
     allTemplates: List<PromptTemplate>,
     query: String,
     onOpenTemplate: (String) -> Unit,
+    onNewTemplate: () -> Unit,
     selectionMode: Boolean,
     selected: Set<String>,
     onToggleSelected: (String) -> Unit,
@@ -380,7 +384,9 @@ private fun TemplatesTab(
         EmptyState(
             Icons.Outlined.Description,
             if (query.isBlank()) stringResource(R.string.library_templates_empty) else stringResource(R.string.library_templates_no_match),
-            if (query.isBlank()) stringResource(R.string.library_templates_empty_body) else stringResource(R.string.library_try_another_search)
+            if (query.isBlank()) stringResource(R.string.library_templates_empty_body) else stringResource(R.string.library_try_another_search),
+            actionLabel = if (query.isBlank()) stringResource(R.string.library_new_template) else null,
+            onAction = if (query.isBlank()) onNewTemplate else null
         )
         return
     }
@@ -401,7 +407,7 @@ private fun TemplateCard(template: PromptTemplate, onClick: () -> Unit, selected
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !template.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             Column(Modifier.weight(1f)) {
-            Text("/${template.name}", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.library_arg1, template.name), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             if (template.description.isNotBlank()) {
                 Text(
                     template.description, style = MaterialTheme.typography.labelSmall,
@@ -419,6 +425,7 @@ private fun WorkflowsTab(
     query: String,
     onOpenWorkflow: (String) -> Unit,
     onEditWorkflow: (String) -> Unit,
+    onNewWorkflow: () -> Unit,
     selectionMode: Boolean,
     selected: Set<String>,
     onToggleSelected: (String) -> Unit,
@@ -429,7 +436,9 @@ private fun WorkflowsTab(
         EmptyState(
             Icons.Outlined.AccountTree,
             if (query.isBlank()) stringResource(R.string.library_workflows_empty) else stringResource(R.string.library_workflows_no_match),
-            if (query.isBlank()) stringResource(R.string.library_workflows_empty_body) else stringResource(R.string.library_try_another_search)
+            if (query.isBlank()) stringResource(R.string.library_workflows_empty_body) else stringResource(R.string.library_try_another_search),
+            actionLabel = if (query.isBlank()) stringResource(R.string.library_new_workflow) else null,
+            onAction = if (query.isBlank()) onNewWorkflow else null
         )
         return
     }
@@ -450,9 +459,9 @@ private fun WorkflowCard(workflow: Workflow, onClick: () -> Unit, onEdit: () -> 
         Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode && !workflow.isBuiltIn) Checkbox(checked = selected, onCheckedChange = { onToggleSelected() })
             Column(Modifier.weight(1f)) {
-                Text(workflow.name, style = MaterialTheme.typography.titleSmall)
+                Text(workflow.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text(
-                    stringResource(R.string.library_workflow_steps, workflow.steps.size) + if (workflow.description.isNotBlank()) " · ${workflow.description}" else "",
+                    androidx.compose.ui.res.pluralStringResource(R.plurals.library_workflow_steps, workflow.steps.size, workflow.steps.size) + if (workflow.description.isNotBlank()) " · ${workflow.description}" else "",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
@@ -512,7 +521,7 @@ private fun SavedTab(
                     }
                     Column(Modifier.weight(1f)) {
                         Text(
-                            output.label.takeIf { it.isNotBlank() && !it.contains('-') } ?: stringResource(R.string.library_saved_output),
+                            output.displayTitle(stringResource(R.string.library_saved_output)),
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(

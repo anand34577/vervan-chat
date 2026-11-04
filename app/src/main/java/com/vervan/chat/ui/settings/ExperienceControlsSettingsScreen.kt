@@ -1,5 +1,11 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -47,21 +53,21 @@ fun ExperienceControlsSettingsScreen(
 ) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
-    val expertMode by vm.expertMode.collectAsState()
-    val contextLimit by vm.contextTokenLimit.collectAsState()
-    val responseLength by vm.responseLength.collectAsState()
-    val preferredBackend by vm.preferredBackend.collectAsState()
-    val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsState()
-    val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsState()
-    val fastCapableRoutingEnabled by vm.fastCapableRoutingEnabled.collectAsState()
+    val expertMode by vm.expertMode.collectAsStateWithLifecycle()
+    val contextLimit by vm.contextTokenLimit.collectAsStateWithLifecycle()
+    val responseLength by vm.responseLength.collectAsStateWithLifecycle()
+    val preferredBackend by vm.preferredBackend.collectAsStateWithLifecycle()
+    val deviceAwarePerformance by vm.deviceAwarePerformance.collectAsStateWithLifecycle()
+    val autoModelSelectionEnabled by vm.autoModelSelectionEnabled.collectAsStateWithLifecycle()
+    val fastCapableRoutingEnabled by vm.fastCapableRoutingEnabled.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Chat behavior") },
+                title = { Text(stringResource(R.string.experience_controls_settings_chat_behavior)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
             )
@@ -71,27 +77,20 @@ fun ExperienceControlsSettingsScreen(
             FeatureHero(
                 icon = Icons.Filled.Tune,
                 eyebrow = "Calm by default, powerful on demand",
-                title = "Shape how Vervan works",
-                body = "Keep the everyday experience simple, or expose more control over models, routing, and response behavior."
+                title = stringResource(R.string.experience_controls_settings_shape_how_vervan_works),
+                body = stringResource(R.string.experience_controls_settings_keep_the_everyday_experience_si),
+                modifier = Modifier.padding(bottom = Space.sm)
             )
-            SystemStatusStrip(
-                title = if (expertMode) "Expert mode active" else "Standard mode",
-                body = if (expertMode) {
-                    "Shows exact model, retrieval, context, and generation controls."
-                } else {
-                    "Shows recommended presets while preserving custom values."
-                },
-                tone = if (expertMode) StatusTone.Info else StatusTone.Ready
-            )
-
-            SectionLabel("Mode")
+            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_experience_controls_settings_mode))
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Expert mode") },
-                    supportingContent = { Text("Show advanced model and response controls.") },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    headlineContent = { Text(stringResource(R.string.experience_controls_settings_expert_mode)) },
+                    supportingContent = { Text(stringResource(R.string.experience_controls_settings_show_advanced_model_and_respons)) },
                     leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                     trailingContent = {
-                        Switch(
+                        com.vervan.chat.ui.common.LabeledSwitch(
+                            label = stringResource(R.string.experience_controls_settings_expert_mode),
                             checked = expertMode,
                             onCheckedChange = { enabled ->
                                 vm.setExpertMode(enabled)
@@ -103,27 +102,29 @@ fun ExperienceControlsSettingsScreen(
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Choose models automatically") },
-                    supportingContent = { Text("Selects a suitable installed model for each message. Turn off to choose one yourself.") },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.toggleable(value = autoModelSelectionEnabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::setAutoModelSelectionEnabled),
+                    headlineContent = { Text(stringResource(R.string.experience_controls_settings_choose_models_automatically)) },
+                    supportingContent = { Text(stringResource(R.string.experience_controls_settings_selects_a_suitable_installed_mo)) },
                     leadingContent = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
                     trailingContent = {
-                        Switch(checked = autoModelSelectionEnabled, onCheckedChange = vm::setAutoModelSelectionEnabled)
+                        Switch(checked = autoModelSelectionEnabled, onCheckedChange = null)
                     }
                 )
                 if (autoModelSelectionEnabled) {
                     androidx.compose.material3.HorizontalDivider()
                     ListItem(
-                        headlineContent = { Text("Route short/long messages differently") },
+                        colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        modifier = Modifier.toggleable(value = fastCapableRoutingEnabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::setFastCapableRoutingEnabled),
+                        headlineContent = { Text(stringResource(R.string.experience_controls_settings_route_short_long_messages_diffe)) },
                         supportingContent = {
                             Text(
-                                "For a chat left on Balanced, uses a smaller installed model for short messages " +
-                                    "and a larger one for long/complex ones. Switching models mid-conversation " +
-                                    "costs a brief reload."
+                                "Uses a smaller model for short messages and a larger one for long ones. Switching costs a brief reload."
                             )
                         },
                         leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
                         trailingContent = {
-                            Switch(checked = fastCapableRoutingEnabled, onCheckedChange = vm::setFastCapableRoutingEnabled)
+                            Switch(checked = fastCapableRoutingEnabled, onCheckedChange = null)
                         }
                     )
                 }
@@ -131,36 +132,38 @@ fun ExperienceControlsSettingsScreen(
 
             androidx.compose.material3.Card(Modifier.padding(top = Space.sm)) {
                 ListItem(
-                    headlineContent = { Text("Adapt to device conditions") },
-                    supportingContent = { Text("Reduces demand when Android reports low power or high heat.") },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.toggleable(value = deviceAwarePerformance, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = vm::setDeviceAwarePerformance),
+                    headlineContent = { Text(stringResource(R.string.experience_controls_settings_adapt_to_device_conditions)) },
+                    supportingContent = { Text(stringResource(R.string.experience_controls_settings_reduces_demand_when_android_rep)) },
                     leadingContent = { Icon(Icons.Filled.Speed, contentDescription = null) },
                     trailingContent = {
-                        Switch(checked = deviceAwarePerformance, onCheckedChange = vm::setDeviceAwarePerformance)
+                        Switch(checked = deviceAwarePerformance, onCheckedChange = null)
                     }
                 )
             }
 
-            SectionLabel("Current defaults")
+            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_experience_controls_settings_current_defaults))
             SettingsRow(Icons.Filled.Memory, "Context capacity", "$contextLimit tokens") {}
             SettingsRow(Icons.Filled.Speed, "Response length", responseLength.lowercase().replaceFirstChar { it.uppercase() }) {}
             SettingsRow(Icons.Filled.Tune, "Performance", preferredBackend.lowercase().replaceFirstChar { it.uppercase() }) {}
 
-            SectionLabel("More settings")
+            SectionLabel(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_experience_controls_settings_more_settings))
             SettingsRow(
                 Icons.Filled.Tune,
                 "Generation settings",
-                if (expertMode) "Sampling, context, and llama.cpp controls" else "Response style, length, and search",
+                if (expertMode) stringResource(R.string.experience_controls_settings_sampling_context_and_llama_cpp) else stringResource(R.string.experience_controls_settings_response_style_length_and_searc),
                 onOpenGeneration
             )
             SettingsRow(
                 Icons.Filled.Memory,
                 "Per-model settings",
-                if (expertMode) "Raw overrides for each installed model" else "Easy model-specific presets",
+                if (expertMode) stringResource(R.string.experience_controls_settings_raw_overrides_for_each_installe) else stringResource(R.string.experience_controls_settings_easy_model_specific_presets),
                 onOpenModels
             )
 
             Text(
-                "Custom values stay unchanged until you choose a new preset.",
+                stringResource(R.string.experience_controls_settings_custom_values_stay_unchanged_un),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.lg)

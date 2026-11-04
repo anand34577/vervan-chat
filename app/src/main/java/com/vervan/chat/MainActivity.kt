@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,25 +37,46 @@ import java.util.UUID
 class MainActivity : FragmentActivity() {
     private var intentVersion by mutableIntStateOf(0)
     private var incomingShare by mutableStateOf<IncomingShare?>(null)
-    private var hardwareShortcut by mutableStateOf<String?>(null)
+    // The shortcut waiting to be handled. Cleared (and stripped from the intent) once the nav graph
+    // acts on it, so a configuration change or process restore can't replay it and create a
+    // second chat/note.
+    private var pendingShortcut by mutableStateOf<String?>(null)
     private var shareIntentConsumed = false
+    private var shortcutConsumed = false
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Holds the system splash until Compose has drawn its first frame, then hands over to
+        // Theme.Vervan (see Theme.Vervan.Starting) without a blank window in between.
+        val splash = installSplashScreen()
+        var firstFrameReady = false
+        splash.setKeepOnScreenCondition { !firstFrameReady }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         shareIntentConsumed = savedInstanceState?.getBoolean(STATE_SHARE_CONSUMED) == true
         incomingShare = if (shareIntentConsumed) null else intent.toIncomingShare(contentResolver)
+        shortcutConsumed = savedInstanceState?.getBoolean(STATE_SHORTCUT_CONSUMED) == true
+        pendingShortcut = if (shortcutConsumed) null else extractShortcut(intent)
         val app = application as VervanApp
+        // DataStore is async, so the first frames used hard-coded defaults: a dark flash for
+        // light-theme users and, worse, the unlocked UI for a frame before app lock kicked in.
+        // A tiny synchronous mirror of those few values gives the first frame the right answer.
+        val mirror = getSharedPreferences(UI_MIRROR_PREFS, MODE_PRIVATE)
+        val initialTheme = runCatching { ThemeMode.valueOf(mirror.getString(KEY_THEME, null) ?: "") }.getOrDefault(ThemeMode.SYSTEM)
+        val initialLock = mirror.getBoolean(KEY_APP_LOCK, false)
+        if (initialLock) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
-            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.DARK)
+            val themeMode by app.container.settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = initialTheme)
             val fontScale by app.container.settingsRepository.fontScale.collectAsStateWithLifecycle(initialValue = 1.0f)
             val oledTrueBlack by app.container.settingsRepository.oledTrueBlack.collectAsStateWithLifecycle(initialValue = false)
             val dynamicColor by app.container.settingsRepository.dynamicColor.collectAsStateWithLifecycle(initialValue = false)
             val highContrast by app.container.settingsRepository.highContrast.collectAsStateWithLifecycle(initialValue = false)
             val largeTouchTargets by app.container.settingsRepository.largeTouchTargets.collectAsStateWithLifecycle(initialValue = false)
             val accentTheme by app.container.settingsRepository.accentTheme.collectAsStateWithLifecycle(initialValue = com.vervan.chat.data.settings.AccentTheme.GREEN)
-            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val appLockEnabled by app.container.settingsRepository.appLockEnabled.collectAsStateWithLifecycle(initialValue = initialLock)
+            LaunchedEffect(themeMode, appLockEnabled) {
+                mirror.edit().putString(KEY_THEME, themeMode.name).putBoolean(KEY_APP_LOCK, appLockEnabled).apply()
+            }
             val appLockMethodName by app.container.settingsRepository.appLockMethod.collectAsStateWithLifecycle(initialValue = "BIOMETRIC")
             val isLocked by app.container.appLockManager.isLocked.collectAsStateWithLifecycle()
             val screenshotBlockingEnabled by app.container.settingsRepository.screenshotBlockingEnabled.collectAsStateWithLifecycle(initialValue = false)
@@ -87,6 +109,7 @@ class MainActivity : FragmentActivity() {
                     isAppearanceLightNavigationBars = !darkTheme
                 }
             }
+            androidx.compose.runtime.SideEffect { firstFrameReady = true }
             val baseDensity = LocalDensity.current
             val windowSizeClass = calculateWindowSizeClass(this)
             VervanTheme(
@@ -118,8 +141,8 @@ class MainActivity : FragmentActivity() {
                                 app = app,
                                 incomingShare = incomingShare.takeUnless { appLockEnabled && isLocked },
                                 onShareConsumed = ::consumeShare,
-                                shortcut = (hardwareShortcut ?: extractShortcut(intent))
-                                    .takeUnless { appLockEnabled && isLocked },
+                                shortcut = pendingShortcut.takeUnless { appLockEnabled && isLocked },
+                                onShortcutConsumed = ::consumeShortcut,
                                 intentVersion = intentVersion,
                                 windowSizeClass = windowSizeClass
                             )
@@ -140,8 +163,9 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        hardwareShortcut = null
         shareIntentConsumed = false
+        shortcutConsumed = false
+        pendingShortcut = extractShortcut(intent)
         incomingShare = intent.toIncomingShare(contentResolver)
         intentVersion++
     }
@@ -155,7 +179,7 @@ class MainActivity : FragmentActivity() {
                 else -> null
             }
             if (shortcut != null) {
-                hardwareShortcut = shortcut
+                pendingShortcut = shortcut
                 intentVersion++
                 return true
             }
@@ -165,7 +189,14 @@ class MainActivity : FragmentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(STATE_SHARE_CONSUMED, shareIntentConsumed)
+        outState.putBoolean(STATE_SHORTCUT_CONSUMED, shortcutConsumed)
         super.onSaveInstanceState(outState)
+    }
+
+    private fun consumeShortcut() {
+        shortcutConsumed = true
+        pendingShortcut = null
+        intent?.removeExtra("vervan_shortcut")
     }
 
     private fun consumeShare() {
@@ -204,6 +235,10 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val STATE_SHARE_CONSUMED = "share_intent_consumed"
+        const val STATE_SHORTCUT_CONSUMED = "shortcut_consumed"
+        const val UI_MIRROR_PREFS = "vervan_ui_mirror"
+        const val KEY_THEME = "theme_mode"
+        const val KEY_APP_LOCK = "app_lock_enabled"
         val STATIC_SHORTCUTS = setOf("new_chat", "voice", "capture", "search", "settings")
     }
 }

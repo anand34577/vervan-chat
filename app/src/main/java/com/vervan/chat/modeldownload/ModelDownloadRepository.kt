@@ -116,7 +116,7 @@ class ModelDownloadRepository(
             }
         val busyKeys = activePackages.map { it.modelId to it.version }.toSet()
         val catalogUi = ModelCatalog.all
-            .filter { it.enabled && (it.modelId to it.version) !in busyKeys && (it.modelId to it.version) !in installedKeys }
+            .filter { it.runsOnThisDevice && (it.modelId to it.version) !in busyKeys && (it.modelId to it.version) !in installedKeys }
             .map { toNotDownloadedUiState(it) }
         downloadingUi + installedVoiceUi + catalogUi
     }
@@ -413,7 +413,16 @@ class ModelDownloadRepository(
                     validator.validateTflite(File(modelFile.tempPath))
                     files.firstOrNull { it.role == ModelFileRole.TOKENIZER }?.let { validator.validateSentencePieceTokenizer(File(it.tempPath)) }
                 }
-                ModelFormat.ONNX_TTS, ModelFormat.WHISPER_CPP -> {} // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
+                ModelFormat.ONNX_TTS, ModelFormat.WHISPER_CPP, ModelFormat.NEEDLE_CACT -> {}
+                // sha256 already proved each graph is the published file; just confirm the TFLite
+                // flatbuffer magic rather than building a 435 MB interpreter here.
+                ModelFormat.OMNI_SPEECH -> files.forEach { f ->
+                    val magic = ByteArray(4)
+                    java.io.RandomAccessFile(File(f.tempPath), "r").use { it.seek(4); it.readFully(magic) }
+                    if (String(magic, Charsets.US_ASCII) != "TFL3") {
+                        failFile(f.id, ModelDownloadException(ModelErrorCode.INVALID_MODEL_FILE, "${f.fileName} is not a TFLite graph"))
+                    }
+                } // no litertlm/tflite-specific check applies; validateFile() above already checked size/checksum
             }
         } catch (e: ModelDownloadException) {
             failFile(modelFile.id, e)
@@ -455,6 +464,9 @@ class ModelDownloadRepository(
             }
             modelDao.upsert(
                 installed.copy(
+                    // A fresh import is named after its file ("LFM3-Omni-2B_int8"); a downloaded
+                    // one takes the catalogue's name. A duplicate keeps any name the user chose.
+                    displayName = if (importResult is ImportResult.Success) catalog.displayName else installed.displayName,
                     origin = ModelOrigin.DOWNLOADED, catalogModelId = catalog.modelId,
                     catalogVersion = catalog.version, sourceUrl = catalog.sourceUrl
                 )

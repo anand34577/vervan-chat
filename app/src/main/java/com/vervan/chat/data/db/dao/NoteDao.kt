@@ -34,6 +34,10 @@ interface NoteDao : BaseDao<Note> {
     @Query("SELECT * FROM notes WHERE deletedAt IS NULL AND tags LIKE '%task%' ORDER BY updatedAt DESC")
     suspend fun getTaskNotes(): List<Note>
 
+    /** Removes a note that was created and left untouched — never user content. */
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun hardDelete(id: String)
+
     @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun purgeDeletedBefore(cutoff: Long)
 

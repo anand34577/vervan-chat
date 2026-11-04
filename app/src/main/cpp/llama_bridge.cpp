@@ -2,9 +2,8 @@
 // against a prebuilt libllama.so/libggml*.so (see CMakeLists.txt — this project does not build
 // llama.cpp itself, only links against the user's own separately-built output).
 //
-// VERSION-SENSITIVE API NOTE: this is written against a recent llama.cpp API surface and has
-// not been compiled against real headers (the native build wasn't finished when this was
-// written). The handful of call sites most likely to need adjusting for your exact checkout:
+// VERSION-SENSITIVE API NOTE: written against llama.cpp v0.8.0 (the revision CI pins in
+// .github/workflows/release.yml); verified with an NDK clang syntax check against those headers. The handful of call sites most likely to need adjusting for your exact checkout:
 //   - llama_model_load_from_file()   (older llama.cpp: llama_load_model_from_file)
 //   - llama_init_from_model()        (older llama.cpp: llama_new_context_with_model)
 //   - llama_get_memory()/llama_memory_seq_rm()  (older llama.cpp: llama_kv_cache_seq_rm(ctx,...) directly)
@@ -129,6 +128,10 @@ struct LlamaSession {
     // design; also lets nativeCloseModel() safely wait out an in-flight nativeGenerate() by
     // taking this same lock before freeing anything.
     std::mutex generate_mutex;
+    // Tokens currently held in the KV cache for sequence 0, in order (prompt + generated). Lets
+    // the next turn reuse the shared prefix instead of re-evaluating the whole conversation.
+    // Empty whenever the cache state is unknown (image turns, failures, recurrent models).
+    std::vector<llama_token> cached_tokens;
 };
 
 #ifndef VERVAN_GGML_BACKEND_DL
@@ -380,8 +383,10 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeLoadModel(
 
     llama_model_params modelParams = llama_model_default_params();
     modelParams.n_gpu_layers = nGpuLayers;
-    modelParams.use_mmap = useMmap;
-    modelParams.use_mlock = useMlock;
+    // llama.cpp v0.8 replaced the use_mmap/use_mlock booleans with a single load mode.
+    modelParams.load_mode = useMmap
+        ? (useMlock ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MMAP)
+        : (useMlock ? LLAMA_LOAD_MODE_MLOCK : LLAMA_LOAD_MODE_NONE);
     modelParams.main_gpu = vulkanDeviceIndex;
 
     // n_gpu_layers == 0 means the user asked for the CPU backend, but that alone does NOT keep
@@ -689,6 +694,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     if (sampler == nullptr) return fail("Could not create llama.cpp sampler");
     // Penalties before top-k/top-p per llama.cpp's own recommended ordering (see llama.h).
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(
+        llama_vocab_n_tokens(session->vocab),
         repeatLastN != 0 ? repeatLastN : 64, repeatPenalty > 0 ? repeatPenalty : 1.1f,
         /* penalty_freq */ 0.0f, /* penalty_present */ 0.0f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(topK > 0 ? topK : 40));
@@ -709,15 +715,36 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
     // longer has the seq_id it expects and hits GGML_ASSERT(cell.has_seq_id(seq_id)). This app
     // only ever uses a single sequence (id 0), so clearing it specifically is equivalent for
     // plain KV-cache models and fixes the crash for hybrid/recurrent ones.
-    llama_memory_seq_rm(llama_get_memory(session->ctx), 0, -1, -1);
+    // Prompt prefix cache. This app rebuilds the whole prompt each turn (persona + history +
+    // retrieved sources), but consecutive prompts almost always share a long prefix: the previous
+    // turn's prompt and reply. Keeping that prefix in the KV cache and only evaluating the new
+    // tail turns a multi-second re-read of the conversation into a few hundred tokens of work.
+    // Image turns, and models whose memory can't be partially rolled back (recurrent/hybrid —
+    // seq_rm reports false), fall back to a full clear exactly like before.
+    // Must target seq_id 0 explicitly, not -1 ("all sequences"): for recurrent/hybrid memory
+    // llama_memory_recurrent::seq_rm only resets its per-sequence `tail` on the seq_id>=0 path.
+    llama_memory_t memory = llama_get_memory(session->ctx);
+    auto clear_cache = [&]() {
+        llama_memory_seq_rm(memory, 0, -1, -1);
+        session->cached_tokens.clear();
+    };
     int32_t n_past = 0;
     bool ok = true;
+    // Any early return below leaves the KV cache in an unknown state; forget it so the next turn
+    // starts clean. Reset to true only once a turn completes.
+    bool cache_valid = false;
+    struct CacheGuard {
+        LlamaSession *session; llama_memory_t memory; bool *valid;
+        ~CacheGuard() { if (!*valid) { llama_memory_seq_rm(memory, 0, -1, -1); session->cached_tokens.clear(); } }
+    } cache_guard{session, memory, &cache_valid};
 
 #ifdef VERVAN_HAS_MTMD
     if (!imagePath.empty()) {
+        clear_cache();
         if (session->mtmd_ctx == nullptr) return fail("An image was supplied, but this model has no loaded vision projector");
         mtmd_helper_bitmap_wrapper wrapper =
-                mtmd_helper_bitmap_init_from_file(session->mtmd_ctx, imagePath.c_str(), /* placeholder */ false);
+                mtmd_helper_bitmap_init_from_file(session->mtmd_ctx, imagePath.c_str(), /* placeholder */ false,
+                                                  mtmd_helper_init_opt_default());
         if (wrapper.bitmap == nullptr) {
             set_last_error("Failed to load image: " + imagePath);
             ok = false;
@@ -783,7 +810,20 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
                         std::to_string(session->n_ctx) + ". Shorten the chat or increase context size.");
         }
 
-        int offset = 0;
+        // Longest common prefix with what's already in the KV cache. Always re-evaluate at least
+        // the final prompt token: sampling needs fresh logits for it.
+        size_t reuse = 0;
+        const size_t maxReuse = std::min(session->cached_tokens.size(), tokens.size() - 1);
+        while (reuse < maxReuse && session->cached_tokens[reuse] == tokens[reuse]) reuse++;
+        if (reuse > 0 && llama_memory_seq_rm(memory, 0, static_cast<llama_pos>(reuse), -1)) {
+            session->cached_tokens.resize(reuse);
+            LOGI("prompt cache: reusing %zu of %d prompt tokens", reuse, n_tokens);
+        } else {
+            reuse = 0;
+            clear_cache();
+        }
+
+        int offset = static_cast<int>(reuse);
         while (offset < n_tokens) {
             const int chunk = std::min<int>(static_cast<int>(session->n_batch), n_tokens - offset);
             llama_batch batch = llama_batch_init(chunk, 0, 1);
@@ -815,6 +855,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
             offset += chunk;
         }
         n_past = n_tokens;
+        session->cached_tokens.assign(tokens.begin(), tokens.end());
     }
 
     if (!ok) return fail(g_last_error.empty() ? "Failed to evaluate multimodal prompt" : g_last_error);
@@ -872,6 +913,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
                 set_last_error("llama_decode failed while injecting the reasoning-budget stop tag");
                 return false;
             }
+            if (imagePath.empty()) session->cached_tokens.push_back(t);
             n_past++;
         }
         return true;
@@ -914,6 +956,7 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
         }
         llama_batch_free(batch);
         if (decodeResult != 0) return fail("llama_decode failed mid-generation");
+        if (imagePath.empty()) session->cached_tokens.push_back(newToken);
 
         if (n > 0) {
             pendingUtf8.append(piece.data(), static_cast<size_t>(n));
@@ -945,6 +988,9 @@ Java_com_vervan_chat_llm_LlamaCppJni_nativeGenerate(
 
     llama_sampler_free(sampler);
     env->DeleteLocalRef(callbackClass);
+    // Text turns leave a cache the next turn can extend. Image turns don't: their KV holds
+    // image embeddings that cached_tokens can't describe.
+    cache_valid = imagePath.empty();
     return nullptr;
 }
 

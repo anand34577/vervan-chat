@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.folders
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -67,14 +68,14 @@ import com.vervan.chat.R
 fun FolderDetailScreen(folderId: String, onBack: () -> Unit, onOpenChat: (String) -> Unit, onOpenNote: (String) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: FolderDetailViewModel = viewModel(factory = viewModelFactory { initializer { FolderDetailViewModel(app, folderId) } })
-    val folder by vm.folder.collectAsState()
-    val chats by vm.chats.collectAsState()
-    val notes by vm.notes.collectAsState()
-    val personas by vm.personas.collectAsState()
-    val models by vm.models.collectAsState()
-    val knowledgeBases by vm.knowledgeBases.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val error by vm.error.collectAsState()
+    val folder by vm.folder.collectAsStateWithLifecycle()
+    val chats by vm.chats.collectAsStateWithLifecycle()
+    val notes by vm.notes.collectAsStateWithLifecycle()
+    val personas by vm.personas.collectAsStateWithLifecycle()
+    val models by vm.models.collectAsStateWithLifecycle()
+    val knowledgeBases by vm.knowledgeBases.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var renaming by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -214,7 +215,7 @@ private fun FlowChips(options: List<Pair<String, String?>>, selected: String?, o
         verticalArrangement = Arrangement.spacedBy(Space.xs)
     ) {
         options.forEach { (label, id) ->
-            VervanFilterChip(selected = selected == id, onClick = { onSelect(id) }, label = { Text(label, maxLines = 1) })
+            VervanFilterChip(selected = selected == id, onClick = { onSelect(id) }, label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) })
         }
     }
 }
@@ -232,7 +233,7 @@ private fun MultiSelectChips(options: List<Pair<String, String>>, selected: List
             VervanFilterChip(
                 selected = isSelected,
                 onClick = { onToggle(if (isSelected) selected - id else selected + id) },
-                label = { Text(label, maxLines = 1) }
+                label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
             )
         }
     }

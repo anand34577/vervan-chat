@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.templates
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,24 +54,25 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
     val vm: TemplateEditorViewModel = viewModel(factory = viewModelFactory {
         initializer { TemplateEditorViewModel(app, templateId) }
     })
-    val name by vm.name.collectAsState()
-    val description by vm.description.collectAsState()
-    val body by vm.body.collectAsState()
-    val isBuiltIn by vm.isBuiltIn.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val loadError by vm.loadError.collectAsState()
-    val recordFound by vm.recordFound.collectAsState()
+    val name by vm.name.collectAsStateWithLifecycle()
+    val description by vm.description.collectAsStateWithLifecycle()
+    val body by vm.body.collectAsStateWithLifecycle()
+    val isBuiltIn by vm.isBuiltIn.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val recordFound by vm.recordFound.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val guardedBack = com.vervan.chat.ui.common.rememberUnsavedChangesGuard(vm::hasUnsavedChanges, onBack)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (templateId == null) "New template" else "Edit template") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = guardedBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } },
                 actions = {
                     if (templateId != null && !isBuiltIn) {
-                        TextButton(onClick = { showDeleteConfirm = true }) { Text("Delete") }
+                        TextButton(onClick = { showDeleteConfirm = true }) { Text(stringResource(R.string.library_delete)) }
                     }
                 }
             )
@@ -77,48 +81,48 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         when {
             loadError != null -> OperationErrorCard(
-                title = "Template unavailable",
+                title = stringResource(R.string.template_editor_template_unavailable),
                 message = loadError.orEmpty(),
-                recovery = "Your other templates are safe. Retry the lookup or return to the library.",
-                actionLabel = "Retry",
+                recovery = stringResource(R.string.template_editor_your_other_templates_are_safe),
+                actionLabel = stringResource(R.string.action_retry),
                 onAction = vm::retryLoad,
                 modifier = Modifier.padding(Space.md)
             )
             isLoading -> LoadingSkeletonList(rows = 5, modifier = Modifier.padding(Space.md))
             templateId != null && !recordFound -> EmptyState(
                 icon = Icons.Filled.Description,
-                title = "Template not found",
-                body = "This template may have been deleted or moved to the recycle bin.",
-                actionLabel = "Back",
+                title = stringResource(R.string.template_editor_template_not_found),
+                body = stringResource(R.string.template_editor_this_template_may_have_been),
+                actionLabel = stringResource(R.string.action_back),
                 onAction = onBack
             )
             else -> Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(vertical = Space.lg)) {
             if (isBuiltIn) {
                 Text(
-                "Saving creates an editable copy. The built-in stays unchanged.",
+                stringResource(R.string.persona_copy_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             BoundedTextField(
-                value = name, onValueChange = vm::setName, label = "Slash-command name",
+                value = name, onValueChange = vm::setName, label = stringResource(R.string.template_editor_slash_command_name),
                 prefix = "/", maxLength = ValidationLimits.TEMPLATE_COMMAND_NAME, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             BoundedTextField(
-                value = description, onValueChange = vm::setDescription, label = "Description",
+                value = description, onValueChange = vm::setDescription, label = stringResource(R.string.workspace_description),
                 maxLength = ValidationLimits.TEMPLATE_DESCRIPTION,
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             BoundedTextField(
-                value = body, onValueChange = vm::setBody, label = "Template body",
+                value = body, onValueChange = vm::setBody, label = stringResource(R.string.template_editor_template_body),
                 maxLength = ValidationLimits.TEMPLATE_BODY, minLines = 5,
-                supportingText = "Use {{input}} where the text after the command should go",
+                supportingText = stringResource(R.string.template_editor_use_input_where_the_text),
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md)
             )
             if (name.isNotBlank()) {
                 Text(
-                    "Preview: /$name optional input",
+                    stringResource(R.string.template_editor_preview_arg1_optional_input, name),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.sm)
@@ -131,16 +135,16 @@ fun TemplateEditorScreen(templateId: String?, onBack: () -> Unit) {
                 enabled = withinLimits,
                 onClick = { scope.launch { if (vm.save()) onBack() } },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.action_save)) }
             }
         }
     }
     }
     if (showDeleteConfirm) {
         ConfirmDialog(
-            title = "Delete template?",
-            body = "\"/$name\" will move to the recycle bin and can be restored.",
-            confirmLabel = "Delete",
+            title = stringResource(R.string.template_editor_delete_template),
+            body = stringResource(R.string.template_editor_arg1_will_move_to_the, name),
+            confirmLabel = stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = { showDeleteConfirm = false; vm.delete(); onBack() },
             onDismiss = { showDeleteConfirm = false }

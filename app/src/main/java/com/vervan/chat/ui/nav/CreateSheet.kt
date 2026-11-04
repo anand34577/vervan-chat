@@ -31,6 +31,9 @@ data class CreateAction(
     val label: String,
     val description: String = "",
     val group: String = "Create",
+    /** Shown in the short "Quick start" view. A flag rather than a label match, so renaming or
+     * translating an action can't silently drop it from the quick view. */
+    val quick: Boolean = false,
     val onClick: () -> Unit
 )
 
@@ -40,14 +43,14 @@ data class CreateAction(
 @Composable
 fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: () -> Unit) {
     var showAll by rememberSaveable { mutableStateOf(false) }
-    val quickLabels = setOf("New chat", "New note", "Scan image", "Voice note")
-    val visibleActions = if (showAll) actions else actions.filter { it.label in quickLabels }
+    val visibleActions = if (showAll) actions else actions.filter { it.quick }
+    val quickStartLabel = androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.create_group_quick)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg).padding(bottom = Space.md)) {
-            Text("Create", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Space.xs))
+            Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.action_create), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Space.xs))
             Text(
-                if (showAll) "Choose what you want to create or import." else "Start with a common action.",
+                androidx.compose.ui.res.stringResource(if (showAll) com.vervan.chat.R.string.create_sheet_all_body else com.vervan.chat.R.string.create_sheet_quick_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -56,7 +59,7 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
             modifier = Modifier.fillMaxWidth().padding(horizontal = Space.sm).padding(bottom = Space.xxl),
             verticalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
-            visibleActions.groupBy { if (showAll) it.group else "Quick start" }.forEach { (group, groupedActions) ->
+            visibleActions.groupBy { if (showAll) it.group else quickStartLabel }.forEach { (group, groupedActions) ->
                 item(key = "group-$group") {
                     VervanSectionHeader(group, modifier = Modifier.padding(horizontal = Space.sm))
                 }
@@ -92,7 +95,7 @@ fun CreateSheet(sheetState: SheetState, actions: List<CreateAction>, onDismiss: 
                     onClick = { showAll = !showAll },
                     modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
                 ) {
-                    Text(if (showAll) "Show fewer actions" else "More create and import actions")
+                    Text(androidx.compose.ui.res.stringResource(if (showAll) com.vervan.chat.R.string.create_show_fewer else com.vervan.chat.R.string.create_show_more))
                 }
             }
         }

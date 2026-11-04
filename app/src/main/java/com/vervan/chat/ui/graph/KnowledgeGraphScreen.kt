@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.graph
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
@@ -72,12 +75,12 @@ import kotlin.math.sin
 fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) {
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: KnowledgeGraphViewModel = viewModel(factory = viewModelFactory { initializer { KnowledgeGraphViewModel(app) } })
-    val center by vm.center.collectAsState()
-    val neighbors by vm.neighbors.collectAsState()
-    val loading by vm.loading.collectAsState()
-    val canGoBack by vm.canGoBack.collectAsState()
-    val query by vm.query.collectAsState()
-    val searchResults by vm.searchResults.collectAsState()
+    val center by vm.center.collectAsStateWithLifecycle()
+    val neighbors by vm.neighbors.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val canGoBack by vm.canGoBack.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val searchResults by vm.searchResults.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -86,12 +89,12 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                     VervanSearchField(
                         value = query,
                         onValueChange = vm::setQuery,
-                        placeholder = "Jump to anything"
+                        placeholder = stringResource(R.string.knowledge_graph_jump_to_anything)
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = { if (canGoBack) vm.back() else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
             )
@@ -102,8 +105,8 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                 if (searchResults.isEmpty()) {
                     EmptyState(
                         icon = Icons.Filled.AutoAwesome,
-                        title = "No matches yet",
-                        body = "Try a shorter name or search for a workspace, chat, note, document, or memory."
+                        title = stringResource(R.string.knowledge_graph_no_matches_yet),
+                        body = stringResource(R.string.knowledge_graph_try_a_shorter_name_or)
                     )
                 } else {
                     PageContainer(Modifier.fillMaxSize(), maxContentWidth = 840.dp) {
@@ -111,7 +114,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                             Modifier.fillMaxSize().padding(vertical = Space.sm),
                             colors = SurfaceRole.Card.cardColors(),
                             border = SurfaceRole.Card.border(),
-                            shape = MaterialTheme.shapes.extraLarge
+                            shape = MaterialTheme.shapes.large
                         ) {
                             LazyColumn {
                                 items(searchResults, key = { it.type.name + it.id }) { node ->
@@ -138,7 +141,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                                         }
                                         Icon(
                                             Icons.AutoMirrored.Filled.OpenInNew,
-                                            contentDescription = "Open ${node.label}",
+                                            contentDescription = stringResource(R.string.knowledge_graph_open_arg1, node.label),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -149,7 +152,7 @@ fun KnowledgeGraphScreen(onBack: () -> Unit, onOpenEntity: (GraphNode) -> Unit) 
                     }
                 }
             } else if (center == null) {
-                EmptyState(icon = Icons.Filled.AutoAwesome, title = "Nothing to graph yet", body = "Create a workspace, chat, or note to see connections here.")
+                EmptyState(icon = Icons.Filled.AutoAwesome, title = stringResource(R.string.knowledge_graph_nothing_to_graph_yet), body = stringResource(R.string.knowledge_graph_create_a_workspace_chat_or))
             } else {
                 GraphCanvas(
                     center = center!!,
@@ -200,10 +203,10 @@ private fun GraphCanvas(
             modifier = Modifier.align(Alignment.TopStart).padding(Space.lg),
             colors = SurfaceRole.Card.cardColors(),
             border = SurfaceRole.Card.border(),
-            shape = MaterialTheme.shapes.extraLarge
+            shape = MaterialTheme.shapes.large
         ) {
             Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
-                Text("Connected context", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.knowledge_graph_connected_context), style = MaterialTheme.typography.titleSmall)
                 Text(
                     "${neighbors.size} connection${if (neighbors.size == 1) "" else "s"} around ${center.label}",
                     style = MaterialTheme.typography.labelSmall,
@@ -224,7 +227,7 @@ private fun GraphCanvas(
                     x = (centerOffset.x - 70.dp.toPx() / 2).toDp(),
                     y = (centerOffset.y - 24.dp.toPx()).toDp()
                 ),
-                trailingAction = { IconButton(onClick = { onOpenEntity(center) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open") } }
+                trailingAction = { IconButton(onClick = { onOpenEntity(center) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.action_open)) } }
             )
             positions.forEach { (edge, pos) ->
                 Column(
@@ -251,7 +254,7 @@ private fun GraphCanvas(
         }
         if (!loading && neighbors.isEmpty()) {
             Text(
-                "No connections found for this item yet.",
+                stringResource(R.string.knowledge_graph_no_connections_found_for_this),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.offset(y = 8.dp).padding(Space.lg)
@@ -275,7 +278,7 @@ private fun NodeChip(
             containerColor = if (emphasized) nodeColor(node.type).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         border = if (emphasized) BorderStroke(1.dp, nodeColor(node.type).copy(alpha = 0.58f)) else SurfaceRole.Raised.border(),
-        shape = if (emphasized) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large
+        shape = MaterialTheme.shapes.large
     ) {
         Row(Modifier.padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = CircleShape, color = nodeColor(node.type).copy(alpha = 0.25f)) {

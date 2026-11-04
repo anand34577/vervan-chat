@@ -1,0 +1,7 @@
+# Shell scripts run on Linux CI runners; CRLF line endings break them.
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.so binary
+*.aar binary
+*.ttf binary

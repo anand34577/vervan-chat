@@ -1,5 +1,10 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -99,23 +104,29 @@ private fun localLanAddress(): String? = runCatching {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApiServerScreen(onBack: () -> Unit) {
+    val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
-    val enabled by vm.apiServerEnabled.collectAsState()
-    val port by vm.apiServerPort.collectAsState()
-    val requireAuth by vm.apiServerRequireAuth.collectAsState()
-    val fullMode by vm.apiServerFullMode.collectAsState()
-    val autoStart by vm.apiServerAutoStart.collectAsState()
-    val entries by app.container.networkAuditLog.entries.collectAsState()
-    val clients by app.container.apiClientRegistry.clients.collectAsState()
+    val enabled by vm.apiServerEnabled.collectAsStateWithLifecycle()
+    val running by com.vervan.chat.server.ApiServerService.running.collectAsStateWithLifecycle()
+    // Switched on, but no socket open: the app was closed with "Start automatically" off, the
+    // port was taken, or Android refused the foreground service.
+    val stalled = enabled && !running
+    val port by vm.apiServerPort.collectAsStateWithLifecycle()
+    val requireAuth by vm.apiServerRequireAuth.collectAsStateWithLifecycle()
+    val fullMode by vm.apiServerFullMode.collectAsStateWithLifecycle()
+    val autoStart by vm.apiServerAutoStart.collectAsStateWithLifecycle()
+    val lanAccess by vm.apiServerLanAccess.collectAsStateWithLifecycle()
+    val entries by app.container.networkAuditLog.entries.collectAsStateWithLifecycle()
+    val clients by app.container.apiClientRegistry.clients.collectAsStateWithLifecycle()
     val requestCount = entries.count { it.reason.startsWith("Local API request") }
 
-    val modelTtl by vm.apiModelTtlSeconds.collectAsState()
-    val appTools by vm.apiServerAppTools.collectAsState()
-    val allowWriteTools by vm.apiServerAllowWriteTools.collectAsState()
+    val modelTtl by vm.apiModelTtlSeconds.collectAsStateWithLifecycle()
+    val appTools by vm.apiServerAppTools.collectAsStateWithLifecycle()
+    val allowWriteTools by vm.apiServerAllowWriteTools.collectAsStateWithLifecycle()
     var portText by remember(port) { mutableStateOf(port.toString()) }
     var ttlText by remember(modelTtl) { mutableStateOf(modelTtl.toString()) }
     var portError by remember { mutableStateOf<String?>(null) }
@@ -129,8 +140,8 @@ fun ApiServerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Local API server") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Text(stringResource(R.string.security_local_api)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
         }
     ) { padding ->
@@ -140,17 +151,17 @@ fun ApiServerScreen(onBack: () -> Unit) {
         // Full web app mode exposes app data (chats, documents, attachments), not just inference,
         // so running it without a key is worth flagging harder than the inference-only case — but
         // the key stays the user's choice either way.
-        val lanRisk = enabled && !requireAuth
+        val lanRisk = enabled && lanAccess && !requireAuth
         val fullModeWithoutKey = enabled && fullMode && !requireAuth
         val statusTone = when {
-            !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+            !enabled || stalled -> MaterialTheme.colorScheme.onSurfaceVariant
             lanRisk -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.primary
         }
 
         ScrollablePage(padding) {
             Text(
-                "Let local apps use the active model through OpenAI-compatible endpoints.",
+                stringResource(R.string.api_server_let_local_apps_use_the),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Space.md)
@@ -168,23 +179,33 @@ fun ApiServerScreen(onBack: () -> Unit) {
             ) {
                 Column(Modifier.padding(Space.lg)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(active = enabled, tone = statusTone)
+                        StatusDot(active = running, tone = statusTone)
                         Column(Modifier.weight(1f).padding(start = Space.md)) {
                             Text(
-                                "Server",
+                                stringResource(R.string.api_server_server),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                if (enabled) "Listening on port $port" else "Not running",
+                                when {
+                                    running -> stringResource(R.string.api_server_listening_on_port_arg1, port)
+                                    stalled -> stringResource(R.string.api_server_stalled)
+                                    else -> stringResource(R.string.api_server_not_running)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = enabled, onCheckedChange = { vm.setApiServerEnabled(it) })
+                        com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.api_server_server), checked = enabled, onCheckedChange = { vm.setApiServerEnabled(it) })
                     }
-                    AnimatedVisibility(visible = enabled, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    if (stalled) {
+                        androidx.compose.material3.Button(
+                            onClick = { com.vervan.chat.server.ApiServerService.start(app) },
+                            modifier = Modifier.padding(top = Space.md)
+                        ) { Text(stringResource(R.string.api_server_start_now)) }
+                    }
+                    AnimatedVisibility(visible = running, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                         Column(Modifier.padding(top = Space.md)) {
                             if (lanRisk) {
                                 StatusLine(
@@ -196,8 +217,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
                             val lanAddress = remember { localLanAddress() }
                             StatusLine(
                                 Icons.Filled.Wifi,
-                                if (lanAddress != null) "From another device: http://$lanAddress:$port/"
-                                else "From another device: http://<this device's LAN IP>:$port/",
+                                when {
+                                    !lanAccess -> stringResource(R.string.api_server_only_apps_on_this_phone, port)
+                                    lanAddress != null -> stringResource(R.string.api_server_from_another_device_http_arg1, lanAddress, port)
+                                    else -> stringResource(R.string.api_server_from_another_device_http_this, port)
+                                },
                                 if (lanRisk) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             // A one-time ?token= query param saves the user from copy-pasting the
@@ -215,7 +239,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                                 modifier = Modifier.padding(top = Space.sm)
                             ) {
                                 Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Open web UI", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.api_server_open_web_ui), modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                     }
@@ -223,9 +247,24 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Start automatically",
+                title = stringResource(R.string.api_server_allow_other_devices_on_this),
+                icon = Icons.Filled.Wifi,
+                trailing = { com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.api_server_allow_other_devices_on_this), checked = lanAccess, onCheckedChange = { vm.setApiServerLanAccess(it) }) }
+            ) {
+                Text(
+                    if (lanAccess)
+                        "Computers and phones on the same network can connect. Keep the API key on, and avoid public Wi-Fi."
+                    else
+                        "Only apps on this phone can connect. Turn this on to use Vervan from your computer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            ApiSection(
+                title = stringResource(R.string.api_server_start_automatically),
                 icon = Icons.Filled.RestartAlt,
-                trailing = { Switch(checked = autoStart, onCheckedChange = { vm.setApiServerAutoStart(it) }) }
+                trailing = { com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.api_server_start_automatically), checked = autoStart, onCheckedChange = { vm.setApiServerAutoStart(it) }) }
             ) {
                 Text(
                     if (autoStart)
@@ -241,9 +280,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Web app mode",
+                title = stringResource(R.string.api_server_web_app_mode),
                 icon = Icons.Filled.Language,
-                trailing = { Switch(checked = fullMode, onCheckedChange = { vm.setApiServerFullMode(it) }) }
+                trailing = { com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.api_server_web_app_mode), checked = fullMode, onCheckedChange = { vm.setApiServerFullMode(it) }) }
             ) {
                 Text(
                     if (fullMode)
@@ -275,19 +314,19 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 }
             }
 
-            ApiSection(title = "Server configuration", icon = Icons.Filled.Router) {
+            ApiSection(title = stringResource(R.string.api_server_server_configuration), icon = Icons.Filled.Router) {
                 OutlinedTextField(
                     value = portText,
                     onValueChange = { text ->
                         portText = text.filter(Char::isDigit).take(5)
                         portError = when {
                             portText.isBlank() -> null
-                            portText.toIntOrNull() !in 1024..65535 -> "Port must be between 1024 and 65535"
+                            portText.toIntOrNull() !in 1024..65535 -> localResources.getString(R.string.api_server_port_must_be_between_1024)
                             else -> null
                         }
                         portText.toIntOrNull()?.let { if (it in 1024..65535) vm.setApiServerPort(it) }
                     },
-                    label = { Text("Port") },
+                    label = { Text(stringResource(R.string.api_server_port)) },
                     isError = portError != null,
                     supportingText = portError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -300,7 +339,7 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        "Model idle timeout (TTL)",
+                        stringResource(R.string.api_server_model_idle_timeout_ttl),
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.padding(start = Space.xs)
                     )
@@ -320,12 +359,12 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         ttlText = text.filter(Char::isDigit).take(5)
                         ttlError = when {
                             ttlText.isBlank() -> null
-                            ttlText.toIntOrNull() !in 0..86_400 -> "TTL must be between 0 and 86400 seconds"
+                            ttlText.toIntOrNull() !in 0..86_400 -> localResources.getString(R.string.api_server_ttl_must_be_between_0)
                             else -> null
                         }
                         ttlText.toIntOrNull()?.let { if (it in 0..86_400) vm.setApiModelTtlSeconds(it) }
                     },
-                    suffix = { Text("seconds") },
+                    suffix = { Text(stringResource(R.string.api_server_seconds_suffix)) },
                     isError = ttlError != null,
                     supportingText = ttlError?.let { { Text(it) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -339,9 +378,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
             // included. In the app a tool call is a card the user sees and can approve; an API
             // request has no such moment, which is why both default to off.
             ApiSection(
-                title = "Let API clients use this device's tools",
+                title = stringResource(R.string.api_server_let_api_clients_use_this),
                 icon = Icons.Filled.Build,
-                trailing = { Switch(checked = appTools, onCheckedChange = { vm.setApiServerAppTools(it) }) }
+                trailing = { com.vervan.chat.ui.common.LabeledSwitch(stringResource(R.string.api_server_let_api_clients_use_this), checked = appTools, onCheckedChange = { vm.setApiServerAppTools(it) }) }
             ) {
                 Text(
                     "Off: an API client can still declare its own tools and run them itself — that never " +
@@ -352,13 +391,13 @@ fun ApiServerScreen(onBack: () -> Unit) {
                 )
                 AnimatedVisibility(visible = appTools, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                     Column(Modifier.padding(top = Space.md)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().toggleable(value = allowWriteTools, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { vm.setApiServerAllowWriteTools(it) }).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Include tools that write or open apps",
+                                stringResource(R.string.api_server_include_tools_that_write_or),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f)
                             )
-                            Switch(checked = allowWriteTools, onCheckedChange = { vm.setApiServerAllowWriteTools(it) })
+                            Switch(checked = allowWriteTools, onCheckedChange = null)
                         }
                         Text(
                             "Without this, only read-only tools run for an API request. With it, a remote " +
@@ -373,10 +412,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
             }
 
             ApiSection(
-                title = "Require an API key",
+                title = stringResource(R.string.api_server_require_an_api_key),
                 icon = if (requireAuth) Icons.Filled.Lock else Icons.Filled.LockOpen,
                 trailing = {
-                    Switch(
+                    com.vervan.chat.ui.common.LabeledSwitch(
+                        label = stringResource(R.string.api_server_require_an_api_key),
                         checked = requireAuth,
                         onCheckedChange = {
                             vm.setApiServerRequireAuth(it)
@@ -407,11 +447,11 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                             OutlinedButton(onClick = { clipboard.setSensitiveText(token, scope) }) {
                                 Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Text("Copy", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.xs))
                             }
                             OutlinedButton(onClick = { confirmRegenerate = true }) {
                                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Text("Regenerate", modifier = Modifier.padding(start = Space.xs))
+                                Text(stringResource(R.string.chat_regenerate), modifier = Modifier.padding(start = Space.xs))
                             }
                         }
                     }
@@ -428,9 +468,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)
                     )
                     Column(Modifier.padding(start = Space.md)) {
-                        Text("Requests this session: $requestCount", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.api_server_requests_this_session_arg1, requestCount), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "View requests in Settings → Storage & backup → Diagnostics.",
+                            stringResource(R.string.api_server_view_requests_in_settings_storage),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -442,18 +482,18 @@ fun ApiServerScreen(onBack: () -> Unit) {
             // happened; this says where from — which is the part worth acting on when the server is
             // reachable over the network with no key.
             ApiSection(
-                title = "Connected clients",
+                title = stringResource(R.string.api_server_connected_clients),
                 icon = Icons.Filled.Devices,
                 trailing = {
                     if (clients.isNotEmpty()) {
-                        OutlinedButton(onClick = { app.container.apiClientRegistry.clear() }) { Text("Clear") }
+                        OutlinedButton(onClick = { app.container.apiClientRegistry.clear() }) { Text(stringResource(R.string.action_clear)) }
                     }
                 }
             ) {
                 if (clients.isEmpty()) {
                     Text(
                         if (enabled) "Nothing has connected yet this session."
-                        else "The server is off, so nothing can connect.",
+                        else stringResource(R.string.api_server_the_server_is_off_so),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -473,9 +513,9 @@ fun ApiServerScreen(onBack: () -> Unit) {
 
     if (confirmRegenerate) {
         ConfirmDialog(
-            title = "Regenerate API key?",
-            body = "The current key stops working now. Update it in every connected app.",
-            confirmLabel = "Regenerate",
+            title = stringResource(R.string.api_server_regenerate_api_key),
+            body = stringResource(R.string.api_server_the_current_key_stops_working),
+            confirmLabel = stringResource(R.string.chat_regenerate),
             destructive = true,
             onConfirm = { token = vm.regenerateApiServerToken(); confirmRegenerate = false },
             onDismiss = { confirmRegenerate = false }
@@ -516,7 +556,7 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
                     modifier = Modifier.weight(1f).padding(start = Space.sm)
                 )
                 Text(
-                    if (client.isLocal) "This device" else "Network",
+                    if (client.isLocal) stringResource(R.string.api_server_this_device) else stringResource(R.string.api_server_network),
                     style = MaterialTheme.typography.labelSmall,
                     color = tone
                 )
@@ -545,8 +585,8 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
                     when {
                         client.unauthorizedCount > 0 && !client.authenticated ->
                             "Rejected ${client.unauthorizedCount} time${if (client.unauthorizedCount == 1) "" else "s"} — wrong or missing key"
-                        client.unauthorizedCount > 0 -> "Signed in (${client.unauthorizedCount} earlier attempt rejected)"
-                        else -> "Signed in with the API key"
+                        client.unauthorizedCount > 0 -> stringResource(R.string.api_server_signed_in_arg1_earlier_attempt, client.unauthorizedCount)
+                        else -> stringResource(R.string.api_server_signed_in_with_the_api)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (client.authenticated) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
@@ -558,13 +598,14 @@ private fun ConnectedClientRow(client: com.vervan.chat.server.ApiClientInfo, req
 }
 
 /** Coarse "how long ago", matching the phrasing the web UI's own chat list uses. */
+@androidx.compose.runtime.Composable
 private fun relativeSince(timestamp: Long): String {
     val minutes = ((System.currentTimeMillis() - timestamp) / 60_000L).coerceAtLeast(0)
     return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}m ago"
-        minutes < 1440 -> "${minutes / 60}h ago"
-        else -> "${minutes / 1440}d ago"
+        minutes < 1 -> stringResource(R.string.api_server_just_now)
+        minutes < 60 -> stringResource(R.string.api_server_arg1_m_ago, minutes)
+        minutes < 1440 -> stringResource(R.string.api_server_arg1_h_ago, minutes / 60)
+        else -> stringResource(R.string.api_server_arg1_d_ago, minutes / 1440)
     }
 }
 

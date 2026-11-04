@@ -1,5 +1,10 @@
 package com.vervan.chat.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -32,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,40 +53,40 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
     val app = LocalContext.current.applicationContext as VervanApp
     val vm: SettingsViewModel = viewModel(factory = viewModelFactory { initializer { SettingsViewModel(app) } })
 
-    val ttsEnginePreference by vm.ttsEnginePreference.collectAsState()
-    val bargeInEnabled by vm.bargeInEnabled.collectAsState()
-    val inbuiltSttEnabled by vm.inbuiltSttEnabled.collectAsState()
-    val modelAudioSttEnabled by vm.modelAudioSttEnabled.collectAsState()
-    val androidSttEnabled by vm.androidSttEnabled.collectAsState()
-    val sttEnginePreference by vm.sttEnginePreference.collectAsState()
-    val sttFallbackEnabled by vm.sttFallbackEnabled.collectAsState()
-    val whisperGpuEnabled by vm.whisperGpuEnabled.collectAsState()
-    val downloadedVoiceModels by vm.downloadedVoiceModels.collectAsState()
-    val activeVoiceDownloadJobs by vm.activeVoiceDownloadJobs.collectAsState()
-    val speechInputEnabled by vm.speechInputEnabled.collectAsState()
-    val voiceReplyMode by vm.voiceReplyMode.collectAsState()
-    val voiceInputMethod by vm.voiceInputMethod.collectAsState()
-    val transcriptReviewEnabled by vm.transcriptReviewEnabled.collectAsState()
-    val handsFreeAutoSend by vm.handsFreeAutoSend.collectAsState()
-    val continueListening by vm.continueListening.collectAsState()
-    val headphonesOnlyPlayback by vm.headphonesOnlyPlayback.collectAsState()
-    val headphonePrivacyPause by vm.headphonePrivacyPause.collectAsState()
-    val voiceInputLanguage by vm.voiceInputLanguage.collectAsState()
-    val vadSensitivity by vm.vadSensitivity.collectAsState()
-    val voiceSilenceDurationMs by vm.voiceSilenceDurationMs.collectAsState()
-    val maxUtteranceSeconds by vm.maxUtteranceSeconds.collectAsState()
-    val storeVoiceRecordings by vm.storeVoiceRecordings.collectAsState()
-    val voiceSpeechRate by vm.voiceSpeechRate.collectAsState()
-    val voiceSpeechPitch by vm.voiceSpeechPitch.collectAsState()
-    val readCodeMode by vm.readCodeMode.collectAsState()
-    val readTableMode by vm.readTableMode.collectAsState()
-    val longResponseVoiceMode by vm.longResponseVoiceMode.collectAsState()
-    val backgroundVoiceEnabled by vm.backgroundVoiceEnabled.collectAsState()
-    val voiceBatterySaver by vm.voiceBatterySaver.collectAsState()
-    val transcriptRetentionEnabled by vm.transcriptRetentionEnabled.collectAsState()
-    val recordingRetentionMode by vm.recordingRetentionMode.collectAsState()
-    val activeGenerationModel by vm.activeGenerationModel.collectAsState()
-    val voiceQualityPreset by vm.voiceQualityPreset.collectAsState()
+    val ttsEnginePreference by vm.ttsEnginePreference.collectAsStateWithLifecycle()
+    val bargeInEnabled by vm.bargeInEnabled.collectAsStateWithLifecycle()
+    val inbuiltSttEnabled by vm.inbuiltSttEnabled.collectAsStateWithLifecycle()
+    val modelAudioSttEnabled by vm.modelAudioSttEnabled.collectAsStateWithLifecycle()
+    val androidSttEnabled by vm.androidSttEnabled.collectAsStateWithLifecycle()
+    val sttEnginePreference by vm.sttEnginePreference.collectAsStateWithLifecycle()
+    val sttFallbackEnabled by vm.sttFallbackEnabled.collectAsStateWithLifecycle()
+    val whisperGpuEnabled by vm.whisperGpuEnabled.collectAsStateWithLifecycle()
+    val downloadedVoiceModels by vm.downloadedVoiceModels.collectAsStateWithLifecycle()
+    val activeVoiceDownloadJobs by vm.activeVoiceDownloadJobs.collectAsStateWithLifecycle()
+    val speechInputEnabled by vm.speechInputEnabled.collectAsStateWithLifecycle()
+    val voiceReplyMode by vm.voiceReplyMode.collectAsStateWithLifecycle()
+    val voiceInputMethod by vm.voiceInputMethod.collectAsStateWithLifecycle()
+    val transcriptReviewEnabled by vm.transcriptReviewEnabled.collectAsStateWithLifecycle()
+    val handsFreeAutoSend by vm.handsFreeAutoSend.collectAsStateWithLifecycle()
+    val continueListening by vm.continueListening.collectAsStateWithLifecycle()
+    val headphonesOnlyPlayback by vm.headphonesOnlyPlayback.collectAsStateWithLifecycle()
+    val headphonePrivacyPause by vm.headphonePrivacyPause.collectAsStateWithLifecycle()
+    val voiceInputLanguage by vm.voiceInputLanguage.collectAsStateWithLifecycle()
+    val vadSensitivity by vm.vadSensitivity.collectAsStateWithLifecycle()
+    val voiceSilenceDurationMs by vm.voiceSilenceDurationMs.collectAsStateWithLifecycle()
+    val maxUtteranceSeconds by vm.maxUtteranceSeconds.collectAsStateWithLifecycle()
+    val storeVoiceRecordings by vm.storeVoiceRecordings.collectAsStateWithLifecycle()
+    val voiceSpeechRate by vm.voiceSpeechRate.collectAsStateWithLifecycle()
+    val voiceSpeechPitch by vm.voiceSpeechPitch.collectAsStateWithLifecycle()
+    val readCodeMode by vm.readCodeMode.collectAsStateWithLifecycle()
+    val readTableMode by vm.readTableMode.collectAsStateWithLifecycle()
+    val longResponseVoiceMode by vm.longResponseVoiceMode.collectAsStateWithLifecycle()
+    val backgroundVoiceEnabled by vm.backgroundVoiceEnabled.collectAsStateWithLifecycle()
+    val voiceBatterySaver by vm.voiceBatterySaver.collectAsStateWithLifecycle()
+    val transcriptRetentionEnabled by vm.transcriptRetentionEnabled.collectAsStateWithLifecycle()
+    val recordingRetentionMode by vm.recordingRetentionMode.collectAsStateWithLifecycle()
+    val activeGenerationModel by vm.activeGenerationModel.collectAsStateWithLifecycle()
+    val voiceQualityPreset by vm.voiceQualityPreset.collectAsStateWithLifecycle()
     val androidRecognizerAvailable = remember {
         com.vervan.chat.voice.AndroidSystemSttRecognizer.isAvailable(app)
     }
@@ -88,9 +94,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Voice & speech") },
+                title = { Text(stringResource(R.string.voice_settings_voice_speech)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
                 }
             )
         }
@@ -99,23 +105,23 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             FeatureHero(
                 icon = Icons.Filled.GraphicEq,
                 eyebrow = "Natural conversation",
-                title = "Tune listening and speaking",
-                body = "Choose how Vervan hears, responds, plays speech, and protects your voice data."
+                title = stringResource(R.string.voice_settings_tune_listening_and_speaking),
+                body = stringResource(R.string.voice_settings_choose_how_vervan_hears_responds)
             )
             VoiceSettingsHeading("Voice quality")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     VoiceChoiceChips(
-                        title = "How should Vervan sound and listen?",
+                        title = stringResource(R.string.voice_settings_how_should_vervan_sound_and),
                         value = voiceQualityPreset,
                         choices = listOf("FAST" to "Fast", "BALANCED" to "Balanced", "BEST" to "Best"),
                         onSelect = vm::setVoiceQualityPreset
                     )
                     Text(
                         when (voiceQualityPreset) {
-                            "FAST" -> "Quickest replies. Skips the slower whisper.cpp transcriber; uses the default Piper voice."
-                            "BEST" -> "Highest quality voice (Kokoro or Supertonic, once downloaded) and drops the lower-accuracy Android fallback for speech input."
-                            else -> "The default balance of speed and accuracy for both listening and replying."
+                            "FAST" -> stringResource(R.string.voice_settings_quickest_replies_skips_the_slower)
+                            "BEST" -> stringResource(R.string.voice_settings_highest_quality_voice_kokoro_or)
+                            else -> stringResource(R.string.voice_settings_the_default_balance_of_speed)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -129,13 +135,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                 Column(Modifier.padding(Space.lg)) {
             VoiceToggleRow("Speech input", "Use dictation, push-to-talk, and hands-free listening.", speechInputEnabled, vm::setSpeechInputEnabled)
                     VoiceChoiceChips(
-                        title = "Input method",
+                        title = stringResource(R.string.voice_settings_input_method),
                         value = voiceInputMethod,
                         choices = listOf("DICTATION" to "Dictation", "PUSH_TO_TALK" to "Push-to-talk", "HANDS_FREE" to "Hands-free"),
                         onSelect = vm::setVoiceInputMethod
                     )
                     VoiceChoiceChips(
-                        title = "Voice replies",
+                        title = stringResource(R.string.voice_replies),
                         value = voiceReplyMode,
                         choices = listOf("NEVER" to "Off", "MANUAL" to "Manual", "AUTOMATIC" to "Automatic", "HANDS_FREE" to "Hands-free"),
                         onSelect = vm::setVoiceReplyMode
@@ -149,7 +155,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
                     VoiceChoiceChips(
-                        title = "Language",
+                        title = stringResource(R.string.voice_settings_language),
                         value = voiceInputLanguage,
                         choices = listOf("AUTO" to "Auto", "EN" to "English", "HI" to "Hindi", "MULTI" to "Multilingual"),
                         onSelect = vm::setVoiceInputLanguage
@@ -212,7 +218,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         vm::setRecordingRetentionMode
                     )
                     Text(
-                        "Active-model and whisper.cpp recognition stay on-device. Android speech may use the device's installed service.",
+                        stringResource(R.string.voice_settings_active_model_and_whisper_cpp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = Space.md)
@@ -223,9 +229,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
             VoiceSettingsHeading("Advanced: engines")
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Realtime voice chat engine", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.voice_settings_realtime_voice_chat_engine), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Auto uses Piper. Choose Kokoro for higher quality with slower playback, or Supertonic for a 31-language voice (largest download, slowest).",
+                        stringResource(R.string.voice_settings_auto_uses_piper_choose_kokoro),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val kokoroDownloaded = downloadedVoiceModels.any { it.engine == "KOKORO" && it.language == "multi" && it.isReady }
@@ -235,36 +241,57 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
                         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
                     ) {
-                        FilterChip(
+                        com.vervan.chat.ui.common.VervanFilterChip(
                             selected = ttsEnginePreference == "AUTO",
                             onClick = { vm.setTtsEnginePreference("AUTO") },
-                            label = { Text("Auto (Piper)") }
+                            label = { Text(stringResource(R.string.voice_settings_auto_piper)) }
                         )
-                        FilterChip(
+                        com.vervan.chat.ui.common.VervanFilterChip(
                             selected = ttsEnginePreference == "KOKORO",
                             onClick = { vm.setTtsEnginePreference("KOKORO") },
                             enabled = kokoroDownloaded,
-                            label = { Text(if (kokoroDownloaded) "Kokoro" else "Kokoro (download below)") }
+                            label = { Text(if (kokoroDownloaded) stringResource(R.string.voice_settings_kokoro) else stringResource(R.string.voice_settings_kokoro_download_below)) }
                         )
-                        FilterChip(
+                        com.vervan.chat.ui.common.VervanFilterChip(
                             selected = ttsEnginePreference == "SUPERTONIC",
                             onClick = { vm.setTtsEnginePreference("SUPERTONIC") },
                             enabled = supertonicDownloaded,
-                            label = { Text(if (supertonicDownloaded) "Supertonic" else "Supertonic (download in Model Manager)") }
+                            label = { Text(if (supertonicDownloaded) stringResource(R.string.voice_settings_supertonic) else stringResource(R.string.voice_settings_supertonic_download_in_model_manager)) }
                         )
+                        val omniSpeechDownloaded = downloadedVoiceModels.any {
+                            it.engine == com.vervan.chat.omni.OmniRuntime.SPEECH_ENGINE && it.isReady
+                        }
+                        com.vervan.chat.ui.common.VervanFilterChip(
+                            selected = ttsEnginePreference == "LFM3_OMNI",
+                            onClick = { vm.setTtsEnginePreference("LFM3_OMNI") },
+                            enabled = omniSpeechDownloaded,
+                            label = { Text(if (omniSpeechDownloaded) "LFM3 Omni voice" else "LFM3 Omni (download speech pack)") }
+                        )
+                    }
+                    if (ttsEnginePreference == "LFM3_OMNI") {
+                        val omniVoice by vm.omniTtsVoice.collectAsStateWithLifecycle()
+                        Text(
+                            "Needs LFM3 Omni 2B too. Slower than Piper and uses about 2 GB more memory while speaking.",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = Space.sm)
+                        )
+                        Row(Modifier.padding(top = Space.xs), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)) {
+                            com.vervan.chat.ui.common.VervanFilterChip(selected = omniVoice == "female", onClick = { vm.setOmniTtsVoice("female") }, label = { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.voice_settings_female)) })
+                            com.vervan.chat.ui.common.VervanFilterChip(selected = omniVoice == "male", onClick = { vm.setOmniTtsVoice("male") }, label = { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.voice_settings_male)) })
+                        }
                     }
                     if (!supertonicDownloaded) {
                         androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
-                            Text("Open Model Manager to download Supertonic", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.voice_settings_open_model_manager_to_download), style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
                         // Every voice besides "multi" (M1) is a separate ~290 KB download layered
                         // on the shared acoustic model — see SupertonicTtsEngine's class doc. Only
                         // list voices actually installed; the rest are downloadable in Model Manager.
-                        val supertonicVoiceVariant by vm.supertonicVoiceVariant.collectAsState()
+                        val supertonicVoiceVariant by vm.supertonicVoiceVariant.collectAsStateWithLifecycle()
                         val installedVoices = downloadedVoiceModels.filter { it.engine == "SUPERTONIC" && it.isReady }
                         Text(
-                            "Supertonic voice",
+                            stringResource(R.string.voice_settings_supertonic_voice),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(top = Space.md)
                         )
@@ -277,7 +304,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                 val label = com.vervan.chat.modeldownload.ModelCatalog.all
                                     .find { it.ttsEngine == "SUPERTONIC" && it.ttsLanguage == voice.language }
                                     ?.displayName?.substringAfter("— ") ?: voice.language
-                                FilterChip(
+                                com.vervan.chat.ui.common.VervanFilterChip(
                                     selected = supertonicVoiceVariant == voice.language,
                                     onClick = { vm.setSupertonicVoiceVariant(voice.language) },
                                     label = { Text(label) }
@@ -285,7 +312,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             }
                         }
                         androidx.compose.material3.TextButton(onClick = onOpenModelManager, modifier = Modifier.padding(top = Space.xs)) {
-                            Text("Download more Supertonic voices in Model Manager", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.voice_settings_download_more_supertonic_voices_in), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -293,17 +320,18 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Speech-to-text", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.voice_settings_speech_to_text), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Choose an engine, or let Vervan use the first one ready.",
+                        stringResource(R.string.voice_settings_choose_an_engine_or_let),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     VoiceChoiceChips(
-                        title = "Preferred engine",
+                        title = stringResource(R.string.voice_settings_preferred_engine),
                         value = sttEnginePreference,
                         choices = listOf(
                             "AUTO" to "Automatic",
                             "MODEL_AUDIO" to "Active model",
+                            "SHRUTI" to "Shruti",
                             "WHISPER_CPP" to "whisper.cpp",
                             "ANDROID" to "Android"
                         ),
@@ -326,7 +354,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         modelAudioSttEnabled,
                         vm::setModelAudioSttEnabled
                     )
-                    val whisperModelVariant by vm.whisperModelVariant.collectAsState()
+                    val whisperModelVariant by vm.whisperModelVariant.collectAsStateWithLifecycle()
                     val whisperModel = downloadedVoiceModels.firstOrNull {
                         it.engine.equals("WHISPER_CPP", ignoreCase = true) &&
                             it.language.equals(whisperModelVariant, ignoreCase = true) && it.isReady
@@ -338,15 +366,71 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     VoiceToggleRow(
                         "whisper.cpp",
                         when {
-                            whisperAvailable -> "Ready · private, on-device transcription."
+                            whisperAvailable -> stringResource(R.string.voice_settings_ready_private_on_device_transcription)
                             // Distinct from "no model yet" — no model download fixes this; the
                             // native library itself wasn't compiled into this build.
-                            !com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE -> "Unavailable · not built into this app."
-                            else -> "Unavailable · download or import a whisper.cpp model."
+                            !com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE -> stringResource(R.string.voice_settings_unavailable_not_built_into_this)
+                            else -> stringResource(R.string.voice_settings_unavailable_download_or_import_a)
                         },
                         inbuiltSttEnabled,
                         vm::setInbuiltSttEnabled
                     )
+                    val shrutiEnabled by vm.shrutiSttEnabled.collectAsStateWithLifecycle()
+                    val shrutiVariant by vm.shrutiModelVariant.collectAsStateWithLifecycle()
+                    val installedShrutiModels = downloadedVoiceModels.filter {
+                        it.engine.equals(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, ignoreCase = true) && it.isReady
+                    }
+                    val shrutiRow = installedShrutiModels.firstOrNull { it.language.equals(shrutiVariant, ignoreCase = true) }
+                    val shrutiAvailable = com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE &&
+                        com.vervan.chat.voice.ShrutiSttEngine.findInstalledModelFile(app, shrutiRow?.filePath, shrutiVariant) != null
+                    val shrutiLanguageName = com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[shrutiVariant] ?: shrutiVariant
+                    VoiceToggleRow(
+                        "Shruti (Indian languages)",
+                        when {
+                            !com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE -> "Unavailable · the Shruti engine is not built into this version."
+                            shrutiAvailable -> "Ready · $shrutiLanguageName + English, fully on-device."
+                            installedShrutiModels.isNotEmpty() -> "Pick one of your downloaded languages below."
+                            else -> "Download a Shruti language (Hindi, Marathi, Tamil, Bengali, Telugu) in Models."
+                        },
+                        shrutiEnabled,
+                        { vm.setShrutiSttEnabled(it) }
+                    )
+                    if (shrutiEnabled && installedShrutiModels.isNotEmpty()) {
+                        androidx.compose.foundation.layout.FlowRow(
+                            modifier = Modifier.padding(top = Space.sm),
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
+                        ) {
+                            installedShrutiModels.forEach { model ->
+                                com.vervan.chat.ui.common.VervanFilterChip(
+                                    selected = shrutiVariant.equals(model.language, ignoreCase = true),
+                                    onClick = { vm.setShrutiModelVariant(model.language) },
+                                    label = { Text(com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[model.language] ?: model.language) }
+                                )
+                            }
+                        }
+                        val shrutiEnglishOnly by vm.shrutiEnglishOnly.collectAsStateWithLifecycle()
+                        VoiceToggleRow(
+                            "English-only speech",
+                            "Off detects the language each time (recommended, also for Hinglish).",
+                            shrutiEnglishOnly,
+                            { vm.setShrutiEnglishOnly(it) }
+                        )
+                        val savedKeywords by vm.shrutiKeywords.collectAsStateWithLifecycle()
+                        var keywordsDraft by remember(savedKeywords) { androidx.compose.runtime.mutableStateOf(savedKeywords) }
+                        androidx.compose.material3.OutlinedTextField(
+                            value = keywordsDraft,
+                            onValueChange = { keywordsDraft = it.take(4_000) },
+                            label = { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.voice_settings_terms_label)) },
+                            supportingText = { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.voice_settings_terms_help)) },
+                            minLines = 2,
+                            maxLines = 5,
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                        )
+                        if (keywordsDraft != savedKeywords) {
+                            androidx.compose.material3.TextButton(onClick = { vm.setShrutiKeywords(keywordsDraft) }) { Text(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.voice_settings_terms_save)) }
+                        }
+                    }
                     VoiceToggleRow(
                         "Android speech service",
                         if (androidRecognizerAvailable) {
@@ -366,6 +450,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             modelAvailable = modelAudioAvailable,
                             whisperEnabled = inbuiltSttEnabled,
                             whisperAvailable = whisperAvailable,
+                            shrutiEnabled = shrutiEnabled,
+                            shrutiAvailable = shrutiAvailable,
                             androidEnabled = androidSttEnabled,
                             androidAvailable = androidRecognizerAvailable
                         )
@@ -374,7 +460,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         if (resolution.isAvailable) {
                             "Current route: " + resolution.candidates.joinToString(" → ") { it.label }
                         } else {
-                            resolution.unavailableReason ?: "Speech input is unavailable"
+                            resolution.unavailableReason ?: stringResource(R.string.voice_settings_speech_input_is_unavailable)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (resolution.isAvailable) MaterialTheme.colorScheme.primary
@@ -388,7 +474,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     // "whisper.cpp unavailable" banner that had nothing to do with their setup.
                     if (inbuiltSttEnabled && !com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         Text(
-                            "whisper.cpp is unavailable in this build. Use another speech engine.",
+                            stringResource(R.string.voice_settings_whisper_cpp_is_unavailable_in),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = Space.sm)
                         )
@@ -410,12 +496,12 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                         }
                         if (installedWhisperModels.size > 1) {
                             Text(
-                                "Model size",
+                                stringResource(R.string.voice_settings_model_size),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = Space.md)
                             )
                             Text(
-                                "Tiny/Base: fastest, least accurate. Small: balanced. Larger models are slower and use more memory.",
+                                stringResource(R.string.voice_settings_tiny_base_fastest_least_accurate),
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             androidx.compose.foundation.layout.FlowRow(
@@ -427,7 +513,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                     val label = com.vervan.chat.modeldownload.ModelCatalog.all
                                         .find { it.ttsEngine == "WHISPER_CPP" && it.ttsLanguage == model.language }
                                         ?.displayName?.substringBefore(" —") ?: model.language
-                                    FilterChip(
+                                    com.vervan.chat.ui.common.VervanFilterChip(
                                         selected = whisperModelVariant == model.language,
                                         onClick = { vm.setWhisperModelVariant(model.language) },
                                         label = { Text(label) }
@@ -439,13 +525,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                     androidx.compose.material3.TextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.xs)
-                    ) { Text("Download or import in Model Manager") }
+                    ) { Text(stringResource(R.string.voice_settings_download_or_import_in_model)) }
 
                     if (com.vervan.chat.BuildConfig.WHISPER_CPP_AVAILABLE) {
                         val gpuDisabledAfterCrash = remember { vm.whisperGpuDisabledAfterCrash() }
                         Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("Try GPU for whisper.cpp (experimental)", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.voice_settings_try_gpu_for_whisper_cpp), style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     if (gpuDisabledAfterCrash) {
                                         "GPU failed on this device and is disabled. Voice recognition now uses the CPU."
@@ -455,7 +541,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Switch(
+                            com.vervan.chat.ui.common.LabeledSwitch(
+                                label = stringResource(R.string.voice_settings_try_gpu_for_whisper_cpp),
                                 checked = whisperGpuEnabled,
                                 onCheckedChange = { vm.setWhisperGpuEnabled(it) },
                                 enabled = !gpuDisabledAfterCrash
@@ -467,23 +554,23 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Voice models", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.voice_settings_voice_models), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Manage downloaded Hindi and English voices in Model Manager.",
+                        stringResource(R.string.voice_settings_manage_downloaded_hindi_and_english),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     androidx.compose.material3.TextButton(
                         onClick = onOpenModelManager,
                         modifier = Modifier.padding(top = Space.sm)
-                    ) { Text("Open Model Manager") }
+                    ) { Text(stringResource(R.string.voice_settings_open_model_manager)) }
                 }
             }
 
             ContentCard {
                 Column(Modifier.padding(Space.lg)) {
-                    Text("Higher quality voice (optional)", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.voice_settings_higher_quality_voice_optional), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Download the optional Kokoro voice here.",
+                        stringResource(R.string.voice_settings_download_the_optional_kokoro_voice),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     com.vervan.chat.voice.TtsVoiceCatalog.entries.forEach { entry ->
@@ -497,9 +584,9 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                                 Text(entry.label, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     when {
-                                        downloaded -> "Ready"
+                                        downloaded -> stringResource(R.string.voice_settings_ready)
                                         activeJob != null -> "Downloading… ${activeJob.progress}%"
-                                        else -> "Not downloaded"
+                                        else -> stringResource(R.string.voice_settings_not_downloaded)
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -507,10 +594,10 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             }
                             when {
                                 downloaded -> IconButton(onClick = { vm.deleteVoiceModel(entry) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete downloaded voice")
+                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.voice_settings_delete_downloaded_voice))
                                 }
                                 activeJob != null -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                else -> androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text("Download") }
+                                else -> androidx.compose.material3.TextButton(onClick = { vm.downloadVoiceModel(entry) }) { Text(stringResource(R.string.voice_settings_download)) }
                             }
                         }
                     }
@@ -537,14 +624,14 @@ private fun VoiceToggleRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = Space.sm),
+        Modifier.fillMaxWidth().toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange).heightIn(min = 48.dp).padding(vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f).padding(end = Space.md)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -563,7 +650,7 @@ private fun VoiceChoiceChips(
             verticalArrangement = Arrangement.spacedBy(Space.xs)
         ) {
             choices.forEach { (key, label) ->
-                FilterChip(
+                com.vervan.chat.ui.common.VervanFilterChip(
                     selected = value == key,
                     onClick = { onSelect(key) },
                     label = { Text(label) }
@@ -592,7 +679,7 @@ private fun VoiceSliderRow(
                 text = valueLabel,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 softWrap = false,
                 modifier = Modifier.padding(start = Space.sm),
             )

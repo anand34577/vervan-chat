@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.common
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +109,7 @@ private fun ReactionStrip(
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg)) {
         if (showHeader) {
             Text(
-                "React",
+                stringResource(R.string.message_actions_sheet_react),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Space.sm)
@@ -162,7 +164,7 @@ private fun ActionChip(action: MessageAction, modifier: Modifier = Modifier, onC
         modifier = modifier
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onClick)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
             .padding(Space.md),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -210,14 +212,19 @@ private fun ActionRow(action: MessageAction, isDestructive: Boolean, onClick: ()
 data class MessageAction(
     val label: String,
     val icon: ImageVector,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    /** Stable identity for filtering — the label is translated, so it can't be matched on. */
+    val id: MessageActionId? = null
 )
+
+enum class MessageActionId { COPY, LISTEN, SAVE, SHARE, EDIT, RETRY, BRANCH, SAVE_AS_PROMPT, ADD_TO_NOTE, DELETE }
 
 /** Default emoji reaction set — kept small so the strip is one row on phone widths.
  *  Matches the most-common reactions across modern chat apps. */
 val defaultReactions = listOf("👍", "👎", "❤️", "🎯", "💡", "😂")
 
-/** Standard message actions used everywhere. Callers can filter / reorder. */
+/** Standard message actions used everywhere. Callers can filter / reorder (by [MessageAction.id]). */
+@androidx.compose.runtime.Composable
 fun standardMessageActions(
     onCopy: () -> Unit = {},
     onSpeak: () -> Unit = {},
@@ -231,18 +238,18 @@ fun standardMessageActions(
     onDelete: () -> Unit = {}
 ): Pair<List<MessageAction>, List<MessageAction>> {
     val primary = listOf(
-        MessageAction("Copy", Icons.Filled.ContentCopy, onCopy),
-        MessageAction("Listen", Icons.AutoMirrored.Filled.VolumeUp, onSpeak),
-        MessageAction("Save", Icons.Filled.BookmarkBorder, onBookmark),
-        MessageAction("Share", Icons.Filled.IosShare, onShare)
+        MessageAction(stringResource(R.string.message_action_copy), Icons.Filled.ContentCopy, onCopy, MessageActionId.COPY),
+        MessageAction(stringResource(R.string.message_action_listen), Icons.AutoMirrored.Filled.VolumeUp, onSpeak, MessageActionId.LISTEN),
+        MessageAction(stringResource(R.string.message_action_save), Icons.Filled.BookmarkBorder, onBookmark, MessageActionId.SAVE),
+        MessageAction(stringResource(R.string.message_action_share), Icons.Filled.IosShare, onShare, MessageActionId.SHARE)
     )
     val secondary = listOf(
-        MessageAction("Edit & resend", Icons.Filled.Edit, onEdit),
-        MessageAction("Try again", Icons.Filled.Refresh, onRegenerate),
-        MessageAction("Branch from here", Icons.Filled.AccountTree, onFork),
-        MessageAction("Save as prompt", Icons.AutoMirrored.Filled.SpeakerNotes, onSaveAsPrompt),
-        MessageAction("Add to note", Icons.Outlined.BookmarkBorder, onAddToNote),
-        MessageAction("Delete", Icons.Filled.DeleteOutline, onDelete)
+        MessageAction(stringResource(R.string.message_action_edit_resend), Icons.Filled.Edit, onEdit, MessageActionId.EDIT),
+        MessageAction(stringResource(R.string.message_action_try_again), Icons.Filled.Refresh, onRegenerate, MessageActionId.RETRY),
+        MessageAction(stringResource(R.string.message_action_branch), Icons.Filled.AccountTree, onFork, MessageActionId.BRANCH),
+        MessageAction(stringResource(R.string.message_action_save_as_prompt), Icons.AutoMirrored.Filled.SpeakerNotes, onSaveAsPrompt, MessageActionId.SAVE_AS_PROMPT),
+        MessageAction(stringResource(R.string.message_action_add_to_note), Icons.Outlined.BookmarkBorder, onAddToNote, MessageActionId.ADD_TO_NOTE),
+        MessageAction(stringResource(R.string.message_action_delete), Icons.Filled.DeleteOutline, onDelete, MessageActionId.DELETE)
     )
     return primary to secondary
 }

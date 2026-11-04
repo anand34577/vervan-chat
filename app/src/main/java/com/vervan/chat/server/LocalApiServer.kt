@@ -173,9 +173,25 @@ class LocalApiServer(
     override fun useGzipWhenAccepted(r: Response): Boolean =
         isCompressibleMime(r.mimeType) && super.useGzipWhenAccepted(r)
 
-    override fun serve(session: IHTTPSession): Response = withCors(serveInner(session))
+    override fun serve(session: IHTTPSession): Response {
+        // Without an API key there is no credential a hostile page would have to guess, so the
+        // browser-origin checks below are the only thing stopping any web page the user opens
+        // (on this phone or on the LAN) from reading chats via fetch(). See BrowserRequestGuard.
+        if (!requireAuth) {
+            val host = session.headers["host"]
+            val origin = session.headers["origin"]
+            if (!BrowserRequestGuard.isAllowedHost(host) || !BrowserRequestGuard.isSameOrigin(origin, host)) {
+                return errorResponse(
+                    Response.Status.FORBIDDEN,
+                    "Cross-site requests are blocked while the API key is off. Turn on \"Require an API key\" to use this server from other web apps."
+                )
+            }
+            return serveInner(session)
+        }
+        return withCors(serveInner(session))
+    }
 
-    /** Every response carries permissive CORS headers, and a preflight `OPTIONS` is answered
+    /** With an API key on, every response carries permissive CORS headers, and a preflight `OPTIONS` is answered
      * without reaching the auth gate or any handler. Without this, a browser-based OpenAI client
      * (Open WebUI, LibreChat, a local dev page) cannot call this server *at all* — the browser
      * blocks the request before it is ever sent, so "compatible with OpenAI clients" is only true
@@ -1815,7 +1831,7 @@ class LocalApiServer(
         val offset = session.parameters["offset"]?.firstOrNull()?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         val all = app.container.db.chatDao().observeListableChats().first()
         val page = all.drop(offset).take(limit)
-        // One query for every listed chat's count, instead of one per chat inside the loop.
+        // One count query per chat on the page (bounded by `limit`, max 500).
         val counts = page.associate { it.id to app.container.db.messageDao().countForChat(it.id) }
         val data = JSONArray()
         page.forEach { chat ->
@@ -2541,7 +2557,8 @@ class LocalApiServer(
             app.container.settingsRepository,
             com.vervan.chat.voice.PiperTtsEngine(app.container.db.ttsVoiceModelDao()),
             com.vervan.chat.voice.KokoroTtsEngine(app.container.db.ttsVoiceModelDao()),
-            com.vervan.chat.voice.SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository)
+            com.vervan.chat.voice.SupertonicTtsEngine(app.container.db.ttsVoiceModelDao(), app.container.settingsRepository),
+            com.vervan.chat.omni.OmniTtsEngine(app)
         )
         return try {
             val bytes = runBlocking {

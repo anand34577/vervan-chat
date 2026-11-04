@@ -1,5 +1,8 @@
 package com.vervan.chat.ui.dev
 
+import com.vervan.chat.R
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,11 +59,13 @@ import com.vervan.chat.ui.theme.Space
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DevWorkspaceScreen(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val localResources = androidx.compose.ui.platform.LocalResources.current
+    val app = context.applicationContext as VervanApp
     val vm: DevWorkspaceViewModel = viewModel(factory = viewModelFactory { initializer { DevWorkspaceViewModel(app) } })
-    val output by vm.output.collectAsState()
-    val running by vm.running.collectAsState()
-    val error by vm.error.collectAsState()
+    val output by vm.output.collectAsStateWithLifecycle()
+    val running by vm.running.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
@@ -70,8 +75,8 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Developer workspace") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } }
+                title = { Text(stringResource(R.string.dev_workspace_developer_workspace)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) } }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -80,13 +85,16 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
             BoundedTextField(
                 value = code, onValueChange = { code = it },
-                label = "Paste code", minLines = 6, maxLength = ValidationLimits.DEVELOPER_INPUT,
+                label = stringResource(R.string.dev_workspace_paste_code), minLines = 6, maxLength = ValidationLimits.DEVELOPER_INPUT,
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.md),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            // Wraps: as a scroller the last action was cut off ("Find the b…") with no cue to swipe.
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.padding(top = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
                 DevAction.entries.forEach { action ->
                     VervanFilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
@@ -94,37 +102,37 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
             }
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
-                    title = "Working on the code",
-                    body = "Analyzing your input with the local model.",
+                    title = stringResource(R.string.dev_workspace_working_on_the_code),
+                    body = stringResource(R.string.dev_workspace_analyzing_your_input_with_the),
                     modifier = Modifier.padding(top = Space.lg)
                 )
             }
             error?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
-                    title = "Couldn't complete the code action",
+                    title = stringResource(R.string.dev_workspace_couldn_t_complete_the_code),
                     message = it,
-                    recovery = "Your code is safe. Shorten it or load a compatible model, then try again.",
+                    recovery = stringResource(R.string.dev_workspace_your_code_is_safe_shorten),
                     modifier = Modifier.padding(top = Space.md)
                 )
             }
             if (output.isNotBlank()) {
-                Text("Result", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+                Text(stringResource(R.string.dev_workspace_result), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
                 Card(Modifier.fillMaxWidth()) {
                     Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(Space.md))
                 }
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     TextButton(onClick = {
                         clipboard.setText(output, scope)
-                        scope.launch { snackbarHostState.showSnackbar("Copied to clipboard") }
-                    }) { Text("Copy") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.dev_workspace_copied_to_clipboard)) }
+                    }) { Text(stringResource(R.string.library_copy)) }
                     TextButton(onClick = {
                         vm.saveAsNote(code.take(60))
-                        scope.launch { snackbarHostState.showSnackbar("Added to notes") }
-                    }) { Text("Add to note") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_added_to_notes)) }
+                    }) { Text(stringResource(R.string.chat_add_note)) }
                     TextButton(onClick = {
                         vm.saveToLibrary()
-                        scope.launch { snackbarHostState.showSnackbar("Saved to library") }
-                    }) { Text("Save to library") }
+                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.dev_workspace_saved_to_library)) }
+                    }) { Text(stringResource(R.string.dev_workspace_save_to_library)) }
                 }
             }
         }

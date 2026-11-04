@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.models
 
+import com.vervan.chat.R
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -67,7 +68,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
 
     fun setupRecommendedModel(modelId: String, version: String) {
         recommendedSetupCatalogId = modelId
-        _status.value = "Setting up the recommended model…"
+        _status.value = app.getString(R.string.model_manager_setting_up_the_recommended_model)
         downloadModel(modelId, version)
     }
     fun pauseDownload(modelId: String, version: String) {
@@ -129,6 +130,11 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     val flashAttentionModeDefault: StateFlow<String> = settings.flashAttentionMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
     val kvCacheTypeDefault: StateFlow<String> = settings.kvCacheType.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "f16")
 
+    /** Models whose agreement the user dismissed in this session. The auto-default watcher in
+     * [init] re-runs on every model-table change; without this it re-opened the dialog the user
+     * had just cancelled, over and over. An explicit tap on the model still asks again. */
+    private val declinedAcknowledgmentIds = mutableSetOf<String>()
+
     init {
         // Auto-default convenience (user ask): whenever a role has installed models but none
         // is active yet — the first import, or every model of that role having just been
@@ -154,7 +160,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 ModelRole.entries.forEach { role ->
                     val ofRole = list.filter { it.role == role }
                     val candidate = ofRole.firstOrNull()
-                    if (candidate != null && ofRole.none { it.isActive }) setActive(candidate)
+                    if (candidate != null && ofRole.none { it.isActive }) autoSetActive(candidate)
                 }
             }
         }
@@ -200,7 +206,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         Log.i(TAG, "importModel() requested: uri=$uri, role=$role")
         viewModelScope.launch {
             _importing.value = true
-            _busyLabel.value = "Opening model…"
+            _busyLabel.value = app.getString(R.string.model_manager_opening_model)
             try {
                 // allowGguf = false: this is the plain "LiteRT-LM" card's import path — GGUF has
                 // its own dedicated "llama.cpp" card/dialog (importLlamaCppModel below).
@@ -214,16 +220,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                     is ImportResult.Duplicate -> {
                         Log.i(TAG, "importModel() duplicate of ${result.existing.displayName}")
-                        _status.value = "Already imported as ${result.existing.displayName}"
+                        _status.value = app.getString(R.string.model_manager_already_imported_as_arg1, result.existing.displayName)
                     }
                     is ImportResult.Rejected -> {
                         Log.w(TAG, "importModel() rejected: ${result.reason}")
-                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
+                        _status.value = app.getString(R.string.model_manager_import_failed_arg1, result.reason.toUserMessage())
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importModel() threw unexpectedly", t)
-                _status.value = "Import failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_import_failed_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -237,7 +243,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         Log.i(TAG, "importEmbeddingPair() requested: $fileA, $fileB")
         viewModelScope.launch {
             _importing.value = true
-            _busyLabel.value = "Opening model…"
+            _busyLabel.value = app.getString(R.string.model_manager_opening_model)
             try {
                 when (val result = importManager.importEmbeddingModel(fileA, fileB) { progress ->
                     _busyLabel.value = progress
@@ -249,16 +255,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                     is ImportResult.Duplicate -> {
                         Log.i(TAG, "importEmbeddingPair() duplicate of ${result.existing.displayName}")
-                        _status.value = "Already imported as ${result.existing.displayName}"
+                        _status.value = app.getString(R.string.model_manager_already_imported_as_arg1, result.existing.displayName)
                     }
                     is ImportResult.Rejected -> {
                         Log.w(TAG, "importEmbeddingPair() rejected: ${result.reason}")
-                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
+                        _status.value = app.getString(R.string.model_manager_import_failed_arg1, result.reason.toUserMessage())
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importEmbeddingPair() threw unexpectedly", t)
-                _status.value = "Import failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_import_failed_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -271,7 +277,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         Log.i(TAG, "importLlamaCppModel() requested: $modelUri, mmproj=$mmprojUri")
         viewModelScope.launch {
             _importing.value = true
-            _busyLabel.value = "Opening model…"
+            _busyLabel.value = app.getString(R.string.model_manager_opening_model)
             try {
                 when (val result = importManager.importLlamaCppModel(modelUri, mmprojUri) { progress ->
                     _busyLabel.value = progress
@@ -283,16 +289,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                     is ImportResult.Duplicate -> {
                         Log.i(TAG, "importLlamaCppModel() duplicate of ${result.existing.displayName}")
-                        _status.value = "Already imported as ${result.existing.displayName}"
+                        _status.value = app.getString(R.string.model_manager_already_imported_as_arg1, result.existing.displayName)
                     }
                     is ImportResult.Rejected -> {
                         Log.w(TAG, "importLlamaCppModel() rejected: ${result.reason}")
-                        _status.value = "Import failed. ${result.reason.toUserMessage()}"
+                        _status.value = app.getString(R.string.model_manager_import_failed_arg1, result.reason.toUserMessage())
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importLlamaCppModel() threw unexpectedly", t)
-                _status.value = "Import failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_import_failed_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -355,7 +361,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         // paths route through, and a malformed URL would only fail much later, as an opaque
         // connection error on the user's first message.
         com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(baseUrl)?.let { error ->
-            _status.value = "Could not add models. $error"
+            _status.value = app.getString(R.string.model_manager_could_not_add_models_arg1, error)
             return
         }
         viewModelScope.launch {
@@ -433,7 +439,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "addRemoteApiModels() threw unexpectedly", t)
-                _status.value = "Could not add models. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_could_not_add_models_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -468,7 +474,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         // Same guarantee as addRemoteApiModels — an edit must not be able to downgrade a working
         // row to an unreachable one.
         com.vervan.chat.llm.RemoteOpenAiEngine.baseUrlError(updated.remoteBaseUrl.orEmpty())?.let { error ->
-            _status.value = "Could not update ${updated.displayName}. $error"
+            _status.value = app.getString(R.string.model_manager_could_not_update_arg1_arg2, updated.displayName, error)
             return
         }
         viewModelScope.launch {
@@ -489,7 +495,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         Log.i(TAG, "importWhisperCppModel() requested: $uri")
         viewModelScope.launch {
             _importing.value = true
-            _busyLabel.value = "Opening model…"
+            _busyLabel.value = app.getString(R.string.model_manager_opening_model)
             try {
                 when (val result = app.container.ttsModelDownloadManager.importWhisperCppModel(app, uri) { progress ->
                     _busyLabel.value = progress
@@ -497,16 +503,16 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }) {
                     is com.vervan.chat.voice.TtsDownloadResult.Success -> {
                         Log.i(TAG, "importWhisperCppModel() copied file ok: ${result.model.fileSizeBytes} bytes")
-                        _status.value = "Imported whisper.cpp model."
+                        _status.value = app.getString(R.string.model_manager_imported_whisper_cpp_model)
                     }
                     is com.vervan.chat.voice.TtsDownloadResult.Failed -> {
                         Log.w(TAG, "importWhisperCppModel() failed: ${result.reason}")
-                        _status.value = "Import failed. ${result.reason}"
+                        _status.value = app.getString(R.string.model_manager_import_failed_arg1, result.reason)
                     }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "importWhisperCppModel() threw unexpectedly", t)
-                _status.value = "Import failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_import_failed_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyLabel.value = null
@@ -522,8 +528,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             return
         }
         _busyModelId.value = model.id
-        _busyLabel.value = "Validating ${model.displayName}..."
-        _status.value = "Validating ${model.displayName}..."
+        _busyLabel.value = app.getString(R.string.model_manager_validating_arg1, model.displayName)
+        _status.value = app.getString(R.string.model_manager_validating_arg1, model.displayName)
         // B12: MODEL_VERIFY is another job type the Job Queue screen claimed to track but
         // never actually created a record for.
         val job = com.vervan.chat.data.db.entities.JobRecord(
@@ -533,7 +539,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         )
         db.jobDao().upsert(job)
         try {
-            val verified = withContext(Dispatchers.Default) {
+            val verifiedSnapshot = withContext(Dispatchers.Default) {
                 val loadResult = coordinator.loadManually(model)
                 require(loadResult.success) { loadResult.errorMessage ?: "Model could not be loaded" }
                 if (model.role == ModelRole.GENERATION) {
@@ -550,7 +556,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         }
                         output.append(it)
                     }
-                    require(output.isNotBlank()) { "Model initialized but produced no output" }
+                    require(output.isNotBlank()) { app.getString(R.string.model_manager_model_initialized_but_produced_no) }
                     if (persisted.engine == ModelEngine.LLAMA_CPP) {
                         val metadata = app.container.withLlamaCpp { engine ->
                             check(engine.loadedModelPath == persisted.filePath) { "Model changed during validation" }
@@ -583,7 +589,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                         remoteApiKeyStore = app.container.remoteApiKeyStore,
                         networkAuditLog = app.container.networkAuditLog
                     )
-                    require(vector != null && vector.isNotEmpty()) { "Embedding model returned no vector" }
+                    require(vector != null && vector.isNotEmpty()) { app.getString(R.string.model_manager_embedding_model_returned_no_vector) }
                     persisted
                 } else {
                     app.container.withEmbedding { engine ->
@@ -596,9 +602,13 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 }
             }
             if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
-                _status.value = "Model validation stopped"
+                _status.value = app.getString(R.string.model_manager_model_validation_stopped)
                 return
             }
+            // `verified` was read before the (seconds-long) test generation. If the user accepted
+            // the license or made the model the default meanwhile, writing it back as-is undid that
+            // — which re-raised the agreement dialog, sometimes twice, on every import.
+            val verified = keepUserChoices(verifiedSnapshot)
             db.modelDao().upsert(verified)
             Log.i(TAG, "validateAndActivate() SUCCESS: ${verified.displayName} verified on ${verified.lastWorkingBackend}")
             _status.value = "Verified ${verified.displayName}"
@@ -617,18 +627,28 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
             }
         } catch (t: Throwable) {
             if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
-                _status.value = "Model validation stopped"
+                _status.value = app.getString(R.string.model_manager_model_validation_stopped)
                 return
             }
             Log.e(TAG, "validateAndActivate() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
-            db.modelDao().upsert(model.copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
+            db.modelDao().upsert(keepUserChoices(model).copy(lastWorkingBackend = ModelBackend.UNVERIFIED))
             db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
-            _status.value = "Model could not be verified. ${t.toUserMessage()} " +
+            _status.value = app.getString(R.string.model_manager_model_could_not_be_verified, t.toUserMessage()) +
                     "The file was kept. Retry activation or delete it."
         } finally {
             _busyModelId.value = null
             _busyLabel.value = null
         }
+    }
+
+    /** Copies the fields only the user changes (license acceptance, default status) from the
+     * current database row onto [snapshot], so a long-running write-back can't revert them. */
+    private suspend fun keepUserChoices(snapshot: ModelInfo): ModelInfo {
+        val current = db.modelDao().get(snapshot.id) ?: return snapshot
+        return snapshot.copy(
+            licenseAcknowledged = snapshot.licenseAcknowledged || current.licenseAcknowledged,
+            isActive = current.isActive
+        )
     }
 
     /** Requires [ModelInfo.licenseAcknowledged] first — if it isn't set yet, this raises the
@@ -641,8 +661,21 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch { activateModel(model) }
     }
 
+    /** The watcher's version of [setActive]: never asks about a model that's still being
+     * validated (validation asks once when it finishes), one that's already being asked about,
+     * or one the user just said no to. */
+    private fun autoSetActive(model: ModelInfo) {
+        if (!model.licenseAcknowledged) {
+            if (model.id == _busyModelId.value || _importing.value) return
+            if (model.id in declinedAcknowledgmentIds) return
+            if (_pendingAcknowledgment.value?.id == model.id) return
+        }
+        setActive(model)
+    }
+
     fun acknowledgeAndActivate(model: ModelInfo) {
         _pendingAcknowledgment.value = null
+        declinedAcknowledgmentIds.remove(model.id)
         val acknowledged = model.copy(licenseAcknowledged = true)
         if (model.catalogModelId == recommendedSetupCatalogId) {
             recommendedSetupCatalogId = null
@@ -666,11 +699,14 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         val previousActiveId = db.modelDao().getActiveModel(model.role)?.id
         coordinator.setDefault(model)
         if (model.role == ModelRole.EMBEDDING && previousActiveId != model.id && db.documentDao().countReady() > 0) {
-            _status.value = "Embedding model changed. Rebuild search in Settings → Storage & backup → Search index."
+            _status.value = app.getString(R.string.model_manager_embedding_model_changed_rebuild_search)
         }
     }
 
-    fun dismissAcknowledgment() { _pendingAcknowledgment.value = null }
+    fun dismissAcknowledgment() {
+        _pendingAcknowledgment.value?.let { declinedAcknowledgmentIds += it.id }
+        _pendingAcknowledgment.value = null
+    }
 
     fun benchmark(model: ModelInfo) {
         if (_importing.value) return
@@ -681,8 +717,8 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         viewModelScope.launch {
             _importing.value = true
             _busyModelId.value = model.id
-            _busyLabel.value = "Benchmarking ${model.displayName}…"
-            _status.value = "Benchmarking ${model.displayName}..."
+            _busyLabel.value = app.getString(R.string.model_manager_benchmarking_arg1, model.displayName)
+            _status.value = app.getString(R.string.model_manager_benchmarking_arg1_2, model.displayName)
             val job = com.vervan.chat.data.db.entities.JobRecord(
                 type = com.vervan.chat.data.db.entities.JobType.BENCHMARK,
                 label = model.displayName,
@@ -737,7 +773,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     }
                 }
                 if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
-                    _status.value = "Benchmark stopped"
+                    _status.value = app.getString(R.string.model_manager_benchmark_stopped)
                     return@launch
                 }
                 Log.i(TAG, "benchmark() SUCCESS for ${model.displayName}: $result")
@@ -745,12 +781,12 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.COMPLETED, updatedAt = System.currentTimeMillis(), detail = result))
             } catch (t: Throwable) {
                 if (db.jobDao().get(job.id)?.state == com.vervan.chat.data.db.entities.JobState.CANCELLED) {
-                    _status.value = "Benchmark stopped"
+                    _status.value = app.getString(R.string.model_manager_benchmark_stopped)
                     return@launch
                 }
                 Log.e(TAG, "benchmark() FAILED for ${model.displayName}: ${t::class.simpleName}: ${t.message}", t)
                 db.jobDao().upsert(job.copy(state = com.vervan.chat.data.db.entities.JobState.FAILED, updatedAt = System.currentTimeMillis(), detail = t.message ?: ""))
-                _status.value = "Benchmark failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_benchmark_failed_arg1, t.toUserMessage())
             } finally {
                 _importing.value = false
                 _busyModelId.value = null
@@ -769,7 +805,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
         val verb = if (model.traits.runsOnDevice) "loaded" else "using"
         val verbIng = if (model.traits.runsOnDevice) "Loading" else "Confirming"
         if (loadInfoFor(model.role).currentModelId == model.id) {
-            _status.value = "${model.displayName} is already $verb"
+            _status.value = app.getString(R.string.model_manager_arg1_is_already_arg2, model.displayName, verb)
             return
         }
         if (!canLoadSafely(model)) {
@@ -806,7 +842,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 Log.e(TAG, "load() FAILED for ${model.displayName} (preferredBackend=${model.preferredBackend}): ${result.errorMessage}")
                 val backendNote = if (model.preferredBackend != BackendChoice.AUTO) " on ${model.preferredBackend}" else ""
                 val failVerb = if (model.traits.runsOnDevice) "Load" else "Connection"
-                _status.value = "$failVerb failed$backendNote. ${result.errorMessage.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_arg1_failed_arg2_arg3, failVerb, backendNote, result.errorMessage.toUserMessage())
             }
             _importing.value = false
             _busyModelId.value = null
@@ -862,7 +898,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
     fun delete(model: ModelInfo) {
         viewModelScope.launch {
             _busyModelId.value = model.id
-            _busyLabel.value = "Deleting ${model.displayName}…"
+            _busyLabel.value = app.getString(R.string.model_manager_deleting_arg1, model.displayName)
             _status.value = _busyLabel.value
             try {
                 // B14: clear any folder default pointing at this model before deleting it, so a
@@ -888,7 +924,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                     // broken not_loaded state is visible in Model Manager and the user can retry
                     // instead of the app silently forgetting a model whose file is still on disk.
                     Log.w(TAG, "delete() FAILED to remove all files for ${model.displayName}; keeping its row so the state is visible")
-                    _status.value = "${model.displayName} was unloaded, but some files remain. Try deleting again."
+                    _status.value = app.getString(R.string.model_manager_arg1_was_unloaded_but_some, model.displayName)
                     return@launch
                 }
                 db.modelDao().delete(model)
@@ -906,7 +942,7 @@ class ModelManagerViewModel(private val app: VervanApp) : ViewModel() {
                 _status.value = "Deleted ${model.displayName}"
             } catch (t: Throwable) {
                 Log.e(TAG, "delete() failed for ${model.displayName}", t)
-                _status.value = "Delete failed. ${t.toUserMessage()}"
+                _status.value = app.getString(R.string.model_manager_delete_failed_arg1, t.toUserMessage())
             } finally {
                 _busyModelId.value = null
                 _busyLabel.value = null
