@@ -80,8 +80,19 @@ jobs:
 
       - name: Install NDK, CMake, Ninja and glslc
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+          # ubuntu-latest has the Android SDK at ANDROID_HOME but not sdkmanager on PATH. It lives
+          # at cmdline-tools/<version>/bin/sdkmanager, three levels down, so search that pattern
+          # (the earlier `find -maxdepth 2` never reached it) and prefer the newest version.
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1)"
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $ANDROID_HOME/cmdline-tools" >&2; exit 1
+          fi
+          echo "Using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/cmake/3.22.1/bin" >> "$GITHUB_PATH"
           sudo apt-get update -qq
