@@ -286,9 +286,13 @@ android {
 
     // Produce ABI-specific APKs. Play-distributed app bundles already split by ABI; this keeps
     // direct APK builds from making every user download both native stacks too.
+    // AGP refuses to build a bundle while ABI splits are on with resource shrinking
+    // (issuetracker.google.com/402800800), so splits are off for any bundle task. Build APKs
+    // and the bundle in separate Gradle invocations, as the release workflow does.
+    val bundleRequested = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
     splits {
         abi {
-            isEnable = true
+            isEnable = !bundleRequested
             reset()
             include("arm64-v8a", "armeabi-v7a")
             // Also produce one APK that installs on every phone, for people who sideload from
