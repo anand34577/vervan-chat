@@ -9,8 +9,9 @@
 # (armv8.0 up to dotprod/i8mm/SVE) is built and the bridge picks the best one on the phone at
 # runtime. A single -march=armv8.2-a+dotprod+i8mm build crashes with SIGILL on the many phones
 # without i8mm (anything older than ~2022), so per-device dispatch is what makes GGUF work on
-# most devices. The Vulkan GPU backend is attempted too (API 28+, needs glslc on the runner)
-# and the build falls back to CPU-only if it can't be configured.
+# most devices. The Vulkan GPU backend is built too (API 28+). Point VULKAN_SDK at a LunarG
+# Linux SDK's x86_64 directory; without it, glslc on PATH is tried. LLAMA_VULKAN_REQUIRED=1
+# fails the build instead of falling back to CPU-only when Vulkan can't be configured.
 # armeabi-v7a: CPU-only, API 26 (the app's minSdk), NEON.
 set -euo pipefail
 
@@ -73,16 +74,34 @@ for abi in $ABIS; do
             triple=aarch64-linux-android; api=28; omp_arch=aarch64
             cpu_flags=(-DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DGGML_OPENMP=ON -DGGML_CPU_KLEIDIAI=OFF)
             vulkan_flags=()
-            if [ "$LLAMA_VULKAN" = "1" ] && command -v glslc >/dev/null; then
+            if [ "$LLAMA_VULKAN" = "1" ] && [ -n "${VULKAN_SDK:-}" ]; then
+                # LunarG SDK (the x86_64 dir): headers, glslc and the SPIRV-Headers CMake package,
+                # the same pieces scripts/build-llama-android-vulkan.ps1 takes from the Windows SDK.
+                # ggml-vulkan's find_package(SPIRV-Headers) has no fallback, so it must be passed.
+                spirv_cfg=$(find "$VULKAN_SDK" -name SPIRV-HeadersConfig.cmake | head -1)
+                [ -n "$spirv_cfg" ] || { echo "SPIRV-HeadersConfig.cmake not found in $VULKAN_SDK" >&2; exit 1; }
+                vulkan_flags=(-DGGML_VULKAN=ON
+                    -DVulkan_GLSLC_EXECUTABLE="$VULKAN_SDK/bin/glslc"
+                    -DVulkan_INCLUDE_DIR="$VULKAN_SDK/include"
+                    -DSPIRV-Headers_DIR="$(dirname "$spirv_cfg")"
+                    -DVulkan_LIBRARY="$NDK_PREBUILT/sysroot/usr/lib/$triple/$api/libvulkan.so")
+            elif [ "$LLAMA_VULKAN" = "1" ] && command -v glslc >/dev/null; then
                 vulkan_flags=(-DGGML_VULKAN=ON
                     -DVulkan_GLSLC_EXECUTABLE="$(command -v glslc)"
                     -DVulkan_LIBRARY="$NDK_PREBUILT/sysroot/usr/lib/$triple/$api/libvulkan.so")
                 [ -d /usr/include/vulkan ] && vulkan_flags+=(-DVulkan_INCLUDE_DIR=/usr/include)
             fi
+            if [ "${LLAMA_VULKAN_REQUIRED:-0}" = "1" ] && [ ${#vulkan_flags[@]} -eq 0 ]; then
+                echo "Vulkan is required but no Vulkan SDK or glslc was found" >&2; exit 1
+            fi
             echo "==> Configuring llama.cpp for $abi (API $api, CPU variants${vulkan_flags:+ + Vulkan})"
             if ! configure_llama "$abi" "$api" "$build_dir" "$out_dir" "${cpu_flags[@]}" "${vulkan_flags[@]}" \
                 || ! cmake --build "$build_dir" --parallel "$JOBS"; then
-                if [ ${#vulkan_flags[@]} -gt 0 ]; then
+                if [ "${LLAMA_VULKAN_REQUIRED:-0}" = "1" ]; then
+                    # The app's verifyLlamaCpp* task needs libggml-vulkan.so, so a CPU-only
+                    # fallback would only fail later with a less useful message.
+                    echo "Vulkan build failed for $abi and LLAMA_VULKAN_REQUIRED=1" >&2; exit 1
+                elif [ ${#vulkan_flags[@]} -gt 0 ]; then
                     echo "::warning::Vulkan build failed for $abi; falling back to CPU-only"
                     configure_llama "$abi" "$api" "$build_dir" "$out_dir" "${cpu_flags[@]}" -DGGML_VULKAN=OFF
                     cmake --build "$build_dir" --parallel "$JOBS"
