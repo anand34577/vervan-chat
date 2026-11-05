@@ -144,4 +144,36 @@ class ToolCallParserTest {
         assertEquals(0, result.calls.size)
         assertEquals(1, result.malformed.size)
     }
+
+    @Test
+    fun `parses LFM native pythonic tool calls`() {
+        val result = ToolCallParser.parseAll(
+            "Checking. <|tool_call_start|>[get_weather(city=\"Paris\", days=3, metric=True), list_notes()]<|tool_call_end|>"
+        )
+        assertEquals(listOf("get_weather", "list_notes"), result.calls.map { it.name })
+        assertEquals("Paris", result.calls[0].params.getString("city"))
+        assertEquals(3, result.calls[0].params.getInt("days"))
+        assertTrue(result.calls[0].params.getBoolean("metric"))
+        assertTrue(result.malformed.isEmpty())
+    }
+
+    @Test
+    fun `LFM call with a comma inside a string argument keeps it whole`() {
+        val call = ToolCallParser.parse("<|tool_call_start|>[search_notes(query='milk, eggs', tags=['a', 'b'])]<|tool_call_end|>")
+        assertEquals("milk, eggs", call?.params?.getString("query"))
+        assertEquals(2, call?.params?.getJSONArray("tags")?.length())
+    }
+
+    @Test
+    fun `LFM tool call markup is hidden from display while streaming`() {
+        assertEquals("Let me look", ToolCallParser.stripForDisplay("Let me look <|tool_call_start|>[search_no"))
+        assertEquals("Done.", ToolCallParser.stripForDisplay("<|tool_call_start|>[a()]<|tool_call_end|>Done."))
+    }
+
+    @Test
+    fun `LFM block with an unparseable call is reported as malformed`() {
+        val result = ToolCallParser.parseAll("<|tool_call_start|>[get_weather(Paris)]<|tool_call_end|>")
+        assertTrue(result.calls.isEmpty())
+        assertEquals(1, result.malformed.size)
+    }
 }
