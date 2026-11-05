@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Button
@@ -234,7 +236,8 @@ fun TranslationScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                IconButton(onClick = {
+                // Swapping needs a known source language to become the new target.
+                IconButton(enabled = sourceLang != "Auto-detect" && !isTranslating, onClick = {
                     if (sourceLang != "Auto-detect") {
                         val prevSource = sourceLang
                         sourceLang = targetLang
@@ -260,11 +263,28 @@ fun TranslationScreen(onBack: () -> Unit) {
                 onValueChange = { sourceText = it.take(InputLimits.TRANSLATION_TEXT_CHARS) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md),
                 minLines = 4,
+                enabled = !isTranslating,
                 shape = MaterialTheme.shapes.large,
-                label = { Text(stringResource(R.string.translation_text_to_translate)) }
+                label = { Text(stringResource(R.string.translation_text_to_translate)) },
+                supportingText = { ToolCharCount(sourceText.length, InputLimits.TRANSLATION_TEXT_CHARS) },
+                trailingIcon = if (sourceText.isNotEmpty() && !isTranslating) {
+                    { IconButton(onClick = { sourceText = ""; translated = "" }) { Icon(Icons.Filled.Clear, stringResource(R.string.tool_clear_input)) } }
+                } else null
             )
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = !isOcrRunning, modifier = Modifier.weight(1f)) {
+            ToolSourceRow {
+                OutlinedButton(
+                    onClick = {
+                        val clip = context.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+                        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                        if (text.isBlank()) scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.tool_clipboard_empty)) }
+                        else sourceText = text.take(InputLimits.TRANSLATION_TEXT_CHARS)
+                    },
+                    enabled = !isTranslating && !isOcrRunning, modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.ContentPaste, null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.tool_paste), maxLines = 1, modifier = Modifier.padding(start = Space.xs))
+                }
+                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = !isOcrRunning && !isTranslating, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                     Text(
                         if (isOcrRunning) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo),
@@ -273,17 +293,20 @@ fun TranslationScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(start = Space.xs)
                     )
                 }
-                if (isTranslating) {
-                    OutlinedButton(onClick = { genJob?.cancel(); isTranslating = false }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                        Text(stringResource(R.string.action_stop), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.xs))
-                    }
-                } else {
-                    Button(onClick = ::translate, enabled = sourceText.isNotBlank(), modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.quick_reply_translate), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-                }
             }
+            ToolPrimaryButton(
+                label = stringResource(R.string.translation_translate_to, targetLang),
+                icon = Icons.Filled.Translate,
+                onClick = ::translate,
+                blockedReason = when {
+                    isOcrRunning -> stringResource(R.string.text_action_recognizing_text)
+                    sourceText.isBlank() -> stringResource(R.string.tool_blocked_add_text)
+                    sourceLang == targetLang -> stringResource(R.string.translation_same_language)
+                    else -> null
+                },
+                running = isTranslating,
+                onStop = { genJob?.cancel(); isTranslating = false }
+            )
             when {
                 isTranslating && translated.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(

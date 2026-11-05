@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -196,7 +198,26 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
         topBar = {
             TopAppBar(
                 title = { OverflowTooltipText(title) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
+                actions = {
+                    if (started) {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, stringResource(R.string.turn_session_menu))
+                        }
+                        androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            val hasTurns = turns.isNotEmpty() && !isThinking
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.turn_copy_transcript)) }, enabled = hasTurns, onClick = { menuOpen = false; copyTranscript() })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.library_share)) }, enabled = hasTurns, onClick = { menuOpen = false; shareTranscript() })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.turn_save_note)) }, enabled = hasTurns, onClick = { menuOpen = false; saveTranscript() })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.turn_new_session)) }, onClick = {
+                                menuOpen = false
+                                genJob?.cancel(); isThinking = false
+                                turns = emptyList(); draft = ""; started = false
+                            })
+                        }
+                    }
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -216,33 +237,23 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             dismissKey = title,
                             body = stringResource(R.string.turn_based_chat_set_a_focus_and_work)
                         )
-                        VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_turn_based_chat_1_set_the_focus))
+                        ToolStep(1, stringResource(R.string.turn_step_focus), hint = stringResource(R.string.turn_based_chat_the_assistant_starts_with_one))
                         OutlinedTextField(
                             value = setup,
                             onValueChange = { setup = it.take(InputLimits.CHAT_TEXT_CHARS) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
                             minLines = 3,
                             shape = MaterialTheme.shapes.large,
-                            label = { Text(stringResource(R.string.turn_based_chat_session_context)) },
-                            placeholder = { Text(setupHint) }
+                            label = { Text(stringResource(R.string.turn_focus_label)) },
+                            placeholder = { Text(setupHint) },
+                            supportingText = { ToolCharCount(setup.length, InputLimits.CHAT_TEXT_CHARS) }
                         )
-                        VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_turn_based_chat_2_begin_the_session))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                        stringResource(R.string.turn_based_chat_the_assistant_starts_with_one),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(Space.lg)
-                            )
-                        }
-                        Button(
+                        ToolPrimaryButton(
+                            label = stringResource(R.string.turn_based_chat_start_guided_session),
+                            icon = Icons.Filled.Forum,
                             onClick = { started = true; send(null) },
-                            enabled = setup.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                        ) { Text(stringResource(R.string.turn_based_chat_start_guided_session)) }
+                            blockedReason = if (setup.isBlank()) stringResource(R.string.turn_blocked_focus) else null
+                        )
                     }
                 }
             }
@@ -295,15 +306,6 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
                             }
                         }
                     }
-                }
-                if (turns.isNotEmpty() && !isThinking) {
-                    ResultActions(
-                        modifier = Modifier.padding(horizontal = Space.md),
-                        onCopy = ::copyTranscript,
-                        onShare = ::shareTranscript,
-                        onSave = ::saveTranscript,
-                        saveLabel = "Save as note"
-                    )
                 }
                 Card(
                     Modifier.fillMaxWidth().padding(Space.md),

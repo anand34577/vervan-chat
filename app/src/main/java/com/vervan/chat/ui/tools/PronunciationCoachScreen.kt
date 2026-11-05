@@ -49,7 +49,7 @@ import com.vervan.chat.validation.InputLimits
  * diff (which target words the recognizer didn't hear back) plus its raw confidence score.
  * heuristic, not true phonetic scoring — good enough to flag likely trouble spots.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PronunciationCoachScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -72,9 +72,9 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
             val scores = result.data?.getFloatArrayExtra(RecognizerIntent.EXTRA_CONFIDENCE_SCORES)
             heardText = heard
             confidence = scores?.firstOrNull()
-            val targetWords = target.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
-            val heardWords = heard.lowercase().split(Regex("\\s+")).toSet()
-            missedWords = targetWords.filter { it.trim(',', '.', '!', '?') !in heardWords }
+            // Punctuation and case are ignored on both sides: "that?" and "That" are the same word.
+            val heardWords = heard.split(Regex("\\s+")).map(::normalizeWord).filter { it.isNotBlank() }.toSet()
+            missedWords = target.split(Regex("\\s+")).filter { it.isNotBlank() && normalizeWord(it) !in heardWords }
         }
     }
     val requestMicPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
@@ -101,40 +101,99 @@ fun PronunciationCoachScreen(onBack: () -> Unit) {
                 title = stringResource(R.string.pronunciation_coach_listen_repeat_improve),
                 body = stringResource(R.string.pronunciation_coach_hear_a_phrase_repeat_it)
             )
+            ToolStep(1, stringResource(R.string.pron_step_phrase))
             OutlinedTextField(
                 value = target, onValueChange = { target = it.take(InputLimits.PRONUNCIATION_TEXT_CHARS); heardText = null },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.lg), placeholder = { Text(stringResource(R.string.pronunciation_coach_word_or_phrase_to_practice)) }
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.pronunciation_coach_word_or_phrase_to_practice)) },
+                supportingText = { ToolCharCount(target.length, InputLimits.PRONUNCIATION_TEXT_CHARS) },
+                maxLines = 3
             )
-            Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
+                PRACTICE_PHRASES.forEach { phrase ->
+                    com.vervan.chat.ui.common.VervanFilterChip(
+                        selected = target == phrase,
+                        onClick = { target = phrase; heardText = null },
+                        label = { Text(phrase, maxLines = 1) }
+                    )
+                }
+            }
+
+            ToolStep(2, stringResource(R.string.pron_step_listen))
+            ToolSourceRow {
                 OutlinedButton(
-                    onClick = { if (ttsReady) tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce") },
-                    enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
+                    onClick = { tts?.setSpeechRate(1f); tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce") },
+                    enabled = target.isNotBlank() && ttsReady, modifier = Modifier.weight(1f)
                 ) { Icon(Icons.AutoMirrored.Filled.VolumeUp, null, Modifier.size(18.dp)); Text(stringResource(R.string.pronunciation_coach_hear_it), modifier = Modifier.padding(start = Space.sm)) }
                 OutlinedButton(
-                    onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
-                    enabled = target.isNotBlank(), modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Mic, null, Modifier.size(18.dp)); Text(stringResource(R.string.pronunciation_coach_repeat_it), modifier = Modifier.padding(start = Space.sm)) }
+                    onClick = { tts?.setSpeechRate(0.6f); tts?.speak(target, TextToSpeech.QUEUE_FLUSH, null, "pronounce-slow") },
+                    enabled = target.isNotBlank() && ttsReady, modifier = Modifier.weight(1f)
+                ) { Text(stringResource(R.string.pron_slowly)) }
             }
+            if (!ttsReady) {
+                Text(stringResource(R.string.pron_tts_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs))
+            }
+
+            ToolStep(3, stringResource(R.string.pron_step_say))
+            ToolPrimaryButton(
+                label = stringResource(if (heardText == null) R.string.pronunciation_coach_repeat_it else R.string.pron_try_again),
+                icon = Icons.Filled.Mic,
+                onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) },
+                blockedReason = if (target.isBlank()) stringResource(R.string.pron_blocked) else null,
+                modifier = Modifier.padding(top = 0.dp)
+            )
             heardText?.let { heard ->
+                val words = target.split(Regex("\\s+")).filter { it.isNotBlank() }
+                val matched = words.size - missedWords.size
+                val score = if (words.isEmpty()) 0 else matched * 100 / words.size
                 Card(
                     Modifier.fillMaxWidth().padding(top = Space.lg),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     Column(Modifier.padding(Space.md)) {
-                        Text(stringResource(R.string.pronunciation_coach_heard_arg1, heard), style = MaterialTheme.typography.bodyMedium)
-                        confidence?.let { Text(stringResource(R.string.pronunciation_confidence, (it * 100).toInt()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs)) }
-                        if (missedWords.isEmpty()) {
-                            Text(stringResource(R.string.pronunciation_coach_sounded_right), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.sm))
-                        } else {
-                            Text(
-                                "Possibly mispronounced: ${missedWords.joinToString(", ")}",
-                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(top = Space.sm)
-                            )
+                        Text(
+                            stringResource(R.string.pron_score, score),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (missedWords.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                        androidx.compose.foundation.layout.FlowRow(
+                            Modifier.fillMaxWidth().padding(top = Space.sm),
+                            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                            verticalArrangement = Arrangement.spacedBy(Space.xs)
+                        ) {
+                            words.forEach { w ->
+                                val ok = normalizeWord(w) !in missedWords.map(::normalizeWord)
+                                androidx.compose.material3.Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = if (ok) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+                                ) {
+                                    Text(
+                                        w, style = MaterialTheme.typography.bodyMedium,
+                                        color = if (ok) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xs)
+                                    )
+                                }
+                            }
                         }
+                        Text(stringResource(R.string.pronunciation_coach_heard_arg1, heard.ifBlank { "…" }), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.sm))
+                        confidence?.let { Text(stringResource(R.string.pronunciation_confidence, (it * 100).toInt()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = Space.xs)) }
+                        Text(
+                            stringResource(if (missedWords.isEmpty()) R.string.pronunciation_coach_sounded_right else R.string.pron_tip),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = Space.sm)
+                        )
                     }
                 }
             }
-    }
+        }
     }
 }
+
+private val PRACTICE_PHRASES = listOf("Thank you very much", "Could you repeat that?", "Comfortable", "Entrepreneur", "Specifically")
+
+private fun normalizeWord(w: String) = w.lowercase().trim { !it.isLetterOrDigit() && it != '\'' }

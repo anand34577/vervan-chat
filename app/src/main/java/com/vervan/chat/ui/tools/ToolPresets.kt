@@ -156,13 +156,13 @@ private val jsonLogActions = listOf(
 )
 
 @Composable fun CodeExplainerScreen(onBack: () -> Unit) =
-    TextActionScreen("Code explainer", codeExplainerActions, onBack, hint = stringResource(R.string.tool_presets_paste_a_short_code_sample))
+    TextActionScreen("Code explainer", codeExplainerActions, onBack, hint = stringResource(R.string.tool_presets_paste_a_short_code_sample), codeInput = true)
 
 @Composable fun RegexSqlHelperScreen(onBack: () -> Unit) =
     TextActionScreen("Regex & SQL helper", regexSqlActions, onBack, hint = stringResource(R.string.tool_presets_describe_what_you_want_or))
 
 @Composable fun JsonLogAnalyzerScreen(onBack: () -> Unit) =
-    TextActionScreen("JSON & log analyzer", jsonLogActions, onBack, hint = stringResource(R.string.tool_presets_paste_json_or_log_output))
+    TextActionScreen("JSON & log analyzer", jsonLogActions, onBack, hint = stringResource(R.string.tool_presets_paste_json_or_log_output), codeInput = true)
 
 // --- Personal organization tools ---
 

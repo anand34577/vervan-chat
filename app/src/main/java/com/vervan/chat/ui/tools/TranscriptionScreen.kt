@@ -67,6 +67,16 @@ import com.vervan.chat.ui.common.ResponsiveActions
 import com.vervan.chat.ui.theme.Space
 import com.vervan.chat.ui.theme.SurfaceRole
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.FindReplace
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
 
 private fun queryDisplayName(context: android.content.Context, uri: Uri): String {
     var name = uri.lastPathSegment?.substringAfterLast('/') ?: "audio"
@@ -86,6 +96,16 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
     val vm: TranscriptionViewModel = viewModel(factory = viewModelFactory { initializer { TranscriptionViewModel(app) } })
 
     val projects by vm.projects.collectAsStateWithLifecycle()
+    var pendingDelete by remember { mutableStateOf<TranscriptionProject?>(null) }
+    pendingDelete?.let { p ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.txd_delete_title)) },
+            text = { Text(stringResource(R.string.txd_delete_body, p.fileName)) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { vm.delete(p.id); pendingDelete = null }) { Text(stringResource(R.string.action_delete)) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) } }
+        )
+    }
     val current by vm.current.collectAsStateWithLifecycle()
     val phase by vm.phase.collectAsStateWithLifecycle()
     val installedModels by vm.installedModelVariants.collectAsStateWithLifecycle()
@@ -138,10 +158,11 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                             modifier = Modifier.padding(top = Space.md)
                         )
                     }
-                    ResponsiveActions(Modifier.padding(top = Space.md)) {
+                    ToolSourceRow(Modifier.padding(top = Space.md)) {
                         Button(
                             onClick = { importLauncher.launch(arrayOf("audio/*", "video/*")) },
-                            enabled = hasSpeechModel
+                            enabled = hasSpeechModel,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                     Text(stringResource(R.string.transcription_import_file))
@@ -152,7 +173,8 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                                 if (recording) vm.stopRecording()
                                 else requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
                             },
-                            enabled = hasSpeechModel || recording
+                            enabled = hasSpeechModel || recording,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                             Text(
@@ -195,7 +217,7 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        IconButton(onClick = { vm.delete(p.id) }) {
+                                        IconButton(onClick = { pendingDelete = p }) {
                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete))
                                         }
                                     }
@@ -206,6 +228,9 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                 }
             }
         } else {
+          // System back closes the transcript, like the toolbar arrow, instead of leaving the tool.
+          androidx.activity.compose.BackHandler { vm.closeCurrent() }
+          androidx.compose.foundation.layout.Box(Modifier.padding(padding)) {
             TranscriptionDetail(
                 vm = vm,
                 project = project, phase = phase, installedVariants = installedWhisperVariants,
@@ -232,6 +257,7 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                     }
                 }
             )
+          }
         }
     }
 }
@@ -245,7 +271,7 @@ private fun statusLabel(p: TranscriptionProject): String = when (p.status) {
     else -> stringResource(R.string.transcription_not_transcribed_yet)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TranscriptionDetail(
     vm: TranscriptionViewModel,
@@ -258,175 +284,267 @@ private fun TranscriptionDetail(
     onDelete: () -> Unit,
     onExport: (String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val copiedLabel = stringResource(R.string.chat_copied)
     var text by remember(project.id) { mutableStateOf(project.transcript) }
     LaunchedEffect(project.transcript) { if (project.transcript != text) text = project.transcript }
     var variantMenuOpen by remember { mutableStateOf(false) }
-    var selectedVariant by remember(project.id) { mutableStateOf(project.modelVariant) }
+    var exportMenuOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var findOpen by rememberSaveable(project.id) { mutableStateOf(false) }
     val aiActionState by vm.aiActionState.collectAsStateWithLifecycle()
     val saveState by vm.saveState.collectAsStateWithLifecycle()
     var showSaveDialog by remember { mutableStateOf(false) }
 
-    // Snapshot-based undo: not every keystroke (BasicTextField gives no cheap per-keystroke undo
-    // stack of its own), just before a whole-document mutation — Replace All or an AI action —
-    // since those are the edits large enough that losing them by accident actually hurts.
+    fun variantKey(m: com.vervan.chat.data.db.entities.TtsVoiceModel) =
+        if (m.engine.equals(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, ignoreCase = true)) TranscriptionViewModel.SHRUTI_PREFIX + m.language else m.language
+    fun variantLabel(key: String) = if (key.startsWith(TranscriptionViewModel.SHRUTI_PREFIX)) {
+        "Shruti " + (com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[key.removePrefix(TranscriptionViewModel.SHRUTI_PREFIX)] ?: key)
+    } else "Whisper $key"
+    val installedKeys = installedVariants.map(::variantKey)
+    // The project remembers the engine it last used; fall back to an installed one when that is gone.
+    var selectedVariant by remember(project.id, installedKeys) {
+        mutableStateOf(project.modelVariant.takeIf { it in installedKeys } ?: installedKeys.firstOrNull() ?: project.modelVariant)
+    }
+
+    // Snapshot undo before whole-document changes (Replace all, a model rewrite, an added section).
     val undoStack = remember(project.id) { mutableStateListOf<String>() }
-    fun pushUndo() { undoStack.add(text) }
-    fun applyMutation(newText: String) { pushUndo(); text = newText; onEdit(newText) }
+    fun applyMutation(newText: String) { undoStack.add(text); text = newText.take(InputLimits.TRANSCRIPT_CHARS); onEdit(text) }
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var replaceWith by rememberSaveable { mutableStateOf("") }
     val matchCount = if (searchQuery.isEmpty()) 0 else Regex(Regex.escape(searchQuery), RegexOption.IGNORE_CASE).findAll(text).count()
-
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size
     val segments = remember(project.segmentsJson) { vm.parseSegments(project) }
+    val transcribing = phase is TranscriptionViewModel.Phase.Transcribing
+
+    fun copy(value: String) {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            ?.setPrimaryClip(android.content.ClipData.newPlainText(project.fileName, value))
+        android.widget.Toast.makeText(context, copiedLabel, android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun share(value: String) {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(android.content.Intent.EXTRA_SUBJECT, project.fileName)
+            .putExtra(android.content.Intent.EXTRA_TEXT, value)
+        context.startActivity(android.content.Intent.createChooser(send, null))
+    }
 
     PageContainer(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(vertical = Space.lg)) {
-            Text(project.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            Text(statusLabel(project), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            Modifier.fillMaxSize().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = Space.lg)
+        ) {
+            // The recording
+            Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                Column(Modifier.padding(Space.md)) {
+                    Text(project.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(statusLabel(project), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (segments.isNotEmpty()) TimestampedPlaybackCard(audioPath = project.audioPath, segments = segments)
+                }
+            }
 
-            fun variantKey(m: com.vervan.chat.data.db.entities.TtsVoiceModel) =
-                if (m.engine.equals(com.vervan.chat.voice.ShrutiSttEngine.ENGINE, ignoreCase = true)) TranscriptionViewModel.SHRUTI_PREFIX + m.language else m.language
-            fun variantLabel(key: String) = if (key.startsWith(TranscriptionViewModel.SHRUTI_PREFIX)) {
-                "Shruti " + (com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[key.removePrefix(TranscriptionViewModel.SHRUTI_PREFIX)] ?: key)
-            } else "Whisper $key"
-            if (installedVariants.size > 1) {
-                ExposedDropdownMenuBox(
-                    expanded = variantMenuOpen, onExpandedChange = { variantMenuOpen = it },
-                    modifier = Modifier.padding(top = Space.sm)
-                ) {
+            // 1 · Transcribe
+            ToolStep(1, stringResource(R.string.txd_step_transcribe), hint = stringResource(R.string.txd_step_transcribe_hint))
+            if (installedVariants.isNotEmpty()) {
+                ExposedDropdownMenuBox(expanded = variantMenuOpen, onExpandedChange = { if (!transcribing) variantMenuOpen = it }) {
                     OutlinedTextField(
-                        value = variantLabel(selectedVariant), onValueChange = {}, readOnly = true,
-                    label = { Text(stringResource(R.string.transcription_model)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = variantMenuOpen) },
+                        value = variantLabel(selectedVariant), onValueChange = {}, readOnly = true, enabled = !transcribing,
+                        label = { Text(stringResource(R.string.transcription_model)) },
+                        trailingIcon = { if (installedVariants.size > 1) ExposedDropdownMenuDefaults.TrailingIcon(expanded = variantMenuOpen) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
-                    androidx.compose.material3.DropdownMenu(expanded = variantMenuOpen, onDismissRequest = { variantMenuOpen = false }) {
-                        installedVariants.forEach { m ->
-                            DropdownMenuItem(text = { Text(variantLabel(variantKey(m))) }, onClick = { selectedVariant = variantKey(m); variantMenuOpen = false })
+                    if (installedVariants.size > 1) {
+                        androidx.compose.material3.DropdownMenu(expanded = variantMenuOpen, onDismissRequest = { variantMenuOpen = false }) {
+                            installedVariants.forEach { m ->
+                                DropdownMenuItem(text = { Text(variantLabel(variantKey(m))) }, onClick = { selectedVariant = variantKey(m); variantMenuOpen = false })
+                            }
                         }
                     }
                 }
             }
-
-            when (phase) {
-                is TranscriptionViewModel.Phase.Transcribing -> {
-                    Row(Modifier.fillMaxWidth().padding(top = Space.md), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp).padding(end = Space.sm), strokeWidth = 2.dp)
-                Text(stringResource(R.string.transcription_running), style = MaterialTheme.typography.bodyMedium)
-                        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
-                    }
-                }
-                else -> {
-                    Button(
-                        onClick = { onTranscribe(selectedVariant) },
-                        enabled = installedVariants.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                    ) { Text(if (project.status == "DONE") "Re-transcribe" else "Transcribe") }
-                }
+            ToolPrimaryButton(
+                label = stringResource(if (project.status == "DONE") R.string.txd_retranscribe else R.string.txd_transcribe),
+                icon = Icons.Filled.Mic,
+                onClick = {
+                    if (project.status == "DONE" && text.isNotBlank()) undoStack.add(text)
+                    onTranscribe(selectedVariant)
+                },
+                blockedReason = if (installedVariants.isEmpty()) stringResource(R.string.transcription_no_model) else null,
+                running = transcribing,
+                onStop = onCancel
+            )
+            if (transcribing) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.sm))
+                Text(stringResource(R.string.transcription_running), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs))
             }
             (phase as? TranscriptionViewModel.Phase.Failed)?.let {
-            ErrorCard(title = stringResource(R.string.transcription_failed), body = it.message, modifier = Modifier.padding(top = Space.sm))
+                ErrorCard(title = stringResource(R.string.transcription_failed), body = it.message, modifier = Modifier.padding(top = Space.sm))
             }
 
-            if (segments.isNotEmpty()) {
-                TimestampedPlaybackCard(audioPath = project.audioPath, segments = segments)
-            }
-
+            // 2 · Transcript
+            ToolStep(2, stringResource(R.string.txd_step_review), hint = stringResource(R.string.txd_step_review_hint))
             OutlinedTextField(
                 value = text,
                 onValueChange = { val next = it.take(InputLimits.TRANSCRIPT_CHARS); text = next; onEdit(next) },
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(top = Space.md),
-                    label = { Text(stringResource(R.string.transcription_transcript)) },
-                    placeholder = { Text(stringResource(R.string.transcription_placeholder)) }
+                enabled = !transcribing,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp),
+                label = { Text(stringResource(R.string.transcription_transcript)) },
+                placeholder = { Text(stringResource(R.string.transcription_placeholder)) },
+                supportingText = { Text(stringResource(R.string.txd_counts, text.length, words)) }
             )
-
-            Text(
-                "${text.length} characters · ${text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size} words",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                OutlinedTextField(
-                    value = searchQuery, onValueChange = { searchQuery = it.take(InputLimits.SEARCH_QUERY_CHARS) },
-                label = { Text(stringResource(R.string.transcription_find)) }, singleLine = true, modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = replaceWith, onValueChange = { replaceWith = it.take(InputLimits.SEARCH_QUERY_CHARS) },
-                label = { Text(stringResource(R.string.transcription_replace_with)) }, singleLine = true, modifier = Modifier.weight(1f)
-                )
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text(
-                    if (searchQuery.isEmpty()) "" else "$matchCount match${if (matchCount == 1) "" else "es"}",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedButton(
-                    onClick = {
-                        val replaced = Regex(Regex.escape(searchQuery), RegexOption.IGNORE_CASE)
-                            .replace(text, Regex.escapeReplacement(replaceWith))
-                        applyMutation(replaced)
-                    },
-                    enabled = matchCount > 0
-            ) { Text(stringResource(R.string.transcription_replace_all)) }
-                OutlinedButton(
-                    onClick = {
-                        val previous = undoStack.removeLastOrNull() ?: return@OutlinedButton
-                        text = previous
-                        onEdit(previous)
-                    },
-                    enabled = undoStack.isNotEmpty(),
-                    modifier = Modifier.padding(start = Space.sm)
-            ) { Text(stringResource(R.string.action_undo)) }
-            }
-
-            ResponsiveActions(Modifier.padding(top = Space.md)) {
-            OutlinedButton(onClick = { onExport("txt") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_txt)) }
-            OutlinedButton(onClick = { onExport("md") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_markdown)) }
-            OutlinedButton(onClick = { onExport("pdf") }, enabled = text.isNotBlank()) { Text(stringResource(R.string.export_pdf)) }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete)) }
-            }
-
-                Text(stringResource(R.string.transcription_offline_model), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.md))
-            val running = (aiActionState as? TranscriptionViewModel.AiActionState.Running)?.label
-            androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AI_ACTIONS.forEach { (label, template) ->
-                    OutlinedButton(
-                        onClick = { pushUndo(); vm.runAiAction(project.id, label, template) },
-                        enabled = text.isNotBlank() && running == null
-                    ) { Text(if (running == label) "$label…" else label) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                OutlinedButton(onClick = { copy(text) }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.action_copy), modifier = Modifier.padding(start = Space.xs))
+                }
+                OutlinedButton(onClick = { share(text) }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_share), modifier = Modifier.padding(start = Space.xs))
+                }
+                androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { exportMenuOpen = true }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.FileDownload, null, Modifier.size(18.dp)); Text(stringResource(R.string.txd_export), modifier = Modifier.padding(start = Space.xs))
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = exportMenuOpen, onDismissRequest = { exportMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.export_txt)) }, onClick = { exportMenuOpen = false; onExport("txt") })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.export_markdown)) }, onClick = { exportMenuOpen = false; onExport("md") })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.export_pdf)) }, onClick = { exportMenuOpen = false; onExport("pdf") })
+                    }
                 }
             }
-            (aiActionState as? TranscriptionViewModel.AiActionState.Failed)?.let {
-            ErrorCard(title = stringResource(R.string.transcription_action_failed), body = it.message, modifier = Modifier.padding(top = Space.sm))
+            Row(Modifier.fillMaxWidth().padding(top = Space.xs), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                androidx.compose.material3.TextButton(onClick = { findOpen = !findOpen }, enabled = text.isNotBlank()) {
+                    Icon(Icons.Filled.FindReplace, null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.txd_find_replace), modifier = Modifier.padding(start = Space.xs))
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                androidx.compose.material3.TextButton(
+                    onClick = { undoStack.removeLastOrNull()?.let { previous -> text = previous; onEdit(previous) } },
+                    enabled = undoStack.isNotEmpty()
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.action_undo), modifier = Modifier.padding(start = Space.xs))
+                }
+            }
+            if (findOpen) {
+                Card(Modifier.fillMaxWidth(), colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
+                    Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        OutlinedTextField(
+                            value = searchQuery, onValueChange = { searchQuery = it.take(InputLimits.SEARCH_QUERY_CHARS) },
+                            label = { Text(stringResource(R.string.transcription_find)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            supportingText = if (searchQuery.isEmpty()) null else {
+                                { Text(if (matchCount == 1) stringResource(R.string.txd_one_match) else stringResource(R.string.txd_matches, matchCount)) }
+                            }
+                        )
+                        OutlinedTextField(
+                            value = replaceWith, onValueChange = { replaceWith = it.take(InputLimits.SEARCH_QUERY_CHARS) },
+                            label = { Text(stringResource(R.string.transcription_replace_with)) }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                applyMutation(Regex(Regex.escape(searchQuery), RegexOption.IGNORE_CASE).replace(text, Regex.escapeReplacement(replaceWith)))
+                            },
+                            enabled = matchCount > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (matchCount > 0) stringResource(R.string.txd_replace_n, matchCount) else stringResource(R.string.transcription_replace_all)) }
+                    }
+                }
             }
 
+            // 3 · Ask the model
+            ToolStep(3, stringResource(R.string.transcription_offline_model), hint = stringResource(R.string.txd_ai_hint))
+            val running = (aiActionState as? TranscriptionViewModel.AiActionState.Running)?.label
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
+                AI_ACTIONS.forEach { (label, template) ->
+                    com.vervan.chat.ui.common.VervanFilterChip(
+                        selected = running == label,
+                        onClick = { vm.runAiAction(project.id, label, template) },
+                        enabled = text.isNotBlank() && running == null && !transcribing,
+                        label = { Text(if (running == label) "$label…" else label) }
+                    )
+                }
+            }
+            if (running != null) {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = Space.sm))
+            }
+            when (val ai = aiActionState) {
+                is TranscriptionViewModel.AiActionState.Failed ->
+                    ErrorCard(title = stringResource(R.string.transcription_action_failed), body = ai.message, modifier = Modifier.padding(top = Space.sm))
+                is TranscriptionViewModel.AiActionState.Done -> Card(
+                    Modifier.fillMaxWidth().padding(top = Space.sm),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
+                    Column(Modifier.padding(Space.md)) {
+                        Text(ai.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            com.vervan.chat.ui.common.MarkdownLiteText(ai.text, modifier = Modifier.padding(top = Space.xs))
+                        }
+                        androidx.compose.foundation.layout.FlowRow(
+                            Modifier.fillMaxWidth().padding(top = Space.sm),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm)
+                        ) {
+                            if (ai.label == "Improve grammar") {
+                                Button(onClick = { applyMutation(ai.text); vm.dismissAiResult() }) { Text(stringResource(R.string.txd_replace_transcript)) }
+                            } else {
+                                Button(onClick = {
+                                    applyMutation(text.trimEnd() + "\n\n## ${ai.label}\n\n${ai.text}\n")
+                                    vm.dismissAiResult()
+                                }) { Text(stringResource(R.string.txd_add_to_transcript)) }
+                            }
+                            OutlinedButton(onClick = { copy(ai.text) }) { Text(stringResource(R.string.action_copy)) }
+                            androidx.compose.material3.TextButton(onClick = vm::dismissAiResult) { Text(stringResource(R.string.omni_dismiss)) }
+                        }
+                    }
+                }
+                else -> {}
+            }
+
+            // Keep it
+            ToolStep(4, stringResource(R.string.txd_step_keep))
             OutlinedButton(
                 onClick = { showSaveDialog = true },
-                enabled = text.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-            ) { Text(stringResource(R.string.transcription_save_knowledge)) }
+                enabled = text.isNotBlank() && !transcribing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
+                Text(stringResource(R.string.transcription_save_knowledge), modifier = Modifier.padding(start = Space.sm))
+            }
             when (val save = saveState) {
                 TranscriptionViewModel.SaveState.Saved -> com.vervan.chat.ui.common.SystemStatusStrip(
-            title = stringResource(R.string.transcription_saved),
+                    title = stringResource(R.string.transcription_saved),
                     body = stringResource(R.string.transcription_the_transcript_was_saved_to),
                     tone = com.vervan.chat.ui.common.StatusTone.Ready,
                     modifier = Modifier.padding(top = Space.sm)
                 )
                 is TranscriptionViewModel.SaveState.Failed -> ErrorCard(
-            title = stringResource(R.string.transcription_save_failed),
+                    title = stringResource(R.string.transcription_save_failed),
                     body = save.message,
                     modifier = Modifier.padding(top = Space.sm)
                 )
                 else -> {}
             }
+            androidx.compose.material3.TextButton(
+                onClick = { confirmDelete = true },
+                enabled = !transcribing,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+            ) {
+                Icon(Icons.Filled.Delete, null, Modifier.size(18.dp))
+                Text(stringResource(R.string.txd_delete), modifier = Modifier.padding(start = Space.sm))
+            }
         }
+    }
+
+    if (confirmDelete) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.txd_delete_title)) },
+            text = { Text(stringResource(R.string.txd_delete_body, project.fileName)) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false; onDelete() }) { Text(stringResource(R.string.action_delete)) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.action_cancel)) } }
+        )
     }
 
     if (showSaveDialog) {
@@ -541,7 +659,7 @@ private fun TimestampedPlaybackCard(
                 }
             Text(stringResource(R.string.transcription_timestamps), style = MaterialTheme.typography.bodyMedium)
             }
-            androidx.compose.foundation.lazy.LazyColumn(Modifier.height(160.dp)) {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 160.dp)) {
                 items(segments) { seg ->
                     val active = positionMs in seg.startMs..(seg.endMs.coerceAtLeast(seg.startMs + 1))
                     Row(

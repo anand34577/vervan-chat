@@ -279,6 +279,7 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
         data object Idle : AiActionState
         data class Running(val label: String) : AiActionState
         data class Failed(val message: String) : AiActionState
+        data class Done(val label: String, val text: String) : AiActionState
     }
     private val _aiActionState = MutableStateFlow<AiActionState>(AiActionState.Idle)
     val aiActionState: StateFlow<AiActionState> = _aiActionState
@@ -303,17 +304,12 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
                 _aiActionState.value = AiActionState.Failed(app.getString(R.string.transcription_could_not_generate_arg1_no, label))
                 return@launch
             }
-            val updated = project.transcript.trimEnd() + "\n\n## $label\n\n${result.trim()}\n"
-            if (updated.length > InputLimits.TRANSCRIPT_CHARS) {
-                _aiActionState.value = AiActionState.Failed(
-                    "The generated section would exceed the ${InputLimits.TRANSCRIPT_CHARS}-character transcript limit."
-                )
-                return@launch
-            }
-            dao.upsert(project.copy(transcript = updated, updatedAt = System.currentTimeMillis()))
-            _aiActionState.value = AiActionState.Idle
+            // The result is shown on its own; the transcript only changes when the user adds it.
+            _aiActionState.value = AiActionState.Done(label, result.trim())
         }
     }
+
+    fun dismissAiResult() { _aiActionState.value = AiActionState.Idle }
 
     sealed interface SaveState {
         data object Idle : SaveState

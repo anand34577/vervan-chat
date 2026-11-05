@@ -184,6 +184,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density"
             android:launchMode="singleTop"
@@ -228,6 +229,7 @@
              EXTRA_PROCESS_TEXT_READONLY extra the host sends, not a manifest declaration. -->
         <activity
             android:name=".ui.quickaction.QuickActionActivity"
+            android:screenOrientation="portrait"
             android:exported="true"
             android:theme="@style/Theme.Vervan.Dialog"
             android:excludeFromRecents="true"
@@ -250,6 +252,7 @@
              to Vervan's own screen instead of just popping over the app being captured" bug. -->
         <activity
             android:name=".overlay.ScreenCaptureActivity"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:theme="@style/Theme.Vervan.Dialog"
             android:configChanges="orientation|screenSize|smallestScreenSize"

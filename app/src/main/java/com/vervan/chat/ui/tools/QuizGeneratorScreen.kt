@@ -48,6 +48,10 @@ import com.vervan.chat.system.toUserMessage
 import com.vervan.chat.validation.InputLimits
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.heightIn
 
 private data class QuizQuestion(val type: String, val question: String, val options: List<String>, val correctAnswer: String, val explanation: String)
 
@@ -122,13 +126,21 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
         }
     }
 
-    val score = remember(submitted) {
-        if (!submitted) 0 else questions.indices.count { i ->
-            val given = answers[i].orEmpty().trim()
-            val correct = questions[i].correctAnswer.trim()
-            given.isNotBlank() && (given.equals(correct, true) || correct.contains(given, true) || given.contains(correct, true))
+    fun isCorrect(i: Int): Boolean {
+        val q = questions[i]
+        val given = answers[i].orEmpty().trim()
+        val correct = q.correctAnswer.trim()
+        if (given.isBlank()) return false
+        return when (q.type) {
+            // A choice is right only when it is the right choice.
+            "multiple_choice", "true_false" -> given.equals(correct, ignoreCase = true)
+            // Typed answers allow small differences, but a word or two can't match by accident.
+            else -> given.equals(correct, ignoreCase = true) ||
+                (given.length >= 3 && (correct.contains(given, true) || given.contains(correct, true)))
         }
     }
+    val score = remember(submitted, questions, answers) { if (!submitted) 0 else questions.indices.count(::isCorrect) }
+    val answered = questions.indices.count { !answers[it].isNullOrBlank() }
 
     Scaffold(
         topBar = {
@@ -139,100 +151,157 @@ fun QuizGeneratorScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
-        Column(
-            Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Space.md)
-        ) {
             ToolIntro(
                 icon = Icons.Filled.Quiz,
                 title = stringResource(R.string.quiz_generator_turn_material_into_active_recall),
                 body = stringResource(R.string.quiz_generator_add_study_material_and_create)
             )
-            OutlinedTextField(
-                value = sourceText, onValueChange = { sourceText = it.take(100_000) },
-                modifier = Modifier.fillMaxWidth(), minLines = 4,
-                placeholder = { Text(stringResource(R.string.quiz_generator_paste_study_material_to_generate)) }
-            )
-            // Difficulty is a labelled choice of three, and Generate is the screen's full-width
-            // primary action like every other tool — not a bare "Medium" button beside a small one.
-            Text(stringResource(R.string.quiz_difficulty), style = MaterialTheme.typography.titleSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                DIFFICULTIES.forEach { d ->
-                    com.vervan.chat.ui.common.VervanFilterChip(selected = difficulty == d, onClick = { difficulty = d }, label = { Text(d) })
+            if (questions.isEmpty()) {
+                ToolStep(1, stringResource(R.string.quiz_step_material))
+                OutlinedTextField(
+                    value = sourceText, onValueChange = { sourceText = it.take(100_000) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 360.dp), minLines = 5,
+                    enabled = !isGenerating,
+                    placeholder = { Text(stringResource(R.string.quiz_generator_paste_study_material_to_generate)) },
+                    supportingText = { ToolCharCount(sourceText.length, 100_000) }
+                )
+                ToolStep(2, stringResource(R.string.quiz_difficulty))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    DIFFICULTIES.forEach { d ->
+                        com.vervan.chat.ui.common.VervanFilterChip(selected = difficulty == d, onClick = { difficulty = d }, label = { Text(d) }, enabled = !isGenerating)
+                    }
                 }
-            }
-            Button(
-                onClick = ::generate,
-                enabled = sourceText.isNotBlank() && !isGenerating,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text(stringResource(R.string.quiz_generator_generate_quiz)) }
-            if (isGenerating) {
-                com.vervan.chat.ui.common.OperationProgressCard(
-                    title = stringResource(R.string.quiz_generator_building_your_quiz),
-                    body = stringResource(R.string.quiz_generator_creating_five_arg1_questions_from, difficulty)
+                ToolPrimaryButton(
+                    label = stringResource(R.string.quiz_generator_generate_quiz),
+                    icon = Icons.Filled.Quiz,
+                    onClick = ::generate,
+                    blockedReason = when {
+                        sourceText.isBlank() -> stringResource(R.string.tool_blocked_add_text)
+                        sourceText.trim().length < 80 -> stringResource(R.string.flash_blocked_short)
+                        else -> null
+                    },
+                    running = isGenerating
                 )
-            }
-            errorText?.let {
-                com.vervan.chat.ui.common.OperationErrorCard(
-                    title = stringResource(R.string.quiz_generator_couldn_t_generate_a_quiz),
-                    message = it,
-                    recovery = stringResource(R.string.quiz_generator_shorten_the_material_or_load),
-                    actionLabel = stringResource(R.string.action_try_again),
-                    onAction = { generate() },
-                    modifier = Modifier.padding(top = Space.lg)
-                )
-            }
-            if (submitted) {
-                ToolResultHeader(
-                    title = stringResource(R.string.quiz_generator_quiz_complete),
-                    supportingText = stringResource(R.string.quiz_generator_you_answered_arg1_of_arg2, score, questions.size)
-                )
-                Card(
-                    Modifier.fillMaxWidth().padding(top = Space.lg),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) { Text(stringResource(R.string.quiz_generator_score_arg1_arg2, score, questions.size), Modifier.padding(Space.md), style = MaterialTheme.typography.titleMedium) }
-            }
-            questions.forEachIndexed { i, q ->
-                Card(Modifier.fillMaxWidth().padding(top = Space.md)) {
-                    Column(Modifier.padding(Space.md)) {
-                        Text(stringResource(R.string.quiz_generator_arg1_arg2, i + 1, q.question), style = MaterialTheme.typography.bodyMedium)
-                        when (q.type) {
-                            "multiple_choice", "true_false" -> {
-                                val opts = q.options.ifEmpty { listOf("True", "False") }
-                                opts.forEach { opt ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(top = Space.xs),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        RadioButton(
-                                            selected = answers[i] == opt,
-                                            enabled = !submitted,
-                                            onClick = { answers = answers + (i to opt) }
-                                        )
-                                        Text(opt, style = MaterialTheme.typography.bodySmall)
-                                    }
+                if (isGenerating) {
+                    com.vervan.chat.ui.common.OperationProgressCard(
+                        title = stringResource(R.string.quiz_generator_building_your_quiz),
+                        body = stringResource(R.string.quiz_generator_creating_five_arg1_questions_from, difficulty),
+                        modifier = Modifier.padding(top = Space.md)
+                    )
+                }
+                errorText?.let {
+                    com.vervan.chat.ui.common.OperationErrorCard(
+                        title = stringResource(R.string.quiz_generator_couldn_t_generate_a_quiz),
+                        message = it,
+                        recovery = stringResource(R.string.quiz_generator_shorten_the_material_or_load),
+                        actionLabel = stringResource(R.string.action_try_again),
+                        onAction = { generate() },
+                        modifier = Modifier.padding(top = Space.md)
+                    )
+                }
+            } else {
+                if (submitted) {
+                    ToolResultHeader(
+                        title = stringResource(R.string.quiz_generator_score_arg1_arg2, score, questions.size),
+                        supportingText = stringResource(
+                            when {
+                                score == questions.size -> R.string.quiz_result_perfect
+                                score * 2 >= questions.size -> R.string.quiz_result_good
+                                else -> R.string.quiz_result_review
+                            }
+                        ),
+                        modifier = Modifier.padding(top = Space.md)
+                    )
+                } else {
+                    ToolStep(null, stringResource(R.string.quiz_step_answer), hint = stringResource(R.string.quiz_answered, answered, questions.size))
+                }
+                questions.forEachIndexed { i, q ->
+                    val right = submitted && isCorrect(i)
+                    Card(
+                        Modifier.fillMaxWidth().padding(top = Space.md),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when {
+                                !submitted -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                right -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                            }
+                        )
+                    ) {
+                        Column(Modifier.padding(Space.md)) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(stringResource(R.string.quiz_generator_arg1_arg2, i + 1, q.question), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                if (submitted) {
+                                    Icon(
+                                        if (right) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                                        contentDescription = stringResource(if (right) R.string.quiz_correct else R.string.quiz_incorrect),
+                                        tint = if (right) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(start = Space.sm)
+                                    )
                                 }
                             }
-                            else -> OutlinedTextField(
-                                value = answers[i].orEmpty(),
-                                onValueChange = { answers = answers + (i to it.take(1_000)) },
-                                enabled = !submitted,
-                                placeholder = { Text(stringResource(R.string.quiz_generator_your_answer)) },
-                                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-                            )
+                            when (q.type) {
+                                "multiple_choice", "true_false" -> {
+                                    // A true/false question always offers both, whatever the model listed.
+                                    val opts = if (q.type == "true_false") listOf("True", "False") else q.options.ifEmpty { listOf("True", "False") }
+                                    opts.forEach { opt ->
+                                        Row(
+                                            Modifier.fillMaxWidth()
+                                                .selectable(selected = answers[i] == opt, enabled = !submitted, role = androidx.compose.ui.semantics.Role.RadioButton) {
+                                                    answers = answers + (i to opt)
+                                                }
+                                                .heightIn(min = 48.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(selected = answers[i] == opt, enabled = !submitted, onClick = null)
+                                            Text(opt, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = Space.sm))
+                                        }
+                                    }
+                                }
+                                else -> OutlinedTextField(
+                                    value = answers[i].orEmpty(),
+                                    onValueChange = { answers = answers + (i to it.take(1_000)) },
+                                    enabled = !submitted,
+                                    placeholder = { Text(stringResource(R.string.quiz_generator_your_answer)) },
+                                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                                )
+                            }
+                            if (submitted) {
+                                HorizontalDivider(Modifier.padding(vertical = Space.sm))
+                                Text(stringResource(R.string.quiz_generator_correct_answer_arg1, q.correctAnswer), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                if (q.explanation.isNotBlank()) {
+                                    Text(q.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Space.xs))
+                                }
+                            }
                         }
-                        if (submitted) {
-                            HorizontalDivider(Modifier.padding(vertical = Space.sm))
-                            Text(stringResource(R.string.quiz_generator_correct_answer_arg1, q.correctAnswer), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            Text(q.explanation, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                if (!submitted) {
+                    ToolPrimaryButton(
+                        label = stringResource(R.string.quiz_generator_submit_answers),
+                        icon = Icons.Filled.CheckCircle,
+                        onClick = { submitted = true },
+                        blockedReason = if (answered == 0) stringResource(R.string.quiz_blocked_answer) else null
+                    )
+                    if (answered in 1 until questions.size) {
+                        Text(
+                            stringResource(R.string.quiz_unanswered_note, questions.size - answered),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    ToolSourceRow(Modifier.padding(top = Space.md)) {
+                        OutlinedButton(onClick = { answers = emptyMap(); submitted = false }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.quiz_retake))
+                        }
+                        Button(onClick = { questions = emptyList(); answers = emptyMap(); submitted = false }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.quiz_new))
                         }
                     }
                 }
             }
-            if (questions.isNotEmpty() && !submitted) {
-                Button(onClick = { submitted = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) { Text(stringResource(R.string.quiz_generator_submit_answers)) }
-            }
-        }
         }
     }
 }

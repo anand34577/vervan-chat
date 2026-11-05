@@ -2,6 +2,7 @@ package com.vervan.chat.ui.tools
 
 import com.vervan.chat.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -294,29 +295,34 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                 title = stringResource(R.string.document_scanner_scan_a_complete_document),
                 body = stringResource(R.string.document_scanner_capture_pages_review_them_then)
             )
-            OutlinedButton(
-                onClick = ::startScan,
-                enabled = gmsAvailable && !isImportingScan,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.lg)
-            ) {
-                if (isImportingScan) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(stringResource(R.string.notification_importing), modifier = Modifier.padding(start = Space.sm))
-                } else {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(stringResource(R.string.document_scanner_capture_page_arg1, pages.size + 1), modifier = Modifier.padding(start = Space.sm))
+            ToolStep(1, stringResource(R.string.docscan_step_capture), hint = stringResource(R.string.docscan_step_capture_hint))
+            if (pages.isEmpty()) {
+                ToolPrimaryButton(
+                    label = stringResource(R.string.docscan_start),
+                    icon = Icons.Filled.PhotoCamera,
+                    onClick = ::startScan,
+                    blockedReason = if (!gmsAvailable) stringResource(R.string.document_scanner_document_scanning_needs_google_play) else null,
+                    running = isImportingScan,
+                    modifier = Modifier.padding(top = 0.dp)
+                )
+            } else {
+                OutlinedButton(
+                    onClick = ::startScan,
+                    enabled = gmsAvailable && !isImportingScan && !isWorking,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isImportingScan) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.notification_importing), modifier = Modifier.padding(start = Space.sm))
+                    } else {
+                        Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                        Text(stringResource(R.string.document_scanner_capture_page_arg1, pages.size + 1), modifier = Modifier.padding(start = Space.sm))
+                    }
                 }
             }
-            if (!gmsAvailable) {
-                Text(
-                    stringResource(R.string.document_scanner_document_scanning_needs_google_play),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = Space.sm)
-                )
-            }
             if (pages.isNotEmpty()) {
-                LazyRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                ToolStep(2, pluralStringResource(R.plurals.docscan_pages, pages.size, pages.size), hint = stringResource(R.string.docscan_review_hint))
+                LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     items(pages, key = { it }) { path ->
                         Box(Modifier.size(100.dp)) {
                             val bitmap = rememberThumbnail(path, 200, invalidationKey = thumbVersion)
@@ -345,12 +351,13 @@ fun DocumentScannerScreen(onBack: () -> Unit, onOpenDocument: (String) -> Unit =
                         modifier = Modifier.padding(top = Space.lg)
                     )
                 } else {
-                    ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                        OutlinedButton(onClick = ::exportPdf) {
+                    ToolStep(3, stringResource(R.string.docscan_step_export))
+                    ToolSourceRow {
+                        OutlinedButton(onClick = ::exportPdf, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.PictureAsPdf, null, Modifier.size(18.dp))
                             Text(stringResource(R.string.export_pdf), modifier = Modifier.padding(start = Space.sm))
                         }
-                        OutlinedButton(onClick = ::exportImages) {
+                        OutlinedButton(onClick = ::exportImages, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
                             Text(stringResource(R.string.document_scanner_images), modifier = Modifier.padding(start = Space.sm))
                         }

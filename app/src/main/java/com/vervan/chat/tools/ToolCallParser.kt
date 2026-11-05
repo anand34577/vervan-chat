@@ -23,8 +23,10 @@ object ToolCallParser {
     // the user saw raw `<|tool_call>call:list_tools{}<tool_call|>` in the bubble instead of the
     // tool running. Accept the pipe on either side, and `/` on either side of the closer, so every
     // observed open/close permutation parses.
-    private const val OPEN = "<\\s*\\|?\\s*tool_call\\s*\\|?\\s*>"
-    private const val CLOSE = "<\\s*\\|?\\s*/?\\s*tool_call\\s*/?\\s*\\|?\\s*>"
+    // LFM models (LFM2, LFM3 Omni) use their own `<|tool_call_start|>[name(arg="x")]<|tool_call_end|>`
+    // envelope with a Python-style call list inside, so `_start`/`_end` are accepted too.
+    private const val OPEN = "<\\s*\\|?\\s*tool_call(?:_start)?\\s*\\|?\\s*>"
+    private const val CLOSE = "<\\s*\\|?\\s*/?\\s*tool_call(?:_end)?\\s*/?\\s*\\|?\\s*>"
     private val COMPLETE = Regex("$OPEN([\\s\\S]*?)$CLOSE", RegexOption.IGNORE_CASE)
     private val STREAMING = Regex("$OPEN([\\s\\S]*)$", RegexOption.IGNORE_CASE)
     private val CODE_FENCE = Regex("^```[a-zA-Z]*\\s*|\\s*```$")
@@ -43,6 +45,11 @@ object ToolCallParser {
         val malformed = mutableListOf<String>()
         for (match in COMPLETE.findAll(text)) {
             val body = match.groupValues[1].trim().replace(CODE_FENCE, "").trim()
+            val pythonic = parsePythonicList(body, match.value)
+            if (pythonic != null) {
+                if (pythonic.isEmpty()) malformed.add(match.value) else calls.addAll(pythonic)
+                continue
+            }
             val call = parseOne(body, match.value)
             if (call != null) calls.add(call) else malformed.add(match.value)
         }
@@ -79,6 +86,81 @@ object ToolCallParser {
         val params = if (argBlob.isBlank()) JSONObject() else
             runCatching { JSONObject(if (argBlob.startsWith("{")) argBlob else "{$argBlob}") }.getOrNull() ?: JSONObject()
         return ToolCall(name, params, rawBlock)
+    }
+
+    /**
+     * LFM's native body: a Python list of calls, `[get_weather(city="Paris"), add(a=1, b=2)]`.
+     * Returns null when [body] isn't that shape (so the JSON/bare parsers get their turn), and an
+     * empty list when it is but no call in it parses (then reported as malformed).
+     */
+    private fun parsePythonicList(body: String, rawBlock: String): List<ToolCall>? {
+        if (!body.startsWith("[") || !body.endsWith("]")) return null
+        val inner = body.substring(1, body.length - 1).trim()
+        if (inner.isEmpty() || inner.startsWith("{") || inner.startsWith("\"")) return null
+        return splitTopLevel(inner).mapNotNull { part ->
+            val m = PY_CALL.find(part) ?: return@mapNotNull null
+            val params = parsePythonKwargs(m.groupValues[2]) ?: return@mapNotNull null
+            ToolCall(m.groupValues[1], params, rawBlock)
+        }
+    }
+
+    private val PY_CALL = Regex("^([A-Za-z_][A-Za-z0-9_.]*)\\s*\\(([\\s\\S]*)\\)$")
+    private val PY_NAME = Regex("[A-Za-z_][A-Za-z0-9_]*")
+
+    /** `city="Paris", days=3, units=None` as a JSON object; null when an argument isn't `key=value`. */
+    private fun parsePythonKwargs(args: String): JSONObject? {
+        val out = JSONObject()
+        for (part in splitTopLevel(args)) {
+            val eq = part.indexOf('=')
+            if (eq <= 0) return null
+            val key = part.substring(0, eq).trim()
+            if (!PY_NAME.matches(key)) return null
+            out.put(key, pythonValue(part.substring(eq + 1).trim()) ?: return null)
+        }
+        return out
+    }
+
+    private fun pythonValue(v: String): Any? {
+        if (v.length >= 2 && (v[0] == '"' || v[0] == '\'') && v.last() == v[0]) {
+            val q = v[0]
+            return v.substring(1, v.length - 1).replace("\\n", "\n").replace("\\$q", "$q").replace("\\\\", "\\")
+        }
+        when (v) {
+            "True", "true" -> return true
+            "False", "false" -> return false
+            "None", "null" -> return JSONObject.NULL
+        }
+        v.toLongOrNull()?.let { return it }
+        v.toDoubleOrNull()?.let { return it }
+        if (v.startsWith("[") || v.startsWith("{")) {
+            val json = v.replace('\'', '"').replace(Regex("\\bTrue\\b"), "true")
+                .replace(Regex("\\bFalse\\b"), "false").replace(Regex("\\bNone\\b"), "null")
+            return runCatching { org.json.JSONTokener(json).nextValue() }.getOrNull()
+        }
+        return null
+    }
+
+    /** Splits on commas outside quotes, brackets and parentheses. */
+    private fun splitTopLevel(s: String): List<String> {
+        val parts = mutableListOf<String>()
+        var depth = 0
+        var quote: Char? = null
+        var start = 0
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (quote != null) {
+                if (c == '\\') i++ else if (c == quote) quote = null
+            } else when (c) {
+                '"', '\'' -> quote = c
+                '(', '[', '{' -> depth++
+                ')', ']', '}' -> depth--
+                ',' -> if (depth == 0) { parts.add(s.substring(start, i)); start = i + 1 }
+            }
+            i++
+        }
+        parts.add(s.substring(start))
+        return parts.map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     fun stripToolCall(text: String, call: ToolCall): String = text.replace(call.rawBlock, "").trim()

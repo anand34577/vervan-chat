@@ -575,7 +575,7 @@ fun VervanNavGraph(
             composable("tools/code-explainer") { com.vervan.chat.ui.tools.CodeExplainerScreen(onBack = { navController.popBackStack() }) }
             composable("tools/regex-sql-helper") { com.vervan.chat.ui.tools.RegexSqlHelperScreen(onBack = { navController.popBackStack() }) }
             composable("tools/json-log-analyzer") { com.vervan.chat.ui.tools.JsonLogAnalyzerScreen(onBack = { navController.popBackStack() }) }
-            composable("tools/image-caption") { com.vervan.chat.ui.tools.ImageCaptionScreen(onBack = { navController.popBackStack() }) }
+            composable("tools/image-caption") { com.vervan.chat.ui.tools.ImageCaptionScreen(onBack = { navController.popBackStack() }, onOpenModels = { navController.navigate("models") { launchSingleTop = true } }) }
             composable("tools/flashcards-photo") {
                 com.vervan.chat.ui.tools.FlashcardsFromPhotoScreen(
                     onBack = { navController.popBackStack() },

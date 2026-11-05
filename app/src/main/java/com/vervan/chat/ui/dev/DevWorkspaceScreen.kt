@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -70,6 +71,7 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var code by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(DevAction.entries.first()) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -83,23 +85,35 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
         Column(Modifier.fillMaxSize().imePadding().padding(vertical = Space.lg).verticalScroll(rememberScrollState())) {
+            com.vervan.chat.ui.tools.ToolIntro(
+                icon = androidx.compose.material.icons.Icons.Filled.Code,
+                title = stringResource(R.string.dev_workspace_developer_workspace),
+                body = stringResource(R.string.dev_intro)
+            )
+            com.vervan.chat.ui.tools.ToolStep(1, stringResource(R.string.dev_step_code))
             BoundedTextField(
                 value = code, onValueChange = { code = it },
                 label = stringResource(R.string.dev_workspace_paste_code), minLines = 6, maxLength = ValidationLimits.DEVELOPER_INPUT,
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier.fillMaxWidth()
             )
-            // Wraps: as a scroller the last action was cut off ("Find the b…") with no cue to swipe.
+            com.vervan.chat.ui.tools.ToolStep(2, stringResource(R.string.tool_step_choose_action))
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             androidx.compose.foundation.layout.FlowRow(
-                Modifier.padding(top = Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
                 DevAction.entries.forEach { action ->
-                    VervanFilterChip(selected = false, onClick = { vm.run(action, code) }, label = { Text(action.label) }, enabled = !running)
+                    VervanFilterChip(selected = selected == action, onClick = { selected = action }, label = { Text(action.label) }, enabled = !running)
                 }
             }
+            com.vervan.chat.ui.tools.ToolPrimaryButton(
+                label = selected.label,
+                icon = androidx.compose.material.icons.Icons.Filled.Code,
+                onClick = { vm.run(selected, code) },
+                blockedReason = if (code.isBlank()) stringResource(R.string.dev_blocked) else null,
+                running = running
+            )
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = stringResource(R.string.dev_workspace_working_on_the_code),
@@ -116,9 +130,11 @@ fun DevWorkspaceScreen(onBack: () -> Unit) {
                 )
             }
             if (output.isNotBlank()) {
-                Text(stringResource(R.string.dev_workspace_result), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+                com.vervan.chat.ui.tools.ToolStep(3, stringResource(R.string.tool_step_review_result))
                 Card(Modifier.fillMaxWidth()) {
-                    Text(output, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(Space.md))
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        com.vervan.chat.ui.common.MarkdownLiteText(output, modifier = Modifier.padding(Space.md))
+                    }
                 }
                 ResponsiveActions(Modifier.padding(top = Space.sm)) {
                     TextButton(onClick = {
