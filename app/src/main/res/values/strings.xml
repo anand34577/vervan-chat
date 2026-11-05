@@ -2540,4 +2540,14 @@
     <string name="shruti_cancel_download">Cancel the %1$s download</string>
     <string name="shruti_remove_title">Remove Shruti %1$s?</string>
     <string name="shruti_remove_body">The model file is deleted from this phone. You can download it again at any time.</string>
+    <string name="omni_setup_unsupported">LFM3 Omni needs a 64-bit phone with at least 6 GB of memory. This phone can still use the other models.</string>
+    <string name="omni_setup_body">The model reads text, photos, video and speech; the speech pack lets it answer out loud. Both stay on this phone and work offline.</string>
+    <string name="omni_setup_installed">Installed</string>
+    <string name="omni_setup_progress">%1$.2f of %2$.2f GB</string>
+    <string name="omni_setup_no_space">Needs %1$.1f GB free; this phone has %2$.1f GB. Free some space first.</string>
+    <string name="omni_setup_download">Download (%1$.1f GB)</string>
+    <string name="omni_setup_license">LFM3 Omni is released by Liquid AI under the %1$s. Organizations with annual revenue of 10 million US dollars or more need a separate license for commercial use. Download over Wi-Fi is recommended.</string>
+    <string name="omni_voice_label">Voice</string>
+    <string name="omni_accent_label">Accent</string>
+    <string name="omni_chars_count">%1$d / %2$d</string>
 </resources>

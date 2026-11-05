@@ -133,15 +133,7 @@ private fun StatusCard(
             val s = status
             when {
                 s == null -> Text(stringResource(R.string.omni_checking), style = MaterialTheme.typography.bodyMedium)
-                !s.installed -> {
-                    Text(stringResource(R.string.omni_needs_downloads), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        (if (s.bundle == null) "• LFM3 Omni 2B (3.2 GB)\n" else "✓ LFM3 Omni 2B\n") +
-                            (if (s.speechDir == null) "• LFM3 Omni speech pack (786 MB)" else "✓ LFM3 Omni speech pack"),
-                        style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.xs)
-                    )
-                    Button(onClick = onOpenModels, modifier = Modifier.padding(top = Space.sm)) { Text(stringResource(R.string.omni_open_models)) }
-                }
+                !s.installed -> OmniSetup(s, onInstalled = vm::refreshStatus, onOpenModels = onOpenModels)
                 else -> {
                     val line = when (runtime) {
                         is OmniRuntime.State.Ready -> stringResource(R.string.omni_loaded, runtime.placement)
@@ -205,17 +197,23 @@ private fun ConversationPane(
                 com.vervan.chat.ui.common.VervanFilterChip(selected = answerForm == "text", onClick = { vm.setAnswerForm("text") }, label = { Text(stringResource(R.string.omni_text_only)) })
             }
             when (mode) {
-                OmniStudioViewModel.Mode.PHOTO -> OutlinedButton(
-                    onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    enabled = ready && idle
-                ) { Text(stringResource(if (mediaLabel == null) R.string.omni_choose_photo else R.string.omni_change_photo)) }
-                OmniStudioViewModel.Mode.VIDEO -> OutlinedButton(
-                    onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
-                    enabled = ready && idle
-                ) { Text(stringResource(if (mediaLabel == null) R.string.omni_choose_video else R.string.omni_change_video)) }
                 else -> Unit
             }
             if (turns.isNotEmpty()) TextButton(onClick = vm::newConversation, enabled = idle) { Text(stringResource(R.string.omni_new_conversation)) }
+        }
+        // Choosing the photo or video is the first step of these modes: a full-width button.
+        when (mode) {
+            OmniStudioViewModel.Mode.PHOTO -> Button(
+                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = ready && idle,
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+            ) { Text(stringResource(if (mediaLabel == null) R.string.omni_choose_photo else R.string.omni_change_photo)) }
+            OmniStudioViewModel.Mode.VIDEO -> Button(
+                onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                enabled = ready && idle,
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+            ) { Text(stringResource(if (mediaLabel == null) R.string.omni_choose_video else R.string.omni_change_video)) }
+            else -> Unit
         }
         when (mode) {
             OmniStudioViewModel.Mode.PHOTO -> Text(
@@ -330,21 +328,30 @@ private fun SpeakPane(vm: OmniStudioViewModel, ready: Boolean, phase: OmniStudio
         OutlinedTextField(
             value = text, onValueChange = { text = it.take(1_500) },
             label = { Text(stringResource(R.string.omni_text_to_speak)) }, minLines = 4, maxLines = 10,
+            supportingText = { Text(stringResource(R.string.omni_chars_count, text.length, 1_500)) },
+            enabled = idle,
             modifier = Modifier.fillMaxWidth()
         )
-        FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Text(stringResource(R.string.omni_voice_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.sm))
+        FlowRow(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             com.vervan.chat.ui.common.VervanFilterChip(selected = voice == "female", onClick = { vm.setTtsVoice("female") }, label = { Text(stringResource(R.string.omni_voice_female)) })
             com.vervan.chat.ui.common.VervanFilterChip(selected = voice == "male", onClick = { vm.setTtsVoice("male") }, label = { Text(stringResource(R.string.omni_voice_male)) })
+        }
+        Text(stringResource(R.string.omni_accent_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.sm))
+        FlowRow(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             listOf("American English", "British English").forEach { l ->
                 com.vervan.chat.ui.common.VervanFilterChip(selected = language == l, onClick = { vm.setTtsLanguage(l) }, label = { Text(l) })
             }
         }
         PhaseLine(phase, onStop = vm::stop)
-        Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Button(onClick = { vm.speak(text) }, enabled = ready && idle && text.isNotBlank()) { Text(stringResource(R.string.omni_speak_action)) }
-            if (output != null) {
-                OutlinedButton(onClick = vm::replaySpeech, enabled = idle) { Text(stringResource(R.string.omni_play_again)) }
-                OutlinedButton(onClick = { saver.launch("omni-speech.wav") }, enabled = idle) { Text(stringResource(R.string.omni_save_wav)) }
+        Button(
+            onClick = { vm.speak(text) }, enabled = ready && idle && text.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().padding(top = Space.md)
+        ) { Text(stringResource(R.string.omni_speak_action)) }
+        if (output != null) {
+            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                OutlinedButton(onClick = vm::replaySpeech, enabled = idle, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.omni_play_again)) }
+                OutlinedButton(onClick = { saver.launch("omni-speech.wav") }, enabled = idle, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.omni_save_wav)) }
             }
         }
         Text(
@@ -369,19 +376,34 @@ private fun TranscribePane(vm: OmniStudioViewModel, ready: Boolean, phase: OmniS
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = Space.sm)) {
         Text(stringResource(R.string.omni_transcribe_hint),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             Button(
                 onClick = { if (recording) vm.stopRecording() else requestMic.launch(Manifest.permission.RECORD_AUDIO) },
-                enabled = ready && (idle || recording)
-            ) { Text(stringResource(if (recording) R.string.action_stop else R.string.omni_record)) }
-            OutlinedButton(onClick = { picker.launch(arrayOf("audio/*", "video/*")) }, enabled = ready && idle) { Text(stringResource(R.string.omni_open_file)) }
+                enabled = ready && (idle || recording),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(if (recording) R.string.action_stop else R.string.omni_record), modifier = Modifier.padding(start = Space.xs))
+            }
+            OutlinedButton(onClick = { picker.launch(arrayOf("audio/*", "video/*")) }, enabled = ready && idle, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.omni_open_file))
+            }
         }
         PhaseLine(phase, onStop = vm::stop)
         if (transcript.isNotBlank()) {
-            Card(Modifier.fillMaxWidth().padding(top = Space.md)) {
-                Text(transcript, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.md))
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Card(Modifier.fillMaxWidth().padding(top = Space.md)) {
+                    Text(transcript, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.md))
+                }
             }
-            TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(transcript)) }) { Text(stringResource(R.string.action_copy)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(transcript)) }) { Text(stringResource(R.string.action_copy)) }
+                TextButton(onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, transcript)
+                    runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                }) { Text(stringResource(R.string.action_share)) }
+            }
         }
         Spacer(Modifier.height(Space.lg))
     }
