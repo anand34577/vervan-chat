@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.library
 
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -508,8 +510,8 @@ private fun SavedTab(
                         onToggleSelected = { onToggleSelected(output.id) },
                         onEnterSelection = { onEnterSelection(output.id) }
                     ),
-                colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
-                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else null
+                colors = if (isSelected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else com.vervan.chat.ui.theme.SurfaceRole.Card.border()
             ) {
                 Row(Modifier.padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     if (selectionMode) {
@@ -520,10 +522,21 @@ private fun SavedTab(
                         )
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            output.displayTitle(stringResource(R.string.library_saved_output)),
-                            style = MaterialTheme.typography.titleSmall,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                output.displayTitle(stringResource(R.string.library_saved_output)),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (!selectionMode) {
+                                Icon(
+                                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
                         Text(
                             buildString {
                                 append(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(output.createdAt)))
@@ -540,7 +553,9 @@ private fun SavedTab(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = Space.sm),
                         )
-                        if (!selectionMode) {
+                        // Actions appear once a card is opened, like Run history, so the list
+                        // reads as content rather than a wall of Copy/Share/Delete buttons.
+                        if (!selectionMode && expanded) {
                             Row {
                                 TextButton(onClick = { clipboard.setText(output.content, scope) }) { Text(stringResource(R.string.library_copy)) }
                                 TextButton(onClick = {

@@ -1,5 +1,15 @@
 package com.vervan.chat.ui.omni
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -255,22 +265,69 @@ private fun ConversationPane(
         }
 
         PhaseLine(phase, onStop = vm::stop)
-        Row(Modifier.fillMaxWidth().padding(vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = typed, onValueChange = { typed = it.take(2_000) },
-                placeholder = { Text(stringResource(R.string.omni_ask_placeholder)) },
-                enabled = ready && idle, maxLines = 4,
-                modifier = Modifier.weight(1f)
+        // Same shape as the chat composer: one rounded container, text on top, actions below,
+        // with the send button filled only when there is something to send.
+        val canSend = ready && idle && typed.isNotBlank()
+        val sendLabel = stringResource(R.string.chat_send)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = Space.sm)
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(start = Space.lg, end = Space.xs, top = Space.sm, bottom = Space.xs)
+        ) {
+            val inputEnabled = ready && idle
+            androidx.compose.foundation.text.BasicTextField(
+                value = typed,
+                onValueChange = { typed = it.take(2_000) },
+                enabled = inputEnabled,
+                maxLines = 4,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = if (inputEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(top = Space.sm, end = Space.sm),
+                decorationBox = { inner ->
+                    Box {
+                        if (typed.isEmpty()) {
+                            Text(
+                                stringResource(R.string.omni_ask_placeholder),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        inner()
+                    }
+                }
             )
-            IconButton(onClick = { vm.askTyped(typed); typed = "" }, enabled = ready && idle && typed.isNotBlank()) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.chat_send))
-            }
-            IconButton(
-                onClick = { if (recording) vm.stopRecording() else requestMic.launch(Manifest.permission.RECORD_AUDIO) },
-                enabled = ready && (idle || recording)
-            ) {
-                Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
-                    contentDescription = if (recording) stringResource(R.string.omni_stop_and_send) else stringResource(R.string.omni_record_question))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { if (recording) vm.stopRecording() else requestMic.launch(Manifest.permission.RECORD_AUDIO) },
+                    enabled = ready && (idle || recording)
+                ) {
+                    Icon(
+                        if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
+                        contentDescription = if (recording) stringResource(R.string.omni_stop_and_send) else stringResource(R.string.omni_record_question),
+                        tint = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(if (canSend) MaterialTheme.colorScheme.onSurface else Color.Transparent)
+                        .clickable(enabled = canSend, role = androidx.compose.ui.semantics.Role.Button) { vm.askTyped(typed); typed = "" }
+                        .semantics { contentDescription = sendLabel },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = null,
+                        tint = if (canSend) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                }
             }
         }
     }
@@ -278,7 +335,7 @@ private fun ConversationPane(
 
 @Composable
 private fun TurnBubble(turn: OmniStudioViewModel.Turn, onReplay: () -> Unit) {
-    val container = if (turn.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
+    val container = if (turn.fromUser) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (turn.fromUser) Arrangement.End else Arrangement.Start) {
         Card(colors = CardDefaults.cardColors(containerColor = container), shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth(0.88f)) {

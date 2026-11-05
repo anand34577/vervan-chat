@@ -36,6 +36,10 @@
     <string name="search_unavailable_recovery">Try the search again or use a shorter query.</string>
     <string name="search_no_results">No results for “%1$s”</string>
     <string name="search_no_results_body">Try fewer words or another filter.</string>
+    <string name="search_scope_elsewhere">There are %1$d matches in other places.</string>
+    <string name="search_show_all">Show all results</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_remove_recent">Remove “%1$s” from recent searches</string>
     <string name="search_scope_no_match">No %1$s match “%2$s”</string>
     <string name="search_scope_all">All</string>
     <string name="search_scope_chats">Chats</string>
