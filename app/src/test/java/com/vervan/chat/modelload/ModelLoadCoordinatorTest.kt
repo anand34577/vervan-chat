@@ -332,7 +332,13 @@ class ModelLoadCoordinatorConcurrencyTest {
         }
         val cResult = scope.async(start = CoroutineStart.UNDISPATCHED) { coordinator.loadManually(c) }
 
-        gate.complete(Unit) // let a finish; b and c now race to go next
+        // UNDISPATCHED alone doesn't guarantee both are queued yet: a's load runs on
+        // Dispatchers.Default and can hold the coordinator mutex for a moment, so b or c may still
+        // be waiting to register. Releasing a before then let b start second on a busy CI runner.
+        kotlinx.coroutines.withTimeout(5_000) {
+            while (coordinator.pendingWaiterCount(ModelRole.GENERATION) < 2) kotlinx.coroutines.delay(5)
+        }
+        gate.complete(Unit) // let a finish; b and c are queued, and c must go next
 
         assertTrue(aResult.await().success)
         assertTrue(bResult.await().success)
