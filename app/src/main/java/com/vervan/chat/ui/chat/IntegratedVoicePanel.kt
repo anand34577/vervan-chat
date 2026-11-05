@@ -152,22 +152,16 @@ internal fun IntegratedVoicePanel(
         onDispose { view.keepScreenOn = false }
     }
 
-    val sessionAccent by animateColorAsState(
-        targetValue = voiceStateColor(state),
-        animationSpec = tween(if (reducedMotion) 1 else 420),
-        label = "voice-session-accent"
-    )
     Card(
         modifier = modifier
             .fillMaxWidth()
             .widthIn(max = 840.dp)
             .animateContentSize(animationSpec = tween(if (reducedMotion) 1 else 320)),
         shape = VervanExtraShapes.hero,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = BorderStroke(
-            1.dp,
-            sessionAccent.copy(alpha = if (state == VoiceControllerState.IDLE) 0.42f else 0.68f)
-        )
+        // The same quiet floating surface as the composer it replaces; the voice state is shown
+        // by the stage's tint inside, so the frame itself no longer needs a coloured outline.
+        colors = CardDefaults.cardColors(containerColor = com.vervan.chat.ui.theme.SurfaceRole.Floating.containerColor()),
+        border = com.vervan.chat.ui.theme.SurfaceRole.Floating.border()
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val compact = maxWidth < 390.dp
@@ -486,7 +480,6 @@ private fun VoiceStateBody(
         modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
         shape = MaterialTheme.shapes.extraLarge,
         color = stageColor,
-        border = BorderStroke(1.dp, voiceStateColor(state).copy(alpha = 0.32f))
     ) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),

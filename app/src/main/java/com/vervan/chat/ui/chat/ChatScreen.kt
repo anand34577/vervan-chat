@@ -1176,10 +1176,7 @@ fun ChatScreen(
                     // sectioned "More options" bottom sheet one tap away.
                     DropdownMenu(
                         expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                        // Search first, then incognito right below it (moved out of the "More
-                        // options" sheet — a per-session privacy switch is everyday enough to
-                        // live at the top level, not a tap further in), then the rest, then
-                        // "More options" last.
+                        // Search first, then the rest, then "More options" last.
                         DropdownMenuItem(text = { Text(stringResource(R.string.chat_find_conversation)) }, leadingIcon = {
                             Icon(
                                 Icons.Filled.Search,
@@ -1187,16 +1184,8 @@ fun ChatScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                         }, onClick = { showOverflow = false; showSearch = true })
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (chat?.isTemporary == true) R.string.chat_turn_incognito_off else R.string.chat_turn_incognito_on)) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Filled.VisibilityOff,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            onClick = { vm.toggleTemporary(); showOverflow = false })
+                        // Incognito lives in the composer's "+" sheet, beside the other per-message
+                        // switches; the title bar shows an eye-off icon while it is on.
                         DropdownMenuItem(text = { Text(stringResource(R.string.chat_statistics)) }, leadingIcon = {
                             Icon(
                                 Icons.Filled.Info,
