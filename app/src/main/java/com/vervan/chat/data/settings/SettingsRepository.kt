@@ -337,7 +337,7 @@ class SettingsRepository(context: Context) {
     suspend fun setShrutiSttEnabled(v: Boolean) { store.edit { it[Keys.SHRUTI_STT_ENABLED] = v } }
 
     /** Which downloaded Shruti language model to load — the catalog entry's `ttsLanguage`
-     * ("hi", "mr", "ta", "bn", "te"; see [com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES]). */
+     * ("hi", "mr", "ta", "bn", "te", "gu"; see [com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES]). */
     val shrutiModelVariant: Flow<String> = store.data.map { it[Keys.SHRUTI_MODEL_VARIANT] ?: "hi" }
     suspend fun setShrutiModelVariant(v: String) { store.edit { it[Keys.SHRUTI_MODEL_VARIANT] = v } }
 

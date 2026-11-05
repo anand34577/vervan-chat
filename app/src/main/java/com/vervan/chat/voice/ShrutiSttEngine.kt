@@ -173,6 +173,7 @@ class ShrutiSttEngine(
             "ta" to "Tamil",
             "bn" to "Bengali",
             "te" to "Telugu",
+            "gu" to "Gujarati",
         )
 
         fun findInstalledModelFile(context: Context, recordedPath: String? = null, variant: String): File? {

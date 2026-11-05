@@ -2524,4 +2524,20 @@
         <item quantity="one">%1$d section</item>
         <item quantity="other">%1$d sections</item>
     </plurals>
+    <string name="shruti_languages_title">Shruti languages</string>
+    <string name="shruti_languages_body">Download the languages you speak. Each one also understands English. The selected language is the one that listens.</string>
+    <string name="shruti_in_use">In use · %1$s</string>
+    <string name="shruti_not_downloaded">%1$s · %2$d MB</string>
+    <string name="shruti_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="shruti_waiting_network">Waiting for a connection</string>
+    <string name="shruti_waiting_storage">Not enough free storage</string>
+    <string name="shruti_paused">Paused</string>
+    <string name="shruti_failed">Download failed</string>
+    <string name="shruti_installing">Checking and installing…</string>
+    <string name="shruti_downloading">Downloading · %1$d%%</string>
+    <string name="shruti_download">Download</string>
+    <string name="shruti_retry">Retry</string>
+    <string name="shruti_cancel_download">Cancel the %1$s download</string>
+    <string name="shruti_remove_title">Remove Shruti %1$s?</string>
+    <string name="shruti_remove_body">The model file is deleted from this phone. You can download it again at any time.</string>
 </resources>

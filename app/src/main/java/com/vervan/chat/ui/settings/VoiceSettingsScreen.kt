@@ -390,25 +390,15 @@ fun VoiceSettingsScreen(onBack: () -> Unit = {}, onOpenModelManager: () -> Unit 
                             !com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE -> "Unavailable · the Shruti engine is not built into this version."
                             shrutiAvailable -> "Ready · $shrutiLanguageName + English, fully on-device."
                             installedShrutiModels.isNotEmpty() -> "Pick one of your downloaded languages below."
-                            else -> "Download a Shruti language (Hindi, Marathi, Tamil, Bengali, Telugu) in Models."
+                            else -> "Download a language below (about 30 MB each). Every model also understands English."
                         },
                         shrutiEnabled,
                         { vm.setShrutiSttEnabled(it) }
                     )
+                    if (shrutiEnabled && com.vervan.chat.BuildConfig.NEEDLE_AVAILABLE) {
+                        ShrutiLanguagePicker(selected = shrutiVariant, onSelect = { vm.setShrutiModelVariant(it) })
+                    }
                     if (shrutiEnabled && installedShrutiModels.isNotEmpty()) {
-                        androidx.compose.foundation.layout.FlowRow(
-                            modifier = Modifier.padding(top = Space.sm),
-                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm),
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.sm)
-                        ) {
-                            installedShrutiModels.forEach { model ->
-                                com.vervan.chat.ui.common.VervanFilterChip(
-                                    selected = shrutiVariant.equals(model.language, ignoreCase = true),
-                                    onClick = { vm.setShrutiModelVariant(model.language) },
-                                    label = { Text(com.vervan.chat.voice.ShrutiSttEngine.LANGUAGES[model.language] ?: model.language) }
-                                )
-                            }
-                        }
                         val shrutiEnglishOnly by vm.shrutiEnglishOnly.collectAsStateWithLifecycle()
                         VoiceToggleRow(
                             "English-only speech",

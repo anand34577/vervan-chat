@@ -485,6 +485,8 @@ object ModelCatalog {
             "6ddfde9e2c4af50113c55748bd1a5a4d26c5a2bf", 29_742_459L, "0a423c25f534e2099b43bc4e826018978c44a9f523cea19125686883a2a7c572"),
         shrutiModel("te", "Telugu", "Telugu and English (no punctuation, numbers as words)", "shruti-telugu", "shruti-telugu.cact",
             "8757e318917e88cbd403fbabab047d24ab7b0362", 29_742_633L, "197166720f32163bc2102ebf9dc0374d51ec9928175649071da92d943cca0d9e"),
+        shrutiModel("gu", "Gujarati", "Gujarati and English (no punctuation, numbers as words)", "shruti-gujarati", "shruti-gujarati.cact",
+            "97b32a13bbd1997fe64fdd03dae5bb358d896445", 29_742_045L, "23fd52c8edb36b24383c70b82d6dd21bfa7b070ca1606b15510e75bbf3822e1f"),
         // LFM3 Omni speech output: the depth decoder, frame embedding and codec graphs that turn
         // the Omni model's hidden states into 24 kHz speech (com.vervan.chat.omni). Needs the
         // "LFM3 Omni 2B" model above too — the language model, audio and vision encoders are read
