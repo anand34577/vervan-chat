@@ -438,6 +438,11 @@ class ModelLoadCoordinator(
         ).hashCode()
     }
 
+    /** How many requests are queued behind the in-flight load for [role]. For tests, which need
+     *  to know a request has registered before they let the current load finish. */
+    internal suspend fun pendingWaiterCount(role: ModelRole): Int =
+        coordinatorMutex.withLock { pendingWaiters[role]?.size ?: 0 }
+
     /** Explicit Model Manager pick — does NOT change the default; combine with [setDefault] if
      * the caller wants that too. If a load is already in-flight for this role, waits for it to
      * finish first, then loads [model] on top (double-load cost, accepted tradeoff — avoids
