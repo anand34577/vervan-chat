@@ -165,10 +165,12 @@ jobs:
           VERVAN_RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           VERVAN_RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           VERVAN_RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: >
-          ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease --stacktrace
-          -Pvervan.versionName=${{ steps.version.outputs.name }}
-          -Pvervan.versionCode=${{ steps.version.outputs.code }}
+        run: |
+          # Two invocations: app/build.gradle.kts turns ABI splits off when a bundle task is
+          # requested, because AGP can't build a bundle with splits and resource shrinking on.
+          version_args="-Pvervan.versionName=${{ steps.version.outputs.name }} -Pvervan.versionCode=${{ steps.version.outputs.code }}"
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease --stacktrace $version_args
+          ./gradlew :app:bundleRelease --stacktrace $version_args
 
       - name: Remove keystore
         if: always()
