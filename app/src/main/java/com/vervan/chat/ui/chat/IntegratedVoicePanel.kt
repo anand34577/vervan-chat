@@ -154,8 +154,8 @@ internal fun IntegratedVoicePanel(
 
     Card(
         modifier = modifier
-            .fillMaxWidth()
             .widthIn(max = 840.dp)
+            .fillMaxWidth()
             .animateContentSize(animationSpec = tween(if (reducedMotion) 1 else 320)),
         shape = VervanExtraShapes.hero,
         // The same quiet floating surface as the composer it replaces; the voice state is shown

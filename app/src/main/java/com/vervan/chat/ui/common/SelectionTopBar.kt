@@ -23,8 +23,9 @@ import androidx.compose.ui.Modifier
  * shows the count, a Close icon exits selection (never a "cancel" text button off to the side),
  * a select-all/deselect-all icon always comes first among actions, then whatever a given screen
  * needs beyond delete (archive, move to folder, restore — [extraActions]), then Delete last,
- * always error-tinted. There is deliberately no "enter selection mode" button anywhere — long
- * press on a row is the only entry point, everywhere, matching [selectableItem].
+ * always error-tinted. Long press on a row (see [selectableItem]) enters selection everywhere;
+ * the busiest lists (chats, notes, run history, memory) also show a visible Select entry, since
+ * many people never discover the gesture.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +52,12 @@ fun SelectionTopBar(
             extraActions()
             if (onDelete != null) {
                 IconButton(enabled = deleteEnabled, onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = deleteContentDescription, tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = deleteContentDescription,
+                        // Disabled reads as disabled: the red tint only when there is something to delete.
+                        tint = if (deleteEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
                 }
             }
         }

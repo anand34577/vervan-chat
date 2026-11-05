@@ -337,33 +337,28 @@ fun VervanNavGraph(
     ) {
     Row(Modifier.fillMaxSize()) {
         if (useRail && showBottomBar) {
+            // Same calm treatment as the phone's bottom bar: page-colored, a hairline divider,
+            // and a tonal (not bright) new-chat button. No brand tile: every tab's top bar
+            // already carries the title, and a phone held sideways has little height to spare.
             NavigationRail(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ) {
-                Surface(
-                    modifier = Modifier.padding(top = Space.sm, bottom = Space.md).size(40.dp),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        // Decorative brand mark; the rail items carry their own labels.
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
+                header = {
+                    FloatingActionButton(
+                        onClick = { showCreateSheet = true },
+                        modifier = Modifier.padding(top = Space.sm, bottom = Space.sm),
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        elevation = androidx.compose.material3.FloatingActionButtonDefaults.bottomAppBarFabElevation(),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = createLabel)
                     }
-                }
-                FloatingActionButton(
-                    onClick = { showCreateSheet = true },
-                    modifier = Modifier.padding(bottom = Space.md),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = createLabel)
-                }
+                },
+            ) {
                 tabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
-                Spacer(Modifier.weight(1f))
                 trailingTabs.forEach { tab -> RailTabItem(tab, currentRoute, navController) }
             }
+            androidx.compose.material3.VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
         Scaffold(
             modifier = Modifier.weight(1f),
@@ -1101,7 +1096,7 @@ fun VervanNavGraph(
     }
 
     if (showCreateSheet) {
-        val sheetState = rememberModalBottomSheetState()
+        val sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()
         fun go(route: String) { showCreateSheet = false; navController.navigate(route) }
         fun newChat(startAction: String? = null) {
             showCreateSheet = false

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 
 /** Owns tool-run history reads and recoverable mutations so the history screen never treats a
  * database failure as an empty history or reports a delete/save as successful before it commits. */
@@ -62,14 +63,19 @@ class ToolRunHistoryViewModel(app: VervanApp) : ViewModel() {
         }
     }
 
-    fun delete(run: ToolRun): Deferred<Result<Unit>> = viewModelScope.async {
+    /** Soft-deletes [ids] together; the screen offers Undo through [restore]. */
+    fun delete(ids: Collection<String>): Deferred<Result<Unit>> = viewModelScope.async {
         try {
-            db.toolRunDao().softDelete(run.id)
+            db.toolRunDao().softDeleteMany(ids.toList())
             Result.success(Unit)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {
             Result.failure(t)
         }
+    }
+
+    fun restore(ids: Collection<String>) {
+        viewModelScope.launch { runCatching { db.toolRunDao().restoreMany(ids.toList()) } }
     }
 }

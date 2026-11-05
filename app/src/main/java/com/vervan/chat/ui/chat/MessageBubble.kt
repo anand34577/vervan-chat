@@ -1128,7 +1128,7 @@ fun savedOutputTitle(text: String): String {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectTextSheet(text: String, onDismiss: () -> Unit) {
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Text(
             stringResource(R.string.chat_select_text),
             style = MaterialTheme.typography.titleMedium,

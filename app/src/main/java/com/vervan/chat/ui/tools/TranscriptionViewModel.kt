@@ -362,6 +362,11 @@ class TranscriptionViewModel(private val app: VervanApp) : ViewModel() {
         }
     }
 
+    /** Clears the whole history, audio files included; the screen confirms first. */
+    fun deleteAll(ids: Collection<String>) {
+        ids.forEach(::delete)
+    }
+
     suspend fun exportTxt(project: TranscriptionProject): File = withContext(Dispatchers.IO) {
         val dir = File(app.filesDir, "exports").apply { mkdirs() }
         pruneOldExports(dir)

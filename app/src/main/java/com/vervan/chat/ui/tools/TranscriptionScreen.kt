@@ -106,6 +106,17 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
             dismissButton = { androidx.compose.material3.TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) } }
         )
     }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    if (confirmClearAll) {
+        com.vervan.chat.ui.common.ConfirmDialog(
+            title = stringResource(R.string.transcription_clear_all_title),
+            body = stringResource(R.string.transcription_clear_all_body, projects.size),
+            confirmLabel = stringResource(R.string.action_clear),
+            destructive = true,
+            onConfirm = { confirmClearAll = false; vm.deleteAll(projects.map { it.id }) },
+            onDismiss = { confirmClearAll = false },
+        )
+    }
     val current by vm.current.collectAsStateWithLifecycle()
     val phase by vm.phase.collectAsStateWithLifecycle()
     val installedModels by vm.installedModelVariants.collectAsStateWithLifecycle()
@@ -193,7 +204,17 @@ fun TranscriptionScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}) {
                         )
                     }
 
-                Text(stringResource(R.string.transcription_history), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.lg, bottom = Space.sm))
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = Space.lg, bottom = Space.xs),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.transcription_history), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        if (projects.size > 1) {
+                            androidx.compose.material3.TextButton(onClick = { confirmClearAll = true }) {
+                                Text(stringResource(R.string.tool_history_clear_all))
+                            }
+                        }
+                    }
                     if (projects.isEmpty()) {
                         EmptyState(
                             icon = Icons.Filled.Mic,

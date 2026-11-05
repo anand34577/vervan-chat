@@ -297,7 +297,7 @@ internal fun DocumentComposerPreviewDialog(
                 // itself, not the card framing it, is the dominant thing on screen.
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
@@ -396,9 +396,9 @@ internal fun ModernChatAttachmentSheet(
 ) {
     // One sheet for everything you can add to or switch on for a message: the three everyday
     // attachments as large tiles, the less common ones as a list, then the chat switches.
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
+            Modifier.widthIn(max = 720.dp).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(horizontal = Space.lg).padding(bottom = Space.xl)
         ) {
@@ -758,7 +758,7 @@ internal fun AudioComposerPreviewDialog(
                 }
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp

@@ -68,7 +68,7 @@ fun MessageActionsSheet(
     destructiveActions: List<MessageAction> = emptyList(),
     showReactionsHeader: Boolean = true
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberAdaptiveSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = modifier) {
         Column(Modifier.fillMaxWidth().padding(bottom = Space.xxl), verticalArrangement = Arrangement.spacedBy(Space.md)) {
             if (onReact != null && reactions.isNotEmpty()) {

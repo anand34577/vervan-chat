@@ -448,7 +448,7 @@ internal fun ChatMoreOptionsSheet(
     onResetSettings: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Column(
             Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
@@ -562,12 +562,15 @@ internal fun ChatEmptyState(
     modifier: Modifier = Modifier,
     onSuggestion: (String) -> Unit
 ) {
+    // A phone held sideways leaves ~200dp above the composer: drop the decorative icon, eyebrow
+    // and footer hint there so the question, the privacy line and the starters all stay visible.
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.xl),
+        modifier = modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = if (compact) Space.sm else Space.xl),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
+        if (!compact) Surface(
             modifier = Modifier.size(60.dp),
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.primaryContainer,
@@ -577,7 +580,7 @@ internal fun ChatEmptyState(
                 Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(28.dp))
             }
         }
-        Text(
+        if (!compact) Text(
             stringResource(R.string.chat_screen_new_conversation),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
@@ -614,8 +617,8 @@ internal fun ChatEmptyState(
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier
-                .widthIn(max = 520.dp)
-                .padding(top = Space.lg),
+                .widthIn(max = 640.dp)
+                .padding(top = if (compact) Space.md else Space.lg),
             horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.CenterHorizontally),
         ) {
             starters.forEach { starter ->
@@ -626,7 +629,7 @@ internal fun ChatEmptyState(
                 )
             }
         }
-        Text(
+        if (!compact) Text(
             stringResource(R.string.chat_screen_type_a_message_attach_a),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -820,7 +823,7 @@ internal fun ChatContextDetailsSheet(
     onSourcesClick: () -> Unit,
     onContextClick: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Column(
             Modifier.widthIn(max = VervanContentWidth.reading).fillMaxWidth().align(Alignment.CenterHorizontally)
                 .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
@@ -1289,7 +1292,7 @@ internal fun ChatVoiceOptionsBottomSheet(
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         VoiceSessionOptionsSheet(
             speechOutputEnabled = speechOutputEnabled,

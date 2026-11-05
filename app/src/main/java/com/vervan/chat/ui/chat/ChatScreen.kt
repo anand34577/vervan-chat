@@ -1446,8 +1446,8 @@ fun ChatScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
-                        .fillMaxSize()
                         .widthIn(max = 840.dp)
+                        .fillMaxSize()
                         .align(Alignment.Center),
                     // The composer owns its own vertical padding; keep only a compact list tail so
                     // the final response does not float unnecessarily far above the input field.
@@ -1732,8 +1732,8 @@ fun ChatScreen(
             if (matchingCommands.isNotEmpty()) {
                 Row(
                     Modifier
-                        .fillMaxWidth()
                         .widthIn(max = 840.dp)
+                        .fillMaxWidth()
                         .align(Alignment.CenterHorizontally)
                         .padding(horizontal = Space.lg)
                         .horizontalScroll(rememberScrollState()),
@@ -1752,8 +1752,8 @@ fun ChatScreen(
             if (pendingQuote != null || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || pendingDocument != null) {
                 Column(
                     Modifier
-                        .fillMaxWidth()
                         .widthIn(max = 840.dp)
+                        .fillMaxWidth()
                         .align(Alignment.CenterHorizontally)
                         .padding(horizontal = Space.lg, vertical = Space.xs)
                         .clip(MaterialTheme.shapes.large)
@@ -2145,8 +2145,8 @@ fun ChatScreen(
             } else {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
                         .widthIn(max = 840.dp)
+                        .fillMaxWidth()
                         .align(Alignment.CenterHorizontally)
                         // Keep a clear bottom margin when the IME is hidden while preserving the
                         // tighter keyboard-open spacing. The text editor itself is unchanged.
