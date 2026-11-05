@@ -373,6 +373,26 @@ fun VervanNavGraph(
             // reserves that same top inset a second time in the padding handed to NavHost,
             // stacking two status-bar-height gaps above every screen's title.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            // Create used to be a fifth bottom tab that was really a button. It is now the
+            // standard Material "new" button on the Chats tab, which keeps the bar to four real
+            // destinations. Home has its own composer, and Library and Tools have their own "new"
+            // actions, so the button only appears where it is the screen's main action.
+            floatingActionButton = {
+                val onChats = currentRoute?.hierarchy?.any { it.route == AppRoutes.CHATS } == true
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !useRail && onChats,
+                    enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
+                ) {
+                    FloatingActionButton(
+                        onClick = { showCreateSheet = true },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = createLabel)
+                    }
+                }
+            },
             bottomBar = {
                 // Shown and hidden by animating its height on the same 300ms curve as the screen
                 // transition. Dropping it instantly resized the screen mid-transition, so opening
@@ -395,7 +415,6 @@ fun VervanNavGraph(
                         trailing = trailingTabs,
                         currentRoute = currentRoute,
                         navController = navController,
-                        onCreate = { showCreateSheet = true }
                     )
                 }
             }
@@ -1140,9 +1159,7 @@ private fun VervanNavigationBar(
     trailing: List<Tab>,
     currentRoute: NavDestination?,
     navController: NavHostController,
-    onCreate: () -> Unit
 ) {
-    val createLabel = stringResource(R.string.action_create)
     val itemColors = NavigationBarItemDefaults.colors(
         selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
         selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -1150,37 +1167,16 @@ private fun VervanNavigationBar(
         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    // The bar sits on the page colour with a hairline above it, so it reads as part of the
+    // screen rather than a second, heavier panel.
+    Surface(color = MaterialTheme.colorScheme.surface) {
         Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp,
             ) {
                 leading.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
-                NavigationBarItem(
-                    selected = false,
-                    onClick = onCreate,
-                    icon = {
-                        // Same 24dp slot as the other tabs' icons so the "Create" label shares their
-                        // baseline; the 32dp disc overflows the slot instead of pushing the label down.
-                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                            Surface(
-                                modifier = Modifier.requiredSize(32.dp),
-                                shape = MaterialTheme.shapes.large,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-                    },
-                    label = { Text(createLabel) },
-                    alwaysShowLabel = true,
-                    colors = itemColors,
-                )
                 trailing.forEach { tab -> NavigationBarTab(tab, currentRoute, navController, itemColors) }
             }
         }

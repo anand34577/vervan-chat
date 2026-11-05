@@ -44,23 +44,30 @@ enum class SurfaceRole {
     @ReadOnlyComposable
     fun containerColor(): Color = when (this) {
         Sunken -> MaterialTheme.colorScheme.surfaceContainerLowest
-        Card -> MaterialTheme.colorScheme.surfaceContainerLow
-        Raised -> MaterialTheme.colorScheme.surfaceContainer
+        // One tint step brighter than before, because resting cards no longer carry an outline:
+        // the fill alone has to lift them off the page.
+        Card -> MaterialTheme.colorScheme.surfaceContainer
+        Raised -> MaterialTheme.colorScheme.surfaceContainerHigh
         Floating -> MaterialTheme.colorScheme.surfaceContainerHigh
         Overlay -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
 
-    /** Border prominence paired with this role, so edge weight tracks depth consistently. */
+    /**
+     * Border paired with this role. Resting surfaces are borderless: a page of outlined boxes
+     * was most of what made screens read as busy, and the tint already separates them. Surfaces
+     * that float over content keep a quiet edge. High contrast brings every outline back, so
+     * nothing relies on a faint tint alone for people who asked for stronger edges.
+     */
     @Composable
-    fun border(): BorderStroke = vervanBorder(
-        when (this) {
-            Sunken -> VervanBorderProminence.Subtle
-            Card -> VervanBorderProminence.Standard
-            Raised -> VervanBorderProminence.Standard
-            Floating -> VervanBorderProminence.Emphasized
-            Overlay -> VervanBorderProminence.Emphasized
+    fun border(): BorderStroke {
+        if (LocalVervanHighContrast.current) {
+            return vervanBorder(if (this == Sunken) VervanBorderProminence.Subtle else VervanBorderProminence.Standard)
         }
-    )
+        return when (this) {
+            Sunken, Card, Raised -> BorderStroke(0.dp, Color.Transparent)
+            Floating, Overlay -> vervanBorder(VervanBorderProminence.Standard)
+        }
+    }
 
     /** Shadow elevation for the few surfaces that truly float above content. Flat roles are 0dp:
      *  the border + tint already separate them, and shadows on a warm-dark palette muddy more than

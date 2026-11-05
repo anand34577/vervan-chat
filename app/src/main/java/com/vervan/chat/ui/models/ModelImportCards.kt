@@ -1012,7 +1012,7 @@ internal fun ImportChoiceCard(
         enabled = enabled,
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = vervanBorder()
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         if (horizontal) {
             Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {

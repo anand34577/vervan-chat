@@ -512,14 +512,14 @@ private fun QuickAskField(onAsk: (String) -> Unit) {
                     .padding(start = Space.sm, top = Space.xs, bottom = Space.xs)
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(scheme.primary)
+                    .background(scheme.onSurface)
                     .clickable(onClick = ::submit, role = Role.Button),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = stringResource(R.string.home_start_chat_question),
-                    tint = scheme.onPrimary,
+                    tint = scheme.surface,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -631,8 +631,18 @@ private fun ContinueCarousel(
                 }
             }))
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // One grouped list (like Settings rows) instead of a stack of separately boxed cards:
+            // fewer edges for the eye to parse, and the rows read as one "recent" set.
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = SurfaceRole.Card.cardColors(),
+                border = SurfaceRole.Card.border(),
+            ) {
                 recentItems.forEachIndexed { index, item ->
+                    if (index > 0) androidx.compose.material3.HorizontalDivider(
+                        Modifier.padding(start = 64.dp),
+                        color = com.vervan.chat.ui.theme.vervanSubtleDividerColor()
+                    )
                     when (item) {
                         is HomeRecentItem.ChatItem -> ContinueRow(
                             icon = Icons.AutoMirrored.Filled.Chat,
@@ -697,17 +707,18 @@ private fun ContinueRow(
     } else {
         preview
     }
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = SurfaceRole.Raised.cardColors(),
-        border = SurfaceRole.Raised.border(),
+    val openLabel = stringResource(R.string.home_open_item, title)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClickLabel = openLabel, role = Role.Button, onClick = onClick)
+            .padding(horizontal = Space.md, vertical = Space.md),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp).background(accent.container, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = accent.onContainer)
             }
-            Column(Modifier.weight(1f).padding(horizontal = Space.md)) {
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -730,18 +741,11 @@ private fun ContinueRow(
                     displayPreview.replace("\n", " "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(R.string.home_open_item, title),
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
     }
 }
 
@@ -855,25 +859,15 @@ private fun ToolsSection(
             onAction = onOpenAllTools,
             topPadding = 0.dp
         )
+        // A single row of chips: these are shortcuts, not content, so they shouldn't take more
+        // of the screen than the recent work above them. "See all" opens the full Tools tab.
         toolGroups.forEach { (_, tools) ->
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
-                maxItemsInEachRow = 2,
             ) {
-                tools.forEachIndexed { index, tool ->
-                    val accent = vervanAccentFor(index + 3)
-                    ActionTile(
-                        icon = tool.icon,
-                        title = tool.label,
-                        body = tool.body,
-                        onClick = tool.onClick,
-                        modifier = Modifier.weight(1f),
-                        iconContainerColor = accent.container,
-                        iconTint = accent.onContainer,
-                    )
-                }
+                tools.forEach { tool -> HeroChip(tool.icon, tool.label, tool.onClick) }
             }
         }
     }
