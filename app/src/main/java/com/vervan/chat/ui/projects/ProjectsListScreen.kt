@@ -174,7 +174,7 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onRename: () -> U
         modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
         onClick = onClick,
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = vervanBorder()
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             IconAffordance(icon = Icons.Filled.Workspaces, size = IconAffordanceSize.Default)

@@ -1,5 +1,26 @@
 package com.vervan.chat.ui.tools
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.ui.Alignment
+import com.vervan.chat.ui.common.SelectionTopBar
+import com.vervan.chat.ui.common.relativeTime
+import com.vervan.chat.ui.common.selectableItem
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
@@ -80,31 +101,86 @@ fun ToolRunHistoryScreen(
     val error by vm.error.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var expandedId by remember(highlightId) { mutableStateOf(highlightId) }
-    var pendingDelete by remember { mutableStateOf<ToolRun?>(null) }
+    var pendingDelete by remember { mutableStateOf<Set<String>?>(null) }
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var menuOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val saveSuccessMessage = stringResource(R.string.tool_history_save_success)
     val saveErrorMessage = stringResource(R.string.tool_history_save_error)
-    val deleteSuccessMessage = stringResource(R.string.tool_history_delete_success)
     val deleteErrorMessage = stringResource(R.string.tool_history_delete_error)
+    val undoLabel = stringResource(R.string.action_undo)
     val filtered = remember(runs, query) {
         if (query.isBlank()) runs else runs.filter {
             it.toolName.contains(query, true) || it.input.contains(query, true) || it.output.contains(query, true)
         }
     }
+    // Drop ids that vanished (deleted elsewhere, filtered out) so the count never lies.
+    val visibleSelected = selected intersect filtered.map { it.id }.toSet()
+    fun exitSelection() { selectionMode = false; selected = emptySet() }
+    BackHandler(enabled = selectionMode) { exitSelection() }
+
+    fun remove(ids: Set<String>) {
+        scope.launch {
+            val result = vm.delete(ids).await()
+            if (result.isFailure) {
+                snackbarHostState.showSnackbar(deleteErrorMessage)
+                return@launch
+            }
+            val message = localResources.getQuantityString(R.plurals.tool_history_removed, ids.size, ids.size)
+            if (snackbarHostState.showSnackbar(message, undoLabel, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                vm.restore(ids)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
-            VervanTopAppBar(
-                title = { Text(stringResource(R.string.tool_run_history_run_history)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
-            )
+            if (selectionMode) {
+                SelectionTopBar(
+                    selectedCount = visibleSelected.size,
+                    allSelected = filtered.isNotEmpty() && visibleSelected.size == filtered.size,
+                    onToggleSelectAll = {
+                        selected = if (filtered.isNotEmpty() && visibleSelected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
+                    },
+                    onExit = { exitSelection() },
+                    onDelete = { pendingDelete = visibleSelected },
+                    deleteContentDescription = stringResource(R.string.action_remove),
+                )
+            } else {
+                VervanTopAppBar(
+                    title = { Text(stringResource(R.string.tool_run_history_run_history)) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } },
+                    actions = {
+                        if (runs.isNotEmpty()) {
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.action_more)) }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tool_history_select)) },
+                                        leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                                        onClick = { menuOpen = false; selectionMode = true; expandedId = null },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tool_history_clear_all), color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Filled.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = { menuOpen = false; pendingDelete = runs.map { it.id }.toSet() },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = 840.dp) {
             Column(Modifier.fillMaxSize()) {
-                VervanSearchField(query, { query = it }, "Search tool results", Modifier.padding(vertical = Space.sm))
+                if (runs.isNotEmpty() || query.isNotBlank()) {
+                    VervanSearchField(query, { query = it }, stringResource(R.string.tool_history_search), Modifier.padding(vertical = Space.sm))
+                }
                 if (error != null) {
                     OperationErrorCard(
                         title = stringResource(R.string.tool_history_unavailable),
@@ -116,15 +192,30 @@ fun ToolRunHistoryScreen(
                     )
                 } else if (isLoading) {
                     LoadingSkeletonList(rows = 6, modifier = Modifier.padding(top = Space.md))
+                } else if (filtered.isEmpty() && query.isNotBlank()) {
+                    EmptyState(
+                        Icons.Filled.SearchOff,
+                        stringResource(R.string.tool_history_no_match),
+                        stringResource(R.string.tool_history_no_match_body),
+                        actionLabel = stringResource(R.string.action_clear),
+                        onAction = { query = "" },
+                    )
                 } else if (filtered.isEmpty()) {
-                    EmptyState(Icons.Filled.History, "No tool runs yet", "Run a tool to see its result here.")
+                    EmptyState(Icons.Filled.History, stringResource(R.string.tool_history_empty_title), stringResource(R.string.tool_history_empty_body))
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(Space.sm),
+                        contentPadding = PaddingValues(bottom = Space.xl),
+                    ) {
                         items(filtered, key = { it.id }) { run ->
                             ToolRunCard(
                                 run = run,
-                                expanded = expandedId == run.id,
+                                expanded = !selectionMode && expandedId == run.id,
+                                selectionMode = selectionMode,
+                                selected = run.id in visibleSelected,
                                 onToggle = { expandedId = if (expandedId == run.id) null else run.id },
+                                onToggleSelected = { selected = if (run.id in selected) selected - run.id else selected + run.id },
+                                onEnterSelection = { selectionMode = true; expandedId = null; selected = selected + run.id },
                                 onCopy = {
                                     val content = run.output.ifBlank { run.input }
                                     context.getSystemService(android.content.ClipboardManager::class.java)
@@ -146,7 +237,8 @@ fun ToolRunHistoryScreen(
                                     }, "Share result"))
                                 },
                                 onRerun = { onRerun(run.toolRoute) },
-                                onDelete = { pendingDelete = run },
+                                // One run goes straight away with Undo; only bulk removal asks first.
+                                onDelete = { remove(setOf(run.id)) },
                             )
                         }
                     }
@@ -155,29 +247,33 @@ fun ToolRunHistoryScreen(
         }
     }
 
-    pendingDelete?.let { run ->
+    pendingDelete?.let { ids ->
+        val clearingAll = ids.size == runs.size
         ConfirmDialog(
-            title = stringResource(R.string.tool_run_history_remove_this_run),
-            body = stringResource(R.string.tool_run_history_it_will_move_to_the),
-            confirmLabel = stringResource(R.string.action_remove),
+            title = if (clearingAll) stringResource(R.string.tool_history_clear_all_title) else stringResource(R.string.tool_run_history_remove_this_run),
+            body = localResources.getQuantityString(R.plurals.tool_history_clear_all_body, ids.size, ids.size),
+            confirmLabel = if (clearingAll) stringResource(R.string.action_clear) else stringResource(R.string.action_remove),
             destructive = true,
             onConfirm = {
                 pendingDelete = null
-                scope.launch {
-                    val result = vm.delete(run).await()
-                    snackbarHostState.showSnackbar(if (result.isSuccess) deleteSuccessMessage else deleteErrorMessage)
-                }
+                exitSelection()
+                remove(ids)
             },
             onDismiss = { pendingDelete = null }
         )
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ToolRunCard(
     run: ToolRun,
     expanded: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
     onToggle: () -> Unit,
+    onToggleSelected: () -> Unit,
+    onEnterSelection: () -> Unit,
     onCopy: () -> Unit,
     onSave: () -> Unit,
     onContinue: () -> Unit,
@@ -185,11 +281,21 @@ private fun ToolRunCard(
     onRerun: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(onClick = onToggle, colors = SurfaceRole.Card.cardColors(), border = SurfaceRole.Card.border()) {
-        Column(Modifier.fillMaxWidth().padding(Space.md)) {
-            Row(Modifier.fillMaxWidth()) {
+    Card(
+        colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else SurfaceRole.Card.cardColors(),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)) else SurfaceRole.Card.border(),
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .selectableItem(selectionMode, onClick = onToggle, onToggleSelected = onToggleSelected, onEnterSelection = onEnterSelection)
+                .padding(Space.md)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (selectionMode) {
+                    Checkbox(checked = selected, onCheckedChange = { onToggleSelected() }, modifier = Modifier.padding(end = Space.sm).size(24.dp))
+                }
                 Column(Modifier.weight(1f)) {
-                    Text(run.toolName, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(run.toolName, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         run.state.name.lowercase().replaceFirstChar { it.titlecase() } +
                             (run.modelName?.let { " · $it" } ?: ""),
@@ -201,8 +307,8 @@ private fun ToolRunCard(
                         },
                     )
                 }
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(run.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(relativeTime(run.updatedAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!selectionMode) {
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                         contentDescription = if (expanded) stringResource(R.string.tool_run_history_collapse_run) else stringResource(R.string.tool_run_history_expand_run),
@@ -219,15 +325,16 @@ private fun ToolRunCard(
                 modifier = Modifier.padding(top = Space.sm),
             )
             if (expanded) {
-                Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    RunAction(Icons.Filled.ContentCopy, "Copy", onCopy)
-                    RunAction(Icons.Filled.Save, "Save", onSave)
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(top = Space.sm),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                ) {
+                    RunAction(Icons.Filled.Replay, stringResource(R.string.tool_run_history_re_run), onRerun)
                     RunAction(Icons.Filled.PlayArrow, "Continue", onContinue)
+                    RunAction(Icons.Filled.ContentCopy, "Copy", onCopy)
                     RunAction(Icons.Filled.Share, "Share", onShare)
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    AssistChip(onClick = onRerun, label = { Text(stringResource(R.string.tool_run_history_re_run)) })
-                    AssistChip(onClick = onDelete, label = { Text(stringResource(R.string.action_remove)) }, leadingIcon = { Icon(Icons.Filled.Delete, null, Modifier.size(16.dp)) })
+                    RunAction(Icons.Filled.Save, "Save", onSave)
+                    RunAction(Icons.Filled.Delete, stringResource(R.string.action_remove), onDelete)
                 }
             }
         }

@@ -285,10 +285,15 @@ fun VervanTheme(
         lightSchemeFor(LightAccents.getValue(accent))
     }
     if (highContrast) colorScheme = colorScheme.withHighContrast(darkTheme)
-    MaterialTheme(
-        colorScheme = colorScheme,
-        shapes = VervanShapes,
-        typography = VervanTypography,
-        content = content
-    )
+    androidx.compose.runtime.CompositionLocalProvider(LocalVervanHighContrast provides highContrast) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            shapes = VervanShapes,
+            typography = VervanTypography,
+            content = content
+        )
+    }
 }
+
+/** Whether the user turned on high contrast; surfaces use it to bring back card outlines. */
+val LocalVervanHighContrast = androidx.compose.runtime.staticCompositionLocalOf { false }

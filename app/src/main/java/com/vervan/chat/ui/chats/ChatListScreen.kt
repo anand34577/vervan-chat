@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -183,10 +184,16 @@ fun ChatListScreen(onOpenChat: (String) -> Unit, onNewChat: (() -> Unit)? = null
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                },
+                // Long-press a row still enters selection; this button is the visible way in for
+                // people who never discover the gesture.
+                actions = {
+                    if (chats.isNotEmpty()) {
+                        IconButton(onClick = { selectionMode = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = stringResource(R.string.action_select))
+                        }
+                    }
                 }
-                // Long-press a row to enter selection mode — no separate top-bar entry point,
-                // so there's one consistent gesture for this everywhere instead of two paths
-                // that can drift (a tap-triggered mode here, long-press-only somewhere else).
             ) else SelectionTopBar(
                 selectedCount = selected.size,
                 // Scoped to the visible (search-filtered) rows: "select all" must never pick up
@@ -385,14 +392,14 @@ fun ChatListScreen(onOpenChat: (String) -> Unit, onNewChat: (() -> Unit)? = null
     }
 }
 
-/** Sticky header for a date/pinned bucket. Uses surfaceContainer (the same surface as the
- *  app bar) so it reads as a section anchor rather than another card mid-list. */
+/** Sticky header for a date/pinned bucket. Uses the page background so it reads as a section
+ *  label that stays put while scrolling, not as a band of a different colour. */
 @Composable
 private fun ChatBucketHeader(label: String, count: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = Space.lg, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm)

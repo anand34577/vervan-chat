@@ -259,7 +259,7 @@ fun TurnBasedChatScreen(title: String, systemInstruction: String, setupHint: Str
             }
         } else {
             Box(Modifier.fillMaxSize().padding(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
-              Column(Modifier.fillMaxSize().widthIn(max = 840.dp)) {
+              Column(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)

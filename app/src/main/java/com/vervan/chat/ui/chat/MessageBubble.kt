@@ -115,6 +115,9 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
@@ -360,8 +363,10 @@ internal fun MessageBubble(
                 // bubbles from snapping in during streaming and branch switches.
                 .graphicsLayer { alpha = 1f }
                 .then(
+                    // A soft neutral fill marks "mine" without the brand gradient shouting over
+                    // the answer, which is the part people actually came to read.
                     if (isUser) Modifier.background(
-                        com.vervan.chat.ui.theme.vervanBrandFill(),
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
                         com.vervan.chat.ui.theme.VervanExtraShapes.userBubble
                     ) else Modifier
                 )
@@ -467,8 +472,7 @@ internal fun MessageBubble(
             // Card still owns shape clipping and content color.
             colors = CardDefaults.cardColors(
                 containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                contentColor = if (isUser) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurface
+                contentColor = MaterialTheme.colorScheme.onSurface
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp, pressedElevation = 0.dp, hoveredElevation = 0.dp),
             border = null
@@ -483,52 +487,27 @@ internal fun MessageBubble(
                 // live state). User messages drop the header entirely — no redundant "You" label
                 // or avatar — and show a quiet timestamp under their text instead, so the
                 // conversation reads asymmetrically the way modern chat apps do.
-                if (!isUser) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(bottom = Space.sm),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Brand-gradient avatar — the same mark the Home hero uses, one visual
-                        // identity for "Vervan" across screens.
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .background(com.vervan.chat.ui.theme.vervanBrandFill(), androidx.compose.foundation.shape.CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.Psychology,
-                                contentDescription = null,
-                                modifier = Modifier.size(17.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                        Text(
-                            stringResource(R.string.message_bubble_vervan),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = Space.sm)
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            when (message.state) {
-                                MessageState.STREAMING -> stringResource(R.string.message_bubble_responding)
-                                MessageState.INTERRUPTED -> stringResource(R.string.message_bubble_interrupted)
-                                MessageState.FAILED -> stringResource(R.string.message_bubble_failed)
-                                MessageState.CANCELLED -> stringResource(R.string.message_bubble_stopped)
-                                MessageState.AWAITING_CONFIRMATION -> stringResource(R.string.message_bubble_needs_approval)
-                                MessageState.COMPLETE -> timeLabel
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = when (message.state) {
-                                MessageState.FAILED, MessageState.INTERRUPTED -> MaterialTheme.colorScheme.error
-                                MessageState.STREAMING -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                // Replies open straight onto their text, like ChatGPT and Claude: there is only
+                // one assistant, so an avatar and "Vervan" over every answer said nothing new.
+                // A status line appears only when the reply needs attention; the time is in the
+                // reply's "more" menu. (Streaming has its own indicator below the text.)
+                if (!isUser && message.state != MessageState.COMPLETE && message.state != MessageState.STREAMING) {
+                    Text(
+                        when (message.state) {
+                            MessageState.INTERRUPTED -> stringResource(R.string.message_bubble_interrupted)
+                            MessageState.FAILED -> stringResource(R.string.message_bubble_failed)
+                            MessageState.CANCELLED -> stringResource(R.string.message_bubble_stopped)
+                            else -> stringResource(R.string.message_bubble_needs_approval)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = when (message.state) {
+                            MessageState.FAILED, MessageState.INTERRUPTED -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = Space.xs)
+                    )
                 }
                 message.imagePath?.let { path ->
                     // Media-first bubble preview; tap opens the zoomable full-screen viewer.
@@ -638,9 +617,8 @@ internal fun MessageBubble(
                 val parsed = remember(toolCallHidden) { com.vervan.chat.llm.ThinkingParser.parse(toolCallHidden) }
                 val clarification = remember(parsed.answer) { com.vervan.chat.llm.ClarificationParser.parse(parsed.answer) }
                 if (editing) {
-                    // Editing happens inside the solid-primary user bubble — the field gets a
-                    // normal surface island and the buttons explicit onPrimary so neither
-                    // disappears against the accent fill.
+                    // Editing happens inside the user bubble: the field gets a surface island so its
+                    // edge reads against the bubble fill, and the buttons use the accent colour.
                     OutlinedTextField(
                         value = editText,
                         onValueChange = { editText = it.take(12_000) },
@@ -651,7 +629,7 @@ internal fun MessageBubble(
                         )
                     )
                     val editButtonColors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        contentColor = MaterialTheme.colorScheme.primary
                     )
                     Row(Modifier.padding(top = Space.xs)) {
                         TextButton(colors = editButtonColors, onClick = {
@@ -674,7 +652,7 @@ internal fun MessageBubble(
                                     Icons.Filled.Mic,
                                     contentDescription = null,
                                     modifier = Modifier.size(15.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Text(
@@ -687,7 +665,7 @@ internal fun MessageBubble(
                                     else -> stringResource(R.string.text_action_voice)
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = Space.xs)
                             )
                         }
@@ -779,18 +757,6 @@ internal fun MessageBubble(
                         }
                     }
                 }
-                // Header-less user bubbles carry their timestamp here, tucked under the text at a
-                // low opacity so it's available but never competes with the message.
-                if (isUser && message.state == MessageState.COMPLETE) {
-                    Text(
-                        timeLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        softWrap = false,
-                        modifier = Modifier.align(Alignment.End).padding(top = Space.xs)
-                    )
-                }
                 if (message.state == MessageState.STREAMING && isGenerating && showStreamingStatus && !parsed.hasThinking) {
                     // "Thinking" indicator while the model is alive but hasn't emitted its first
                     // token yet — replaces the silent gap that previously made the app feel broken
@@ -865,10 +831,11 @@ internal fun MessageBubble(
                 }
             }
         }
-        // One quiet metadata line (model, mode, speed) instead of two stacked lines: who answered
-        // and how fast are one fact about this response.
-        if (!isUser && message.modelName != null && !editing) {
-            val provenance = buildList {
+        // Who answered and how fast is reference detail, not something to read under every reply,
+        // so it lives at the top of the reply's "more" menu instead of as a line of its own.
+        val provenance = if (isUser || message.modelName == null) timeLabel else {
+            buildList {
+                add(timeLabel)
                 add(message.modelName)
                 message.profile?.lowercase()?.replaceFirstChar { it.titlecase() }?.let(::add)
                 message.thinkingMode?.takeIf { it != "OFF" }?.lowercase()
@@ -883,131 +850,129 @@ internal fun MessageBubble(
                     }
                 }
             }.joinToString(" · ")
-            Text(
-                provenance,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = Space.xs, top = Space.xs),
-            )
         }
-        // Quick reply suggestions under the *last* completed assistant message — mirrors
-        // ChatGPT/Gemini's "Continue / Summarize / Make shorter / Regenerate" follow-up row.
-        // Renders *outside* the bubble so the chips read as actions on the conversation.
-        if (isLastAssistant && !editing && !isGenerating) {
-            QuickReplyChips(
-                suggestions = defaultQuickReplies(),
-                onClick = onQuickReply,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // Follow-ups (continue, summarize, shorter, translate) used to be a row of chips under
+        // every latest reply, taller than a short answer itself. They now sit in the "more" menu;
+        // regenerate already has its own icon, so it is not repeated there.
+        val reworkReplies = if (isLastAssistant && !isGenerating) {
+            defaultQuickReplies().filter { it.prompt != com.vervan.chat.ui.common.QUICK_REPLY_REGENERATE }
+        } else emptyList()
+        fun toggleBookmark() {
+            scope.launch {
+                if (savedOutput == null) {
+                    // The label links the bookmark back to its message (ChatScreen looks
+                    // bookmarks up by it); lists show a readable title via displaySavedOutputTitle().
+                    app.container.db.savedOutputDao().upsert(
+                        SavedOutput(content = message.content, sourceChatId = message.chatId, label = message.id)
+                    )
+                } else {
+                    app.container.db.savedOutputDao().upsert(savedOutput.copy(deletedAt = System.currentTimeMillis()))
+                }
+                onBookmarkChanged(savedOutput == null)
+            }
         }
         if (showActions && !editing) {
-            // horizontalScroll here previously fought Arrangement.End — a scrollable
-            // Row measures children with unbounded width, so "End" has no finite edge to align
-            // against and buttons silently render left-aligned/off past the bubble instead of
-            // at the visible right edge (looked like the last one, the 3-dot menu, vanished).
-            // Six buttons × 48dp still fits any real phone width now that the stats line no longer
-            // competes for the same row, so no scroll guard is needed.
+            // Replies get four quiet icons, left-aligned under the text they act on (copy, read
+            // aloud, regenerate, more); user messages keep theirs on the right, under the bubble.
             Row(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = Space.xs),
-                horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.End),
+                horizontalArrangement = if (isUser) Arrangement.spacedBy(Space.xs, Alignment.End) else Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val quietTint = MaterialTheme.colorScheme.onSurfaceVariant
                 if (isUser && !isGenerating) {
                     IconButton(onClick = { editing = true }) {
                         Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.chat_edit_resend), modifier = Modifier.size(18.dp))
                     }
                 }
-                if (!isUser && message.state == MessageState.COMPLETE && message.content.isNotBlank()) {
-                    IconButton(
-                        onClick = {
-                            onReadAloud(if (isUser) message.content else assistantSpokenText(message.content), message.id)
-                        }
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.chat_read_aloud), modifier = Modifier.size(18.dp))
-                    }
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                if (savedOutput == null) {
-                                    app.container.db.savedOutputDao().upsert(
-                                        SavedOutput(
-                                            content = message.content,
-                                            sourceChatId = message.chatId,
-                                            // The label links the bookmark back to its message
-                                            // (ChatScreen looks bookmarks up by it); lists show a
-                                            // readable title via displaySavedOutputTitle().
-                                            label = message.id
-                                        )
-                                    )
-                                } else {
-                                    app.container.db.savedOutputDao().upsert(
-                                        savedOutput.copy(deletedAt = System.currentTimeMillis())
-                                    )
-                                }
-                                onBookmarkChanged(savedOutput == null)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            if (savedOutput == null) Icons.Outlined.BookmarkBorder else Icons.Filled.Bookmark,
-                            contentDescription = if (savedOutput == null) stringResource(R.string.chat_bookmark_response) else stringResource(R.string.chat_remove_bookmark),
-                            modifier = Modifier.size(18.dp),
-                            tint = if (savedOutput == null) LocalContentColor.current else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (!isGenerating) {
-                        IconButton(onClick = onRegenerate) {
-                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.chat_regenerate), modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    IconButton(onClick = onFork) {
-                        Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = stringResource(R.string.chat_fork_action), modifier = Modifier.size(18.dp))
-                    }
-                }
-                // Reply stays gesture-only here; copy is the visible gesture alternative.
+                val assistantComplete = !isUser && message.state == MessageState.COMPLETE && message.content.isNotBlank()
                 if (message.content.isNotBlank()) {
                     IconButton(
                         // Clipboard hygiene — auto-clears after 30s if
                         // nothing else has overwritten it since.
                         onClick = { copyMessage() }
                     ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy), modifier = Modifier.size(18.dp), tint = quietTint)
                     }
+                }
+                if (assistantComplete) {
+                    IconButton(
+                        onClick = { onReadAloud(assistantSpokenText(message.content), message.id) }
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.chat_read_aloud), modifier = Modifier.size(18.dp), tint = quietTint)
+                    }
+                    if (!isGenerating) {
+                        IconButton(onClick = onRegenerate) {
+                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.chat_regenerate), modifier = Modifier.size(18.dp), tint = quietTint)
+                        }
+                    }
+                }
+                if (message.content.isNotBlank()) {
                     Box {
                         IconButton(onClick = { showMessageMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.chat_more_message_actions), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.MoreHoriz, contentDescription = stringResource(R.string.chat_more_message_actions), modifier = Modifier.size(18.dp), tint = quietTint)
                         }
                         DropdownMenu(expanded = showMessageMenu, onDismissRequest = { showMessageMenu = false }) {
-                            // Assistant replies get a dedicated fork icon in the action row above;
-                            // keep it in this menu only for user messages, which have no such icon.
-                            if (isUser) {
+                            provenance?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .widthIn(max = 280.dp)
+                                        .padding(horizontal = Space.md, vertical = Space.sm)
+                                )
+                                HorizontalDivider()
+                            }
+                            reworkReplies.forEach { reply ->
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.chat_fork_action)) },
-                                    onClick = { onFork(); showMessageMenu = false }
+                                    text = { Text(reply.label) },
+                                    leadingIcon = reply.icon?.let { icon -> { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) } },
+                                    onClick = { showMessageMenu = false; onQuickReply(reply) }
                                 )
                             }
+                            if (reworkReplies.isNotEmpty()) HorizontalDivider()
+                            if (assistantComplete) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(if (savedOutput == null) R.string.chat_bookmark_response else R.string.chat_remove_bookmark)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (savedOutput == null) Icons.Outlined.BookmarkBorder else Icons.Filled.Bookmark,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    onClick = { showMessageMenu = false; toggleBookmark() }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_fork_action)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = { onFork(); showMessageMenu = false }
+                            )
                             if (!isUser && message.state == MessageState.COMPLETE) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_remember)) },
+                                    leadingIcon = { Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                     onClick = { showRememberDialog = true; showMessageMenu = false }
                                 )
                             }
                             // Partial selection: the bubble's own tap/swipe/long-press gestures
                             // can't share a touch stream with text selection, so selection opens
                             // in its own sheet.
-                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_select_text)) }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_select_text)) }, leadingIcon = { Icon(Icons.Filled.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = {
                                 showSelectText = true
                                 showMessageMenu = false
                             })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_save_template)) }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_save_template)) }, leadingIcon = { Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = {
                                 showSaveAsPromptDialog = true
                                 showMessageMenu = false
                             })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_add_note)) }, onClick = {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.chat_add_note)) }, leadingIcon = { Icon(Icons.Filled.EditNote, contentDescription = null, modifier = Modifier.size(18.dp)) }, onClick = {
                                 scope.launch {
                                     app.container.db.noteDao().upsert(
                                         com.vervan.chat.data.db.entities.Note(
@@ -1163,7 +1128,7 @@ fun savedOutputTitle(text: String): String {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectTextSheet(text: String, onDismiss: () -> Unit) {
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Text(
             stringResource(R.string.chat_select_text),
             style = MaterialTheme.typography.titleMedium,

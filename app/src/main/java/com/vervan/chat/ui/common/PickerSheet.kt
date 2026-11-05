@@ -48,7 +48,7 @@ fun <T> PickerSheet(
     multiSelect: Boolean = false,
     searchable: Boolean = options.size > 6
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberAdaptiveSheetState()
     var query by remember { mutableStateOf("") }
     val filtered = if (query.isBlank()) options else options.filter {
         it.label.contains(query, ignoreCase = true) || it.supporting?.contains(query, ignoreCase = true) == true

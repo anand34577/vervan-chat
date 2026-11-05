@@ -1,5 +1,6 @@
 package com.vervan.chat.ui.search
 
+import androidx.compose.foundation.clickable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,6 +132,14 @@ fun SearchScreen(
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     var scopeName by rememberSaveable { mutableStateOf(SearchScope.All.name) }
     val scope = SearchScope.entries.firstOrNull { it.name == scopeName } ?: SearchScope.All
+    val recentPrefs = remember { app.getSharedPreferences(RECENT_PREFS, android.content.Context.MODE_PRIVATE) }
+    var recents by remember { mutableStateOf(readRecentSearches(recentPrefs)) }
+    // Remember what was searched when the person leaves (usually by opening a result), the way
+    // every search box they know does, so the next visit can repeat it with one tap.
+    val latestQuery by androidx.compose.runtime.rememberUpdatedState(query)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { saveRecentSearch(recentPrefs, latestQuery) }
+    }
 
     Scaffold(
         topBar = {
@@ -163,13 +172,33 @@ fun SearchScreen(
                     Modifier.fillMaxWidth().padding(vertical = Space.sm),
                     horizontalArrangement = Arrangement.spacedBy(Space.sm)
                 ) {
-                    items(SearchScope.entries) { s ->
-                        com.vervan.chat.ui.common.VervanFilterChip(selected = scope == s, onClick = { scopeName = s.name }, label = { Text(stringResource(s.labelRes)) })
+                    // Only scopes that hold a match (plus All and the current one) get a chip,
+                    // so the ones with results are not pushed off-screen by empty ones.
+                    items(SearchScope.entries.filter { it == SearchScope.All || it == scope || searching || results.countIn(it) > 0 }) { s ->
+                        val count = if (searching) 0 else results.countIn(s)
+                        val label = stringResource(s.labelRes)
+                        com.vervan.chat.ui.common.VervanFilterChip(
+                            selected = scope == s,
+                            onClick = { scopeName = s.name },
+                            label = { Text(if (count > 0) "$label · $count" else label) }
+                        )
                     }
                 }
             }
             Box(Modifier.fillMaxSize()) {
                 when {
+                    query.isBlank() && recents.isNotEmpty() -> RecentSearches(
+                        recents = recents,
+                        onPick = { picked -> restoredQuery = picked; vm.setQuery(picked) },
+                        onRemove = { removed ->
+                            recents = recents - removed
+                            writeRecentSearches(recentPrefs, recents)
+                        },
+                        onClear = {
+                            recents = emptyList()
+                            writeRecentSearches(recentPrefs, recents)
+                        },
+                    )
                     query.isBlank() -> EmptyState(
                         icon = Icons.Filled.Search,
                         title = stringResource(R.string.search_empty_title),
@@ -191,6 +220,14 @@ fun SearchScreen(
                         icon = Icons.Filled.Search,
                         title = stringResource(R.string.search_no_results, query),
                         body = stringResource(R.string.search_no_results_body)
+                    )
+                    // Matches exist, just not in the chosen scope: say so instead of a blank page.
+                    results.countIn(scope) == 0 -> EmptyState(
+                        icon = Icons.Filled.Search,
+                        title = stringResource(R.string.search_scope_no_match, stringResource(scope.labelRes).lowercase(), query),
+                        body = stringResource(R.string.search_scope_elsewhere, results.countIn(SearchScope.All)),
+                        actionLabel = stringResource(R.string.search_show_all),
+                        onAction = { scopeName = SearchScope.All.name }
                     )
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         if (results.chats.isNotEmpty() && (scope == SearchScope.All || scope == SearchScope.Chats)) {
@@ -261,7 +298,7 @@ fun SearchScreen(
                         }
                         if ((scope == SearchScope.All || scope == SearchScope.Tools) && results.toolRuns.isNotEmpty()) {
                             item { GroupLabel("Recent tool results") }
-                            items(results.toolRuns, key = { "run_" + it.id }) { ResultRow(Icons.Filled.History, it.toolName, it.output.ifBlank { it.input }.take(100), query) { onOpenToolRun(it.id) } }
+                            items(results.toolRuns, key = { "run_" + it.id }) { ResultRow(Icons.Filled.History, it.toolName, com.vervan.chat.ui.tools.runPreview(it.output.ifBlank { it.input }).take(100), query) { onOpenToolRun(it.id) } }
                         }
                         if (scope != SearchScope.All &&
                             when (scope) {
@@ -343,6 +380,80 @@ private fun ResultRow(icon: ImageVector, title: String, subtitle: String = "", q
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
             )
+        }
+    }
+}
+
+
+/** How many results [this] holds for [scope]; matches the grouping the result list uses. */
+private fun SearchResults.countIn(scope: SearchScope): Int = when (scope) {
+    SearchScope.All -> SearchScope.entries.filter { it != SearchScope.All }.sumOf { countIn(it) }
+    SearchScope.Chats -> chats.size
+    SearchScope.Messages -> messages.size
+    SearchScope.Content -> notes.size + documents.size + passages.size + knowledgeBases.size
+    SearchScope.Organize -> workspaces.size + projects.size + folders.size
+    SearchScope.Reusable -> personas.size + memories.size + templates.size + workflows.size + savedOutputs.size
+    SearchScope.Tools -> tools.size + toolRuns.size
+}
+
+private const val RECENT_PREFS = "search_recent"
+private const val RECENT_KEY = "queries"
+private const val RECENT_MAX = 8
+
+private fun readRecentSearches(prefs: android.content.SharedPreferences): List<String> =
+    prefs.getString(RECENT_KEY, null).orEmpty().split('\n').filter { it.isNotBlank() }
+
+private fun writeRecentSearches(prefs: android.content.SharedPreferences, recents: List<String>) {
+    prefs.edit().putString(RECENT_KEY, recents.joinToString("\n")).apply()
+}
+
+private fun saveRecentSearch(prefs: android.content.SharedPreferences, query: String) {
+    val q = query.trim().replace('\n', ' ')
+    if (q.length < 2) return
+    val updated = (listOf(q) + readRecentSearches(prefs).filterNot { it.equals(q, ignoreCase = true) }).take(RECENT_MAX)
+    writeRecentSearches(prefs, updated)
+}
+
+@Composable
+private fun RecentSearches(
+    recents: List<String>,
+    onPick: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.search_recent),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.TextButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
+            }
+        }
+        items(recents, key = { it }) { recent ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .clickable { onPick(recent) }
+                    .padding(start = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    recent,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(horizontal = Space.md),
+                )
+                IconButton(onClick = { onRemove(recent) }) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.search_remove_recent, recent), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

@@ -177,7 +177,7 @@ internal fun AvailableForDownloadSection(
                 onClick = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                border = vervanBorder()
+                border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
             ) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Icon(

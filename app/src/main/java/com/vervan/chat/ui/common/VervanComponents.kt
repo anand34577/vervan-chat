@@ -395,7 +395,7 @@ fun ActionTile(
         modifier = modifier.heightIn(min = 72.dp),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = vervanBorder(VervanBorderProminence.Standard)
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Row(
             Modifier.fillMaxWidth().padding(Space.md),

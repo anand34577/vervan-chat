@@ -25,8 +25,22 @@ private val AccentPalette = listOf(
     VervanAccent(Color(0xFF553017), Color(0xFFFFB48A))  // orange
 )
 
-/** Stable categorical accent for [index] (wraps around the palette). */
-fun vervanAccentFor(index: Int): VervanAccent = AccentPalette[((index % AccentPalette.size) + AccentPalette.size) % AccentPalette.size]
+/**
+ * Icon-tile colours for [index]. Tiles are now one calm neutral (like ChatGPT's and Claude's
+ * monochrome icons): a rainbow of tiles on every list made screens feel loud, and the fixed
+ * dark palette above also rendered as dark blocks in light mode. The index is kept so callers
+ * and the palette stay available if a screen ever needs categorical colour again.
+ */
+@Composable
+@ReadOnlyComposable
+@Suppress("UNUSED_PARAMETER")
+fun vervanAccentFor(index: Int): VervanAccent = VervanAccent(
+    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+    onContainer = MaterialTheme.colorScheme.onSurface
+)
+
+/** The original categorical palette, for the rare place colour carries meaning. */
+fun vervanCategoricalAccentFor(index: Int): VervanAccent = AccentPalette[((index % AccentPalette.size) + AccentPalette.size) % AccentPalette.size]
 
 /** Number of distinct categorical accents available. */
 val vervanAccentCount: Int get() = AccentPalette.size

@@ -31,4 +31,10 @@ interface MemoryDao : BaseDao<Memory> {
     // Universal search — memories weren't searchable before.
     @Query("SELECT * FROM memories WHERE deletedAt IS NULL AND text LIKE '%' || :q || '%' ORDER BY createdAt DESC LIMIT 20")
     suspend fun search(q: String): List<Memory>
+
+    @Query("UPDATE memories SET deletedAt = :now WHERE id IN (:ids)")
+    suspend fun softDeleteMany(ids: List<String>, now: Long = System.currentTimeMillis())
+
+    @Query("UPDATE memories SET deletedAt = NULL WHERE id IN (:ids)")
+    suspend fun restoreMany(ids: List<String>)
 }

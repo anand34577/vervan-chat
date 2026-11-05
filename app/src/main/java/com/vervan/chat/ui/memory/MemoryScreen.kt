@@ -1,5 +1,26 @@
 package com.vervan.chat.ui.memory
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.text.style.TextOverflow
+import com.vervan.chat.ui.common.SelectionTopBar
+import com.vervan.chat.ui.common.VervanSearchField
+import com.vervan.chat.ui.common.selectableItem
 import com.vervan.chat.R
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,38 +83,99 @@ import kotlinx.coroutines.launch
 @Composable
 fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, highlightMemoryId: String? = null) {
     val app = LocalContext.current.applicationContext as VervanApp
+    val resources = LocalResources.current
     val memories by app.container.db.memoryDao().observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
     val pendingSuggestions by app.container.db.memorySuggestionDao().observePendingCount().collectAsStateWithLifecycle(initialValue = 0)
     val scope = rememberCoroutineScope()
-    var showAdd by remember { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<Memory?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    // null = closed; a blank Memory = adding; an existing one = editing it.
+    var editing by remember { mutableStateOf<Memory?>(null) }
+    var pendingBulkDelete by remember { mutableStateOf<Set<String>?>(null) }
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var menuOpen by remember { mutableStateOf(false) }
+    val undoLabel = stringResource(R.string.action_undo)
+    val filtered = remember(memories, query) {
+        if (query.isBlank()) memories else memories.filter { it.text.contains(query, true) || it.key?.contains(query, true) == true }
+    }
+    val visibleSelected = selected intersect filtered.map { it.id }.toSet()
+    fun exitSelection() { selectionMode = false; selected = emptySet() }
+    BackHandler(enabled = selectionMode) { exitSelection() }
+
+    fun remove(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        scope.launch {
+            app.container.db.memoryDao().softDeleteMany(ids.toList())
+            val message = resources.getQuantityString(R.plurals.memory_removed, ids.size, ids.size)
+            if (snackbarHostState.showSnackbar(message, undoLabel, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                app.container.db.memoryDao().restoreMany(ids.toList())
+            }
+        }
+    }
+
     val listState = rememberLazyListState()
+    // Rows sit after the hero, the snapshot card, the section header and (when shown) search.
+    val rowsOffset = 3 + if (memories.size > SEARCH_THRESHOLD) 1 else 0
     LaunchedEffect(memories, highlightMemoryId) {
         if (highlightMemoryId != null) {
             val index = memories.indexOfFirst { it.id == highlightMemoryId }
-            if (index >= 0) listState.animateScrollToItem(index + 1)
+            if (index >= 0) listState.animateScrollToItem(index + rowsOffset)
         }
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.memory_memory)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
-                },
-                actions = {
-                    IconButton(onClick = onOpenSuggestions) {
-                        BadgedBox(badge = { if (pendingSuggestions > 0) Badge { Text(stringResource(R.string.memory_arg1, pendingSuggestions)) } }) {
-                            Icon(Icons.Filled.Lightbulb, contentDescription = stringResource(R.string.memory_suggested_title))
+            if (selectionMode) {
+                SelectionTopBar(
+                    selectedCount = visibleSelected.size,
+                    allSelected = filtered.isNotEmpty() && visibleSelected.size == filtered.size,
+                    onToggleSelectAll = {
+                        selected = if (filtered.isNotEmpty() && visibleSelected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
+                    },
+                    onExit = { exitSelection() },
+                    onDelete = { pendingBulkDelete = visibleSelected },
+                    deleteContentDescription = stringResource(R.string.library_delete),
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.memory_memory)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
+                    },
+                    actions = {
+                        IconButton(onClick = onOpenSuggestions) {
+                            BadgedBox(badge = { if (pendingSuggestions > 0) Badge { Text(stringResource(R.string.memory_arg1, pendingSuggestions)) } }) {
+                                Icon(Icons.Filled.Lightbulb, contentDescription = stringResource(R.string.memory_suggested_title))
+                            }
+                        }
+                        if (memories.isNotEmpty()) {
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.action_more)) }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_select)) },
+                                        leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                                        onClick = { menuOpen = false; selectionMode = true },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_forget_all), color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Filled.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = { menuOpen = false; pendingBulkDelete = memories.map { it.id }.toSet() },
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.memory_add_memory)) }
-        }
+            if (!selectionMode) {
+                FloatingActionButton(onClick = { editing = Memory(text = "") }) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.memory_add_memory)) }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         PageContainer(Modifier.padding(padding), maxContentWidth = VervanContentWidth.standard) {
         LazyColumn(
@@ -126,6 +208,9 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         bottomPadding = 0.dp
                     )
                 }
+                if (memories.size > SEARCH_THRESHOLD) {
+                    item { VervanSearchField(query, { query = it }, stringResource(R.string.memory_search)) }
+                }
             }
             if (memories.isEmpty()) {
                 item {
@@ -134,37 +219,70 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         title = stringResource(R.string.memory_no_memories_saved),
                         body = stringResource(R.string.memory_save_a_preference_fact_or),
                         actionLabel = stringResource(R.string.memory_add_memory),
-                        onAction = { showAdd = true }
+                        onAction = { editing = Memory(text = "") }
+                    )
+                }
+            } else if (filtered.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Filled.SearchOff,
+                        title = stringResource(R.string.memory_no_match),
+                        body = stringResource(R.string.tool_history_no_match_body),
+                        actionLabel = stringResource(R.string.action_clear),
+                        onAction = { query = "" }
                     )
                 }
             }
-            items(memories, key = { it.id }) { memory ->
+            items(filtered, key = { it.id }) { memory ->
                 val highlighted = memory.id == highlightMemoryId
+                val isSelected = memory.id in visibleSelected
                 Card(
                     Modifier.fillMaxWidth(),
-                    colors = if (highlighted) {
-                        androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                    } else {
-                        SurfaceRole.Card.cardColors()
+                    colors = when {
+                        isSelected -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        highlighted -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        else -> SurfaceRole.Card.cardColors()
                     },
-                    border = if (highlighted) {
-                        androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
-                    } else {
-                        SurfaceRole.Card.border()
+                    border = when {
+                        isSelected -> BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f))
+                        highlighted -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                        else -> SurfaceRole.Card.border()
                     },
                     shape = MaterialTheme.shapes.large
                 ) {
-                    Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                            Text(memory.text, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            val subtitle = memory.scope.name + (memory.key?.let { " · key: $it" } ?: "") +
-                                if (memory.embedding != null) " · Semantic ready" else ""
-                            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Row(
+                        Modifier
+                            .selectableItem(
+                                selectionMode = selectionMode,
+                                onClick = { editing = memory },
+                                onToggleSelected = { selected = if (memory.id in selected) selected - memory.id else selected + memory.id },
+                                onEnterSelection = { selectionMode = true; selected = selected + memory.id },
+                            )
+                            .padding(horizontal = Space.lg, vertical = Space.md),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (selectionMode) {
+                            Checkbox(checked = isSelected, onCheckedChange = { selected = if (it) selected + memory.id else selected - memory.id })
                         }
-                        com.vervan.chat.ui.common.LabeledSwitch(label = "Use memory: " + memory.text.take(60), checked = memory.enabled, onCheckedChange = { checked ->
-                            scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
-                        })
-                        TextButton(onClick = { pendingDelete = memory }, modifier = Modifier.padding(start = Space.xs)) { Text(stringResource(R.string.library_delete)) }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                memory.text,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (memory.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            val subtitle = listOfNotNull(
+                                memory.scope.name.lowercase().replaceFirstChar { it.titlecase() },
+                                memory.key?.let { "key: $it" },
+                                if (!memory.enabled) "Paused" else null,
+                            ).joinToString(" · ")
+                            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (!selectionMode) {
+                            com.vervan.chat.ui.common.LabeledSwitch(label = "Use memory: " + memory.text.take(60), checked = memory.enabled, onCheckedChange = { checked ->
+                                scope.launch { app.container.db.memoryDao().update(memory.copy(enabled = checked)) }
+                            })
+                        }
                     }
                 }
             }
@@ -172,14 +290,15 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
         }
     }
 
-    if (showAdd) {
-        var text by rememberSaveable { mutableStateOf("") }
-        var key by rememberSaveable { mutableStateOf("") }
+    editing?.let { target ->
+        val isNew = target.text.isEmpty() && memories.none { it.id == target.id }
+        var text by rememberSaveable(target.id) { mutableStateOf(target.text) }
+        var key by rememberSaveable(target.id) { mutableStateOf(target.key.orEmpty()) }
         AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text(stringResource(R.string.memory_new_memory)) },
+            onDismissRequest = { editing = null },
+            title = { Text(if (isNew) stringResource(R.string.memory_new_memory) else stringResource(R.string.memory_edit_memory)) },
             text = {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     BoundedTextField(
                         value = text, onValueChange = { text = it },
                         placeholder = stringResource(R.string.memory_e_g_prefers_concise_answers),
@@ -190,7 +309,7 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                         placeholder = stringResource(R.string.memory_key_optional_e_g_tone),
                         singleLine = true,
                         maxLength = ValidationLimits.MEMORY_KEY,
-                supportingText = stringResource(R.string.memory_using_the_same_key_replaces),
+                        supportingText = stringResource(R.string.memory_using_the_same_key_replaces),
                         modifier = Modifier.padding(top = Space.sm)
                     )
                 }
@@ -199,41 +318,53 @@ fun MemoryScreen(onBack: () -> Unit = {}, onOpenSuggestions: () -> Unit = {}, hi
                 TextButton(
                     enabled = text.isNotBlank() && text.length <= ValidationLimits.MEMORY_TEXT && key.length <= ValidationLimits.MEMORY_KEY,
                     onClick = {
-                    if (text.isNotBlank()) {
+                        val trimmedKey = key.trim().ifBlank { null }
                         scope.launch {
-                            val trimmedKey = key.trim().ifBlank { null }
-                            val existing = trimmedKey?.let {
-                                app.container.db.memoryDao().findByKey(it, com.vervan.chat.data.db.entities.MemoryScope.GLOBAL, null)
+                            val sameKey = trimmedKey?.let {
+                                app.container.db.memoryDao().findByKey(it, target.scope, target.scopeRefId)
+                            }?.takeIf { it.id != target.id }
+                            if (!isNew && sameKey != null) {
+                                // Editing onto another memory's key: that one is replaced, as the hint says.
+                                app.container.db.memoryDao().softDeleteMany(listOf(sameKey.id))
                             }
-                            val memory = if (existing != null) {
-                                existing.copy(text = text, key = trimmedKey)
-                            } else {
-                                Memory(text = text, key = trimmedKey)
-                            }
-                            app.container.memoryRepository.upsert(memory)
+                            val base = if (isNew) (sameKey ?: target) else target
+                            app.container.memoryRepository.upsert(base.copy(text = text.trim(), key = trimmedKey))
+                        }
+                        editing = null
+                    }
+                ) { Text(stringResource(R.string.action_save)) }
+            },
+            dismissButton = {
+                Row {
+                    if (!isNew) {
+                        TextButton(onClick = { editing = null; remove(setOf(target.id)) }) {
+                            Text(stringResource(R.string.library_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
-                    showAdd = false
-                }) { Text(stringResource(R.string.action_save)) }
-            },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(stringResource(R.string.action_cancel)) } }
+                    TextButton(onClick = { editing = null }) { Text(stringResource(R.string.action_cancel)) }
+                }
+            }
         )
     }
 
-    pendingDelete?.let { memory ->
+    pendingBulkDelete?.let { ids ->
+        val all = ids.size == memories.size
         ConfirmDialog(
-            title = stringResource(R.string.memory_delete_memory),
-            body = stringResource(R.string.memory_arg1_will_be_permanently_deleted, memory.text),
-            confirmLabel = stringResource(R.string.library_delete),
+            title = if (all) stringResource(R.string.memory_forget_all_title) else stringResource(R.string.memory_delete_memory),
+            body = resources.getQuantityString(R.plurals.memory_bulk_delete_body, ids.size, ids.size),
+            confirmLabel = if (all) stringResource(R.string.memory_forget_all) else stringResource(R.string.library_delete),
             destructive = true,
             onConfirm = {
-                pendingDelete = null
-                scope.launch { app.container.db.memoryDao().update(memory.copy(deletedAt = System.currentTimeMillis())) }
+                pendingBulkDelete = null
+                exitSelection()
+                remove(ids)
             },
-            onDismiss = { pendingDelete = null }
+            onDismiss = { pendingBulkDelete = null }
         )
     }
 }
+
+private const val SEARCH_THRESHOLD = 5
 
 @Composable
 private fun MemorySnapshotCard(total: Int, enabled: Int, modifier: Modifier = Modifier) {

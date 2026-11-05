@@ -26,6 +26,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -296,7 +297,7 @@ internal fun DocumentComposerPreviewDialog(
                 // itself, not the card framing it, is the dominant thing on screen.
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.md), contentAlignment = Alignment.Center) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp
@@ -387,47 +388,110 @@ internal fun ModernChatAttachmentSheet(
     onAudioFile: () -> Unit,
     onDocument: () -> Unit,
     modelRunsOnDevice: Boolean = true,
+    sourcesSummary: String? = null,
+    onSources: (() -> Unit)? = null,
+    onTools: (() -> Unit)? = null,
+    incognito: Boolean = false,
+    onIncognitoChange: ((Boolean) -> Unit)? = null,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // One sheet for everything you can add to or switch on for a message: the three everyday
+    // attachments as large tiles, the less common ones as a list, then the chat switches.
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = com.vervan.chat.ui.common.rememberAdaptiveSheetState()) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally)
-                .padding(horizontal = Space.lg).padding(bottom = Space.xxl)
+            Modifier.widthIn(max = 720.dp).fillMaxWidth().align(Alignment.CenterHorizontally)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = Space.lg).padding(bottom = Space.xl)
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.media_share), style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        if (modelRunsOnDevice) stringResource(R.string.media_private_prepare)
-                        else stringResource(R.string.media_remote_prepare),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (modelRunsOnDevice) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                    contentDescription = if (modelRunsOnDevice) stringResource(R.string.media_private_content) else stringResource(R.string.media_remote_content),
-                    tint = MaterialTheme.colorScheme.primary
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    if (modelRunsOnDevice) stringResource(R.string.media_private_prepare)
+                    else stringResource(R.string.media_remote_prepare),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = Space.xs)
                 )
             }
-            Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.Image, stringResource(R.string.media_gallery), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_photos), visionAvailable != false, onPhoto, vervanAccentFor(1), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.PhotoCamera, stringResource(R.string.media_camera), if (visionAvailable == false) stringResource(R.string.action_unavailable) else stringResource(R.string.media_take_photo), visionAvailable != false, onCamera, vervanAccentFor(3), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Description, stringResource(R.string.media_document), stringResource(R.string.media_pdf_file), true, onDocument, vervanAccentFor(2), Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                AttachmentTile(Icons.Filled.Image, stringResource(R.string.media_photos), visionAvailable != false, onPhoto, Modifier.weight(1f))
+                AttachmentTile(Icons.Filled.PhotoCamera, stringResource(R.string.media_camera), visionAvailable != false, onCamera, Modifier.weight(1f))
+                AttachmentTile(Icons.Filled.Description, stringResource(R.string.media_files), true, onDocument, Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                CompactAttachmentAction(Icons.Filled.DocumentScanner, stringResource(R.string.media_scan_text), if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_from_photo), !isRunningOcr, onOcrPhoto, vervanAccentFor(5), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.Mic, stringResource(R.string.media_record), if (audioAvailable == true) stringResource(R.string.media_transcribe) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onRecordAudio, vervanAccentFor(4), Modifier.weight(1f))
-                CompactAttachmentAction(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_audio), if (audioAvailable == true) stringResource(R.string.media_transcribe_file) else stringResource(R.string.media_stt_off), audioAvailable == true && !isImportingAudio, onAudioFile, vervanAccentFor(4), Modifier.weight(1f))
+            if (visionAvailable == false) {
+                Text(
+                    stringResource(R.string.media_photos_need_vision),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs)
+                )
             }
-            TextButton(
-                onClick = onOcrCamera,
-                enabled = !isRunningOcr,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = Space.sm)
-            ) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = Space.xs))
-                Text(stringResource(R.string.media_scan_camera))
+            Column(Modifier.padding(top = Space.sm)) {
+                SheetRow(Icons.Filled.DocumentScanner, if (isRunningOcr) stringResource(R.string.media_reading) else stringResource(R.string.media_scan_text), null, !isRunningOcr, onOcrPhoto)
+                SheetRow(Icons.Filled.CameraAlt, stringResource(R.string.media_scan_camera), null, !isRunningOcr, onOcrCamera)
+                val sttOff = if (audioAvailable == true) null else stringResource(R.string.media_stt_off)
+                SheetRow(Icons.Filled.Mic, stringResource(R.string.media_record), sttOff, audioAvailable == true && !isImportingAudio, onRecordAudio)
+                SheetRow(Icons.Filled.AudioFile, if (isImportingAudio) stringResource(R.string.media_transcribing) else stringResource(R.string.media_transcribe_file), sttOff, audioAvailable == true && !isImportingAudio, onAudioFile)
+            }
+            if (onSources != null || onTools != null || onIncognitoChange != null) {
+                HorizontalDivider(Modifier.padding(vertical = Space.sm))
+                onSources?.let { SheetRow(Icons.AutoMirrored.Filled.MenuBook, stringResource(R.string.chat_sources), sourcesSummary, true, it) }
+                onTools?.let { SheetRow(Icons.Filled.Build, stringResource(R.string.chat_tools), null, true, it) }
+                onIncognitoChange?.let { change ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .clip(MaterialTheme.shapes.medium)
+                            .toggleable(value = incognito, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = change)
+                            .padding(horizontal = Space.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.chat_incognito_on_label), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = Space.md))
+                        androidx.compose.material3.Switch(checked = incognito, onCheckedChange = null)
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun AttachmentTile(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = enabled, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(vertical = Space.md),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.xs), maxLines = 1)
+    }
+}
+
+@Composable
+private fun SheetRow(icon: ImageVector, title: String, trailing: String?, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(enabled = enabled, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = Space.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = Space.md), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        trailing?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
     }
 }
 
@@ -694,7 +758,7 @@ internal fun AudioComposerPreviewDialog(
                 }
                 Box(Modifier.fillMaxWidth().weight(1f).padding(Space.xl), contentAlignment = Alignment.Center) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = 6.dp

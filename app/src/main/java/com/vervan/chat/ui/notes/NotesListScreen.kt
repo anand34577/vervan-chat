@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Add
@@ -109,9 +110,15 @@ fun NotesListScreen(onOpenNote: (String) -> Unit, onBack: () -> Unit = {}) {
                     title = { Text(stringResource(R.string.folder_notes)) },
                     navigationIcon = {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
+                    },
+                    // Long-press a row still enters selection; this is the visible way in.
+                    actions = {
+                        if (notes.isNotEmpty()) {
+                            IconButton(onClick = { selectionMode = true }) {
+                                Icon(Icons.Filled.Checklist, contentDescription = stringResource(R.string.action_select))
+                            }
+                        }
                     }
-                    // Long-press a row to enter selection mode — no separate top-bar entry
-                    // point, matching every other list screen in the app.
                 )
             }
         },

@@ -37,7 +37,7 @@ fun JobProgressCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        border = vervanBorder()
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Column(Modifier.padding(Space.lg)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

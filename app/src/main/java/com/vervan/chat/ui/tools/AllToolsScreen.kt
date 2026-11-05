@@ -273,10 +273,10 @@ fun AllToolsScreen(onNavigate: (String) -> Unit, onBack: (() -> Unit)? = null) {
             else -> "Vision not confirmed"
         }
     }
-    // Stable per-category color so a tool's icon is the same hue wherever it appears (grid or
-    // pinned), turning a wall of identical amber chips into a scannable, colorful directory.
-    val entryAccent = remember {
-        categories.flatMapIndexed { i, cat -> cat.entries.map { it.route to com.vervan.chat.ui.theme.vervanAccentFor(i) } }.toMap()
+    // Tool icons share one calm tile colour; the icon shape and label do the identifying.
+    val neutralAccent = com.vervan.chat.ui.theme.vervanAccentFor(0)
+    val entryAccent = remember(neutralAccent) {
+        categories.flatMap { cat -> cat.entries.map { it.route to neutralAccent } }.toMap()
     }
     val visibleCategories = remember(query, selectedCategory) {
         categories.mapNotNull { category ->
@@ -526,71 +526,66 @@ private fun ToolCard(
     readiness: String,
     modifier: Modifier = Modifier,
 ) {
-    val container = accent?.container ?: MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-    val onContainer = accent?.onContainer ?: MaterialTheme.colorScheme.onPrimaryContainer
-    // A faint wash of the category accent over the surface — cards stay calm but each category
-    // reads as its own colour family, matching the icon chip.
-    // Light-theme accent containers are dark; even a 16% wash of them turns the card a dull grey
-    // that reads as "disabled". Keep the wash very light there.
-    val isLight = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    val cardContainer = accent?.container?.copy(alpha = if (isLight) 0.05f else 0.16f)
-        ?.compositeOver(MaterialTheme.colorScheme.surfaceContainerLow)
-        ?: MaterialTheme.colorScheme.surfaceContainerLow
+    val container = accent?.container ?: MaterialTheme.colorScheme.surfaceContainerHighest
+    val onContainer = accent?.onContainer ?: MaterialTheme.colorScheme.onSurface
+    // One row per tool: icon, name with a one-line description, and the pin star. The old card
+    // put the description on its own line under the icon row, doubling every tool's height.
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().heightIn(min = 96.dp),
-        colors = CardDefaults.cardColors(containerColor = cardContainer),
-        border = vervanBorder(),
+        modifier = modifier.fillMaxWidth(),
+        colors = com.vervan.chat.ui.theme.SurfaceRole.Card.cardColors(),
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border(),
     ) {
-        Column(Modifier.fillMaxWidth().padding(Space.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = container,
-                    contentColor = onContainer,
-                ) {
-                    Icon(entry.icon, null, Modifier.padding(Space.sm).size(20.dp))
-                }
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.md, top = Space.sm, bottom = Space.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = container,
+                contentColor = onContainer,
+            ) {
+                Icon(entry.icon, null, Modifier.padding(Space.sm).size(20.dp))
+            }
+            Column(Modifier.weight(1f).padding(start = Space.md)) {
                 Text(
                     entry.label,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = Space.md),
                 )
-                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
-                    Icon(
-                        if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                        contentDescription = if (isFavorite) stringResource(R.string.all_tools_unpin_arg1, entry.label) else stringResource(R.string.all_tools_pin_arg1, entry.label),
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
+                Text(
+                    entry.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // Positive readiness is the normal state and does not need repeating on every
+                // card. Keep only the exceptions, where the label tells the user what must change.
+                if (readiness != "Ready") {
+                    // Needing a model is a setup step, not a failure: warning tone, not error red.
+                    Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.Info, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.vervanWarning, modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            readiness,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.vervanWarning,
+                            modifier = Modifier.padding(start = Space.xs),
+                        )
+                    }
                 }
             }
-            Text(
-                entry.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = Space.sm),
-            )
-            // Positive readiness is the normal state and does not need repeating on every card.
-            // Keep only the exceptions, where the label tells the user what must change.
-            if (readiness != "Ready") {
-                // Needing a model is a setup step, not a failure: warning tone, not error red.
-                Row(Modifier.padding(top = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Filled.Info, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.vervanWarning, modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        readiness,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.vervanWarning,
-                        modifier = Modifier.padding(start = Space.xs),
-                    )
-                }
+            IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = if (isFavorite) stringResource(R.string.all_tools_unpin_arg1, entry.label) else stringResource(R.string.all_tools_pin_arg1, entry.label),
+                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

@@ -1012,7 +1012,7 @@ internal fun ImportChoiceCard(
         enabled = enabled,
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = vervanBorder()
+        border = com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         if (horizontal) {
             Row(Modifier.fillMaxWidth().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
@@ -1063,15 +1063,16 @@ internal fun ModelCard(
         Modifier.fillMaxWidth().padding(bottom = 10.dp).animateContentSize()
             .combinedClickable(onClick = { if (selectionMode) onToggleSelect() else onEdit() }, onLongClick = onLongPress),
         colors = CardDefaults.cardColors(
+            // The active model is marked by its accent outline and "Default" badge; a tinted fill
+            // on top of that made the whole card read as one big green block.
             containerColor = when {
                 selected -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-                model.isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                else -> MaterialTheme.colorScheme.surface
+                else -> com.vervan.chat.ui.theme.SurfaceRole.Card.containerColor()
             }
         ),
         border = if (model.isActive || selected) {
             androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-        } else null
+        } else com.vervan.chat.ui.theme.SurfaceRole.Card.border()
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
@@ -1103,7 +1104,7 @@ internal fun ModelCard(
                                 model.runtimeSummary(),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = VervanMono,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         if (model.origin == com.vervan.chat.data.db.entities.ModelOrigin.DOWNLOADED) {

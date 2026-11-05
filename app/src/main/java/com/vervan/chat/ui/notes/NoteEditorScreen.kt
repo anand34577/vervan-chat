@@ -1,5 +1,7 @@
 package com.vervan.chat.ui.notes
 
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
 import com.vervan.chat.R
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,7 +62,8 @@ import com.vervan.chat.ui.theme.Space
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) {
-    val app = LocalContext.current.applicationContext as VervanApp
+    val context = LocalContext.current
+    val app = context.applicationContext as VervanApp
     val vm: NoteEditorViewModel = viewModel(factory = viewModelFactory { initializer { NoteEditorViewModel(app, noteId) } })
     val note by vm.note.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
@@ -90,6 +93,7 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
     var previewMode by remember { mutableStateOf(false) }
     var pendingResult by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
     val knowledgeBases by vm.knowledgeBases.collectAsStateWithLifecycle()
     // System back / predictive back saves exactly like the toolbar arrow does.
     androidx.activity.compose.BackHandler(enabled = loaded) {
@@ -135,11 +139,41 @@ fun NoteEditorScreen(noteId: String, onBack: () -> Unit, onDeleted: () -> Unit) 
                             )
                         }
                     }
-                    IconButton(onClick = { vm.save(title, content, tags); showKbPicker = true }) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = stringResource(R.string.chat_add_to_knowledge))
-                    }
-                    IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.library_delete))
+                    // Less frequent actions live in one menu so the bar keeps to the two that
+                    // shape writing (preview, AI). Share was missing entirely before.
+                    androidx.compose.foundation.layout.Box {
+                        IconButton(onClick = { showMore = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.action_more))
+                        }
+                        DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.action_share)) },
+                                leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                                enabled = content.isNotBlank() || title.isNotBlank(),
+                                onClick = {
+                                    showMore = false
+                                    vm.save(title, content, tags)
+                                    val body = listOf(title, content).filter { it.isNotBlank() }.joinToString("\n\n")
+                                    context.startActivity(android.content.Intent.createChooser(
+                                        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+                                            putExtra(android.content.Intent.EXTRA_TEXT, body)
+                                        }, null
+                                    ))
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_add_to_knowledge)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
+                                onClick = { showMore = false; vm.save(title, content, tags); showKbPicker = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.library_delete), color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = { showMore = false; confirmDelete = true }
+                            )
+                        }
                     }
                 }
             )

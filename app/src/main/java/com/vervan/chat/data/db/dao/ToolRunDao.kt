@@ -21,4 +21,12 @@ interface ToolRunDao : BaseDao<ToolRun> {
 
     @Query("UPDATE tool_runs SET deletedAt = :now, updatedAt = :now WHERE id = :id")
     suspend fun softDelete(id: String, now: Long = System.currentTimeMillis())
+
+    @Query("UPDATE tool_runs SET deletedAt = :now, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun softDeleteMany(ids: List<String>, now: Long = System.currentTimeMillis())
+
+    /** Undo for [softDelete]/[softDeleteMany]: tool runs are not listed in the recycle bin, so the
+     *  snackbar's Undo is the only way back. */
+    @Query("UPDATE tool_runs SET deletedAt = NULL WHERE id IN (:ids)")
+    suspend fun restoreMany(ids: List<String>)
 }
