@@ -375,6 +375,11 @@
     <string name="chat_document_preview">Open document preview</string>
     <string name="chat_send">Send</string>
     <string name="chat_thinking">Thinking</string>
+    <string name="chat_composer_think">Think</string>
+    <string name="chat_composer_think_level">Think · %1$s</string>
+    <string name="chat_composer_think_on">On</string>
+    <string name="chat_composer_think_off">Off</string>
+    <string name="chat_composer_think_options">Thinking options</string>
     <string name="chat_continue_response">Continue with a new response</string>
     <string name="chat_partial_kept">Partial response kept</string>
     <string name="chat_fork_action">Fork chat from here</string>
@@ -451,6 +456,10 @@
     <string name="chat_match_count">%1$d/%2$d</string>
     <string name="chat_value_label">%1$s: %2$s</string>
     <string name="chat_sources">Sources</string>
+    <string name="chat_incognito_on_label">Incognito</string>
+    <string name="media_files">Files</string>
+    <string name="media_photos_need_vision">Photos need a model that can see images.</string>
+    <string name="chat_sources_off">Off</string>
     <string name="chat_generating_title">Generating a chat title</string>
     <string name="chat_generation_error">Generation could not continue</string>
     <string name="chat_attachment_error">Attachment could not be added</string>

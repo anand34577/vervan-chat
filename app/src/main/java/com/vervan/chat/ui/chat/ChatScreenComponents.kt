@@ -18,6 +18,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -173,6 +175,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
@@ -707,7 +710,9 @@ internal fun ChatContextStrip(
     // be chips on every chat, which pushed the conversation down for information that never
     // changed; the model now lives in the title and the workspace in chat details.
     val showContext = contextPercent >= CONTEXT_CHIP_THRESHOLD_PERCENT
-    if (folderName != null || personaName != null || thinkingMode != null || sourceCount != null || showContext) {
+    // Thinking has its own toggle in the composer now, so it no longer earns a chip here; it
+    // still shows in the details sheet.
+    if (folderName != null || personaName != null || sourceCount != null || showContext) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -730,14 +735,6 @@ internal fun ChatContextStrip(
                     label = stringResource(R.string.chat_scope_persona, it),
                     contentDescription = stringResource(R.string.chat_scope_persona_description, it),
                     onClick = onPersonaClick,
-                )
-            }
-            thinkingMode?.let {
-                ChatContextChip(
-                    icon = Icons.Filled.AutoAwesome,
-                    label = stringResource(R.string.chat_scope_thinking, it.lowercase().replaceFirstChar { c -> c.uppercase() }),
-                    contentDescription = stringResource(R.string.chat_scope_thinking_description, it),
-                    onClick = onModelClick,
                 )
             }
             sourceCount?.let {
@@ -1776,3 +1773,52 @@ internal fun rememberDocumentAttachLauncher(
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onSelected(inspectDocument(context, uri))
     }
+
+/**
+ * Thinking on/off pill in the composer's control row. Tap toggles it; long-press opens the mode
+ * dialog where the depth (fast, balanced, deep) and response style can be chosen.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun ComposerThinkingToggle(
+    mode: String,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val on = mode != "OFF"
+    val label = if (on && mode != "BALANCED") {
+        stringResource(R.string.chat_composer_think_level, mode.lowercase().replaceFirstChar { it.uppercase() })
+    } else {
+        stringResource(R.string.chat_composer_think)
+    }
+    val state = stringResource(if (on) R.string.chat_composer_think_on else R.string.chat_composer_think_off)
+    val moreLabel = stringResource(R.string.chat_composer_think_options)
+    val container = if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val content = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .heightIn(min = 48.dp)
+            .padding(vertical = Space.xs)
+            .clip(VervanExtraShapes.pill)
+            .background(container)
+            .border(
+                BorderStroke(1.dp, if (on) Color.Transparent else MaterialTheme.colorScheme.outlineVariant),
+                VervanExtraShapes.pill
+            )
+            .combinedClickable(
+                enabled = enabled,
+                role = androidx.compose.ui.semantics.Role.Switch,
+                onLongClickLabel = moreLabel,
+                onClick = onToggle,
+                onLongClick = onLongPress,
+            )
+            .semantics { stateDescription = state }
+            .padding(horizontal = Space.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.xs)
+    ) {
+        Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+    }
+}

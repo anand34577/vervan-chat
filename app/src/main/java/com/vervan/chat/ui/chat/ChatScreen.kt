@@ -1057,17 +1057,8 @@ fun ChatScreen(
         topBar = {
             TopAppBar(title = {
                 Column(Modifier.heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
-                    OverflowTooltipText(
-                        text = chat?.title ?: stringResource(R.string.chat_new_conversation),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onOpenChatInfo)
-                            .semantics { contentDescription = chatDetailsContentDescription }
-                    )
-                    // The model is the setting people change most, so it lives in the title as a
-                    // tap-to-switch line (like the model menu in other assistant apps) rather than
-                    // in a row of chips that pushed the conversation down.
+                    // The model is the setting people change most, so it is the bar's main line
+                    // (the model menu in ChatGPT and Claude); the chat title sits quietly below.
                     val busy = isRetrieving || isRecallingMemory
                     Row(
                         Modifier
@@ -1106,13 +1097,22 @@ fun ChatScreen(
                             modelLoadState is ChatViewModel.ModelLoadState.Loading -> stringResource(R.string.chat_arg1_loading, modelName)
                             else -> modelName
                         }
+                        if (chat?.isTemporary == true && !busy) {
+                            Icon(
+                                Icons.Filled.VisibilityOff,
+                                contentDescription = stringResource(R.string.chat_incognito_on_label),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = Space.xs),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
-                            if (chat?.isTemporary == true && !busy) "$status · incognito" else status,
-                            style = MaterialTheme.typography.labelMedium,
+                            status,
+                            style = MaterialTheme.typography.titleMedium,
                             color = when {
-                                modelName == null -> MaterialTheme.colorScheme.primary
-                                isGenerating || busy -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                modelName == null || busy -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurface
                             },
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -1122,10 +1122,21 @@ fun ChatScreen(
                             Icon(
                                 Icons.Filled.ExpandMore,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                    chat?.title?.let { chatTitle ->
+                        OverflowTooltipText(
+                            text = chatTitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onOpenChatInfo)
+                                .semantics { contentDescription = chatDetailsContentDescription }
+                        )
                     }
                 }
             }, navigationIcon = {
@@ -1140,14 +1151,8 @@ fun ChatScreen(
                 // "Mode & model"), not here — the top bar was too cramped with the pill taking
                 // roughly a third of its width on a phone.
                 // Keep the frequently changed chat controls directly accessible.
-                val grounded = chat?.sourceGrounded == true
-                IconButton(onClick = { showSourcePicker = true }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = stringResource(R.string.chat_sources),
-                        tint = if (grounded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // Sources moved into the composer's "+" sheet, next to the other things you can
+                // add to a message; the bar keeps only the chat menu.
                 if (titleGenerating) {
                     Box(
                         Modifier
@@ -1384,11 +1389,15 @@ fun ChatScreen(
                     if (contextLimit > 0) (estimatedTokens * 100 / contextLimit).coerceIn(
                         0, 100
                     ) else 0
-                ChatContextProgressBar(
-                    contextTokens = estimatedTokens,
-                    contextLimit = contextLimit,
-                    contextPercent = contextPercent,
-                )
+                // A meter for an almost-empty window was a permanent grey stripe under the title
+                // that said nothing; it only earns its place once the window starts to fill.
+                if (contextPercent >= 70) {
+                    ChatContextProgressBar(
+                        contextTokens = estimatedTokens,
+                        contextLimit = contextLimit,
+                        contextPercent = contextPercent,
+                    )
+                }
                 ChatContextStrip(
                     workspaceName = workspace?.name,
                     folderName = folder?.name,
@@ -2378,16 +2387,10 @@ fun ChatScreen(
                                 // minimum, which left the 48dp icons and 46dp send circle visibly sunken
                                 // beside it no matter how they were nudged). Single-line: everything is
                                 // flush-centered. Multi-line: the field grows upward, icons stay anchored.
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                                    IconButton(
-                                        onClick = { showAttachmentSheet = true },
-                                        enabled = composerEnabled
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                            contentDescription = stringResource(R.string.chat_open_attachment_options)
-                                        )
-                                    }
+                                // Two rows, like the composers in ChatGPT and Claude: the message on
+                                // top with the full width to itself, and the controls underneath
+                                // ([+] [Think] … [mic] [send]) so they never squeeze the text.
+                                Column(Modifier.fillMaxWidth()) {
                                     androidx.compose.foundation.text.BasicTextField(
                                         value = draft,
                                         onValueChange = {
@@ -2399,8 +2402,8 @@ fun ChatScreen(
                                             if (draftLoaded) vm.saveDraft(draft)
                                         },
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .heightIn(min = 48.dp, max = 148.dp)
+                                            .fillMaxWidth()
+                                            .heightIn(min = 44.dp, max = 168.dp)
                                             // Hardware keyboards: Enter sends, Shift+Enter adds a
                                             // line; Ctrl/Cmd+Enter always sends. Soft keyboards
                                             // keep Enter as a newline.
@@ -2418,7 +2421,7 @@ fun ChatScreen(
                         contentDescription = chatMessageContentDescription
                                             },
                                         enabled = composerTypingEnabled,
-                                        maxLines = 5,
+                                        maxLines = 6,
                                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                                             color = if (draft.length > 12_000) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                         ),
@@ -2428,8 +2431,8 @@ fun ChatScreen(
                                         decorationBox = { inner ->
                                             Box(
                                                 Modifier.padding(
-                                                    horizontal = Space.xs, vertical = Space.md
-                                                ), contentAlignment = Alignment.CenterStart
+                                                    start = Space.md, end = Space.md, top = Space.sm, bottom = Space.xs
+                                                ), contentAlignment = Alignment.TopStart
                                             ) {
                                                 if (draft.isEmpty()) {
                                                     Text(
@@ -2443,6 +2446,32 @@ fun ChatScreen(
                                                 inner()
                                             }
                                         })
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { showAttachmentSheet = true },
+                                        enabled = composerEnabled
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = stringResource(R.string.chat_open_attachment_options)
+                                        )
+                                    }
+                                    if (selectedGenerationModel?.supportsThinking != false) {
+                                        val thinkingMode = com.vervan.chat.llm.ThinkingPolicy.effectiveThinkingMode(
+                                            chat?.thinkingMode,
+                                            selectedGenerationModel?.defaultThinkingMode,
+                                            selectedGenerationModel?.supportsThinking
+                                        )
+                                        ComposerThinkingToggle(
+                                            mode = thinkingMode,
+                                            enabled = composerEnabled && !isGenerating,
+                                            // Tap flips it; long-press opens the depth and
+                                            // response-style settings for finer control.
+                                            onToggle = { vm.setThinkingMode(if (thinkingMode == "OFF") "BALANCED" else "OFF") },
+                                            onLongPress = { showModeSettings = true }
+                                        )
+                                    }
+                                    Spacer(Modifier.weight(1f))
                                     if (speechInputAvailable) {
                                         Box {
                                             IconButton(
@@ -2536,19 +2565,34 @@ fun ChatScreen(
                                         pendingDocument is ChatViewModel.DocumentAttachState.Ready
                                     val canSend =
                                         (draft.isNotBlank() || pendingImagePath != null || pendingOcrImagePath != null || pendingAudioPath != null || documentReady) && composerEnabled && draft.length <= 12_000
-                                    val sendActive = canSend || isGenerating
+                                    // With nothing to send, the slot starts a voice conversation
+                                    // instead of showing a dead send button (the ChatGPT pattern).
+                                    val voiceSlot = !canSend && !isGenerating && speechInputAvailable && composerEnabled
+                                    val sendActive = canSend || isGenerating || voiceSlot
+                                    // Monochrome, high-contrast send: one clear action without the
+                                    // brand gradient competing with the conversation above it.
+                                    val sendContent = MaterialTheme.colorScheme.surface
                                     Box(
                                         Modifier
                                             .padding(start = Space.xs)
-                                            .size(48.dp)
+                                            .size(44.dp)
                                             .clip(androidx.compose.foundation.shape.CircleShape)
                                             .background(
-                                                if (sendActive) com.vervan.chat.ui.theme.vervanBrandFill()
-                                                else androidx.compose.ui.graphics.SolidColor(
-                                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                                )
+                                                if (sendActive) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.surfaceContainerHighest
                                             ), contentAlignment = Alignment.Center
                                     ) {
+                                        if (voiceSlot) {
+                                            IconButton(onClick = {
+                                                requestHandsFreePermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                            }) {
+                                                Icon(
+                                                    Icons.Filled.GraphicEq,
+                                                    contentDescription = stringResource(R.string.chat_start_hands_free),
+                                                    tint = sendContent
+                                                )
+                                            }
+                                        } else
                                         if (isGenerating) {
                                             IconButton(onClick = {
                                                 if (hapticsEnabled) haptics.performHapticFeedback(
@@ -2559,7 +2603,7 @@ fun ChatScreen(
                                                 Icon(
                                                     Icons.Filled.Stop,
                         contentDescription = stringResource(R.string.chat_stop_generating),
-                                                    tint = MaterialTheme.colorScheme.onPrimary
+                                                    tint = sendContent
                                                 )
                                             }
                                         } else {
@@ -2572,10 +2616,11 @@ fun ChatScreen(
                                                 Icon(
                                                     Icons.AutoMirrored.Filled.Send,
                         contentDescription = stringResource(R.string.chat_send_message),
-                                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    tint = if (canSend) sendContent else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
                                         }
+                                    }
                                     }
                                 }
                             }
@@ -2593,6 +2638,12 @@ fun ChatScreen(
             modelRunsOnDevice = modelRunsOnDevice,
             isImportingAudio = isImportingAudio,
             isRunningOcr = isRunningOcr,
+            sourcesSummary = chat?.kbIdList()?.size?.takeIf { chat?.sourceGrounded == true && it > 0 }?.toString()
+                ?: stringResource(R.string.chat_sources_off),
+            onSources = { showAttachmentSheet = false; showSourcePicker = true },
+            onTools = if (selectedGenerationModel?.supportsTools != false) ({ showAttachmentSheet = false; showChatTools = true }) else null,
+            incognito = chat?.isTemporary == true,
+            onIncognitoChange = { vm.toggleTemporary() },
             onDismiss = { showAttachmentSheet = false },
             onPhoto = {
                 showAttachmentSheet = false
