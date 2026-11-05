@@ -385,14 +385,14 @@ fun ChatListScreen(onOpenChat: (String) -> Unit, onNewChat: (() -> Unit)? = null
     }
 }
 
-/** Sticky header for a date/pinned bucket. Uses surfaceContainer (the same surface as the
- *  app bar) so it reads as a section anchor rather than another card mid-list. */
+/** Sticky header for a date/pinned bucket. Uses the page background so it reads as a section
+ *  label that stays put while scrolling, not as a band of a different colour. */
 @Composable
 private fun ChatBucketHeader(label: String, count: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = Space.lg, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm)
