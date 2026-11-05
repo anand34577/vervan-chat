@@ -20,6 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Stop
@@ -97,7 +100,8 @@ fun TextActionScreen(
     allowVoice: Boolean = false,
     allowImageOcr: Boolean = false,
     allowSaveAsNote: Boolean = false,
-    requireInput: Boolean = true
+    requireInput: Boolean = true,
+    codeInput: Boolean = false,
 ) {
     val context = LocalContext.current
     val localResources = androidx.compose.ui.platform.LocalResources.current
@@ -112,6 +116,17 @@ fun TextActionScreen(
     var isRunning by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var genJob by remember { mutableStateOf<Job?>(null) }
+    var selectedLabel by rememberSaveable { mutableStateOf(actions.first().label) }
+
+    fun pasteFromClipboard() {
+        val clip = context.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        if (text.isBlank()) {
+            scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.tool_clipboard_empty)) }
+        } else {
+            inputText = (if (inputText.isBlank()) text else "$inputText\n$text").take(InputLimits.GENERAL_TOOL_INPUT_CHARS)
+        }
+    }
 
     fun runAction(action: TextAction) {
         if (inputText.isBlank() && requireInput) return
@@ -250,78 +265,94 @@ fun TextActionScreen(
                 body = stringResource(R.string.text_action_add_text_choose_an_action),
             )
 
-            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_1_add_input))
+            ToolStep(1, stringResource(R.string.tool_step_add_text))
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it.take(InputLimits.GENERAL_TOOL_INPUT_CHARS) },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 4,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 320.dp),
+                minLines = 5,
+                enabled = !isRunning,
+                textStyle = if (codeInput) MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    else androidx.compose.material3.LocalTextStyle.current,
                 shape = MaterialTheme.shapes.large,
                 placeholder = { Text(hint) },
+                supportingText = { ToolCharCount(inputText.length, InputLimits.GENERAL_TOOL_INPUT_CHARS) },
                 trailingIcon = {
-                    if (inputText.isNotBlank()) {
-                        IconButton(onClick = { copy(inputText) }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.text_action_copy_input_text)) }
+                    if (inputText.isNotEmpty() && !isRunning) {
+                        IconButton(onClick = { inputText = "" }) { Icon(Icons.Filled.Clear, stringResource(R.string.tool_clear_input)) }
                     }
                 }
             )
-            if (allowVoice || allowImageOcr) {
-                Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    if (allowVoice) {
-                        OutlinedButton(onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.Mic, null, Modifier.size(18.dp))
-                            Text(stringResource(R.string.text_action_voice), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
-                        }
-                    }
-                    if (allowImageOcr) {
-                        OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                            Text(stringResource(R.string.media_from_photo), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
-                        }
+            ToolSourceRow {
+                OutlinedButton(onClick = { pasteFromClipboard() }, enabled = !isRunning, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.ContentPaste, null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.tool_paste), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
+                }
+                if (allowVoice) {
+                    OutlinedButton(onClick = { requestMicPermission.launch(android.Manifest.permission.RECORD_AUDIO) }, enabled = !isRunning, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Mic, null, Modifier.size(18.dp))
+                        Text(stringResource(R.string.text_action_voice), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
-                AnimatedVisibility(visible = isOcrRunning) {
-                    Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text(stringResource(R.string.text_action_recognizing_text), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = Space.sm))
+                if (allowImageOcr) {
+                    OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = !isRunning && !isOcrRunning, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                        Text(stringResource(R.string.media_from_photo), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
             }
-
-            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_2_choose_an_action))
-            androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                verticalArrangement = Arrangement.spacedBy(Space.sm)
-            ) {
-                actions.forEach { action ->
-                    VervanFilterChip(
-                        selected = activeLabel == action.label,
-                        onClick = { runAction(action) },
-                        label = { Text(action.label) },
-                        enabled = (inputText.isNotBlank() || !requireInput) && !isRunning
-                    )
+            AnimatedVisibility(visible = isOcrRunning) {
+                Row(Modifier.padding(top = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.text_action_recognizing_text), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = Space.sm))
                 }
             }
 
-            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_text_action_3_review_result))
+            // One action needs no picker: the button below names it.
+            if (actions.size > 1) {
+                ToolStep(2, stringResource(R.string.tool_step_choose_action))
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm)
+                ) {
+                    actions.forEach { action ->
+                        VervanFilterChip(
+                            selected = selectedLabel == action.label,
+                            onClick = { selectedLabel = action.label },
+                            label = { Text(action.label) },
+                            enabled = !isRunning
+                        )
+                    }
+                }
+            }
+            val selected = actions.firstOrNull { it.label == selectedLabel } ?: actions.first()
+            ToolPrimaryButton(
+                label = selected.label,
+                icon = Icons.Filled.AutoAwesome,
+                onClick = { runAction(selected) },
+                blockedReason = when {
+                    isOcrRunning -> stringResource(R.string.text_action_recognizing_text)
+                    requireInput && inputText.isBlank() -> stringResource(R.string.tool_blocked_add_text)
+                    else -> null
+                },
+                running = isRunning,
+                onStop = { stop() }
+            )
+
+            if (isRunning || outputText.isNotBlank() || errorText != null) {
+                ToolStep(if (actions.size > 1) 3 else 2, stringResource(R.string.tool_step_review_result))
+            }
             when {
-                // Pre-first-token: a spinner is all we can show, but keep the stop control present.
+                // Before the first token a spinner is all there is; Stop is the button above.
                 isRunning && outputText.isBlank() -> {
                     Card(
                         Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(Space.xl),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Row(Modifier.fillMaxWidth().padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             Text(stringResource(R.string.text_action_generating_with_the_active_model), modifier = Modifier.padding(start = Space.md).weight(1f))
-                            OutlinedButton(onClick = { stop() }) {
-                                Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
-                            }
                         }
                     }
                 }
@@ -335,21 +366,14 @@ fun TextActionScreen(
                                 activeLabel?.let {
                                     Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                                 }
-                                if (isRunning) {
-                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                                }
+                                if (isRunning) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                             }
-                            MarkdownLiteText(outputText, modifier = Modifier.padding(top = Space.sm))
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                MarkdownLiteText(outputText, modifier = Modifier.padding(top = Space.sm))
+                            }
                         }
                     }
-                    if (isRunning) {
-                        Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.End) {
-                            Button(onClick = { stop() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) {
-                                Icon(Icons.Filled.Stop, null, Modifier.size(18.dp))
-                                Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
-                            }
-                        }
-                    } else {
+                    if (!isRunning) {
                         ResultActions(
                             modifier = Modifier.padding(top = Space.sm),
                             onCopy = { copy(outputText) },
@@ -369,6 +393,10 @@ fun TextActionScreen(
                             } else null,
                             saveLabel = "Save as note"
                         )
+                        androidx.compose.material3.TextButton(
+                            onClick = { inputText = outputText.take(InputLimits.GENERAL_TOOL_INPUT_CHARS); outputText = "" },
+                            modifier = Modifier.padding(top = Space.xs)
+                        ) { Text(stringResource(R.string.tool_use_as_input)) }
                     }
                 }
                 errorText != null -> {
@@ -379,29 +407,6 @@ fun TextActionScreen(
                         actionLabel = lastAction?.let { "Try again" },
                         onAction = lastAction?.let { action -> { runAction(action) } }
                     )
-                }
-                else -> {
-                    Card(
-                        Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    ) {
-                        Row(Modifier.fillMaxWidth().padding(Space.xl), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp),
-                            )
-                            Column(Modifier.weight(1f).padding(start = Space.md)) {
-                                Text(stringResource(R.string.voice_ready), style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    stringResource(R.string.text_action_your_local_result_will_appear),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
                 }
             }
       }

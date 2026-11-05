@@ -14,6 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +31,7 @@ import androidx.compose.material3.Text
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import com.vervan.chat.ui.common.ScrollablePage
 import com.vervan.chat.ui.theme.Space
+import com.vervan.chat.ui.common.copyText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +81,7 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var comparedOnce by remember { mutableStateOf(false) }
     var progress by rememberSaveable { mutableStateOf("") }
+    var compareJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val pickA = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -115,7 +120,8 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
         errorText = null
         comparedOnce = false
         progress = ""
-        scope.launch {
+        compareJob?.cancel()
+        compareJob = scope.launch {
             try {
                 val chunksA = chunks(textA)
                 val chunksB = chunks(textB)
@@ -160,35 +166,45 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(Space.md)
-            ) {
             ToolIntro(
                 icon = Icons.AutoMirrored.Filled.CompareArrows,
                 title = stringResource(R.string.document_comparison_see_exactly_what_changed),
                 body = stringResource(R.string.document_comparison_compare_two_versions_for_changes)
             )
-            ToolSection(
-                title = stringResource(R.string.document_comparison_choose_both_versions),
-                description = stringResource(R.string.document_comparison_paste_text_or_load_a),
-                icon = Icons.Filled.UploadFile
-            ) {
-            Text(stringResource(R.string.document_comparison_original_version_a), style = MaterialTheme.typography.labelMedium)
-            OutlinedTextField(value = textA, onValueChange = { textA = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text(stringResource(R.string.document_comparison_paste_the_original_version)) })
-            OutlinedButton(onClick = { pickA.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.document_comparison_load_version_a)) }
-
-            Text(stringResource(R.string.document_comparison_revised_version_b), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.sm))
-            OutlinedTextField(value = textB, onValueChange = { textB = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) }, modifier = Modifier.fillMaxWidth(), minLines = 4, placeholder = { Text(stringResource(R.string.document_comparison_paste_the_revised_version)) })
-            OutlinedButton(onClick = { pickB.launch("text/*") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.document_comparison_load_version_b)) }
-
-            Button(
+            CompareSide(
+                step = 1,
+                title = stringResource(R.string.document_comparison_original_version_a),
+                value = textA,
+                onValueChange = { textA = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) },
+                placeholder = stringResource(R.string.document_comparison_paste_the_original_version),
+                onLoad = { pickA.launch("text/*") },
+                enabled = !isComparing
+            )
+            CompareSide(
+                step = 2,
+                title = stringResource(R.string.document_comparison_revised_version_b),
+                value = textB,
+                onValueChange = { textB = it.take(InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) },
+                placeholder = stringResource(R.string.document_comparison_paste_the_revised_version),
+                onLoad = { pickB.launch("text/*") },
+                enabled = !isComparing
+            )
+            ToolPrimaryButton(
+                label = stringResource(R.string.document_comparison_compare_versions),
+                icon = Icons.AutoMirrored.Filled.CompareArrows,
                 onClick = ::compare,
-                enabled = textA.isNotBlank() && textB.isNotBlank() && !isComparing,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-            ) { Text(stringResource(R.string.document_comparison_compare_versions)) }
-            }
+                blockedReason = when {
+                    textA.isBlank() || textB.isBlank() -> stringResource(R.string.compare_blocked_both)
+                    textA.trim() == textB.trim() -> stringResource(R.string.compare_blocked_same)
+                    else -> null
+                },
+                running = isComparing,
+                onStop = { compareJob?.cancel(); isComparing = false; progress = "" }
+            )
 
+            if (isComparing || errorText != null || comparedOnce || results.isNotEmpty()) {
+                ToolStep(3, stringResource(R.string.tool_step_review_result))
+            }
             if (isComparing) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = progress.ifBlank { "Preparing the comparison" },
@@ -202,11 +218,10 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                     recovery = stringResource(R.string.document_comparison_check_both_versions_or_shorten),
                     actionLabel = stringResource(R.string.action_try_again),
                     onAction = { compare() },
-                    modifier = Modifier.padding(top = Space.lg)
                 )
             }
             if (comparedOnce && results.isEmpty() && errorText == null) {
-                Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Text(stringResource(R.string.document_comparison_no_meaningful_differences_found), Modifier.padding(Space.md), style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -220,11 +235,50 @@ fun DocumentComparisonScreen(onBack: () -> Unit) {
                 Card(Modifier.fillMaxWidth().padding(top = Space.md), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                     Column(Modifier.padding(Space.md)) {
                         Text(stringResource(R.string.document_comparison_section_arg1, section), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text(explanation, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = Space.xs))
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            com.vervan.chat.ui.common.MarkdownLiteText(explanation, modifier = Modifier.padding(top = Space.xs))
+                        }
                     }
                 }
             }
+            if (results.isNotEmpty() && !isComparing) {
+                val report = results.joinToString("\n\n") { (section, text) -> "Section $section\n$text" }
+                com.vervan.chat.ui.common.ResultActions(
+                    modifier = Modifier.padding(top = Space.sm),
+                    onCopy = { context.getSystemService(android.content.ClipboardManager::class.java).copyText(report, scope, "Comparison") },
+                    onShare = {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, report)
+                        context.startActivity(android.content.Intent.createChooser(send, null))
+                    }
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun CompareSide(
+    step: Int,
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onLoad: () -> Unit,
+    enabled: Boolean,
+) {
+    ToolStep(step, title)
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 280.dp),
+        minLines = 4, enabled = enabled,
+        placeholder = { Text(placeholder) },
+        supportingText = { ToolCharCount(value.length, InputLimits.DOCUMENT_COMPARISON_SIDE_CHARS) },
+        trailingIcon = if (value.isNotEmpty() && enabled) {
+            { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Filled.Clear, stringResource(R.string.tool_clear_input)) } }
+        } else null
+    )
+    androidx.compose.material3.TextButton(onClick = onLoad, enabled = enabled) {
+        Icon(Icons.Filled.UploadFile, null, Modifier.size(18.dp))
+        Text(stringResource(R.string.compare_load_file), modifier = Modifier.padding(start = Space.sm))
     }
 }

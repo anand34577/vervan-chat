@@ -76,7 +76,7 @@ private val CAPTION_MODES = listOf(
  * clear message instead of silently failing when it doesn't (same guard [ChatViewModel] uses). */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ImageCaptionScreen(onBack: () -> Unit) {
+fun ImageCaptionScreen(onBack: () -> Unit, onOpenModels: (() -> Unit)? = null) {
     val context = LocalContext.current
     val localResources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as VervanApp
@@ -96,6 +96,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     var genJob by remember { mutableStateOf<Job?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var lastMode by remember { mutableStateOf<CaptionMode?>(null) }
+    var selectedMode by rememberSaveable { mutableStateOf(CAPTION_MODES.first().label) }
 
     fun runMode(mode: CaptionMode) {
         val path = imagePath ?: return
@@ -156,7 +157,7 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
     val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
         if (granted) { val (file, uri) = newImageFile(); pendingFile = file; takePicture.launch(uri) }
     }
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
                 val (file, _) = newImageFile()
@@ -182,66 +183,82 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(contentPadding = padding, maxContentWidth = 840.dp) {
-        Column(
-            Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Space.md)
-        ) {
             ToolIntro(
                 icon = Icons.Filled.ImageSearch,
                 title = stringResource(R.string.image_caption_describe_an_image_for_any),
                 body = stringResource(R.string.image_caption_create_alt_text_captions_or)
             )
             if (visionAvailable == false) {
-                Text(
-                    stringResource(R.string.image_caption_load_a_vision_capable_model),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error
+                com.vervan.chat.ui.common.SystemStatusStrip(
+                    title = stringResource(R.string.tool_needs_vision_title),
+                    body = stringResource(R.string.image_caption_load_a_vision_capable_model),
+                    tone = com.vervan.chat.ui.common.StatusTone.Warning,
+                    actionLabel = onOpenModels?.let { stringResource(R.string.tool_choose_model) },
+                    onAction = onOpenModels,
+                    modifier = Modifier.padding(top = Space.md)
                 )
             }
-            ResponsiveActions {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
-                }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = visionAvailable != false) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)); Text(stringResource(R.string.image_caption_from_files), modifier = Modifier.padding(start = Space.sm))
+
+            ToolStep(1, stringResource(R.string.tool_step_choose_image))
+            ToolImageSource(
+                imagePath = imagePath,
+                onCamera = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
+                onGallery = { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !isRunning
+            )
+
+            ToolStep(2, stringResource(R.string.caption_step_what))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                CAPTION_MODES.forEach { mode ->
+                    VervanFilterChip(selected = selectedMode == mode.label, onClick = { selectedMode = mode.label }, label = { Text(mode.label) }, enabled = !isRunning)
                 }
             }
-            imagePath?.let { path ->
-                val bitmap = rememberThumbnail(path, 700)
-                bitmap?.let { Image(it, "Selected image", Modifier.fillMaxWidth().height(200.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
-                FlowRow(Modifier.fillMaxWidth().padding(top = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    CAPTION_MODES.forEach { mode ->
-                        VervanFilterChip(selected = activeMode == mode.label, onClick = { runMode(mode) }, label = { Text(mode.label) }, enabled = !isRunning)
-                    }
-                }
+            val mode = CAPTION_MODES.firstOrNull { it.label == selectedMode } ?: CAPTION_MODES.first()
+            ToolPrimaryButton(
+                label = stringResource(R.string.caption_write, mode.label.lowercase()),
+                icon = Icons.Filled.ImageSearch,
+                onClick = { runMode(mode) },
+                blockedReason = when {
+                    visionAvailable == false -> stringResource(R.string.tool_needs_vision_title)
+                    imagePath == null -> stringResource(R.string.tool_blocked_add_image)
+                    else -> null
+                },
+                running = isRunning,
+                onStop = { genJob?.cancel(); isRunning = false }
+            )
+
+            if (isRunning || output.isNotBlank() || errorText != null) {
+                ToolStep(3, stringResource(R.string.tool_step_review_result))
             }
             when {
                 isRunning && output.isBlank() -> {
                     com.vervan.chat.ui.common.OperationProgressCard(
                         title = "Creating ${activeMode?.lowercase() ?: "description"}",
                         body = stringResource(R.string.image_caption_analyzing_the_image_with_the),
-                        actionLabel = stringResource(R.string.action_stop),
-                        onAction = { genJob?.cancel(); isRunning = false }
                     )
                 }
                 output.isNotBlank() -> {
-                    ToolResultHeader(
-                        title = activeMode?.takeIf { it.isNotBlank() } ?: stringResource(R.string.image_caption_description_ready),
-                        supportingText = if (isRunning) stringResource(R.string.text_action_generating_with_the_active_model) else stringResource(R.string.image_caption_ready_to_copy_and_use)
-                    )
-                    Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                        Column(Modifier.padding(Space.md)) {
-                            Text(output, style = MaterialTheme.typography.bodyMedium)
-                            if (!isRunning) {
-                                OutlinedButton(
-                                    onClick = {
-                                        context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .copyText(output, scope, "Caption")
-                                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
-                                    },
-                                    modifier = Modifier.padding(top = Space.sm)
-                                ) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                        Column(Modifier.padding(Space.lg)) {
+                            activeMode?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(output, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = Space.xs))
                             }
                         }
+                    }
+                    if (!isRunning) {
+                        com.vervan.chat.ui.common.ResultActions(
+                            modifier = Modifier.padding(top = Space.sm),
+                            onCopy = {
+                                context.getSystemService(android.content.ClipboardManager::class.java).copyText(output, scope, "Caption")
+                                scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
+                            },
+                            onShare = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, output)
+                                context.startActivity(android.content.Intent.createChooser(send, null))
+                            },
+                            onRegenerate = lastMode?.let { m -> { runMode(m) } }
+                        )
                     }
                 }
                 errorText != null -> {
@@ -250,12 +267,10 @@ fun ImageCaptionScreen(onBack: () -> Unit) {
                         message = errorText!!,
                         recovery = stringResource(R.string.image_caption_load_a_vision_model_or),
                         actionLabel = lastMode?.let { "Try again" },
-                        onAction = lastMode?.let { mode -> { runMode(mode) } },
-                        modifier = Modifier.padding(top = Space.lg)
+                        onAction = lastMode?.let { m -> { runMode(m) } },
                     )
                 }
             }
-        }
         }
     }
 }

@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,13 +67,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
-enum class ScanKind(val title: String, val fields: List<Pair<String, String>>) {
+enum class ScanKind(val title: String, val fields: List<Pair<String, String>>, val photoHint: Int, val actionLabel: Int) {
     RECEIPT(
         "Receipt scanner",
-        listOf("merchant" to "Merchant", "date" to "Date", "total" to "Total", "tax" to "Tax", "currency" to "Currency", "paymentMethod" to "Payment method")
+        listOf("merchant" to "Merchant", "date" to "Date", "total" to "Total", "tax" to "Tax", "currency" to "Currency", "paymentMethod" to "Payment method"),
+        R.string.scan_hint_receipt, R.string.scan_action_receipt
     ),
-    TABLE("Table scanner", emptyList()),
-    CUSTOM("Smart form filler", emptyList())
+    TABLE("Table scanner", emptyList(), R.string.scan_hint_table, R.string.scan_action_table),
+    CUSTOM("Smart form filler", emptyList(), R.string.scan_hint_form, R.string.scan_action_form)
 }
 
 /**
@@ -85,6 +88,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as VervanApp
     val scope = rememberCoroutineScope()
+    val localResources = androidx.compose.ui.platform.LocalResources.current
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
 
     val managedImagePath = rememberManagedImagePath()
     val imagePath = managedImagePath.path
@@ -157,6 +162,15 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         }
     }
 
+    fun selectImage(file: File) {
+        managedImagePath.set(file.absolutePath)
+        lastFile = file
+        errorText = null
+        fields = emptyMap()
+        markdownTable = ""
+        lineItems = ""
+    }
+
     fun newImageFile(): Pair<File, android.net.Uri> {
         val dir = File(app.filesDir, "images").apply { mkdirs() }
         val file = File(dir, "scan-${System.currentTimeMillis()}.jpg")
@@ -169,7 +183,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
         pendingFile = null
         if (success && file != null) {
             ImageUtils.fixOrientation(file)
-            runExtraction(file)
+            selectImage(file)
         } else file?.delete()
     }
     val requestCameraPermission = com.vervan.chat.ui.common.rememberPermissionRequester { granted ->
@@ -179,7 +193,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
             takePicture.launch(uri)
         }
     }
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
                 val dest = withContext(Dispatchers.IO) {
@@ -190,7 +204,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                         file
                     }.getOrElse { file.delete(); null }
                 }
-                if (dest != null) runExtraction(dest)
+                if (dest != null) selectImage(dest)
             }
         }
     }
@@ -198,6 +212,7 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
     fun copyText(text: String) {
         val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
         clipboard.copyText(text, scope, kind.title)
+        scope.launch { snackbar.showSnackbar(localResources.getString(R.string.scan_copied)) }
     }
 
     fun exportFile(name: String, content: String, mime: String) {
@@ -214,7 +229,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 title = { OverflowTooltipText(kind.title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) } }
             )
-        }
+        },
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) }
     ) { padding ->
         ScrollablePage(contentPadding = padding) {
             FeatureHero(
@@ -225,46 +241,39 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 dismissKey = kind.title,
                 body = stringResource(R.string.structured_scan_capture_a_clear_image_review)
             )
-            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_1_choose_what_to_capture))
+            var step = 1
             if (kind == ScanKind.CUSTOM) {
+                ToolStep(step++, stringResource(R.string.scan_step_fields))
                 OutlinedTextField(
                     value = customFieldsInput, onValueChange = { customFieldsInput = it.take(InputLimits.STRUCTURED_FIELD_COUNT * (InputLimits.STRUCTURED_FIELD_CHARS + 1)) },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isProcessing,
                     label = { Text(stringResource(R.string.structured_scan_fields_to_extract)) },
                     placeholder = { Text(stringResource(R.string.structured_scan_e_g_name_id_number)) },
-                    // Camera and From files stay disabled until this has a field; say so.
-                    supportingText = { Text(stringResource(R.string.structured_scan_fields_required)) }
+                    supportingText = { Text(stringResource(R.string.scan_fields_count, activeFields.size, InputLimits.STRUCTURED_FIELD_COUNT)) }
                 )
             }
-            val captureEnabled = kind != ScanKind.CUSTOM || activeFields.isNotEmpty()
-            ResponsiveActions {
-                OutlinedButton(onClick = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) }, enabled = captureEnabled) {
-                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
-                    Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
-                }
-                OutlinedButton(onClick = { pickImage.launch("image/*") }, enabled = captureEnabled) {
-                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
-                    Text(stringResource(R.string.structured_scan_from_files), modifier = Modifier.padding(start = Space.sm))
-                }
-            }
-            VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_2_check_the_source))
-            imagePath?.let { path ->
-                val bitmap = rememberThumbnail(path, 700)
-                bitmap?.let { Image(it, "Scanned image", Modifier.fillMaxWidth().height(180.dp).padding(top = Space.md), contentScale = ContentScale.Fit) }
-            } ?: Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                Text(
-                    stringResource(R.string.structured_scan_take_a_photo_or_choose),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(Space.lg)
-                )
-            }
-            // A step heading with nothing under it read as a broken section.
+            ToolStep(step++, stringResource(R.string.tool_step_choose_image), hint = stringResource(kind.photoHint))
+            ToolImageSource(
+                imagePath = imagePath,
+                onCamera = { requestCameraPermission.launch(android.Manifest.permission.CAMERA) },
+                onGallery = { pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !isProcessing
+            )
+            ToolPrimaryButton(
+                label = stringResource(kind.actionLabel),
+                icon = Icons.Filled.DocumentScanner,
+                onClick = { lastFile?.let { runExtraction(it) } },
+                blockedReason = when {
+                    kind == ScanKind.CUSTOM && activeFields.isEmpty() -> stringResource(R.string.structured_scan_fields_required)
+                    lastFile == null -> stringResource(R.string.tool_blocked_add_image)
+                    else -> null
+                },
+                running = isProcessing
+            )
+
             if (errorText != null || isProcessing || markdownTable.isNotBlank() || fields.isNotEmpty()) {
-                VervanSectionHeader(androidx.compose.ui.res.stringResource(com.vervan.chat.R.string.hdr_structured_scan_3_review_extracted_data))
+                ToolStep(step, stringResource(R.string.scan_step_review), hint = stringResource(R.string.scan_step_review_hint))
             }
             errorText?.let {
                 com.vervan.chat.ui.common.OperationErrorCard(
@@ -283,23 +292,39 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                 )
             } else if (kind == ScanKind.TABLE) {
                 if (markdownTable.isNotBlank()) {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                        com.vervan.chat.ui.common.MarkdownLiteText(markdownTable, modifier = Modifier.padding(Space.md))
+                    }
                     OutlinedTextField(
                         value = markdownTable, onValueChange = { markdownTable = it.take(InputLimits.OCR_TEXT_CHARS) },
-                        modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 6, label = { Text(stringResource(R.string.structured_scan_markdown_table)) }
+                        modifier = Modifier.fillMaxWidth().padding(top = Space.md).heightIn(max = 300.dp), minLines = 4,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                        label = { Text(stringResource(R.string.structured_scan_markdown_table)) }
                     )
-                    ResponsiveActions(Modifier.padding(top = Space.sm)) {
-                        OutlinedButton(onClick = { copyText(markdownTable) }) { Text(stringResource(R.string.structured_scan_copy_markdown)) }
-                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }) { Text(stringResource(R.string.structured_scan_copy_csv)) }
-                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }) { Text(stringResource(R.string.structured_scan_copy_json)) }
+                    ToolSourceRow(Modifier.padding(top = Space.sm)) {
+                        OutlinedButton(onClick = { copyText(markdownToCsv(markdownTable)) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.structured_scan_copy_csv)) }
+                        OutlinedButton(onClick = { copyText(markdownToJson(markdownTable)) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.structured_scan_copy_json)) }
+                    }
+                    ToolSourceRow(Modifier.padding(top = Space.sm)) {
+                        OutlinedButton(onClick = { copyText(markdownTable) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.structured_scan_copy_markdown)) }
+                        Button(
+                            onClick = { exportFile("table-${System.currentTimeMillis()}.csv", markdownToCsv(markdownTable) + "\n", "text/csv") },
+                            modifier = Modifier.weight(1f)
+                        ) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.structured_scan_export_csv), modifier = Modifier.padding(start = Space.sm)) }
                     }
                 }
             } else if (fields.isNotEmpty()) {
-                Column(Modifier.padding(top = Space.lg)) {
+                Column {
                     activeFields.forEach { (key, label) ->
                         OutlinedTextField(
                             value = fields[key].orEmpty(),
                             onValueChange = { fields = fields + (key to it.take(4_000)) },
                             label = { Text(label) },
+                            singleLine = key != "address",
+                            isError = kind == ScanKind.RECEIPT && key == "total" && fields[key].isNullOrBlank(),
+                            supportingText = if (kind == ScanKind.RECEIPT && key == "total" && fields[key].isNullOrBlank()) {
+                                { Text(stringResource(R.string.scan_total_missing)) }
+                            } else null,
                             modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm)
                         )
                     }
@@ -312,7 +337,8 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                     }
                     when (kind) {
                         ScanKind.RECEIPT -> Column {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            val amount = fields["total"]?.filter { it.isDigit() || it == '.' }?.toDoubleOrNull()
+                            ToolSourceRow {
                                 OutlinedButton(
                                     onClick = {
                                         val header = activeFields.joinToString(",") { it.first }
@@ -327,20 +353,20 @@ fun StructuredScanScreen(kind: ScanKind, onBack: () -> Unit) {
                                             app.container.db.expenseDao().upsert(
                                                 com.vervan.chat.data.db.entities.Expense(
                                                     merchant = fields["merchant"].orEmpty().ifBlank { "Unknown" },
-                                                    amount = fields["total"]?.filter { it.isDigit() || it == '.' }?.toDoubleOrNull() ?: 0.0,
+                                                    amount = amount ?: 0.0,
                                                     currency = fields["currency"].orEmpty(),
                                                     paymentMethod = fields["paymentMethod"].orEmpty()
                                                 )
                                             )
-                                            statusMessage = "Logged to expense ledger"
+                                            snackbar.showSnackbar(localResources.getString(R.string.scan_logged_expense))
                                         }
                                     },
+                                    enabled = amount != null,
                                     modifier = Modifier.weight(1f)
                                 ) { Text(stringResource(R.string.structured_scan_log_as_expense)) }
                             }
-                            statusMessage?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Space.xs)) }
                         }
-                        ScanKind.CUSTOM -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        ScanKind.CUSTOM -> ToolSourceRow {
                             OutlinedButton(
                                 onClick = {
                                     val json = JSONObject().apply { activeFields.forEach { (key, _) -> put(key, fields[key].orEmpty()) } }

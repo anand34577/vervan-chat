@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -64,7 +65,7 @@ private val LENGTHS = listOf("Short", "Medium", "Long")
 /** Structured reply drafting — no email account access needed, works entirely from pasted/typed
  * text (spec: "no email access required initially"). The draft streams in and a model-load
  * failure surfaces in-line instead of crashing. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun EmailComposerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -93,7 +94,7 @@ fun EmailComposerScreen(onBack: () -> Unit) {
         genJob = scope.launch {
             try {
                 val prompt = buildString {
-                    appendLine("Draft a reply email/message with these parameters:")
+                    appendLine(if (originalMessage.isBlank()) "Draft a new email/message with these parameters:" else "Draft a reply email/message with these parameters:")
                     appendLine("Tone: $tone")
                     appendLine("Length: $length")
                     if (relationship.isNotBlank()) appendLine("Relationship to recipient: $relationship")
@@ -147,78 +148,95 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                 dismissKey = stringResource(R.string.email_composer_email_message_composer),
                 body = stringResource(R.string.email_composer_draft_an_email_from_a)
             )
-            OutlinedTextField(
-                value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.lg), minLines = 3,
-                shape = MaterialTheme.shapes.large,
-                label = { Text(stringResource(R.string.email_composer_original_message_optional)) }
-            )
+
+            ToolStep(1, stringResource(R.string.email_step_what), hint = stringResource(R.string.email_step_what_hint))
             OutlinedTextField(
                 value = keyPoints, onValueChange = { keyPoints = it.take(12_000) },
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm), minLines = 2,
+                modifier = Modifier.fillMaxWidth(), minLines = 3,
+                enabled = !isGenerating,
                 shape = MaterialTheme.shapes.large,
-                label = { Text(stringResource(R.string.email_composer_key_points_to_include)) }
+                label = { Text(stringResource(R.string.email_composer_key_points_to_include)) },
+                placeholder = { Text(stringResource(R.string.email_key_points_placeholder)) },
+                supportingText = { ToolCharCount(keyPoints.length, 12_000) }
             )
+            OutlinedTextField(
+                value = originalMessage, onValueChange = { originalMessage = it.take(20_000) },
+                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp), minLines = 3,
+                enabled = !isGenerating,
+                shape = MaterialTheme.shapes.large,
+                label = { Text(stringResource(R.string.email_composer_original_message_optional)) },
+                supportingText = { Text(stringResource(R.string.email_original_hint)) }
+            )
+
+            ToolStep(2, stringResource(R.string.tool_step_set_options))
+            Text(stringResource(R.string.email_tone), style = MaterialTheme.typography.labelLarge)
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth().padding(top = Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
+            ) {
+                TONES.forEach { t -> com.vervan.chat.ui.common.VervanFilterChip(selected = tone == t, onClick = { tone = t }, label = { Text(t) }, enabled = !isGenerating) }
+            }
+            Text(stringResource(R.string.email_length), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.sm))
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth().padding(top = Space.xs),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            ) {
+                LENGTHS.forEach { l -> com.vervan.chat.ui.common.VervanFilterChip(selected = length == l, onClick = { length = l }, label = { Text(l) }, enabled = !isGenerating) }
+            }
             OutlinedTextField(
                 value = relationship, onValueChange = { relationship = it.take(200) },
                 modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                singleLine = true,
+                enabled = !isGenerating,
                 shape = MaterialTheme.shapes.large,
-                label = { Text(stringResource(R.string.email_composer_relationship_to_recipient_optional)) }
+                label = { Text(stringResource(R.string.email_composer_relationship_to_recipient_optional)) },
+                placeholder = { Text(stringResource(R.string.email_relationship_placeholder)) }
             )
-            Row(Modifier.fillMaxWidth().padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Box(Modifier.weight(1f)) {
-                    OutlinedButton(onClick = { toneMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.email_composer_tone_arg1, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    DropdownMenu(expanded = toneMenuOpen, onDismissRequest = { toneMenuOpen = false }) {
-                        TONES.forEach { t -> DropdownMenuItem(text = { Text(t) }, onClick = { tone = t; toneMenuOpen = false }) }
-                    }
-                }
-                Box(Modifier.weight(1f)) {
-                    OutlinedButton(onClick = { lengthMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.email_composer_length_arg1, length), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    DropdownMenu(expanded = lengthMenuOpen, onDismissRequest = { lengthMenuOpen = false }) {
-                        LENGTHS.forEach { l -> DropdownMenuItem(text = { Text(l) }, onClick = { length = l; lengthMenuOpen = false }) }
-                    }
-                }
-            }
-            if (isGenerating) {
-                OutlinedButton(onClick = { genJob?.cancel(); isGenerating = false }, modifier = Modifier.fillMaxWidth().padding(top = Space.md)) {
-                    Icon(Icons.Filled.Stop, null, Modifier.size(18.dp)); Text(stringResource(R.string.action_stop), modifier = Modifier.padding(start = Space.sm))
-                }
-            } else {
-                Button(
-                    onClick = ::generate,
-                    enabled = keyPoints.isNotBlank() || originalMessage.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().padding(top = Space.md)
-                ) { Text(stringResource(R.string.email_composer_draft_reply)) }
-            }
 
+            ToolPrimaryButton(
+                label = stringResource(if (originalMessage.isBlank()) R.string.email_draft_message else R.string.email_composer_draft_reply),
+                icon = Icons.Filled.Mail,
+                onClick = ::generate,
+                blockedReason = if (keyPoints.isBlank() && originalMessage.isBlank()) stringResource(R.string.email_blocked) else null,
+                running = isGenerating,
+                onStop = { genJob?.cancel(); isGenerating = false }
+            )
+
+            if (isGenerating || output.isNotBlank() || errorText != null) {
+                ToolStep(3, stringResource(R.string.tool_step_review_result))
+            }
             when {
                 isGenerating && output.isBlank() -> {
-                    Row(Modifier.fillMaxWidth().padding(top = Space.lg), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = Space.md), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text(stringResource(R.string.email_composer_drafting), modifier = Modifier.padding(start = Space.md))
                     }
                 }
                 output.isNotBlank() -> {
-                    Card(Modifier.fillMaxWidth().padding(top = Space.lg), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                        Column(Modifier.padding(Space.lg)) {
-                            MarkdownLiteText(output)
-                            if (!isGenerating) {
-                                ResponsiveActions(Modifier.padding(top = Space.md)) {
-                                    OutlinedButton(onClick = {
-                                        context.getSystemService(android.content.ClipboardManager::class.java)
-                                            .copyText(output, scope, "Draft")
-                                        scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
-                                    }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
-                                    OutlinedButton(onClick = {
-                                        val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, output) }
-                                        context.startActivity(Intent.createChooser(send, "Share draft"))
-                                    }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_share), modifier = Modifier.padding(start = Space.sm)) }
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            MarkdownLiteText(output, modifier = Modifier.padding(Space.lg))
+                        }
+                    }
+                    if (!isGenerating) {
+                        ResponsiveActions(Modifier.padding(top = Space.sm)) {
+                            OutlinedButton(onClick = {
+                                context.getSystemService(android.content.ClipboardManager::class.java)
+                                    .copyText(output, scope, "Draft")
+                                scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.chat_copied)) }
+                            }) { Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_copy), modifier = Modifier.padding(start = Space.sm)) }
+                            OutlinedButton(onClick = {
+                                val mail = Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:")).putExtra(Intent.EXTRA_TEXT, output)
+                                runCatching { context.startActivity(mail) }.onFailure {
+                                    scope.launch { snackbarHostState.showSnackbar(localResources.getString(R.string.email_no_app)) }
                                 }
-                            }
+                            }) { Icon(Icons.Filled.Mail, null, Modifier.size(18.dp)); Text(stringResource(R.string.email_open_in_app), modifier = Modifier.padding(start = Space.sm)) }
+                            OutlinedButton(onClick = {
+                                val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, output) }
+                                context.startActivity(Intent.createChooser(send, "Share draft"))
+                            }) { Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Text(stringResource(R.string.library_share), modifier = Modifier.padding(start = Space.sm)) }
+                            androidx.compose.material3.TextButton(onClick = ::generate) { Text(stringResource(R.string.email_another_version)) }
                         }
                     }
                 }
@@ -229,7 +247,6 @@ fun EmailComposerScreen(onBack: () -> Unit) {
                         recovery = stringResource(R.string.email_composer_your_notes_are_safe_check),
                         actionLabel = stringResource(R.string.action_try_again),
                         onAction = { generate() },
-                        modifier = Modifier.padding(top = Space.lg)
                     )
                 }
             }

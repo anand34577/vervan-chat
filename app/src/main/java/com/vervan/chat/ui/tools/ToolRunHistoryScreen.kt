@@ -212,7 +212,7 @@ private fun ToolRunCard(
                 }
             }
             Text(
-                run.output.ifBlank { run.errorMessage ?: run.input },
+                runPreview(run.output.ifBlank { run.errorMessage ?: run.input }),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = if (expanded) 20 else 3,
                 overflow = TextOverflow.Ellipsis,
@@ -237,4 +237,23 @@ private fun ToolRunCard(
 @Composable
 private fun RunAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     AssistChip(onClick = onClick, label = { Text(label) }, leadingIcon = { Icon(icon, null, Modifier.size(16.dp)) })
+}
+
+
+/** What a run's card shows: code fences dropped, and a JSON result (a quiz, a scan) summarised
+ *  as its first readable value instead of raw brackets. Copy/Share still use the full output. */
+internal fun runPreview(raw: String): String {
+    val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+    if (!(text.startsWith("[") || text.startsWith("{"))) return text
+    val json = runCatching { org.json.JSONTokener(text).nextValue() }.getOrNull() ?: return text
+    fun firstString(v: Any?): String? = when (v) {
+        is String -> v.takeIf { it.isNotBlank() }
+        is org.json.JSONObject -> listOf("question", "title", "name", "merchant", "text").firstNotNullOfOrNull { v.optString(it).takeIf { s -> s.isNotBlank() } }
+            ?: v.keys().asSequence().firstNotNullOfOrNull { firstString(v.opt(it)) }
+        is org.json.JSONArray -> (0 until v.length()).asSequence().firstNotNullOfOrNull { firstString(v.opt(it)) }
+        else -> null
+    }
+    val count = (json as? org.json.JSONArray)?.length()
+    val first = firstString(json).orEmpty()
+    return if (count != null) "$count items · $first" else first.ifBlank { text }
 }

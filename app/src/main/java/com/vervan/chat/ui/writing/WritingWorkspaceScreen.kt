@@ -28,6 +28,7 @@ import androidx.compose.material3.TextButton
 import com.vervan.chat.ui.common.VervanTopAppBar as TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle as collectAsState
 import androidx.compose.runtime.getValue
@@ -69,6 +70,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
 
     var original by rememberSaveable { mutableStateOf("") }
     var targetLanguage by rememberSaveable { mutableStateOf("") }
+    var selected by remember { mutableStateOf(WritingAction.REWRITE) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -81,24 +83,47 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         ScrollablePage(contentPadding = padding, modifier = Modifier.imePadding(), maxContentWidth = 840.dp) {
+            com.vervan.chat.ui.tools.ToolIntro(
+                icon = androidx.compose.material.icons.Icons.Filled.EditNote,
+                title = stringResource(R.string.writing_workspace_writing_workspace),
+                body = stringResource(R.string.ww_intro)
+            )
+            com.vervan.chat.ui.tools.ToolStep(1, stringResource(R.string.tool_step_add_text))
             BoundedTextField(
                 value = original, onValueChange = { original = it },
-                label = stringResource(R.string.writing_workspace_your_text), minLines = 4, maxLength = ValidationLimits.WRITING_INPUT,
+                label = stringResource(R.string.writing_workspace_your_text), minLines = 5, maxLength = ValidationLimits.WRITING_INPUT,
                 modifier = Modifier.fillMaxWidth()
             )
-            OutlinedTextField(
-                value = targetLanguage, onValueChange = { targetLanguage = it.take(80) },
-                label = { Text(stringResource(R.string.writing_workspace_target_language_for_translate)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
-            )
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(top = Space.md),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm)
+            com.vervan.chat.ui.tools.ToolStep(2, stringResource(R.string.tool_step_choose_action))
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.xs)
             ) {
                 WritingAction.entries.forEach { action ->
-                    VervanFilterChip(selected = false, onClick = { vm.run(action, original, targetLanguage) }, label = { Text(action.label) }, enabled = !running)
+                    VervanFilterChip(selected = selected == action, onClick = { selected = action }, label = { Text(action.label) }, enabled = !running)
                 }
             }
+            if (selected == WritingAction.TRANSLATE) {
+                OutlinedTextField(
+                    value = targetLanguage, onValueChange = { targetLanguage = it.take(80) },
+                    label = { Text(stringResource(R.string.ww_translate_into)) },
+                    placeholder = { Text(stringResource(R.string.ww_translate_placeholder)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm)
+                )
+            }
+            com.vervan.chat.ui.tools.ToolPrimaryButton(
+                label = selected.label,
+                icon = androidx.compose.material.icons.Icons.Filled.EditNote,
+                onClick = { vm.run(selected, original, targetLanguage) },
+                blockedReason = when {
+                    original.isBlank() -> stringResource(R.string.tool_blocked_add_text)
+                    selected == WritingAction.TRANSLATE && targetLanguage.isBlank() -> stringResource(R.string.ww_blocked_language)
+                    else -> null
+                },
+                running = running
+            )
             if (running) {
                 com.vervan.chat.ui.common.OperationProgressCard(
                     title = stringResource(R.string.writing_workspace_preparing_the_revision),
@@ -115,7 +140,7 @@ fun WritingWorkspaceScreen(onBack: () -> Unit) {
                 )
             }
             if (revision.isNotBlank()) {
-                Text(stringResource(R.string.writing_workspace_revision), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Space.xl, bottom = Space.xs))
+                com.vervan.chat.ui.tools.ToolStep(3, stringResource(R.string.ww_step_compare), hint = stringResource(R.string.ww_step_compare_hint))
                 DiffViewer(
                     original = original,
                     transformed = revision,

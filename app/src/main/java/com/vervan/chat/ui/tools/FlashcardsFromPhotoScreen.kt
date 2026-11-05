@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -170,12 +171,13 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                     title = stringResource(R.string.flashcards_from_photo_turn_notes_into_a_study),
                     body = stringResource(R.string.flashcards_from_photo_photograph_pages_or_notes_to)
                 )
-                ResponsiveActions(Modifier.padding(top = Space.lg)) {
-                    OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, enabled = !generating) {
+                ToolStep(1, stringResource(R.string.flash_step_pages), hint = stringResource(R.string.flash_step_pages_hint))
+                ToolSourceRow {
+                    OutlinedButton(onClick = { requestCamera.launch(android.Manifest.permission.CAMERA) }, enabled = !generating && !ocrRunning, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
                         Text(stringResource(R.string.media_camera), modifier = Modifier.padding(start = Space.sm))
                     }
-                    OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !generating) {
+                    OutlinedButton(onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !generating && !ocrRunning, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
                         Text(stringResource(R.string.media_gallery), modifier = Modifier.padding(start = Space.sm))
                     }
@@ -186,23 +188,32 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         Text(stringResource(R.string.flashcards_from_photo_reading_the_image), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Space.sm))
                     }
                 }
+                ocrError?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                }
+
+                ToolStep(2, stringResource(R.string.flash_step_text), hint = stringResource(R.string.flash_step_text_hint))
                 OutlinedTextField(
                     value = sourceText,
                     onValueChange = { sourceText = it.take(ValidationLimits.STUDY_SOURCE) },
                     label = { Text(stringResource(R.string.flashcards_from_photo_study_material_editable)) },
                     minLines = 5,
-                    modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-                    enabled = !generating
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    enabled = !generating,
+                    supportingText = { ToolCharCount(sourceText.length, ValidationLimits.STUDY_SOURCE) }
                 )
+
+                ToolStep(3, stringResource(R.string.flash_step_deck))
                 OutlinedTextField(
                     value = deckName,
                     onValueChange = { deckName = it.take(ValidationLimits.STUDY_SET_NAME) },
                     label = { Text(stringResource(R.string.study_deck_name)) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                    isError = deckName.isBlank(),
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = !generating
                 )
-                Text("${cardCount.toInt()} cards", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = Space.md))
+                Text(stringResource(R.string.flash_card_count, cardCount.toInt()), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = Space.md))
                 Slider(value = cardCount, onValueChange = { cardCount = it }, valueRange = 5f..25f, steps = 19, enabled = !generating)
 
                 if (generating) {
@@ -217,20 +228,26 @@ fun FlashcardsFromPhotoScreen(onBack: () -> Unit, onOpenSet: (String) -> Unit) {
                         }
                     }
                 } else {
-                    Button(
+                    ToolPrimaryButton(
+                        label = stringResource(R.string.flash_make_deck, cardCount.toInt()),
+                        icon = Icons.Filled.School,
                         onClick = { vm.generateSet(deckName.trim(), sourceText, cardCount.toInt(), "", "balanced") { onOpenSet(deckName.trim()) } },
-                        modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-                        enabled = sourceText.isNotBlank() && deckName.isNotBlank() && !ocrRunning
-                    ) {
-                        Icon(Icons.Filled.School, null, Modifier.size(18.dp))
-                        Text(stringResource(R.string.study_generate), modifier = Modifier.padding(start = Space.sm))
-                    }
+                        blockedReason = when {
+                            ocrRunning -> stringResource(R.string.flashcards_from_photo_reading_the_image)
+                            sourceText.isBlank() -> stringResource(R.string.flash_blocked_text)
+                            sourceText.trim().length < 80 -> stringResource(R.string.flash_blocked_short)
+                            deckName.isBlank() -> stringResource(R.string.flash_blocked_name)
+                            else -> null
+                        }
+                    )
                 }
                 error?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
-                }
-                ocrError?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = Space.sm))
+                    com.vervan.chat.ui.common.OperationErrorCard(
+                        title = stringResource(R.string.flash_failed),
+                        message = it,
+                        recovery = stringResource(R.string.flash_failed_recovery),
+                        modifier = Modifier.padding(top = Space.md)
+                    )
                 }
         }
     }
